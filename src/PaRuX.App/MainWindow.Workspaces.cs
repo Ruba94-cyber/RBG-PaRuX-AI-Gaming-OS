@@ -200,6 +200,23 @@ namespace PaRuX
         /// <summary>Opens the Runtime Manager workspace (engine installs), whichever interface mode is active.</summary>
         public void ShowRuntimeManager() => TryNavigateWorkspace("__runtime__");
 
+        /// <summary>
+        /// "PaRuX.exe --play key" (a desktop or Steam shortcut): bring PaRuX forward, open Games and run the normal Play
+        /// path for that title. The usual confirmation still comes first; nothing starts silently.
+        /// </summary>
+        internal void OpenGameFromShortcut(string titleKey)
+        {
+            if (OnboardingPage.Visibility == Visibility.Visible || !IsWorkspaceAllowedForSetup("__games__"))
+            {
+                Log.Write("Game shortcut ignored: first-run setup is open or the Games workspace is off for this setup profile.");
+                return;
+            }
+            App.ShowMainWindow();
+            ShowStudioWorkspace(StudioWorkspace.Games);
+            GameLibraryPage.OnShown();
+            _ = GameLibraryPage.PlayRequestedByShortcutAsync(titleKey);
+        }
+
         private bool TryNavigateWorkspace(string tag)
         {
             // A link, keyboard action or UIA invoke must obey the SAME profile as the
