@@ -38,7 +38,8 @@ public static class PadFeel
         short ox = 0, oy = 0;
         if (length > deadzone && length > 0)
         {
-            double magnitude = Math.Min(1.0, (length - deadzone) / (32767.0 - deadzone));
+            // No circular clamp: a square-gate pad keeps its full-axis diagonals; each axis is clamped below.
+            double magnitude = (length - deadzone) / (32767.0 - deadzone);
             ox = (short)Math.Clamp(Math.Round(x / length * magnitude * 32767.0), -32767, 32767);
             oy = (short)Math.Clamp(Math.Round(y / length * magnitude * 32767.0), -32767, 32767);
         }

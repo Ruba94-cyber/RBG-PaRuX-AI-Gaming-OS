@@ -1425,7 +1425,7 @@ public sealed class ManualGameLibraryView : UserControl
 
     private static void NotifyStoreGameStarted(DiscoveredGameDto game)
     {
-        string installationId = game.ProviderId + ":" + game.ProviderGameId;
+        string installationId = game.ProviderId.ToLowerInvariant() + ":" + game.ProviderGameId;
         _ = VirtualPadActivationController.Current.NotifyGameStartedAsync(installationId,
             TitleKeyFor(game.Name, installationId));
     }

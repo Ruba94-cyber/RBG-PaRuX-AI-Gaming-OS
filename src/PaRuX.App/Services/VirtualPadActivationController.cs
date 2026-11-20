@@ -102,7 +102,7 @@ internal sealed class VirtualPadActivationController
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(titleKey) && _titleKeys.Count < 2000) _titleKeys[gameId] = titleKey;
+            if (!string.IsNullOrWhiteSpace(titleKey) && (_titleKeys.Count < 2000 || _titleKeys.ContainsKey(gameId))) _titleKeys[gameId] = titleKey;
             await Service.OnGameStartedAsync(gameId).ConfigureAwait(false);
             Changed?.Invoke();
         }

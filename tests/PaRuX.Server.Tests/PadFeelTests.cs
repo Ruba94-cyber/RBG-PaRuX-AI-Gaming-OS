@@ -75,4 +75,13 @@ public sealed class PadFeelTests
         Assert.NotEqual(PadFeel.Fingerprint(a), PadFeel.Fingerprint(a with { InvertLeftY = true }));
         Assert.Equal(string.Empty, PadFeel.Fingerprint(null));
     }
+
+    [Fact]
+    public void A_square_gate_pad_keeps_its_full_axis_diagonal_with_default_zero_dead_zone()
+    {
+        var report = PadFeel.Apply(R(lx: 32767, ly: 32767, rx: 32767, ry: 20000), new GamingControllerProfile { LeftDeadzone = 0, RightDeadzone = 0 });
+        Assert.Equal((32767, 32767), (report.LeftX, report.LeftY));
+        Assert.Equal(32767, report.RightX);
+        Assert.Equal(20000, report.RightY);
+    }
 }

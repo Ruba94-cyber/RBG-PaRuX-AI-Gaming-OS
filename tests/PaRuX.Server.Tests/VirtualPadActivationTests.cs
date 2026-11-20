@@ -674,4 +674,19 @@ public sealed class VirtualPadActivationTests : IDisposable
         await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "new settings picked up");
         await rig.Service.StopAsync();
     }
+
+    [Fact]
+    public async Task A_failed_lookup_on_game_switch_keeps_the_running_settings_without_restarting()
+    {
+        bool fail = false;
+        await using var rig = MakeRig(feel: (_, _) => fail ? throw new InvalidOperationException("core slow") : Task.FromResult<GamingControllerProfile?>(SwapAToB));
+        await rig.Service.StartAsync(Identity(), true, "game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "feel on start");
+        int created = rig.Backend.Attempts;
+        fail = true;
+        await rig.Service.OnGameStartedAsync("game-1");
+        Assert.Equal(created, rig.Backend.Attempts);
+        Assert.Equal(Xbox360Report.B, rig.Backend.Pad.Last?.Buttons);
+        await rig.Service.StopAsync();
+    }
 }
