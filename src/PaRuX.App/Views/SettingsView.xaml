@@ -417,6 +417,14 @@
                 </Border>
             </StackPanel>
 
+            <!-- ==================== Local OpenAI-compatible server (chat) ==================== -->
+            <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Models">
+                <TextBlock Text="LOCAL OPENAI-COMPATIBLE SERVER" loc:Loc.ItText="SERVER LOCALE COMPATIBILE CON OPENAI" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
+                <Border Style="{StaticResource PaRuXCardStyle}">
+                    <loc:OpenAiCompatibleProviderPanel />
+                </Border>
+            </StackPanel>
+
             <!-- ==================== Guided tour ==================== -->
             <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="General">
                 <TextBlock Text="FINDING YOUR WAY AROUND" loc:Loc.ItText="PER ORIENTARTI" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />

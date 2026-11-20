@@ -85,6 +85,7 @@ builder.Services.AddSingleton<SmartRouterService>(services => new SmartRouterSer
             proof, services.GetRequiredService<ICandidateLaunchFenceSource>(), cancellationToken))));
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.IRoleRouter>(sp => sp.GetRequiredService<SmartRouterService>());
 builder.Services.AddSingleton<ExternalTextProviderService>();
+builder.Services.AddSingleton<OpenAiCompatibleProviderService>();
 builder.Services.AddSingleton<CloudFallbackService>();
 builder.Services.AddSingleton<PaRuX.Server.DesktopIntegration.DesktopIntegrationService>();
 builder.Services.AddSingleton<PaRuX.Server.DesktopIntegration.DocumentWriteService>();
@@ -4174,6 +4175,7 @@ app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();
 PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
 app.MapGameSaveBackupEndpoints();
+app.MapOpenAiCompatibleProviderEndpoints();
 app.MapEmulatorEndpoints();
 PaRuX.Server.Orchestration.Gaming.QuickResumeEndpoints.MapQuickResumeEndpoints(app);
 PaRuX.Server.Orchestration.Gaming.Downloads.GameDownloadEndpoints.MapGameDownloadEndpoints(app);

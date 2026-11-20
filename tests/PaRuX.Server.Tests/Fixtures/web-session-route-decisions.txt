@@ -16,6 +16,7 @@ ALLOW PUT /api/v1/conversations/{id}
 DENY DELETE /api/v1/adapters/{id}
 DENY DELETE /api/v1/ai/backends/cloud-fallback
 DENY DELETE /api/v1/ai/backends/external
+DENY DELETE /api/v1/ai/openai-compatible
 DENY DELETE /api/v1/apikeys/{id}
 DENY DELETE /api/v1/automations/{id}
 DENY DELETE /api/v1/backup/safety-snapshots
@@ -83,6 +84,7 @@ DENY GET /api/v1/ai/backends/cloud-fallback
 DENY GET /api/v1/ai/backends/detect
 DENY GET /api/v1/ai/backends/external
 DENY GET /api/v1/ai/backends/remote-policy
+DENY GET /api/v1/ai/openai-compatible
 DENY GET /api/v1/ai/profile
 DENY GET /api/v1/apikeys
 DENY GET /api/v1/artifacts
@@ -361,6 +363,7 @@ DENY POST /api/v1/ai/backends/cloud-fallback
 DENY POST /api/v1/ai/backends/cloud-fallback/test
 DENY POST /api/v1/ai/backends/external
 DENY POST /api/v1/ai/backends/remote-policy
+DENY POST /api/v1/ai/openai-compatible/test
 DENY POST /api/v1/ai/profile
 DENY POST /api/v1/ai/profile/auto-fallback
 DENY POST /api/v1/apikeys
@@ -665,6 +668,7 @@ DENY POST /v1/messages
 DENY POST /v1/messages/count_tokens
 DENY POST /v1/responses
 DENY POST /v1/videos
+DENY PUT /api/v1/ai/openai-compatible
 DENY PUT /api/v1/chat/capability-overrides/{role}/{profile}
 DENY PUT /api/v1/coding/model-selection/mode
 DENY POST /api/v1/gaming/xinput-shim/install

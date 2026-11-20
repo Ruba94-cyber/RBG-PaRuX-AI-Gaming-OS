@@ -54,6 +54,7 @@ public sealed class ChatProxyService
     private readonly McpClientRegistry _mcp;
     private readonly LocalInferenceChatBridge _engineBridge;
     private readonly CloudFallbackService _cloudFallback;
+    private readonly OpenAiCompatibleProviderService? _openAiProvider;
     private readonly PromptCacheScopePolicy _promptCache = new();
     private readonly RuntimeTokenCounter _tokenCounter = new(Http);
 
@@ -61,9 +62,11 @@ public sealed class ChatProxyService
         LocalRuntimeService runtime, IRoleRouter router, AiProfileService profiles,
         ContextEngineService context, SkillRouter skills, PersonaService personas, McpClientRegistry mcp,
         ModelDownloadService models, LocalAiProcessManager process, CloudFallbackService cloudFallback,
-        IModalityChatBackend? modality = null)
+        IModalityChatBackend? modality = null,
+        OpenAiCompatibleProviderService? openAiProvider = null)
     {
         _modality = modality;
+        _openAiProvider = openAiProvider;
         _runtime = runtime;
         _cloudFallback = cloudFallback;
         _router = router;
@@ -137,6 +140,16 @@ public sealed class ChatProxyService
             {
                 error = new { message = forcedRouteIneligibility }
             }, cancellationToken);
+            return;
+        }
+
+        // Explicit opt-in: the user pointed chat at a USER_MANAGED OpenAI-compatible server. Per-turn forced routes and
+        // structured-output turns (internal features) keep using PaRuX's own runtime.
+        if (_openAiProvider != null && request.ForcedModelRoute == null
+            && StructuredOutputRequestTransport.TryRead(request) == null
+            && _openAiProvider.IsActiveForChat())
+        {
+            await ServeFromOpenAiCompatibleAsync(request, hasVisualInput, documentMode, downstream, cancellationToken);
             return;
         }
 
@@ -903,6 +916,75 @@ public sealed class ChatProxyService
         if (fallbackReason is not null) routed["fallbackReason"] = fallbackReason;
         if (modality is not null) ModalityChatGate.Annotate(routed, modality);
         return routed;
+    }
+
+    /// <summary>
+    /// Plain chat to the OpenAI-compatible server the user switched on. Retrieval context, tools and images are not
+    /// forwarded to a server PaRuX does not manage: a turn that needs them is refused with a clear message instead of
+    /// being sent without them or silently answered by another model. Persona and skill prompts still apply.
+    /// </summary>
+    private async Task ServeFromOpenAiCompatibleAsync(
+        ChatCompletionRequest request, bool hasVisualInput, bool documentMode, HttpResponse downstream, CancellationToken cancellationToken)
+    {
+        string? unsupported = hasVisualInput ? "Images are not sent to an external OpenAI-compatible server."
+            : documentMode ? "Document questions stay on PaRuX's own model, so your files are not sent to an external server."
+            : request.ContinueFinalMessage ? "Continuing an edited answer needs PaRuX's own runtime."
+            : null;
+        if (unsupported != null)
+        {
+            downstream.StatusCode = StatusCodes.Status409Conflict;
+            await downstream.WriteAsJsonAsync(new
+            {
+                error = new
+                {
+                    message = unsupported + " Switch chat back to PaRuX's own model in Settings > Models, or send this without it.",
+                    type = "openai_compatible_unsupported"
+                }
+            }, cancellationToken);
+            return;
+        }
+
+        ChatCompletionMessage? lastUser = request.Messages.LastOrDefault(m => m.Role == "user");
+        SkillRouteResult routed = _skills.Route(lastUser?.Content ?? string.Empty, request.SkillId);
+        if (routed.Skill != null) ApplySkillPromptShaping(request, routed.Skill, request.SkillParameters);
+        ApplyPersonaPrompt(request, _personas.GetActive());
+
+        OpenAiCompatibleProviderService.ChatTarget target;
+        try
+        {
+            target = await _openAiProvider!.ResolveChatTargetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OpenAiCompatibleProviderException failure)
+        {
+            downstream.StatusCode = failure.HttpStatus;
+            await downstream.WriteAsJsonAsync(new { error = new { message = failure.Message, type = failure.State } }, cancellationToken);
+            return;
+        }
+
+        downstream.StatusCode = StatusCodes.Status200OK;
+        downstream.ContentType = "text/event-stream";
+        downstream.Headers.CacheControl = "no-cache";
+        downstream.Headers.Append("X-Accel-Buffering", "no");
+        string routeLine = "data: " + JsonSerializer.Serialize(new
+        {
+            parux_event = "model_routed",
+            mode = "external",
+            selectedModel = target.Model,
+            engineId = OpenAiCompatibleProviderService.EngineId,
+            engineReason = "The user switched chat to " + target.DisplayName + ".",
+            provider = ChatRouteDestination.ExternalProvider,
+            locality = "local",
+            ownership = "USER_MANAGED",
+            network = target.IsLan ? "lan" : "loopback"
+        }) + "\n\n";
+        await downstream.WriteAsync(routeLine, cancellationToken);
+        await downstream.Body.FlushAsync(cancellationToken);
+
+        await LocalInferenceChatBridge.StreamExternalProviderAsync(
+            _openAiProvider.CreateEngine(target),
+            LocalInferenceChatBridge.BuildExternalProviderRequest(request, target.Model),
+            downstream,
+            cancellationToken);
     }
 
     private static async Task WriteDirectAnswerAsync(string answer, HttpResponse downstream, CancellationToken cancellationToken)

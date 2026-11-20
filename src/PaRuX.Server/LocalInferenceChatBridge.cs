@@ -200,6 +200,69 @@ public sealed class LocalInferenceChatBridge
         }
     }
 
+    /// <summary>
+    /// Streams a turn to a USER_MANAGED OpenAI-compatible server the user switched on for chat. Unlike a direct
+    /// PaRuX engine there is no baseline fallback: silently answering from a different model than the one the user
+    /// chose would hide the failure, so every problem is reported as an error event and the stream ends. No GPU lease
+    /// is taken because the work does not run on PaRuX's runtime.
+    /// </summary>
+    public static async Task<LocalInferenceChatStreamResult> StreamExternalProviderAsync(
+        ILocalInferenceEngine engine,
+        LocalInferenceRequest localRequest,
+        HttpResponse downstream,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(localRequest);
+        ArgumentNullException.ThrowIfNull(downstream);
+        const string errorType = "openai_compatible_provider_error";
+        try
+        {
+            await foreach (LocalInferenceChunk chunk in engine.StreamAsync(localRequest, cancellationToken).ConfigureAwait(false))
+            {
+                if (!string.IsNullOrEmpty(chunk.Error))
+                {
+                    await WriteErrorAsync(downstream, chunk.Error, cancellationToken, errorType).ConfigureAwait(false);
+                    return new LocalInferenceChatStreamResult(false, false, chunk.Error);
+                }
+                if (!string.IsNullOrEmpty(chunk.Reasoning))
+                    await WriteDeltaAsync(downstream, "reasoning_content", chunk.Reasoning, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(chunk.Content))
+                    await WriteDeltaAsync(downstream, "content", chunk.Content, cancellationToken).ConfigureAwait(false);
+                if (chunk.Completed)
+                {
+                    await WriteDoneAsync(downstream, cancellationToken).ConfigureAwait(false);
+                    return new LocalInferenceChatStreamResult(true, false, null);
+                }
+            }
+            const string premature = "The server ended the answer before a completion marker.";
+            await WriteErrorAsync(downstream, premature, cancellationToken, errorType).ConfigureAwait(false);
+            return new LocalInferenceChatStreamResult(false, false, premature);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            await WriteErrorAsync(downstream, ex.Message, CancellationToken.None, errorType).ConfigureAwait(false);
+            return new LocalInferenceChatStreamResult(false, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Maps the chat request to the engine boundary for an external server. Output length and temperature are sent
+    /// only when the caller set them (0 / NaN mean "leave the server's own default"), because a fixed PaRuX default
+    /// can exceed another server's context and be refused.
+    /// </summary>
+    internal static LocalInferenceRequest BuildExternalProviderRequest(ChatCompletionRequest request, string model)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new LocalInferenceRequest(
+            ModelVariantId: model,
+            Messages: request.Messages.Select(message => (message.Role, message.Content ?? string.Empty)).ToList(),
+            MaxOutputTokens: request.MaxCompletionTokens ?? request.MaxTokens ?? 0,
+            Temperature: request.Temperature ?? double.NaN,
+            Stream: true);
+    }
+
     internal static string InferWorkload(ChatCompletionRequest request, bool hasRetrievalContext)
     {
         string prompt = request.Messages.LastOrDefault(message =>
@@ -258,12 +321,13 @@ public sealed class LocalInferenceChatBridge
     private static async Task WriteErrorAsync(
         HttpResponse downstream,
         string? error,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string errorType = "local_inference_engine_error")
     {
         string bounded = Trim(error);
         string line = "data: " + JsonSerializer.Serialize(new
         {
-            error = new { message = bounded, type = "local_inference_engine_error" }
+            error = new { message = bounded, type = errorType }
         }) + "\n\n";
         await downstream.WriteAsync(line, cancellationToken).ConfigureAwait(false);
         await WriteDoneAsync(downstream, cancellationToken).ConfigureAwait(false);
