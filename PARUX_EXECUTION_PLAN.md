@@ -1,3 +1,9 @@
+## 2026-11-21 — Open queue (re-verified against `main` 19c83efd) and per-game controller feel
+
+**Open queue, highest impact first.** (1) Per-game controller settings had no effect on games (data only): fixed in this change for forwarded pads, see below; real Stadia pass still open. (2) Real-pad evidence: Stadia (BLE HID VID 18D1/PID 9400), ViGEmBus and HidHide are present on the reference PC; the HID → HidHide → ViGEm path has never been run end to end with a physical pad. (3) A pad that Windows already reads as XInput is not changed by the per-game profile (no injection layer): the UI says so; decide whether an XInput shim is wanted. (4) Cold start 0.7-1.3 s vs Playnite 0.4 s (open since 11-19). (5) Competitor idle/first-token numbers invalid or missing. (6) Cloud-save direct integrations and owned-store install/repair remain MISSING (folder mirroring is DONE in 4.4.0). (7) Install/upgrade/uninstall on a clean machine, Corporate on real 8 GB, physical TV remain unverified.
+
+**Per-game controller feel (PARTIAL).** `PadFeel` applies a game's OWN controller profile (dead zones, trigger threshold, stick inversion, button remap) to the Xbox report sent to the virtual pad; the forwarding service resolves it on start and on every game switch and restarts forwarding only when it changed; a failed lookup keeps the plain mapping. Launches (manual, emulator, Steam, Epic, GOG, extra stores) now notify the controller with the title key the settings are stored under. Evidence: Server tests 42/42 (7 PadFeel, 4 service tests with a capturing fake pad), App x64 Debug build 0 errors. Not done: physical Stadia run, FlaUI regression, independent review result.
+
 ## 2026-11-19 (morning) — Handoff: state of the overnight Gaming + AI push
 
 **Resume from `main`.** Everything below is committed and pushed; the working tree is clean. Branch work on `codex/gaming-library-20261119` is merged into `main`.

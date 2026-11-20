@@ -33,7 +33,19 @@ internal sealed class VirtualPadActivationController
             id => WindowsRawGamepadSource.TryOpen(id),
             ViGEmBusClient.ProbeDriver,
             new CoreIsolation(),
-            Profiles);
+            Profiles,
+            feelResolver: ResolveFeelAsync);
+    }
+
+    // Library title key of the game each pad-profile game id belongs to (the controller feel is stored per title).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _titleKeys = new(StringComparer.Ordinal);
+
+    /// <summary>Only a game's OWN controller settings are applied to forwarded input; games on the shared profile keep the mapping as saved.</summary>
+    private async Task<GamingControllerProfile?> ResolveFeelAsync(string? gameId, CancellationToken ct)
+    {
+        if (gameId is null || !_titleKeys.TryGetValue(gameId, out string? titleKey)) return null;
+        var result = await GamingOrchestratorClient.Current.GetGameControllerProfileAsync(titleKey, ct).ConfigureAwait(false);
+        return result.Succeeded && result.Value is { Source: "game" } envelope ? envelope.Profile : null;
     }
 
     public static (bool Present, string? Message) ProbeDriver() => ViGEmBusClient.ProbeDriver();
@@ -86,10 +98,11 @@ internal sealed class VirtualPadActivationController
     }
 
     /// <summary>A game was launched by PaRuX: switch the active forwarding to that game's profile. Never starts forwarding.</summary>
-    public async Task NotifyGameStartedAsync(string gameId)
+    public async Task NotifyGameStartedAsync(string gameId, string? titleKey = null)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(titleKey) && _titleKeys.Count < 2000) _titleKeys[gameId] = titleKey;
             await Service.OnGameStartedAsync(gameId).ConfigureAwait(false);
             Changed?.Invoke();
         }

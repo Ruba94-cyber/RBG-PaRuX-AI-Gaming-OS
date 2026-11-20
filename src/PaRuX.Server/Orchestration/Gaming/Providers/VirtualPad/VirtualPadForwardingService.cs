@@ -60,6 +60,8 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
     private string? _isolatedPath;
     private string? _gameId;
     private string? _mappingFingerprint;
+    private string _feelFingerprint = string.Empty;
+    private readonly Func<string?, CancellationToken, Task<PaRuX.Contracts.GamingControllerProfile?>>? _feelResolver;
     private PadMappingSource _source = PadMappingSource.None;
     private VirtualPadPhase _phase = VirtualPadPhase.Idle;
     private string _message = "Not active.";
@@ -67,8 +69,10 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
 
     public VirtualPadForwardingService(IVirtualControllerBackend backend, Func<string, IRawGamepadSource?> openSource,
         Func<(bool Present, string? Message)> driverProbe, IPadIsolation isolation, GamePadProfileStore profiles,
-        VirtualPadServiceOptions? options = null)
+        VirtualPadServiceOptions? options = null,
+        Func<string?, CancellationToken, Task<PaRuX.Contracts.GamingControllerProfile?>>? feelResolver = null)
     {
+        _feelResolver = feelResolver;
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _openSource = openSource ?? throw new ArgumentNullException(nameof(openSource));
         _driverProbe = driverProbe ?? throw new ArgumentNullException(nameof(driverProbe));
@@ -197,13 +201,16 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             return Status;
         }
 
+        string? feelGame;
+        lock (_gate) feelGame = _gameId;
+        PaRuX.Contracts.GamingControllerProfile? feel = await ResolveFeelAsync(feelGame, ct).ConfigureAwait(false);
         VirtualPadForwardingStatus started = new(false, "Not started.");
         VirtualPadForwardingSession? session = null;
         for (int attempt = 1; attempt <= Math.Max(1, _options.MaxStartAttempts); attempt++)
         {
             ct.ThrowIfCancellationRequested();
             session = new VirtualPadForwardingSession(_backend, source, monitor.IsReady);
-            started = session.Start(resolved.Mapping!, _options.Interval, ct);
+            started = session.Start(resolved.Mapping!, _options.Interval, ct, feel);
             if (started.Running) break;
             await session.DisposeAsync().ConfigureAwait(false);
             session = null;
@@ -224,6 +231,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             _monitor = monitor;
             _source = resolved.Source;
             _mappingFingerprint = Fingerprint(resolved.Mapping!);
+            _feelFingerprint = PadFeel.Fingerprint(feel);
             _rearmOffered = false;
             _phase = VirtualPadPhase.Running;
             _message = resolved.Source == PadMappingSource.GameProfile
@@ -361,7 +369,8 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             {
                 if (resolved.Mapping is null) return Status; // keep the working mapping rather than dropping input
                 bool changed;
-                lock (_gate) { changed = Fingerprint(resolved.Mapping) != _mappingFingerprint; }
+                PaRuX.Contracts.GamingControllerProfile? feel = await ResolveFeelAsync(gameId, ct).ConfigureAwait(false);
+                lock (_gate) { changed = Fingerprint(resolved.Mapping) != _mappingFingerprint || PadFeel.Fingerprint(feel) != _feelFingerprint; }
                 if (!changed) return Status;
                 if (await TearDownAsync(ct).ConfigureAwait(false) is { Running: true } stuck)
                 { Set(VirtualPadPhase.Failed, stuck.Message); return Status; }
@@ -412,6 +421,16 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
         message.Contains("another program", StringComparison.OrdinalIgnoreCase) ||
         message.Contains("Stop the previous", StringComparison.OrdinalIgnoreCase) ||
         message.Contains("could not be used", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The game's own controller feel, or null (no resolver, no own profile, or the lookup failed: forwarding then
+    /// continues with the plain mapping rather than dropping input).</summary>
+    private async Task<PaRuX.Contracts.GamingControllerProfile?> ResolveFeelAsync(string? gameId, CancellationToken ct)
+    {
+        if (_feelResolver is null || string.IsNullOrWhiteSpace(gameId)) return null;
+        try { return await _feelResolver(gameId, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { return null; }
+    }
 
     private static string Fingerprint(PadMapping mapping) => JsonSerializer.Serialize(mapping);
 

@@ -36,8 +36,8 @@ internal sealed class GameControllerProfileSection : StackPanel
         AutomationProperties.SetLiveSetting(_source, AutomationLiveSetting.Polite);
         Children.Add(new TextBlock
         {
-            Text = T("Change how this game reads your controller. Games without their own settings follow the shared profile on the Devices page.",
-                     "Cambia come questo gioco legge il controller. I giochi senza impostazioni proprie seguono il profilo condiviso nella pagina Dispositivi."),
+            Text = T("Change how this game feels with your controller. These settings reach the game while PaRuX is forwarding a controller to it (for pads Windows does not treat as Xbox pads, such as Stadia or generic HID pads; start it in Gaming > Devices). A pad the game already reads directly is not changed. Games without their own settings follow the shared profile.",
+                     "Cambia come questo gioco risponde al controller. Le impostazioni arrivano al gioco mentre PaRuX inoltra un controller (per pad che Windows non vede come Xbox, come Stadia o i pad HID generici; avvialo in Gaming > Dispositivi). Un pad che il gioco legge direttamente non viene modificato. I giochi senza impostazioni proprie seguono il profilo condiviso."),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.8,
         });

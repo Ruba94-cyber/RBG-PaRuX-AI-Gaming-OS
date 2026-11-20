@@ -2,8 +2,9 @@ namespace PaRuX.Contracts;
 
 /// <summary>
 /// User-tunable controller diagnostics/mapping profile. It is data only: PaRuX applies it to the
-/// values it reports and to the Console navigation input, and never injects it into games or
-/// into a virtual controller driver. Defaults match the XInput reference deadzones.
+/// values it reports and to the Console navigation input. A game's OWN profile is also applied to the input PaRuX forwards
+/// to the virtual Xbox pad (<c>PadFeel</c>); a pad the game reads directly is never altered. Defaults match the XInput
+/// reference deadzones.
 /// </summary>
 public sealed record GamingControllerProfile
 {

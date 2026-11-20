@@ -1415,6 +1415,21 @@ public sealed class ManualGameLibraryView : UserControl
         }
     }
 
+    /// <summary>A store client was asked to start a game: switch an owner-armed virtual pad to that game's controller settings.</summary>
+    /// <summary>Same rule as the Core's title catalogue (GameTitleCatalog.KeyFor), which the per-game controller settings are keyed by.</summary>
+    private static string TitleKeyFor(string? name, string installationId)
+    {
+        string key = GameLibraryQuery.NormalizeName(name);
+        return key.Length >= 2 ? key : "id:" + installationId;
+    }
+
+    private static void NotifyStoreGameStarted(DiscoveredGameDto game)
+    {
+        string installationId = game.ProviderId + ":" + game.ProviderGameId;
+        _ = VirtualPadActivationController.Current.NotifyGameStartedAsync(installationId,
+            TitleKeyFor(game.Name, installationId));
+    }
+
     private async Task LaunchSteamAsync(DiscoveredGameDto game)
     {
         if (_busy || !string.Equals(game.ProviderId, "steam", StringComparison.OrdinalIgnoreCase)) return;
@@ -1435,6 +1450,7 @@ public sealed class ManualGameLibraryView : UserControl
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             var result = await GamingOrchestratorClient.Current.RequestSteamGameLaunchAsync(game.ProviderGameId);
             await UpdateGamingStatusAsync();
+            if (result.Succeeded && result.Value is { Launched: true }) NotifyStoreGameStarted(game);
             _discoveryStatus.Text = result.Succeeded && result.Value is { Launched: true }
                 ? T("Launch request sent to Steam. Return to AI manually after playing.",
                     "Richiesta di avvio inviata a Steam. Torna manualmente all'AI dopo aver giocato.")
@@ -1468,6 +1484,7 @@ public sealed class ManualGameLibraryView : UserControl
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             var result = await GamingOrchestratorClient.Current.RequestEpicGameLaunchAsync(game.ProviderGameId);
             await UpdateGamingStatusAsync();
+            if (result.Succeeded && result.Value is { Launched: true }) NotifyStoreGameStarted(game);
             _discoveryStatus.Text = result.Succeeded && result.Value is { Launched: true }
                 ? T("Epic protocol request dispatched. Game start is not verified; return to AI manually.",
                     "Richiesta al protocollo Epic inviata. L'avvio del gioco non è verificato: torna manualmente all'AI.")
@@ -1502,6 +1519,7 @@ public sealed class ManualGameLibraryView : UserControl
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             var result = await GamingOrchestratorClient.Current.RequestExtraStoreGameLaunchAsync(game.ProviderId, game.ProviderGameId);
             await UpdateGamingStatusAsync();
+            if (result.Succeeded && result.Value is { Launched: true }) NotifyStoreGameStarted(game);
             _discoveryStatus.Text = result.Succeeded && result.Value is { Launched: true }
                 ? T("Launch request sent through the store client. Return to AI manually after playing.",
                     "Richiesta di avvio inviata tramite il client dello store. Torna manualmente all'AI dopo aver giocato.")
@@ -1535,6 +1553,7 @@ public sealed class ManualGameLibraryView : UserControl
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             var result = await GamingOrchestratorClient.Current.RequestGogGameLaunchAsync(game.ProviderGameId);
             await UpdateGamingStatusAsync();
+            if (result.Succeeded && result.Value is { Launched: true }) NotifyStoreGameStarted(game);
             _discoveryStatus.Text = result.Succeeded && result.Value is { Launched: true }
                 ? T("Launch request sent to GOG GALAXY. Return to AI manually after playing.",
                     "Richiesta di avvio inviata a GOG GALAXY. Torna manualmente all'AI dopo aver giocato.")
@@ -1631,7 +1650,9 @@ public sealed class ManualGameLibraryView : UserControl
             }
             await UpdateGamingStatusAsync();
             // Switches an owner-armed virtual pad to this game's profile; never starts forwarding by itself.
-            _ = VirtualPadActivationController.Current.NotifyGameStartedAsync(game.Id);
+            string manualSource = string.IsNullOrEmpty(game.EmulatorId) ? GameInstallationSources.Manual : GameInstallationSources.Emulator;
+            _ = VirtualPadActivationController.Current.NotifyGameStartedAsync(game.Id,
+                TitleKeyFor(game.Name, manualSource + ":" + game.Id));
             if (isApplication)
             {
                 _status.Text = T("Application started. PaRuX does not monitor it and AI state is unchanged.",
