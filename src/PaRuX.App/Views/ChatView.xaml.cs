@@ -2128,6 +2128,10 @@ namespace PaRuX.Views
             EndPushToTalk();
         }
 
+        /// <summary>Controller button "Dictation": the same start/stop toggle as the microphone button. Refuses itself while Gaming is
+        /// active (see ToggleVoiceAsync), so a pad button can never start the AI next to a game.</summary>
+        public void ToggleDictationFromPad() => _ = ToggleVoiceAsync();
+
         private async Task ToggleVoiceAsync()
         {
             if (_voiceStarting) return;

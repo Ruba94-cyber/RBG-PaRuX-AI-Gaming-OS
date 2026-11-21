@@ -166,6 +166,9 @@ namespace PaRuX
                 Log.Write("Deferred Quick Chat window creation failed: " + ex.GetType().Name + ": " + ex.Message);
             }
 
+            try { MainWin.StartPadActions(); }
+            catch (Exception ex) { Log.Write("PadActions start failed: " + ex.GetType().Name + ": " + ex.Message); }
+
             // Honour a setup-profile switch or an exit that happened before this ran: start only what is still wanted.
             if (IsShuttingDown) return;
             // Start the model load (fire-and-forget; OFF and Gaming modes are respected by Core).
@@ -285,6 +288,7 @@ namespace PaRuX
                 ChatSession.Current.Cancel();
                 ChatSession.Current.Persist();
                 Hotkey.Dispose();
+                PadActionListener.Current.Stop();
                 if (BubbleWin != null) BubbleWin.PersistPosition();
                 if (MainWin != null) MainWin.DisposeTray();
             }

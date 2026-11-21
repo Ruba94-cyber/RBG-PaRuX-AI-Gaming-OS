@@ -455,6 +455,7 @@ namespace PaRuX.Views
                 case "Gaming & AI Sharing":
                     _ = RefreshGamingStatusAsync();
                     _ = RefreshConsoleDisplaysAsync();
+                    RefreshPadButtons();
                     break;
                 case "PaRuX Platform":
                     break;

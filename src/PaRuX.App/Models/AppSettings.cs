@@ -64,6 +64,10 @@ namespace PaRuX.Models
         public string Hotkey { get; set; } = "Ctrl+Alt+Space";
         public string DefaultProfile { get; set; } = "AUTO";
 
+        /// <summary>Controller buttons: PaRuX actions per control and the Console/TV navigation overrides. Version tolerant; a missing or
+        /// corrupt value loads as the safe defaults (only a Stadia pad has default bindings).</summary>
+        public PaRuX.Services.PadActionSettings PadActions { get; set; } = new();
+
         /// <summary>Display roles are assigned by the user, never guessed from
         /// HDMI, resolution, EDID vendor or whether a panel is a television.
         /// Only one explicitly TV-marked display can host Console fullscreen.

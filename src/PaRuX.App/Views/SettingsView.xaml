@@ -1301,6 +1301,30 @@
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
                     </StackPanel>
                 </Border>
+                <Border x:Name="PadButtonsCard" Style="{StaticResource PaRuXCardStyle}">
+                    <StackPanel Spacing="{StaticResource PaRuXSpaceM}">
+                        <TextBlock x:Name="PadButtonsHeading" Text="Controller buttons" loc:Loc.ItText="Pulsanti del controller" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                        <TextBlock x:Name="PadButtonsIntro" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <ToggleSwitch x:Name="PadButtonsEnabledSwitch" Header="Use controller buttons for PaRuX actions" IsOn="True"
+                            AutomationProperties.AutomationId="Settings_PadButtons_Enabled_Toggle" Toggled="PadButtonsEnabledSwitch_Toggled" />
+                        <ComboBox x:Name="PadButtonsPadCombo" MinWidth="360" Header="Pad"
+                            AutomationProperties.AutomationId="Settings_PadButtons_Pad_Combo" SelectionChanged="PadButtonsPadCombo_SelectionChanged" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="PadButtonsRefreshButton" Content="Detect pads" AutomationProperties.AutomationId="Settings_PadButtons_Refresh_Button" Click="PadButtonsRefreshButton_Click" />
+                            <Button x:Name="PadButtonsDetectButton" Content="Detect button" AutomationProperties.AutomationId="Settings_PadButtons_Detect_Button" Click="PadButtonsDetectButton_Click" />
+                            <Button x:Name="PadButtonsRestoreButton" Content="Restore defaults (this pad)" AutomationProperties.AutomationId="Settings_PadButtons_Restore_Button" Click="PadButtonsRestoreButton_Click" />
+                        </StackPanel>
+                        <TextBlock x:Name="PadButtonsLive" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Live_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsStatus" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Status_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsConflicts" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.AutomationId="Settings_PadButtons_Conflicts_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsHeaderRow" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <StackPanel x:Name="PadButtonsTable" Spacing="4" />
+                        <TextBlock x:Name="PadButtonsTvHeading" Text="TV mode (Console navigation)" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                        <TextBlock x:Name="PadButtonsTvWarning" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.AutomationId="Settings_PadButtons_Tv_Warning_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <StackPanel x:Name="PadButtonsTvTable" Spacing="4" />
+                        <Button x:Name="PadButtonsTvRestore" Content="Restore defaults (TV mode)" AutomationProperties.AutomationId="Settings_PadButtons_Tv_Restore_Button" Click="PadButtonsTvRestore_Click" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- ==================== Automations ==================== -->
