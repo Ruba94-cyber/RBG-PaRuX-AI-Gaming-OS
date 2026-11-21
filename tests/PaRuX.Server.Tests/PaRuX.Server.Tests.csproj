@@ -38,6 +38,12 @@
     <Compile Include="..\..\src\PaRuX.App\Services\ControllerLiveModel.cs" Link="Linked\ControllerLiveModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\RawMappingWizardModel.cs" Link="Linked\RawMappingWizardModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\RawPadEdgeTranslator.cs" Link="Linked\RawPadEdgeTranslator.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Models\ComputerAppShortcut.cs" Link="Linked\ComputerAppShortcut.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Models\AppSettings.cs" Link="Linked\AppSettings.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionModel.cs" Link="Linked\PadActionModel.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionEngine.cs" Link="Linked\PadActionEngine.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionPolicy.cs" Link="Linked\PadActionPolicy.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionPoller.cs" Link="Linked\PadActionPoller.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationMarkdown.cs" Link="Linked\ConversationMarkdown.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CommandPaletteFilter.cs" Link="Linked\CommandPaletteFilter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiText.cs" Link="Linked\UiText.cs" />

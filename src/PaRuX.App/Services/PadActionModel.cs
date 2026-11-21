@@ -210,6 +210,8 @@ public sealed class PadActionSettings
 
 internal sealed class PadActionSettingsJsonConverter : JsonConverter<PadActionSettings>
 {
+    public override bool HandleNull => true;
+
     public override PadActionSettings Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         // Version tolerant and never throws: anything unexpected falls back to the safe defaults instead of failing the whole settings file.
