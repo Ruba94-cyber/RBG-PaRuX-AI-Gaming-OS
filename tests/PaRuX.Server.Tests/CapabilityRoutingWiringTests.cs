@@ -29,10 +29,13 @@ public sealed class CapabilityRoutingWiringTests : IClassFixture<ApiSecurityTest
 
     public void Dispose()
     {
+        foreach (IDisposable scope in _vramScopes) scope.Dispose();
         _modelDir.Dispose();
         _runtimeRoot.Dispose();
         try { Directory.Delete(_root, true); } catch (IOException) { }
     }
+
+    private readonly List<IDisposable> _vramScopes = new();
 
     // Hermetic RAM: hardware fit is part of capability routing, so the host's live free RAM must not decide these tests.
     private sealed class FixedRam(SystemRamSnapshot? snapshot) : ISystemRamSnapshotProvider
@@ -46,7 +49,10 @@ public sealed class CapabilityRoutingWiringTests : IClassFixture<ApiSecurityTest
     {
         string state = Path.Combine(_root, "state");
         Directory.CreateDirectory(state);
-        return new SmartRouterService(new RuntimeManagerService(new LocalAiProcessManager(), new FixedRam(ram)),
+        // Hermetic VRAM too: a real GPU (e.g. RTX 5080) would otherwise mask the injected RAM starvation.
+        var process = new LocalAiProcessManager();
+        _vramScopes.Add(process.OverrideVramMibForTests(0));
+        return new SmartRouterService(new RuntimeManagerService(process, new FixedRam(ram)),
             new ModelBenchmarkService(new ModelBenchmarkStore(state), new NeverRun()),
             new PaRuX.Server.CapabilityProfiler.CapabilityProfilerStore(state)) { CapabilityModeRoot = _root };
     }

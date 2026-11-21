@@ -22,6 +22,8 @@ public sealed class ManagedRuntimeHttpClientGuardTests
     {
         ("LocalAiProcessManager.cs", "private static readonly HttpClient Http = new()",
             "Health/system_stats GETs only (no prompt content); also shared with the ComfyUI media runtime, which has no recorded launch identity."),
+        ("Program.cs", "new HuggingFaceCheckpointResolver(new HttpClient",
+            "Read-only huggingface.co repository listing for add-your-own checkpoints (https, fixed host, no prompt content); never contacts a managed runtime endpoint."),
         ("TextInferenceQuiescence.cs", "private static readonly HttpClient Http = new()",
             "Prompt-free /slots and /v1/models probes, including llama.cpp router child ports owned by descendants of the launched runtime."),
     };
