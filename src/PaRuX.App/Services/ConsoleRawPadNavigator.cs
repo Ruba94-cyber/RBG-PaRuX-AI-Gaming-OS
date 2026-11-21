@@ -68,6 +68,8 @@ public sealed class ConsoleRawPadNavigator : IDisposable
 
     public event Action<ConsoleNavigationAction>? ActionRaised;
     public event Action? AcceptRequested;
+    /// <summary>A gamepad virtual key meant for the open on-screen keyboard (X, Y, Start, shoulders, triggers).</summary>
+    public event Action<int>? PadKeyRaised;
 
     public ConsoleRawPadNavigator() : this(null, null, null, null, null) { }
 
@@ -134,7 +136,8 @@ public sealed class ConsoleRawPadNavigator : IDisposable
     {
         try
         {
-            if (e.IsAccept) AcceptRequested?.Invoke();
+            if (e.PadKey != 0) PadKeyRaised?.Invoke(e.PadKey);
+            else if (e.IsAccept) AcceptRequested?.Invoke();
             else ActionRaised?.Invoke(e.Action);
         }
         catch (Exception ex)
@@ -325,3 +328,4 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         return (null, $"no saved mapping, no preset, and the generic fallback refused it: {why}");
     }
 }
+

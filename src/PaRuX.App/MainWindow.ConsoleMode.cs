@@ -431,6 +431,7 @@ public sealed partial class MainWindow
                 _consoleRawPad = new ConsoleRawPadNavigator();
                 _consoleRawPad.ActionRaised += action => { if (_consoleModeActive) ApplyConsoleAction(action); };
                 _consoleRawPad.AcceptRequested += AcceptFocusedConsoleControl;
+                _consoleRawPad.PadKeyRaised += vk => { if (_consoleModeActive && _keyboardOverlay?.IsOpen == true) _keyboardOverlay.HandlePadKey(vk); };
             }
             _consoleRawPad.OverlayOpen = () => ConsoleOverlayOpen;
             _consoleRawPad.Start(DispatcherQueue, () => GameLibraryBusy);
@@ -485,3 +486,4 @@ public sealed partial class MainWindow
             : "Use the same game library in fullscreen. Use D-pad or left stick to navigate, A to select and Escape or B to exit.");
     }
 }
+

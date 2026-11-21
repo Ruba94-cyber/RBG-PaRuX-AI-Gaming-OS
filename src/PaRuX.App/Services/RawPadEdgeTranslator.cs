@@ -6,7 +6,7 @@ using PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad;
 namespace PaRuX.Services;
 
 /// <summary>One navigation event produced from a pad frame. <see cref="IsAccept"/> means "invoke the focused control".</summary>
-public readonly record struct RawPadNavigationEvent(ConsoleNavigationAction Action, bool IsAccept);
+public readonly record struct RawPadNavigationEvent(ConsoleNavigationAction Action, bool IsAccept, int PadKey = 0);
 
 /// <summary>
 /// Pure edge/repeat translator: feeds mapped <see cref="Xbox360Report"/> frames (with a monotonic millisecond clock) and
@@ -35,6 +35,12 @@ public sealed class RawPadEdgeTranslator
         (Xbox360Report.RightShoulder, ConsoleNavigationAction.NextPage, false),
         (Xbox360Report.Start, ConsoleNavigationAction.FocusSearch, false),
         (Xbox360Report.Back, ConsoleNavigationAction.SwitchWorkspace, false),
+    };
+
+    private static readonly (ushort Bit, int Vk)[] KeyboardButtons =
+    {
+        (Xbox360Report.X, 197), (Xbox360Report.Y, 198), (Xbox360Report.Start, 207),
+        (Xbox360Report.LeftShoulder, 200), (Xbox360Report.RightShoulder, 199),
     };
 
     private bool _primed;
@@ -76,6 +82,14 @@ public sealed class RawPadEdgeTranslator
         ushort pressed = (ushort)(frame.Buttons & ~_heldButtons);
         foreach (var (bit, action, accept) in ButtonEdges)
             if ((pressed & bit) != 0) Emit(events, action, accept, interactionBusy, overlayOpen);
+        if (overlayOpen)
+        {
+            // The on-screen keyboard is driven by pad keys (X backspace, Y space, Start done, LB/RB caret, LT shift, RT layer).
+            foreach (var (bit, vk) in KeyboardButtons)
+                if ((pressed & bit) != 0) events.Add(new RawPadNavigationEvent(ConsoleNavigationAction.None, false, vk));
+            if (lt && !_leftTrigger) events.Add(new RawPadNavigationEvent(ConsoleNavigationAction.None, false, 201));
+            if (rt && !_rightTrigger) events.Add(new RawPadNavigationEvent(ConsoleNavigationAction.None, false, 202));
+        }
         // The analog triggers never switch workspace (they are pressed by accident too easily); only View/Back does.
 
         Repeat(events, move, ref _moveDir, ref _moveNext, ref _moveSince, nowMs, interactionBusy, overlayOpen);
@@ -144,3 +158,4 @@ public sealed class RawPadEdgeTranslator
         if (resolved != ConsoleNavigationAction.None) events.Add(new RawPadNavigationEvent(resolved, false));
     }
 }
+

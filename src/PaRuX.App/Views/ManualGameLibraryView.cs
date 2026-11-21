@@ -630,7 +630,12 @@ public sealed class ManualGameLibraryView : UserControl
     }
 
     /// <summary>Console Menu button: jump to the filter field, where A/Y opens the on-screen keyboard.</summary>
-    public void FocusSearch() => _filter.Focus(FocusState.Programmatic);
+    public void FocusSearch()
+    {
+        // The visible search field is the Gaming home one; the legacy filter box is the fallback.
+        if (_universal?.FocusSearch() == true) return;
+        _filter.Focus(FocusState.Programmatic);
+    }
 
     /// <summary>Leaving the Games workspace cancels any expensive local hash
     /// before the next workspace resumes interactive AI activity.</summary>
@@ -1778,3 +1783,4 @@ public sealed class ManualGameLibraryView : UserControl
 
     private void SetBusy(bool value) { TrackFocusAcrossBusy(value); _busy = value; _add.IsEnabled = !value; _browse.IsEnabled = !value; _steamRefresh.IsEnabled = !value; _epicRefresh.IsEnabled = !value; _gogRefresh.IsEnabled = !value; _allStoresRefresh.IsEnabled = !value; _displayRefresh.IsEnabled = !value; _controllerRefresh.IsEnabled = !value; _inspectInstaller.IsEnabled = !value && _installerInspectionAllowed; _refreshStaged.IsEnabled = !value && _installerInspectionAllowed; UpdatePackageStageAvailability(); _cancelInspection.IsEnabled = value && _inspectionCancellation != null; _gamingStatusRefresh.IsEnabled = !value; _returnToAi.IsEnabled = !value && _returnToAiAvailable; SyncGamingStrip(); _games.IsHitTestVisible = !value; _discoveredGames.IsHitTestVisible = !value; _detectedPrevious.IsEnabled = !value && _lastDetectedWindow.HasPrevious; _detectedNext.IsEnabled = !value && _lastDetectedWindow.HasNext; _storeDiscoveryOfferScan.IsEnabled = !value; _storeDiscoveryOfferDismiss.IsEnabled = !value; }
 }
+

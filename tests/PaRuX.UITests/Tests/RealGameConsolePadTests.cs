@@ -18,44 +18,6 @@ namespace PaRuX.UITests.Tests;
 [Collection(UiTestCollection.Name)]
 public sealed class RealGameConsolePadTests
 {
-    private sealed class PadSim : IDisposable
-    {
-        private readonly Process _process;
-        internal PadSim()
-        {
-            string exe = Environment.GetEnvironmentVariable("PARUX_VPADSIM")
-                ?? Path.Combine(Repository.Root, "tools", "PaRuX.VirtualPadSim", "bin", "Debug", "net10.0", "PaRuX.VirtualPadSim.exe");
-            if (!File.Exists(exe)) throw new FileNotFoundException("Build tools/PaRuX.VirtualPadSim first.", exe);
-            _process = Process.Start(new ProcessStartInfo(exe, "--interactive")
-            {
-                UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true
-            })!;
-            string? first = ReadLine(TimeSpan.FromSeconds(30));
-            Assert.Equal("READY", first);
-        }
-
-        private string? ReadLine(TimeSpan timeout)
-        {
-            var read = _process.StandardOutput.ReadLineAsync();
-            return read.Wait(timeout) ? read.Result : null;
-        }
-
-        /// <summary>Sends one verb (for example "dpad right") and waits until the simulator finished it.</summary>
-        internal void Send(string verb)
-        {
-            _process.StandardInput.WriteLine(verb);
-            _process.StandardInput.Flush();
-            string? reply = ReadLine(TimeSpan.FromSeconds(20));
-            Assert.True(reply is not null && reply.StartsWith("OK", StringComparison.Ordinal), "pad simulator replied: " + reply);
-        }
-
-        public void Dispose()
-        {
-            try { _process.StandardInput.WriteLine("quit"); _process.StandardInput.Flush(); } catch { }
-            try { if (!_process.WaitForExit(5000)) _process.Kill(true); } catch { }
-        }
-    }
-
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private struct MonitorInfoEx
     {
