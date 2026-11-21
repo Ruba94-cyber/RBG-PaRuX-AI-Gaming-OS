@@ -237,10 +237,13 @@ public sealed partial class GameSaveBackupService
         }
     }
 
-    private Manifest? ReadManifest(string id)
+    private Manifest? ReadManifest(string id) => ReadManifestIn(_root, id);
+
+    /// <summary>Reads and validates one backup manifest from a directory (the managed folder or the mirror).</summary>
+    private Manifest? ReadManifestIn(string directory, string id)
     {
         if (!ValidId(id)) return null;
-        string path = Path.Combine(_root, "save-" + id + ".json");
+        string path = Path.Combine(directory, "save-" + id + ".json");
         if (!File.Exists(path)) return null;
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0 ||
             new FileInfo(path).Length is <= 0 or > 256 * 1024)

@@ -51,7 +51,7 @@ namespace PaRuX.Services
             return copy;
         }
 
-        private static ChatMessage CloneMessage(ChatMessage message)
+        internal static ChatMessage CloneMessage(ChatMessage message)
         {
             // JSON round trip: the shape the history store persists, so future fields clone without extra code.
             ChatMessage clone = JsonSerializer.Deserialize<ChatMessage>(JsonSerializer.Serialize(message)) ?? new ChatMessage();

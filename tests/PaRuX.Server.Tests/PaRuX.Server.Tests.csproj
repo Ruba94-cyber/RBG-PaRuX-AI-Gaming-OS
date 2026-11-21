@@ -62,6 +62,8 @@
     <Compile Include="..\..\src\PaRuX.App\Models\ChatAttachment.cs" Link="Models\ChatAttachment.cs" />
     <Compile Include="..\..\src\PaRuX.App\Models\ConversationBranch.cs" Link="Models\ConversationBranch.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationBranching.cs" Link="Branching\ConversationBranching.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ConversationRewind.cs" Link="Branching\ConversationRewind.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\AccentPalette.cs" Link="Linked\AccentPalette.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaPromptEnhancer.cs" Link="Branching\MediaPromptEnhancer.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingWorkspacePath.cs" Link="CodingAgent\CodingWorkspacePath.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ManagedRuntimeEndpoint.cs" Link="Runtime\ManagedRuntimeEndpoint.cs" />

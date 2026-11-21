@@ -448,6 +448,10 @@ internal sealed class GameDetailPanel : UserControl
             _body.Children.Add(note);
         }
 
+        // desktop / Steam shortcuts (collapsed by default; nothing is created until a button is pressed)
+        _body.Children.Add(BuildAdvancedSection(T("Shortcuts: desktop and Steam", "Collegamenti: desktop e Steam"),
+            "GameDetail_Shortcuts_Expander_" + key, new GameShortcutsSection(title)));
+
         // save backup / restore and launch helpers (advanced, collapsed by default)
         _body.Children.Add(BuildAdvancedSection(T("Save games: back up and restore", "Salvataggi: backup e ripristino"),
             "GameDetail_Saves_Expander_" + key, new GameSaveBackupPanel(title.Name, "_" + key,

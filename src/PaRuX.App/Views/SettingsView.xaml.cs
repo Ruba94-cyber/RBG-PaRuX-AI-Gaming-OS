@@ -2315,6 +2315,7 @@ namespace PaRuX.Views
                 AppSettings s = SettingsStore.Current.Data;
 
                 SelectByTag(ThemeCombo, s.Theme);
+                LoadAccentUi(s);
                 SelectByTag(LanguageCombo, PaRuX.Services.UiLanguage.Normalize(s.UiLanguage));
                 LoadSetupProfile();
                 SelectByTag(BubbleCombo, s.BubbleMode);

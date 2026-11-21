@@ -200,6 +200,53 @@ namespace PaRuX
         /// <summary>Opens the Runtime Manager workspace (engine installs), whichever interface mode is active.</summary>
         public void ShowRuntimeManager() => TryNavigateWorkspace("__runtime__");
 
+        /// <summary>
+        /// "PaRuX.exe --play key" (a desktop or Steam shortcut): bring PaRuX forward, open Games and run the normal Play
+        /// path for that title. The usual confirmation still comes first; nothing starts silently.
+        /// </summary>
+        internal void OpenGameFromShortcut(string titleKey)
+        {
+            bool setupOpen = OnboardingPage.Visibility == Visibility.Visible;
+            if (setupOpen || !IsWorkspaceAllowedForSetup("__games__"))
+            {
+                // Never dropped silently: the person clicked a shortcut and is told why nothing started.
+                Log.Write("Game shortcut not started: first-run setup is open or the Games workspace is off for this setup profile.");
+                App.ShowMainWindow();
+                _ = ShowShortcutNoticeAsync(setupOpen
+                    ? PaRuX.Services.UiText.Pick(
+                        "PaRuX is still being set up, so the game was not started. Finish the setup, then click the shortcut again.",
+                        "PaRuX è ancora in fase di configurazione, quindi il gioco non è stato avviato. Termina la configurazione, poi fai di nuovo clic sul collegamento.")
+                    : PaRuX.Services.UiText.Pick(
+                        "The Games area is turned off in your setup profile, so the game was not started. Change the profile in Settings to use game shortcuts.",
+                        "L'area Giochi è disattivata nel tuo profilo di configurazione, quindi il gioco non è stato avviato. Cambia profilo nelle Impostazioni per usare i collegamenti ai giochi."));
+                return;
+            }
+            App.ShowMainWindow();
+            ShowStudioWorkspace(StudioWorkspace.Games);
+            GameLibraryPage.OnShown();
+            _ = GameLibraryPage.PlayRequestedByShortcutAsync(titleKey);
+        }
+
+        private bool _shortcutNoticeOpen;
+
+        private async System.Threading.Tasks.Task ShowShortcutNoticeAsync(string message)
+        {
+            if (_shortcutNoticeOpen || Content?.XamlRoot is null) return;
+            _shortcutNoticeOpen = true;
+            try
+            {
+                await new Microsoft.UI.Xaml.Controls.ContentDialog
+                {
+                    XamlRoot = Content.XamlRoot,
+                    Title = PaRuX.Services.UiText.Pick("Game shortcut", "Collegamento al gioco"),
+                    Content = new Microsoft.UI.Xaml.Controls.TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                    CloseButtonText = "OK"
+                }.ShowAsync();
+            }
+            catch (Exception ex) { Log.Write("Shortcut notice failed: " + ex.Message); }
+            finally { _shortcutNoticeOpen = false; }
+        }
+
         private bool TryNavigateWorkspace(string tag)
         {
             // A link, keyboard action or UIA invoke must obey the SAME profile as the

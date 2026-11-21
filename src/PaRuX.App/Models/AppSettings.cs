@@ -7,6 +7,10 @@ namespace PaRuX.Models
     {
         // New installations default to the approved dark graphite finish. Existing saved choices remain unchanged.
         public string Theme { get; set; } = "Dark";
+        /// <summary>Accent colour: "orbit" (the approved PRX Orbit identity, default), a preset id, or "custom" with <see cref="AccentCustomHex"/>.</summary>
+        public string AccentId { get; set; } = "orbit";
+        /// <summary>#RRGGBB for the "custom" accent; ignored otherwise. An invalid value falls back to Orbit.</summary>
+        public string? AccentCustomHex { get; set; }
         /// <summary>Interface language: "en" (default, independent of the Windows display language) or "it".</summary>
         public string UiLanguage { get; set; } = "en";
         public bool StartWithWindows { get; set; }

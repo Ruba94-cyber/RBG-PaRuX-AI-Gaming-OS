@@ -2172,6 +2172,32 @@ internal sealed class GamingHomeView : StackPanel
         if (key is not null && !_grid.FocusTile(key)) _grid.FocusFirst();
     }
 
+    /// <summary>
+    /// A desktop or Steam shortcut asked for this game ("PaRuX.exe --play key"). It goes through the same Play path as
+    /// the Play button, so the normal confirmation comes first and cancelling it starts nothing. Returns a message when
+    /// the game cannot be started, otherwise null.
+    /// </summary>
+    internal async Task<string?> PlayByKeyAsync(string titleKey)
+    {
+        var query = new GameTitleListQuery { Hidden = "include" };
+        var result = await GamingLibraryClient.Current.QueryTitlesAsync(query);
+        GameTitleDto? title = result.Succeeded && result.Value is not null
+            ? result.Value.FirstOrDefault(t => string.Equals(t.TitleKey, titleKey, StringComparison.Ordinal))
+            : null;
+        if (!result.Succeeded)
+            return T("The game library could not be read, so the shortcut could not start the game.",
+                "Impossibile leggere la libreria, quindi il collegamento non ha potuto avviare il gioco.");
+        if (title is null)
+            return T("That game is no longer in your PaRuX library, so the shortcut did nothing.",
+                "Quel gioco non è più nella tua libreria PaRuX, quindi il collegamento non ha fatto nulla.");
+        GameInstallationDto? chosen = GameUi.ChooseInstallation(title);
+        if (chosen is null || !GameUi.CanStart(chosen))
+            return T($"{title.Name} cannot start right now (it may be updating or not installed).",
+                $"{title.Name} non può partire adesso (potrebbe essere in aggiornamento o non installato).");
+        await PlayAsync(title);
+        return null;
+    }
+
     private async Task PlayAsync(GameTitleDto title)
     {
         GameInstallationDto? chosen = GameUi.ChooseInstallation(title);

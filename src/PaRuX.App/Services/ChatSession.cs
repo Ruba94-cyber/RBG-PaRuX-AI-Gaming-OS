@@ -116,6 +116,48 @@ namespace PaRuX.Services
             return OpenNewConversation(branch);
         }
 
+        private RewindResult? _lastRewind;
+
+        /// <summary>True while the most recent rewind of the open chat can still be undone.</summary>
+        public bool CanUndoRewind => ConversationRewind.CanUndo(Conversation, _lastRewind);
+
+        /// <summary>
+        /// Removes every message after <paramref name="message"/> from the open chat. The longer chat is kept as a
+        /// retained version (Versions) and can be restored with <see cref="UndoLastRewind"/>; nothing is removed while a
+        /// reply is being written or when history cannot be written. See <see cref="ConversationRewind"/>.
+        /// </summary>
+        public RewindResult RewindToMessage(ChatMessage message)
+        {
+            // IsBusy covers a chat turn; a coding task started from the chat keeps working (and appending notices and
+            // cards) without marking any message as streaming, so its execution lease is checked as well.
+            if (IsBusy || AgentCodingWorkerService.HasActiveExecutionLease)
+                return new RewindResult { Status = RewindStatus.Busy, ConversationId = Conversation.Id };
+            RewindResult result = ConversationRewind.Rewind(Conversation, message, conversation =>
+            {
+                conversation.Title = conversation.Title == "New chat" || string.IsNullOrWhiteSpace(conversation.Title)
+                    ? HistoryStore.DeriveTitle(conversation)
+                    : conversation.Title;
+                return HistoryStore.Save(conversation);
+            });
+            if (result.Status == RewindStatus.Rewound)
+            {
+                _lastRewind = result;
+                ConversationPersisted?.Invoke();
+                ConversationChanged?.Invoke();
+            }
+            return result;
+        }
+
+        /// <summary>Brings back the messages removed by the last rewind. False when that is no longer possible.</summary>
+        public bool UndoLastRewind()
+        {
+            if (IsBusy || !ConversationRewind.Undo(Conversation, _lastRewind, HistoryStore.RestoreBranch)) return false;
+            _lastRewind = null;
+            if (!Conversation.IsIncognito) ConversationPersisted?.Invoke();
+            ConversationChanged?.Invoke();
+            return true;
+        }
+
         /// <summary>Duplicates a stored conversation (default: the current one) into a new "Copy of …" conversation and opens it.</summary>
         public bool DuplicateConversation(string? id = null)
         {

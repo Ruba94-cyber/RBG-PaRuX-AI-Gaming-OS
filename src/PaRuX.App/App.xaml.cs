@@ -72,10 +72,19 @@ namespace PaRuX
                 mutexName += ".UITest." + testScope;
             }
 #endif
+            // "PaRuX.exe --play key" comes from a desktop or Steam shortcut for one library game.
+            bool hasPlayRequest = PaRuX.Contracts.GameLaunchRequestChannel.TryParseCommandLine(Environment.GetCommandLineArgs(), out string playTitleKey);
+
             _singleInstanceMutex = new Mutex(true, mutexName, out createdNew);
             if (!createdNew)
             {
                 Log.Write("PaRuX already running - activating existing instance and exiting.");
+                if (hasPlayRequest)
+                {
+                    // Hand the request to the running instance; it shows the normal Play confirmation.
+                    bool queued = PaRuX.Contracts.GameLaunchRequestChannel.TrySubmit(AppPaths.PaRuXRoot, playTitleKey, out _);
+                    Log.Write("Game shortcut request " + (queued ? "handed to the running instance." : "could not be queued."));
+                }
                 ActivateExistingInstance();
                 Environment.Exit(0);
                 return;
@@ -116,6 +125,13 @@ namespace PaRuX
                     if (!uiQueue.TryEnqueue(ExitApplication)) Environment.Exit(0);
                 });
 
+                // Shortcut requests: later ones arrive through the event; one given on this launch (or left in the
+                // queue by an earlier launch that could not reach us) is handled now. Stale requests are dropped.
+                _playSignal = PaRuX.Contracts.GameLaunchRequestChannel.Listen(AppPaths.PaRuXRoot, () =>
+                    uiQueue.TryEnqueue(ProcessGameShortcutRequests));
+                if (hasPlayRequest) PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
+                uiQueue.TryEnqueue(ProcessGameShortcutRequests);
+
                 BubbleWin = new BubbleWindow();
                 BubbleWin.ApplyVisibilityMode();
 
@@ -132,6 +148,25 @@ namespace PaRuX
                 try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
                 try { _singleInstanceMutex?.Dispose(); } catch { }
                 Environment.Exit(1);
+            }
+        }
+
+        private static IDisposable? _playSignal;
+
+        /// <summary>Takes the queued "--play" requests and opens the first one. One game at a time: starting several
+        /// games from a burst of clicks would stack confirmation dialogs.</summary>
+        private static void ProcessGameShortcutRequests()
+        {
+            try
+            {
+                System.Collections.Generic.IReadOnlyList<string> keys = PaRuX.Contracts.GameLaunchRequestChannel.Drain(AppPaths.PaRuXRoot);
+                if (keys.Count == 0 || MainWin == null) return;
+                if (keys.Count > 1) Log.Write("Several game shortcut requests arrived together; only the first is opened.");
+                MainWin.OpenGameFromShortcut(keys[0]);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("ProcessGameShortcutRequests failed: " + ex.Message);
             }
         }
 
@@ -181,6 +216,7 @@ namespace PaRuX
         public static void ApplyTheme()
         {
             ElementTheme theme = CurrentElementTheme;
+            PaRuX.Services.AccentApplier.Apply(SettingsStore.Current.Data.AccentId, SettingsStore.Current.Data.AccentCustomHex);
 
             if (MainWin != null)
             {
