@@ -15,7 +15,9 @@ namespace PaRuX.Services
         int ChangedFiles = 0,
         string DiffStat = "",
         // Set only when a non-Git apply was refused because an unresolved recovery journal exists; names that folder.
-        string? UnresolvedRecoveryDirectory = null);
+        string? UnresolvedRecoveryDirectory = null,
+        // Set when the applied patch was kept so the owner can reverse exactly these changes (Git targets only).
+        string? UndoId = null);
 
     /// <summary>
     /// Explicit user-driven bridge from an isolated PaRuX task worktree back to the user's original
@@ -30,7 +32,8 @@ namespace PaRuX.Services
         public static async Task<CodeApplyResult> ApplyAsync(
             string repositoryRoot, string worktreeRoot, CancellationToken ct,
             string? approvedWorkspaceFingerprint = null, string? verifiedWorkspaceFingerprint = null,
-            IReadOnlyList<string>? acceptedFiles = null)
+            IReadOnlyList<string>? acceptedFiles = null,
+            string? undoStateDirectory = null)
         {
             if (acceptedFiles != null && acceptedFiles.Count == 0) return new CodeApplyResult(false, "No accepted files to apply. Nothing was applied."); string repository = CanonicalDirectory(repositoryRoot, "repository");
             string worktree = CanonicalDirectory(worktreeRoot, "worktree");
@@ -201,9 +204,12 @@ namespace PaRuX.Services
                             "The patch command returned success but PaRuX could not verify the exact task changes in the target. Do not assume integration succeeded.",
                             changedFiles, Bound(stat.Output.Trim(), 2_000));
 
+                    // Keep the exact applied patch so the owner can reverse these changes later (never automatic).
+                    string? undoId = TryRecordUndo(undoStateDirectory, repository, patch, normalizeLineEndings);
                     return new CodeApplyResult(true,
-                        "Applied the reviewed PaRuX task changes to the original repository as uncommitted local changes. No commit, push or rebase was performed.",
-                        changedFiles, Bound(stat.Output.Trim(), 2_000));
+                        "Applied the reviewed PaRuX task changes to the original repository as uncommitted local changes. No commit, push or rebase was performed."
+                        + (undoId == null ? string.Empty : " You can undo exactly these changes while the files are unchanged."),
+                        changedFiles, Bound(stat.Output.Trim(), 2_000), UndoId: undoId);
                 }
                 finally
                 {
@@ -218,6 +224,109 @@ namespace PaRuX.Services
                     catch { }
                 }
             }
+        }
+
+
+        // ---- Undo of an applied task patch -------------------------------------------------------------------------
+        // The applied patch is kept under PaRuX state. Undo reverses exactly that patch, only when `git apply --reverse --check`
+        // proves the files still hold the applied content; otherwise nothing is touched. It never commits or discards other edits.
+
+        private const int MaxUndoRecords = 10;
+        private static readonly TimeSpan UndoRetention = TimeSpan.FromDays(30);
+
+        private sealed record UndoRecord(string Id, string Repository, DateTime AppliedUtc, bool NormalizeLineEndings);
+
+        private static string UndoDirectory(string? stateDirectory) =>
+            Path.Combine(stateDirectory ?? AppPaths.CodingAgentStateDir, "apply-undo");
+
+        private static string? TryRecordUndo(string? stateDirectory, string repository, string patchPath, bool normalize)
+        {
+            try
+            {
+                string dir = UndoDirectory(stateDirectory);
+                Directory.CreateDirectory(dir);
+                string id = Guid.NewGuid().ToString("N");
+                string temp = Path.Combine(dir, id + ".patch.tmp");
+                File.Copy(patchPath, temp, overwrite: true);
+                File.Move(temp, Path.Combine(dir, id + ".patch"), overwrite: true);
+                var record = new UndoRecord(id, repository, DateTime.UtcNow, normalize);
+                File.WriteAllText(Path.Combine(dir, id + ".json"), System.Text.Json.JsonSerializer.Serialize(record));
+                PruneUndo(dir);
+                return id;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        }
+
+        private static List<UndoRecord> ReadUndoRecords(string dir)
+        {
+            var list = new List<UndoRecord>();
+            if (!Directory.Exists(dir)) return list;
+            foreach (string json in Directory.EnumerateFiles(dir, "*.json"))
+            {
+                try
+                {
+                    UndoRecord? record = System.Text.Json.JsonSerializer.Deserialize<UndoRecord>(File.ReadAllText(json));
+                    if (record != null && record.Id.Length == 32 && record.Id.All(Uri.IsHexDigit)
+                        && File.Exists(Path.Combine(dir, record.Id + ".patch"))) list.Add(record);
+                }
+                catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
+            }
+            return list.OrderByDescending(r => r.AppliedUtc).ToList();
+        }
+
+        private static void PruneUndo(string dir)
+        {
+            List<UndoRecord> all = ReadUndoRecords(dir);
+            foreach (UndoRecord stale in all.Where((r, i) => i >= MaxUndoRecords || DateTime.UtcNow - r.AppliedUtc > UndoRetention))
+                DeleteUndo(dir, stale.Id);
+        }
+
+        private static void DeleteUndo(string dir, string id)
+        {
+            foreach (string ext in new[] { ".json", ".patch" })
+            {
+                try { File.Delete(Path.Combine(dir, id + ext)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
+
+        /// <summary>The newest kept patch for <paramref name="repositoryRoot"/>, or null.</summary>
+        public static string? LatestUndoId(string repositoryRoot, string? undoStateDirectory = null) =>
+            ReadUndoRecords(UndoDirectory(undoStateDirectory))
+                .FirstOrDefault(r => PathEquals(r.Repository, repositoryRoot))?.Id;
+
+        /// <summary>
+        /// Reverses one kept patch. Refuses (changing nothing) when the id is unknown, the repository is gone, or any applied file was
+        /// edited since, because the reverse check would then fail. On success the kept patch is removed.
+        /// </summary>
+        public static async Task<CodeApplyResult> UndoAsync(string undoId, CancellationToken ct, string? undoStateDirectory = null)
+        {
+            if (string.IsNullOrEmpty(undoId) || undoId.Length != 32 || !undoId.All(Uri.IsHexDigit))
+                return new CodeApplyResult(false, "That applied change is not known. Nothing was changed.");
+            string dir = UndoDirectory(undoStateDirectory);
+            UndoRecord? record = ReadUndoRecords(dir).FirstOrDefault(r => r.Id == undoId);
+            if (record == null) return new CodeApplyResult(false, "That applied change is no longer available to undo. Nothing was changed.");
+            if (!Directory.Exists(record.Repository))
+                return new CodeApplyResult(false, "The project folder no longer exists. Nothing was changed.");
+            string patch = Path.Combine(dir, record.Id + ".patch");
+
+            string[] Args(params string[] a) => record.NormalizeLineEndings ? NormalizedApplyArguments(a) : a;
+            GitResult check = await GitAsync(record.Repository, ct, Args("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (check.TimedOut)
+                return new CodeApplyResult(false, "Git did not answer in time. Nothing was changed; try again.");
+            if (!check.Ok)
+                return new CodeApplyResult(false,
+                    "The applied files were edited since, so PaRuX cannot undo exactly those changes safely. Nothing was changed. " + Bound(check.Error, 600));
+
+            GitResult reverse = await GitAsync(record.Repository, CancellationToken.None, Args("apply", "--reverse", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (!reverse.Ok || reverse.TimedOut)
+                return new CodeApplyResult(false,
+                    "Git could not reverse the changes after the check passed. Inspect the project before retrying: " + Bound(reverse.Error, 600));
+            // The patch must now apply forward again; this proves the reverse really happened.
+            GitResult forward = await GitAsync(record.Repository, CancellationToken.None, Args("apply", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (!forward.Ok)
+                return new CodeApplyResult(false, "The undo ran but PaRuX could not confirm it. Inspect the project; the kept patch was not deleted.");
+            DeleteUndo(dir, record.Id);
+            return new CodeApplyResult(true, "Undid the applied task changes. Other local edits were not touched.");
         }
 
         /// <summary>

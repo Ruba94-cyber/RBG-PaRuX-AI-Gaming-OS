@@ -388,6 +388,59 @@ public sealed class CodeWorktreeApplyServiceTests : IDisposable
     private static byte[] WithoutCarriageReturns(string path) =>
         File.ReadAllBytes(path).Where(value => value != (byte)0x0D).ToArray();
 
+    [Fact]
+    public async Task Undo_reverses_exactly_the_applied_patch_and_keeps_other_local_edits()
+    {
+        string state = Path.Combine(_root, "state");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        File.WriteAllText(Path.Combine(_worktree, "new.txt"), "new-file\n");
+        File.WriteAllText(Path.Combine(_repo, "unstaged.txt"), "my-own-edit\n");
+
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        Assert.NotNull(applied.UndoId);
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.True(undone.Success, undone.Message);
+        Assert.Equal("before\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+        Assert.False(File.Exists(Path.Combine(_repo, "new.txt")));
+        Assert.Equal("my-own-edit\n", ReadNormalized(Path.Combine(_repo, "unstaged.txt")));   // the owner's own edit survives
+        Assert.Null(CodeWorktreeApplyService.LatestUndoId(_repo, state));                         // the kept patch is consumed
+        CodeApplyResult again = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+        Assert.False(again.Success);
+    }
+
+    [Fact]
+    public async Task Undo_refuses_and_changes_nothing_when_an_applied_file_was_edited_afterwards()
+    {
+        string state = Path.Combine(_root, "state-refuse");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        File.WriteAllText(Path.Combine(_repo, "tracked.txt"), "after, then edited by the owner\n");
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.False(undone.Success);
+        Assert.Contains("Nothing was changed", undone.Message);
+        Assert.Equal("after, then edited by the owner\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));   // still available once the file is restored
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../../evil")]
+    [InlineData("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")]
+    public async Task Undo_rejects_unknown_or_malformed_ids(string id)
+    {
+        CodeApplyResult result = await CodeWorktreeApplyService.UndoAsync(id, CancellationToken.None, Path.Combine(_root, "state-none"));
+        Assert.False(result.Success);
+    }
+
     private static string ReadNormalized(string path) =>
         File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
 
