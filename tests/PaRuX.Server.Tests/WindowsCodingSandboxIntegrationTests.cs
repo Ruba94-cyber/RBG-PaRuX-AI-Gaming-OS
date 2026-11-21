@@ -51,6 +51,50 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void The_shared_tooling_capability_is_a_stable_capability_sid()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        (IntPtr Sid, string Text)? first = WindowsCodingSandbox.TryGetToolingCapability();
+        Assert.NotNull(first);
+        Assert.StartsWith("S-1-15-3-", first!.Value.Text, StringComparison.Ordinal);   // a capability SID, never a user or group
+        Assert.Equal(first.Value.Text, WindowsCodingSandbox.TryGetToolingCapability()!.Value.Text);
+    }
+
+    [Fact]
+    public async Task A_second_workspace_reuses_the_tooling_grant_instead_of_regranting_the_interpreter()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        IReadOnlyList<string> dirs = WindowsCodingSandbox.ResolveHostToolDirectories(new[] { "python.exe" });
+        if (dirs.Count == 0) return;
+        (IntPtr Sid, string Text)? capability = WindowsCodingSandbox.TryGetToolingCapability();
+        Assert.NotNull(capability);
+
+        async Task<(WindowsCodingSandbox.Result Result, TimeSpan Elapsed)> RunInFreshWorkspace(string name)
+        {
+            string workspace = Path.Combine(_root, name);
+            Directory.CreateDirectory(workspace);
+            File.WriteAllText(Path.Combine(workspace, "probe.py"), "print('py-" + name + "')");
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            WindowsCodingSandbox.Result result = await WindowsCodingSandbox.RunAsync(
+                workspace, "python probe.py", CancellationToken.None, timeout: TimeSpan.FromMinutes(3),
+                networkMode: WindowsCodingSandbox.NetworkMode.None);
+            return (result, clock.Elapsed);
+        }
+
+        var first = await RunInFreshWorkspace("ws-a");
+        Assert.True(first.Result.ExitCode == 0, $"Exit {first.Result.ExitCode}: {first.Result.Output} {first.Result.Error}");
+        Assert.True(WindowsCodingSandbox.HasEquivalentAllowRule(dirs[0], capability!.Value.Text, "(OI)(CI)(RX)"),
+            "the interpreter root must carry the shared tooling capability ACE");
+
+        var second = await RunInFreshWorkspace("ws-b");
+        Assert.True(second.Result.ExitCode == 0, $"Exit {second.Result.ExitCode}: {second.Result.Output} {second.Result.Error}");
+        Assert.Contains("py-ws-b", second.Result.Output, StringComparison.Ordinal);
+        // A new workspace used to cost another recursive grant over the whole interpreter (tens of seconds); now it is only
+        // the workspace's own grants plus the process start.
+        Assert.True(second.Elapsed < TimeSpan.FromSeconds(30), "second workspace took " + second.Elapsed);
+    }
+
+    [Fact]
     public async Task Real_no_network_appcontainer_executes_in_workspace_and_scrubs_parent_secret()
     {
         if (!OperatingSystem.IsWindows()) return;

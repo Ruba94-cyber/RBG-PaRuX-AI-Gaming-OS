@@ -201,6 +201,7 @@ namespace PaRuX.Services
             IntPtr appContainerSid = IntPtr.Zero;
             IntPtr internetCapabilitySid = IntPtr.Zero;
             IntPtr capabilityArray = IntPtr.Zero;
+            IntPtr processCapabilityArray = IntPtr.Zero;
             IntPtr attributeList = IntPtr.Zero;
             IntPtr securityCapabilitiesPtr = IntPtr.Zero;
             IntPtr environmentPtr = IntPtr.Zero;
@@ -234,6 +235,26 @@ namespace PaRuX.Services
 
                 appContainerSid = EnsureProfile(profileName, capabilityArray, capabilityCount);
                 string sid = new SecurityIdentifier(appContainerSid).Value;
+
+                // Read-only toolchain roots (a per-user Python, Node, JDK...) are granted ONCE to a PaRuX-owned capability SID that every
+                // coding sandbox token carries, instead of once per workspace profile. The per-profile grant rewrote every file below
+                // the interpreter for each new repository (about 90 s on a host with live antivirus), left one more ACE on the owner's
+                // software per workspace (214 on one Python install) and made the first command of every task slow.
+                bool needsTooling = CommandMayNeedReadOnlyToolingRoots(command);
+                (IntPtr Sid, string Text)? toolingCapability = needsTooling ? TryGetToolingCapability() : null;
+                int processCapabilityCount = capabilityCount + (toolingCapability.HasValue ? 1 : 0);
+                if (processCapabilityCount > 0)
+                {
+                    int entrySize = Marshal.SizeOf<SID_AND_ATTRIBUTES>();
+                    processCapabilityArray = Marshal.AllocHGlobal(entrySize * processCapabilityCount);
+                    int slot = 0;
+                    if (internetCapabilitySid != IntPtr.Zero)
+                        Marshal.StructureToPtr(new SID_AND_ATTRIBUTES { Sid = internetCapabilitySid, Attributes = SeGroupEnabled },
+                            processCapabilityArray + entrySize * slot++, false);
+                    if (toolingCapability.HasValue)
+                        Marshal.StructureToPtr(new SID_AND_ATTRIBUTES { Sid = toolingCapability.Value.Sid, Attributes = SeGroupEnabled },
+                            processCapabilityArray + entrySize * slot++, false);
+                }
                 EnsureWindowStationAndDesktopAppContainerAccess();
 
                 var setupClock = Stopwatch.StartNew();
@@ -246,8 +267,8 @@ namespace PaRuX.Services
                 long sandboxDirsMs = setupClock.ElapsedMilliseconds - workspaceMs;
                 await GrantPathsAccessAsync(EnumerateAncestors(sandboxDir), sid, "(RX)", required: false, cancellationToken).ConfigureAwait(false);
                 long ancestorsMs = setupClock.ElapsedMilliseconds - workspaceMs - sandboxDirsMs;
-                if (CommandMayNeedReadOnlyToolingRoots(command))
-                    await GrantReadOnlyToolingRootsAsync(sid, command, cancellationToken, root, networkMode == NetworkMode.InternetClient).ConfigureAwait(false);
+                if (needsTooling)
+                    await GrantReadOnlyToolingRootsAsync(toolingCapability?.Text ?? sid, command, cancellationToken, root, networkMode == NetworkMode.InternetClient).ConfigureAwait(false);
                 string setupTimings = "workspace=" + workspaceMs + "ms sandboxDirs=" + sandboxDirsMs + "ms sandboxAncestors="
                     + ancestorsMs + "ms tooling=" + (setupClock.ElapsedMilliseconds - workspaceMs - sandboxDirsMs - ancestorsMs) + "ms";
 
@@ -301,8 +322,8 @@ namespace PaRuX.Services
                 SECURITY_CAPABILITIES capabilities = new()
                 {
                     AppContainerSid = appContainerSid,
-                    Capabilities = capabilityArray,
-                    CapabilityCount = capabilityCount,
+                    Capabilities = processCapabilityArray,
+                    CapabilityCount = processCapabilityCount,
                     Reserved = 0
                 };
                 securityCapabilitiesPtr = Marshal.AllocHGlobal(Marshal.SizeOf<SECURITY_CAPABILITIES>());
@@ -415,6 +436,7 @@ namespace PaRuX.Services
                 }
                 if (securityCapabilitiesPtr != IntPtr.Zero) Marshal.FreeHGlobal(securityCapabilitiesPtr);
                 if (capabilityArray != IntPtr.Zero) Marshal.FreeHGlobal(capabilityArray);
+                if (processCapabilityArray != IntPtr.Zero) Marshal.FreeHGlobal(processCapabilityArray);
                 if (internetCapabilitySid != IntPtr.Zero) LocalFree(internetCapabilitySid);
                 if (environmentPtr != IntPtr.Zero) Marshal.FreeHGlobal(environmentPtr);
                 if (appContainerSid != IntPtr.Zero) FreeSid(appContainerSid);
@@ -525,6 +547,50 @@ namespace PaRuX.Services
             catch { return false; }
             finally { _aclMutationGate.Release(); }
         }
+
+        /// <summary>Name of the PaRuX-owned capability that grants coding sandboxes read access to host toolchain roots.</summary>
+        internal const string ToolingReadCapabilityName = "parux.coding.tooling.read";
+
+        private static readonly object ToolingCapabilityLock = new();
+        private static (IntPtr Sid, string Text)? _toolingCapability;
+
+        /// <summary>The shared tooling capability SID (derived from a fixed name, stable across runs and machines), cached for the process.</summary>
+        internal static (IntPtr Sid, string Text)? TryGetToolingCapability()
+        {
+            if (!OperatingSystem.IsWindows()) return null;
+            lock (ToolingCapabilityLock)
+            {
+                if (_toolingCapability.HasValue) return _toolingCapability;
+                try
+                {
+                    if (!DeriveCapabilitySidsFromName(ToolingReadCapabilityName, out IntPtr groupSids, out uint groupCount,
+                            out IntPtr capabilitySids, out uint capabilityCount) || capabilityCount == 0)
+                        return null;
+                    IntPtr sid = Marshal.ReadIntPtr(capabilitySids);   // kept for the life of the process
+                    string text = new SecurityIdentifier(sid).Value;
+                    LocalFreeSidArray(groupSids, groupCount, keepFirstOfArray: false);
+                    _toolingCapability = (sid, text);
+                    return _toolingCapability;
+                }
+                catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or ArgumentException or Win32Exception)
+                {
+                    return null;   // older Windows: fall back to the per-workspace grants
+                }
+            }
+        }
+
+        private static void LocalFreeSidArray(IntPtr array, uint count, bool keepFirstOfArray)
+        {
+            if (array == IntPtr.Zero) return;
+            for (uint i = keepFirstOfArray ? 1u : 0u; i < count; i++)
+                LocalFree(Marshal.ReadIntPtr(array, (int)i * IntPtr.Size));
+            LocalFree(array);
+        }
+
+        [DllImport("kernelbase.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeriveCapabilitySidsFromName(string capName, out IntPtr capabilityGroupSids, out uint capabilityGroupSidCount,
+            out IntPtr capabilitySids, out uint capabilitySidCount);
 
         private static IntPtr EnsureProfile(string profileName, IntPtr capabilities, int capabilityCount)
         {
