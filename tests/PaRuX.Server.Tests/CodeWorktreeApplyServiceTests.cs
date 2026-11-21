@@ -406,6 +406,8 @@ public sealed class CodeWorktreeApplyServiceTests : IDisposable
 
         Assert.True(undone.Success, undone.Message);
         Assert.Equal("before\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+        Assert.Equal("before\n", File.ReadAllText(Path.Combine(_repo, "tracked.txt")));   // byte-exact: no line-ending drift
+        Assert.DoesNotContain("tracked.txt", Git(_repo, "status", "--porcelain"));         // Git sees it as untouched again
         Assert.False(File.Exists(Path.Combine(_repo, "new.txt")));
         Assert.Equal("my-own-edit\n", ReadNormalized(Path.Combine(_repo, "unstaged.txt")));   // the owner's own edit survives
         Assert.Null(CodeWorktreeApplyService.LatestUndoId(_repo, state));                         // the kept patch is consumed

@@ -151,8 +151,15 @@ namespace PaRuX.Services
                                 "The reviewed Git state changed while constructing the patch. "
                                 + "Nothing was applied; review again.");
                     }
+                    // Byte-exact first: when the patch applies with core.autocrlf=false (LF working files), Git writes the patched
+                    // lines with their own line endings. Windows Git's default autocrlf=true would turn them into CRLF and leave
+                    // a phantom "modified" file that also makes an exact undo impossible. CRLF targets fail this probe and keep
+                    // the previous behaviour below.
+                    bool exactLineEndings = (await GitAsync(repository, ct, "-c", "core.autocrlf=false",
+                        "apply", "--check", "--binary", "--whitespace=nowarn", patch).ConfigureAwait(false)) is { Ok: true, TimedOut: false };
                     GitResult check = await GitAsync(repository, ct,
                         "apply", "--check", "--binary", "--whitespace=nowarn", patch).ConfigureAwait(false);
+                    if (exactLineEndings && !check.Ok) check = new GitResult(0, string.Empty, string.Empty);
                     // The reviewed patch is built from LF blobs. A target whose working files are CRLF while
                     // its Git has no core.autocrlf (isolated or sandboxed Git environments) rejects every
                     // hunk although nothing conflicts. Retry the same preflight with Git's own line-ending
@@ -184,7 +191,9 @@ namespace PaRuX.Services
                             "The task patch does not apply cleanly to the current repository. Nothing was changed. " + Bound(check.Error, 900),
                             changedFiles, Bound(stat.Output.Trim(), 2_000));
 
-                    GitResult apply = await GitAsync(repository, ct, normalizeLineEndings
+                    GitResult apply = await GitAsync(repository, ct, exactLineEndings
+                        ? new[] { "-c", "core.autocrlf=false", "apply", "--binary", "--whitespace=nowarn", patch }
+                        : normalizeLineEndings
                         ? NormalizedApplyArguments("apply", "--binary", "--whitespace=nowarn", patch)
                         : new[] { "apply", "--binary", "--whitespace=nowarn", patch }).ConfigureAwait(false);
                     if (apply.TimedOut)
@@ -349,7 +358,12 @@ namespace PaRuX.Services
                         "The project is now on a different commit than when the changes were applied (for example you committed them). Nothing was changed.");
             }
 
-            string[] Args(params string[] a) => record.NormalizeLineEndings ? NormalizedApplyArguments(a) : a;
+            // Prefer a byte-exact restore: with core.autocrlf=false Git writes back the original line endings (an LF file stays LF).
+            // Windows Git defaults to autocrlf=true, which would rewrite the restored lines as CRLF and leave a phantom "modified" file.
+            // Working files that really are CRLF fail that check, and then the mode recorded at apply time is used.
+            string[] Exact(params string[] a) => new[] { "-c", "core.autocrlf=false" }.Concat(a).ToArray();
+            bool exactMode = (await GitAsync(record.Repository, ct, Exact("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false)) is { Ok: true, TimedOut: false };
+            string[] Args(params string[] a) => exactMode ? Exact(a) : record.NormalizeLineEndings ? NormalizedApplyArguments(a) : a;
             GitResult check = await GitAsync(record.Repository, ct, Args("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
             if (check.TimedOut)
                 return new CodeApplyResult(false, "Git did not answer in time. Nothing was changed; try again.");
