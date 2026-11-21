@@ -149,6 +149,9 @@ public sealed class ContextEngineService
         }
 
         IReadOnlyCollection<string>? allowedTools = skill == null ? null : skill.AllowedTools;
+        // A short plain question under the default skill cannot use the built-in tools; sending their schemas costs ~900 prompt tokens.
+        if (ToolSchemaIntentGate.CanOmitToolSchemas(query, skill?.Id))
+            return new ChatContextResult(pack, new JsonArray());
         JsonArray toolSchemas = await _mcp.GetToolSchemasAsync(cancellationToken, allowedTools).ConfigureAwait(false);
         McpToolSchemaRouter.Decision toolRouting = McpToolSchemaRouter.Route(query, toolSchemas);
         return new ChatContextResult(pack, toolRouting.Schemas);
