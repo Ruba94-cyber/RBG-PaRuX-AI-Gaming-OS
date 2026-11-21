@@ -1283,6 +1283,21 @@
                         <TextBlock x:Name="ConsoleAutoReturnExplanation" TextWrapping="Wrap"
                             Style="{StaticResource PaRuXCaptionTextStyle}"
                             Text="When enabled, PaRuX can bring its existing fullscreen Console window forward only after the directly launched game process closes and the Core verifies AI recovery. External launchers and uncertain child processes do not trigger this. Windows may deny foreground activation." loc:Loc.ItText="Se attivo, PaRuX può portare in primo piano la finestra Console a schermo intero già esistente solo dopo la chiusura del processo del gioco avviato direttamente e dopo che il Core ha verificato il ripristino dell&#x27;IA. Launcher esterni e processi figli incerti non attivano questa funzione. Windows può negare l&#x27;attivazione in primo piano." />
+                        <ToggleSwitch x:Name="ConsoleStartOnTvSwitch"
+                            Header="Start PaRuX directly in TV mode when the chosen TV is on" loc:Loc.ItHeader="Avvia PaRuX direttamente in modalità TV quando la TV scelta è accesa"
+                            AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartOnTv_Toggle"
+                            IsOn="False" Toggled="ConsoleStartOnTvSwitch_Toggled" />
+                        <TextBlock x:Name="ConsoleStartOnTvExplanation" TextWrapping="Wrap"
+                            Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View or the triggers switch between Gaming and AI, B goes back."
+                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View o i dorsali passano tra Gaming e AI, B torna indietro." />
+                        <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
+                            Header="When the TV is not connected, start" loc:Loc.ItHeader="Se la TV non è collegata, avvia"
+                            AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"
+                            SelectionChanged="ConsoleStartWithoutTvCombo_SelectionChanged">
+                            <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />
+                            <ComboBoxItem Content="Minimized" loc:Loc.ItContent="Ridotto a icona" Tag="minimized" />
+                        </ComboBox>
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
                     </StackPanel>
                 </Border>

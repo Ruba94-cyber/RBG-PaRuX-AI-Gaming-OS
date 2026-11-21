@@ -71,6 +71,14 @@ namespace PaRuX.Models
         public List<ConsoleDisplayAssignment> ConsoleDisplays { get; set; } = new();
         public string ConsoleTargetDisplayId { get; set; } = string.Empty;
 
+        /// <summary>Opt-in: at launch, when the chosen Console TV (<see cref="ConsoleTargetDisplayId"/>) is connected, open directly in
+        /// Console/TV mode on that screen (the Gaming library), so the owner can play from the couch. Off by default.</summary>
+        public bool ConsoleStartOnTvWhenPresent { get; set; } = false;
+
+        /// <summary>What a launch does when <see cref="ConsoleStartOnTvWhenPresent"/> is on but the TV is NOT connected:
+        /// "normal" (the usual AI window in desktop mode, the default) or "minimized".</summary>
+        public string StartupWithoutTv { get; set; } = "normal";
+
         /// <summary>Opt-in through choosing a TV, with an independent off switch:
         /// attempt to move only verified, directly launched WINDOWED game processes.
         /// External launchers and exclusive fullscreen are never forcibly rerouted.</summary>

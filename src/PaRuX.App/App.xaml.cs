@@ -129,6 +129,11 @@ namespace PaRuX
 
                 ApplyTheme();
 
+                // Console/TV start preference (opt-in): TV connected -> fullscreen Gaming library on it; otherwise the chosen
+                // fallback (normal window or minimized). Skipped when this launch is a game shortcut. Runs after the first paint.
+                if (!hasPlayRequest)
+                    uiQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _ = MainWin.ApplyConsoleStartupPreferenceAsync());
+
                 // Not needed for the first paint: the Quick Chat bubble window, the agent worker poll loops and the model
                 // warmup start once the dispatcher has drained the shell's own first layout work (Low priority). Gaming and
                 // Local AI watching (the hard-off safety path) still start above, before any window exists. Every user of

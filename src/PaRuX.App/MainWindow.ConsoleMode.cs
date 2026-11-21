@@ -339,6 +339,19 @@ public sealed partial class MainWindow
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
             (int)e.Key, GameLibraryBusy);
 
+        if (action == ConsoleNavigationAction.SwitchWorkspace)
+        {
+            e.Handled = SwitchConsoleWorkspace();
+            return;
+        }
+
+        // B on the AI page goes back to the Gaming library first; only B on the library leaves Console/TV mode.
+        if (action == ConsoleNavigationAction.Exit && !ConsoleOnGamingWorkspace())
+        {
+            e.Handled = SwitchConsoleWorkspace();
+            return;
+        }
+
         if (action == ConsoleNavigationAction.Exit)
         {
             try
@@ -354,6 +367,11 @@ public sealed partial class MainWindow
             }
             return;
         }
+
+        if (!ConsoleOnGamingWorkspace()
+            && action is ConsoleNavigationAction.PreviousPage or ConsoleNavigationAction.NextPage
+                or ConsoleNavigationAction.ScrollUp or ConsoleNavigationAction.ScrollDown or ConsoleNavigationAction.FocusSearch)
+            return;   // library-only actions are ignored on the AI page; native focus navigation below still works there
 
         switch (action)
         {
