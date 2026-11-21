@@ -121,7 +121,7 @@ public sealed class LlamaBenchRunner : IModelBenchmarkRunner
             "-m", modelPath, "-p", "0", "-n", "128", "-r", "3", "-ngl", cpuOnly ? "0" : "99",
             "-fa", "on", "--offline", "-o", "json"
         };
-        if (!hasGpu && !cpuOnly) arguments.AddRange(["-dev", "Vulkan0"]);
+        if (!hasGpu && !cpuOnly) arguments.AddRange(["-dev", VulkanDeviceSelector.ResolveBlocking()]);
         return arguments;
     }
 
