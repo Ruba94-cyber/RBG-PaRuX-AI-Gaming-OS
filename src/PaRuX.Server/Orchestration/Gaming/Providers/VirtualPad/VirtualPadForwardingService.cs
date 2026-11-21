@@ -24,7 +24,8 @@ public interface IPadIsolation
 public enum VirtualPadPhase { Idle, Starting, Running, PausedRemoved, Failed }
 
 public sealed record VirtualPadServiceStatus(
-    VirtualPadPhase Phase, string Message, bool CanRearm, string? GameId, PadMappingSource MappingSource);
+    VirtualPadPhase Phase, string Message, bool CanRearm, string? GameId, PadMappingSource MappingSource,
+    bool PhysicalPadHidden = true);
 
 public sealed class VirtualPadServiceOptions
 {
@@ -58,6 +59,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
     private IsolationMonitor? _monitor;
     private PadDeviceIdentity? _device;
     private string? _isolatedPath;
+    private bool _unhidden;
     private string? _gameId;
     private string? _mappingFingerprint;
     private string _feelFingerprint = string.Empty;
@@ -103,7 +105,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
                     }
                 }
                 return new(_phase, _message,
-                    _phase == VirtualPadPhase.PausedRemoved && _rearmOffered, _gameId, _source);
+                    _phase == VirtualPadPhase.PausedRemoved && _rearmOffered, _gameId, _source, !_unhidden);
             }
         }
     }
@@ -116,9 +118,11 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
     // ------------------------------------------------------------------ start / stop
 
     /// <param name="consentToHide">Explicit owner consent to hide the physical pad (HidHide). Without it nothing starts,
-    /// because forwarding next to a visible physical pad would double every input.</param>
+    /// because forwarding next to a visible physical pad would double every input, unless <paramref name="allowUnhidden"/> is set.</param>
+    /// <param name="allowUnhidden">The owner chose to forward WITHOUT hiding the physical pad (HidHide is not needed at all):
+    /// nothing is hidden, and some games may see both the physical and the virtual pad. Ignored when consent to hide is given.</param>
     public async Task<VirtualPadServiceStatus> StartAsync(PadDeviceIdentity device, bool consentToHide, string? gameId,
-        CancellationToken ct = default)
+        CancellationToken ct = default, bool allowUnhidden = false)
     {
         ArgumentNullException.ThrowIfNull(device);
         if (ct.IsCancellationRequested) { Set(VirtualPadPhase.Idle, "Start cancelled."); return Status; }
@@ -153,6 +157,11 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             if (path is null || !await SafeIsolatedAsync(path, ct).ConfigureAwait(false))
             {
                 path = null;
+                if (!consentToHide && allowUnhidden)
+                {
+                    lock (_gate) { _device = device; _isolatedPath = null; _unhidden = true; _gameId = gameId; }
+                    return await LaunchAsync(device, null, resolved, ct).ConfigureAwait(false);
+                }
                 if (!consentToHide)
                 {
                     Set(VirtualPadPhase.Failed,
@@ -171,7 +180,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
                 path = outcome.InstancePath;
             }
 
-            lock (_gate) { _device = device; _isolatedPath = path; _gameId = gameId; }
+            lock (_gate) { _device = device; _isolatedPath = path; _unhidden = false; _gameId = gameId; }
             return await LaunchAsync(device, path, resolved, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -183,7 +192,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
         finally { _op.Release(); }
     }
 
-    private async Task<VirtualPadServiceStatus> LaunchAsync(PadDeviceIdentity device, string isolatedPath,
+    private async Task<VirtualPadServiceStatus> LaunchAsync(PadDeviceIdentity device, string? isolatedPath,
         ResolvedPadMapping resolved, CancellationToken ct)
     {
         // Resolved before the source and monitor are opened, so a cancellation here has nothing to dispose.
@@ -197,20 +206,26 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             return Status;
         }
 
-        var monitor = new IsolationMonitor(_isolation, isolatedPath, _options);
-        if (!await monitor.PrimeAsync(ct).ConfigureAwait(false))
+        // Hiding off: no monitor, the session's isolation gate is always open (nothing was hidden, so nothing can be lost).
+        IsolationMonitor? monitor = null;
+        if (isolatedPath is not null)
         {
-            await monitor.DisposeAsync().ConfigureAwait(false);
-            Set(VirtualPadPhase.Failed, "Physical input isolation was not confirmed.");
-            return Status;
+            monitor = new IsolationMonitor(_isolation, isolatedPath, _options);
+            if (!await monitor.PrimeAsync(ct).ConfigureAwait(false))
+            {
+                await monitor.DisposeAsync().ConfigureAwait(false);
+                Set(VirtualPadPhase.Failed, "Physical input isolation was not confirmed.");
+                return Status;
+            }
         }
+        Func<bool> ready = monitor is null ? static () => true : monitor.IsReady;
 
         VirtualPadForwardingStatus started = new(false, "Not started.");
         VirtualPadForwardingSession? session = null;
         for (int attempt = 1; attempt <= Math.Max(1, _options.MaxStartAttempts); attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            session = new VirtualPadForwardingSession(_backend, source, monitor.IsReady);
+            session = new VirtualPadForwardingSession(_backend, source, ready);
             started = session.Start(resolved.Mapping!, _options.Interval, ct, feel);
             if (started.Running) break;
             await session.DisposeAsync().ConfigureAwait(false);
@@ -221,7 +236,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
 
         if (session is null)
         {
-            await monitor.DisposeAsync().ConfigureAwait(false);
+            if (monitor is not null) await monitor.DisposeAsync().ConfigureAwait(false);
             Set(VirtualPadPhase.Failed, started.Message);
             return Status;
         }
@@ -238,6 +253,8 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             _message = resolved.Source == PadMappingSource.GameProfile
                 ? "Forwarding with the game profile."
                 : "Forwarding with the controller mapping.";
+            if (isolatedPath is null)
+                _message += " The physical pad is NOT hidden: some games may see both the physical and the virtual pad. Turning hiding on is recommended.";
         }
         return Status;
     }
@@ -252,7 +269,9 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             lock (_gate) { _rearmOffered = false; }
             Set(VirtualPadPhase.Idle, ended is { Running: true }
                 ? ended.Message
-                : "Stopped. The virtual pad was neutralised and removed. The physical pad stays hidden until you restore visibility (after leaving Gaming).");
+                : _unhidden
+                    ? "Stopped. The virtual pad was neutralised and removed. Nothing was hidden, so there is nothing to restore."
+                    : "Stopped. The virtual pad was neutralised and removed. The physical pad stays hidden until you restore visibility (after leaving Gaming).");
             return Status;
         }
         finally { _op.Release(); }
@@ -321,7 +340,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             lock (_gate)
             {
                 _ = Status;
-                if (_phase != VirtualPadPhase.PausedRemoved || !_rearmOffered || _device is null || _isolatedPath is null)
+                if (_phase != VirtualPadPhase.PausedRemoved || !_rearmOffered || _device is null || (_isolatedPath is null && !_unhidden))
                     return Status with { Message = "Nothing to re-arm." };
                 device = _device; path = _isolatedPath; game = _gameId;
             }
@@ -330,7 +349,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
             Set(VirtualPadPhase.Starting, "Re-arming.");
             var (present, driverMessage) = SafeProbe();
             if (!present) { Set(VirtualPadPhase.Failed, driverMessage ?? "The virtual controller driver is not available."); return Status; }
-            if (!await SafeIsolatedAsync(path, ct).ConfigureAwait(false))
+            if (path is not null && !await SafeIsolatedAsync(path, ct).ConfigureAwait(false))
             {
                 Set(VirtualPadPhase.Failed, "The pad is no longer hidden from games. Start again from the guided steps and consent to hide it.");
                 return Status;
@@ -364,7 +383,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
         {
             PadDeviceIdentity? device; string? path; VirtualPadPhase phase;
             lock (_gate) { _gameId = gameId; device = _device; path = _isolatedPath; phase = _phase; }
-            if (device is null || path is null) return Status;
+            if (device is null || (path is null && !_unhidden)) return Status;
             ResolvedPadMapping resolved = _profiles.Resolve(device.DeviceId, gameId);
             if (phase == VirtualPadPhase.Running && Status.Phase == VirtualPadPhase.Running)
             {

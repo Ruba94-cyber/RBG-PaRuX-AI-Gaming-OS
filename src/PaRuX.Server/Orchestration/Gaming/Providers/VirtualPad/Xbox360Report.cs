@@ -47,6 +47,12 @@ public sealed class PadMapping
     public PadHatTarget HatTarget { get; set; } = PadHatTarget.Dpad;
     public bool InvertLeftX { get; set; }
     public bool InvertRightX { get; set; }
+    /// <summary>D-pad reported as two digital axes (some DirectInput-style pads) instead of a hat: horizontal and vertical axis.
+    /// A value of at least +0.5 means Right / Down, at most -0.5 means Left / Up (flipped by the Invert flags).</summary>
+    public int? DpadXAxis { get; set; }
+    public int? DpadYAxis { get; set; }
+    public bool InvertDpadX { get; set; }
+    public bool InvertDpadY { get; set; }
 
     public PadMapping Clone() => new()
     {
@@ -57,7 +63,8 @@ public sealed class PadMapping
         LeftTriggerAxis = LeftTriggerAxis, RightTriggerAxis = RightTriggerAxis,
         LeftTriggerButton = LeftTriggerButton, RightTriggerButton = RightTriggerButton,
         TriggerAxisIsSigned = TriggerAxisIsSigned, StickDeadzone = StickDeadzone,
-        HatIsDpad = HatIsDpad, HatTarget = HatTarget
+        HatIsDpad = HatIsDpad, HatTarget = HatTarget,
+        DpadXAxis = DpadXAxis, DpadYAxis = DpadYAxis, InvertDpadX = InvertDpadX, InvertDpadY = InvertDpadY
     };
 
     public string? Validate()
@@ -67,7 +74,7 @@ public sealed class PadMapping
         if (Buttons.Count > Max) return "Too many button mappings.";
         foreach (var (index, bit) in Buttons)
             if (index is < 0 or >= Max || bit == 0 || (bit & (bit - 1)) != 0) return "Each button must map to exactly one Xbox button.";
-        foreach (int? axis in new[] { LeftXAxis, LeftYAxis, RightXAxis, RightYAxis, LeftTriggerAxis, RightTriggerAxis })
+        foreach (int? axis in new[] { LeftXAxis, LeftYAxis, RightXAxis, RightYAxis, LeftTriggerAxis, RightTriggerAxis, DpadXAxis, DpadYAxis })
             if (axis is < 0 or >= Max) return "An axis index is out of range.";
         foreach (int? button in new[] { LeftTriggerButton, RightTriggerButton })
             if (button is < 0 or >= Max) return "A trigger button index is out of range.";
@@ -87,6 +94,7 @@ public static class GenericPadMapper
         foreach (var (index, bit) in mapping.Buttons)
             if (index >= 0 && index < state.Buttons.Count && state.Buttons[index]) buttons |= bit;
         if (mapping.HatIsDpad && mapping.HatTarget == PadHatTarget.Dpad) buttons |= HatToDpad(state.HatDirection);
+        buttons |= DpadFromAxes(state, mapping);
 
         short lx = Stick(state, mapping.LeftXAxis, mapping.InvertLeftX, mapping.StickDeadzone);
         short ly = Stick(state, mapping.LeftYAxis, mapping.InvertLeftY, mapping.StickDeadzone);
@@ -101,6 +109,27 @@ public static class GenericPadMapper
         byte lt = Trigger(state, mapping.LeftTriggerAxis, mapping.LeftTriggerButton, mapping.TriggerAxisIsSigned);
         byte rt = Trigger(state, mapping.RightTriggerAxis, mapping.RightTriggerButton, mapping.TriggerAxisIsSigned);
         return new Xbox360Report(buttons, lt, rt, lx, ly, rx, ry);
+    }
+
+    private const double DpadAxisThreshold = 0.5;
+
+    /// <summary>D-pad bits from a pad that reports its D-pad as two digital axes; 0 when none are mapped.</summary>
+    public static ushort DpadFromAxes(RawGamepadState state, PadMapping mapping)
+    {
+        ushort bits = 0;
+        if (mapping.DpadXAxis is not null)
+        {
+            double x = Axis(state, mapping.DpadXAxis) * (mapping.InvertDpadX ? -1 : 1);
+            if (x >= DpadAxisThreshold) bits |= Xbox360Report.DpadRight;
+            else if (x <= -DpadAxisThreshold) bits |= Xbox360Report.DpadLeft;
+        }
+        if (mapping.DpadYAxis is not null)
+        {
+            double y = Axis(state, mapping.DpadYAxis) * (mapping.InvertDpadY ? -1 : 1);
+            if (y >= DpadAxisThreshold) bits |= Xbox360Report.DpadDown;
+            else if (y <= -DpadAxisThreshold) bits |= Xbox360Report.DpadUp;
+        }
+        return bits;
     }
 
     public static ushort HatToDpad(int hat) => hat switch
