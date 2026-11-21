@@ -402,7 +402,9 @@ internal sealed class GamingDevicesPanel : StackPanel
         var startWizard = MakeButton(T("Guided mapping: press each control", "Mappatura guidata: premi ogni controllo"), "GameDevices_Wizard_Start_Button", () =>
         {
             string? id = (_rawDevices.SelectedItem as ComboBoxItem)?.Tag as string;
-            if (!wizard.Begin(id))
+            var info = SelectedDeviceInfo();
+            var preset = info is null ? null : PadMappingPresets.Find(info.VendorId, info.ProductId);
+            if (!wizard.Begin(id, preset, p => ApplyRawMapping(p.Mapping.Clone())))
                 _rawDeviceStatus.Text = T("Choose a controller first (Find controllers).", "Scegli prima un controller (Trova controller).");
             return System.Threading.Tasks.Task.CompletedTask;
         });
@@ -483,21 +485,98 @@ internal sealed class GamingDevicesPanel : StackPanel
         ApplyToUi(GamingControllerProfile.Default);
     }
 
-    private Task DetectRawAsync()
+    /// <summary>
+    /// The two lists a pad can be on: XInput slots (Xbox family, games read them directly) and Windows' raw HID list (everything else;
+    /// games cannot use these until PaRuX forwards them to a virtual Xbox pad). "Find controllers" reports both honestly and never
+    /// says "none" while either list has a pad.
+    /// </summary>
+    private IReadOnlyList<RawGamepadDeviceInfo> _detected = Array.Empty<RawGamepadDeviceInfo>();
+    private int _xinputPads;
+
+    private async Task DetectRawAsync()
     {
-        _rawDevices.Items.Clear();
         var list = WindowsRawGamepadSource.ListDevices();
+        // Windows fills the RawGameController list asynchronously the first time an app asks, so an empty first answer is
+        // retried briefly before the panel claims there is no pad.
+        for (int attempt = 0; list.Count == 0 && attempt < 4; attempt++)
+        {
+            await Task.Delay(350);
+            list = WindowsRawGamepadSource.ListDevices();
+        }
+        _detected = list;
+        _xinputPads = await CountXInputPadsAsync();
+
+        _rawDevices.Items.Clear();
         foreach (RawGamepadDeviceInfo device in list)
+        {
+            bool direct = PadMappingPresets.Classify(device.VendorId, device.ProductId) == RawPadRoute.XInputDirect;
             _rawDevices.Items.Add(new ComboBoxItem
             {
-                Content = $"{device.Name} (VID {device.VendorId:X4}, PID {device.ProductId:X4})",
+                Content = $"{device.Name} (VID {device.VendorId:X4}, PID {device.ProductId:X4}) - "
+                    + (direct ? T("works directly (XInput)", "funziona direttamente (XInput)")
+                              : T("needs forwarding", "richiede inoltro")),
                 Tag = device.Id
             });
+        }
         _rawDevices.SelectedIndex = list.Count > 0 ? 0 : -1;
-        _rawDeviceStatus.Text = list.Count > 0
-            ? T($"{list.Count} physical controllers listed. Choose one and click Read once.",
-                 $"{list.Count} controller fisici rilevati. Scegline uno e premi Leggi una volta.")
-            : T("No compatible raw controllers were found.", "Nessun controller raw compatibile rilevato.");
+        _rawDeviceStatus.Text = DescribeDetection(list, _xinputPads);
+    }
+
+    private static async Task<int> CountXInputPadsAsync()
+    {
+        try
+        {
+            var result = await GamingOrchestratorClient.Current.GetControllersAsync();
+            return result.Succeeded && result.Value is { } states ? states.Count : 0;
+        }
+        catch (Exception) { return 0; }
+    }
+
+    internal static string DescribeDetection(IReadOnlyList<RawGamepadDeviceInfo> list, int xinputPads)
+    {
+        int direct = list.Count(d => PadMappingPresets.Classify(d.VendorId, d.ProductId) == RawPadRoute.XInputDirect);
+        int needFwd = list.Count - direct;
+        if (list.Count == 0 && xinputPads == 0)
+            return T("Windows reports no controller (no XInput pad, no raw HID pad). Wake the pad or pair it in Windows Bluetooth settings, then try again.",
+                     "Windows non riporta nessun controller (né XInput né HID grezzo). Sveglia il controller o abbinalo dalle impostazioni Bluetooth di Windows, poi riprova.");
+        if (list.Count == 0)
+            return T($"{xinputPads} XInput controller(s) work directly with games; no raw HID pad is present.",
+                     $"{xinputPads} controller XInput funzionano direttamente con i giochi; nessun pad HID grezzo presente.");
+        string head = T($"{list.Count} controller(s) found: {direct} work directly (XInput), {needFwd} are raw HID pads that games cannot use yet.",
+                        $"{list.Count} controller trovati: {direct} funzionano direttamente (XInput), {needFwd} sono pad HID grezzi che i giochi non possono ancora usare.");
+        return needFwd > 0
+            ? head + " " + T("For a raw pad, choose it and press \"Set up forwarding for this pad\".",
+                             "Per un pad grezzo, sceglilo e premi \"Configura l'inoltro per questo pad\".")
+            : head;
+    }
+
+    /// <summary>One click after "Find controllers": loads the built-in preset (if any) for the chosen pad into the mapping boxes and says what comes next.</summary>
+    private Task SetUpForwardingForSelectedAsync()
+    {
+        if (SelectedDeviceInfo() is not { } device)
+        {
+            _stepDevice.Text = T("Press \"1. Find controllers\" first, then choose a pad.", "Premi prima \"1. Trova controller\", poi scegli un pad.");
+            return Task.CompletedTask;
+        }
+        if (PadMappingPresets.Classify(device.VendorId, device.ProductId) == RawPadRoute.XInputDirect)
+        {
+            _stepDevice.Text = T("This pad is read directly by games through XInput: no forwarding is needed.",
+                                 "Questo pad è letto direttamente dai giochi tramite XInput: l'inoltro non serve.");
+            return Task.CompletedTask;
+        }
+        string next = T("Next: check the numbers (Live view or \"Read once\"), press Save mapping, then steps 2 to 4 below.",
+                        "Poi: controlla i numeri (Vista dal vivo o \"Leggi una volta\"), premi Salva mappatura, quindi i passi da 2 a 4 qui sotto.");
+        if (PadMappingPresets.Find(device.VendorId, device.ProductId) is { } preset)
+        {
+            ApplyRawMapping(preset.Mapping.Clone());
+            _stepDevice.Text = T($"Proposed mapping \"{preset.Name}\" loaded into the mapping boxes. It is unverified: confirm it on your pad. ",
+                                 $"Mappatura proposta \"{preset.Name}\" caricata nelle caselle. Non è verificata: confermala sul tuo pad. ") + next;
+        }
+        else
+        {
+            _stepDevice.Text = T("This pad has no built-in preset. Run \"Guided mapping: press each control\" above, then Save mapping, then steps 2 to 4 below.",
+                                 "Per questo pad non c'è un preset integrato. Esegui \"Mappatura guidata: premi ogni controllo\" qui sopra, poi Salva mappatura e i passi da 2 a 4 qui sotto.");
+        }
         return Task.CompletedTask;
     }
 
@@ -958,11 +1037,21 @@ internal sealed class GamingDevicesPanel : StackPanel
         var detect = MakeButton(T("1. Find controllers", "1. Trova controller"), "GameDevices_Guided_Detect_Button", async () =>
         {
             await DetectRawAsync();
-            _stepDevice.Text = SelectedDeviceId is null
-                ? T("No compatible controller found. Connect it and try again.", "Nessun controller compatibile. Collegalo e riprova.")
-                : T("Controller selected in the list above. Choose a different one there if needed.", "Controller selezionato nell'elenco qui sopra. Sceglierne un altro lì se serve.");
+            // The answer comes from the detection result itself, never from the combo box state.
+            var pick = _detected.Count > 0 ? (SelectedDeviceInfo() ?? _detected[0]) : null;
+            if (pick is null)
+                _stepDevice.Text = DescribeDetection(_detected, _xinputPads);
+            else if (PadMappingPresets.Classify(pick.VendorId, pick.ProductId) == RawPadRoute.XInputDirect)
+                _stepDevice.Text = T($"{pick.Name} works directly with games (XInput). No forwarding is needed.",
+                                     $"{pick.Name} funziona direttamente con i giochi (XInput). L'inoltro non serve.");
+            else
+                _stepDevice.Text = T($"{pick.Name} is a raw HID pad: games cannot use it yet. Press \"Set up forwarding for this pad\" to continue (choose a different pad in the list above if needed).",
+                                     $"{pick.Name} è un pad HID grezzo: i giochi non possono ancora usarlo. Premi \"Configura l'inoltro per questo pad\" per continuare (scegli un altro pad nell'elenco qui sopra se serve).");
         });
         AddGuidedRow(detect, _stepDevice, "GameDevices_Guided_Step1_Text");
+        var setup = MakeButton(T("Set up forwarding for this pad", "Configura l'inoltro per questo pad"),
+            "GameDevices_Guided_Setup_Button", SetUpForwardingForSelectedAsync);
+        Children.Add(setup);
 
         // 2. Virtual driver: detect only; if absent, explain and link, never install.
         var driver = MakeButton(T("2. Check virtual driver", "2. Verifica driver virtuale"), "GameDevices_Guided_Driver_Button", () =>

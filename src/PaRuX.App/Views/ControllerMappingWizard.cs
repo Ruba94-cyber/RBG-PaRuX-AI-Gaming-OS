@@ -26,6 +26,9 @@ namespace PaRuX.Views
         private readonly TextBlock _progress = new() { Opacity = 0.7 };
         private readonly Button _skip;
         private readonly Button _cancel;
+        private readonly Button _usePreset;
+        private PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.PadMappingPreset? _preset;
+        private Action<PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.PadMappingPreset>? _applyPreset;
         private WindowsRawGamepadSource? _source;
         private int _index;
         private bool[]? _baselineButtons;
@@ -48,6 +51,16 @@ namespace PaRuX.Views
             _skip.Click += (_, _) => Advance(null);
             _cancel.Click += (_, _) => Finish(T("Stopped. Nothing is saved until you press Save mapping.", "Interrotto. Nulla viene salvato finché non premi Salva mappatura."));
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            _usePreset = new Button { Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAutomationId(_usePreset, "GameDevices_Wizard_Preset_Button");
+            _usePreset.Click += (_, _) =>
+            {
+                if (_preset is null || _applyPreset is null) return;
+                _applyPreset(_preset);
+                Finish(T("Preset \"", "Preset \"") + _preset.Name + T("\" loaded into the mapping boxes. It is a starting point, not yet verified: turn on Live view or Read once, press the buttons, fix any number that is wrong, then press Save mapping.",
+                    "\" caricato nelle caselle di mappatura. È un punto di partenza non ancora verificato: attiva la Vista dal vivo o Leggi una volta, premi i pulsanti, correggi i numeri sbagliati, poi premi Salva mappatura."));
+            };
+            row.Children.Add(_usePreset);
             row.Children.Add(_skip);
             row.Children.Add(_cancel);
             Children.Add(_progress);
@@ -63,11 +76,20 @@ namespace PaRuX.Views
         /// <summary>Raised with a closing message when the wizard ends (finished, stopped or the pad vanished).</summary>
         public event Action<string>? Ended;
 
-        public bool Begin(string? deviceId)
+        /// <param name="deviceId">The raw controller to read.</param>
+        /// <param name="preset">A built-in proposal for this pad's VID/PID, or null. When present, "Use preset" fills the mapping boxes
+        /// with it in one click; it is never saved or sent anywhere, so the owner still confirms (Live view, Save mapping).</param>
+        /// <param name="applyPreset">Writes the preset into the mapping boxes.</param>
+        public bool Begin(string? deviceId, PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.PadMappingPreset? preset = null,
+            Action<PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.PadMappingPreset>? applyPreset = null)
         {
             Stop();
             _source = string.IsNullOrWhiteSpace(deviceId) ? null : WindowsRawGamepadSource.TryOpen(deviceId);
             if (_source is null) return false;
+            _preset = preset;
+            _applyPreset = applyPreset;
+            _usePreset.Visibility = preset is not null && applyPreset is not null ? Visibility.Visible : Visibility.Collapsed;
+            _usePreset.Content = preset is null ? "" : T("Use preset: ", "Usa preset: ") + preset.Name + T(" (unverified)", " (non verificato)");
             _index = 0;
             Visibility = Visibility.Visible;
             ResetStep();
