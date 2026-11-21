@@ -20,7 +20,10 @@ internal static partial class ToolSchemaIntentGate
     // Object words (English and Italian), file extensions, paths and possessives that point at the user's data, plus write verbs.
     [GeneratedRegex(
         @"(file|files|folder|cartella|document|documento|docs?\b|docx|word\b|excel|xlsx|xls\b|csv|spreadsheet|workbook|foglio|pdf|pptx|slide|note\b|notes\b|appunti|desktop|disk\b|disco|drive|path\b|percorso" +
-        @"|\b(my|mine|mio|mia|miei|mie)\b|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
+        @"|\b(my|mine|mio|mia|miei|mie)\b" +
+        // Imperative verbs that ask for an action on something (English and Italian): the object may be a file the user never named.
+        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
+        @"|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
         @"|[a-z]:\\|\\\\|/[a-z0-9_.-]+/|\.[a-z0-9]{2,5}\b|https?://|```)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ToolIntent();

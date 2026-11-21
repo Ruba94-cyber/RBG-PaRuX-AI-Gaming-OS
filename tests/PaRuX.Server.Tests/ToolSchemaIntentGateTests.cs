@@ -35,6 +35,18 @@ public sealed class ToolSchemaIntentGateTests : IDisposable
     [InlineData("Read https://example.com/page and summarize")]
     [InlineData("Export the table to csv")]
     [InlineData("Look at this:\n```\nx=1\n```")]
+    [InlineData("Cerca la fattura Rossi")]
+    [InlineData("Apri il preventivo")]
+    [InlineData("Trova il contratto di Bianchi")]
+    [InlineData("Leggi la mail di ieri")]
+    [InlineData("Elenca le cartelle")]
+    [InlineData("Mostra i miei appunti")]
+    [InlineData("Search the Rossi invoice")]
+    [InlineData("Find the quote")]
+    [InlineData("Open the budget")]
+    [InlineData("Generate a report")]
+    [InlineData("Show the latest invoice")]
+    [InlineData("List the invoices")]
     public void Anything_that_can_touch_files_documents_or_the_users_data_keeps_the_tools(string query) =>
         Assert.False(ToolSchemaIntentGate.CanOmitToolSchemas(query, "general"));
 

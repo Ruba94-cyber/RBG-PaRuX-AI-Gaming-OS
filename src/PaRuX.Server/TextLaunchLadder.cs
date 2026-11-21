@@ -115,14 +115,23 @@ internal static class TextLaunchLadder
                 return SetOption(arguments, GpuLayersFlag, ReducedGpuLayers(ReadValue(arguments, GpuLayersFlag)));
             case Step.VulkanEngine:
                 FlashOff(arguments);
-                return SetOption(arguments, DeviceFlag, VulkanDeviceSelector.ResolveBlocking());
+                return VulkanRung(arguments);
             case Step.VulkanKeepFlash:
-                return SetOption(arguments, DeviceFlag, VulkanDeviceSelector.ResolveBlocking());
+                return VulkanRung(arguments);
             case Step.CpuOnly:
                 return RuntimeLaunchOptimizer.ToCpuFallbackArguments(arguments);
             default:
                 throw new ArgumentOutOfRangeException(nameof(rung));
         }
+    }
+
+    /// <summary>The Vulkan rung's arguments: the best healthy device, or CPU arguments when every GPU device is marked failed.</summary>
+    private static List<string> VulkanRung(List<string> arguments)
+    {
+        VulkanDeviceSelector.DeviceChoice choice = VulkanDeviceSelector.ResolveBlockingChoice();
+        return choice.CpuFallback
+            ? RuntimeLaunchOptimizer.ToCpuFallbackArguments(arguments)
+            : SetOption(arguments, DeviceFlag, choice.Device ?? VulkanDeviceSelector.DefaultDevice);
     }
 
     /// <summary>
