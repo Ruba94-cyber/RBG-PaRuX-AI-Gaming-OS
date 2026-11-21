@@ -46,18 +46,86 @@ public sealed class VulkanDeviceChoiceTests : IDisposable
     }
 
     [Fact]
-    public void Insufficient_free_vram_moves_to_the_device_that_fits_and_says_so_when_none_do()
+    public void A_useful_discrete_card_stays_chosen_even_when_the_model_does_not_fit_it()
     {
         var devices = VulkanDeviceSelector.ParseDevices(
             "  Vulkan0: AMD Radeon 780M Graphics (19359 MiB, 18391 MiB free)\r\n  Vulkan1: NVIDIA GeForce RTX 5080 (16193 MiB, 3000 MiB free)\r\n");
-        // 3 GB free on the card (a game is open): a 6 GB model fits the iGPU's shared memory instead.
-        Assert.Equal("Vulkan0", VulkanDeviceSelector.Select(devices, Laptop, requiredMib: 6000).Device);
-        // A model that fits nowhere keeps the best device, and the reason says layers are fitted.
-        var none = VulkanDeviceSelector.Select(devices, Laptop, requiredMib: 40000);
-        Assert.Equal("Vulkan1", none.Device);
-        Assert.Contains("no device reports enough free memory", none.Reason);
-        // A model that fits the card keeps the card.
+        // Partial offload to the 5080 beats running on the iGPU alone, whatever the free memory (a game is open, or the model is ~16 GB).
+        Assert.Equal("Vulkan1", VulkanDeviceSelector.Select(devices, Laptop, requiredMib: 6000).Device);
+        var big = VulkanDeviceSelector.Select(devices, Laptop, requiredMib: 17000);
+        Assert.Equal("Vulkan1", big.Device);
+        Assert.Contains("layers are fitted", big.Reason);
         Assert.Equal("Vulkan1", VulkanDeviceSelector.Select(devices, Laptop, requiredMib: 2000).Device);
+    }
+
+    [Fact]
+    public void Fit_chooses_among_discrete_cards_and_decides_between_a_tiny_dgpu_and_the_igpu()
+    {
+        var two = VulkanDeviceSelector.ParseDevices(
+            "  Vulkan0: AMD Radeon RX 7600 (8176 MiB, 7000 MiB free)\r\n  Vulkan1: NVIDIA GeForce RTX 4090 (24564 MiB, 2000 MiB free)\r\n");
+        var inv = Inventory(("AMD Radeon RX 7600", 8L << 30), ("NVIDIA GeForce RTX 4090", 24L << 30));
+        Assert.Equal("Vulkan0", VulkanDeviceSelector.Select(two, inv, requiredMib: 6000).Device); // only the 7600 has room
+
+        var tiny = VulkanDeviceSelector.ParseDevices(
+            "  Vulkan0: AMD Radeon 780M Graphics (19359 MiB, 18391 MiB free)\r\n  Vulkan1: NVIDIA GeForce MX450 (2048 MiB, 1900 MiB free)\r\n");
+        var tinyInv = Inventory(("AMD Radeon(TM) 780M Graphics", 512L << 20), ("NVIDIA GeForce MX450", 2L << 30));
+        Assert.Equal("Vulkan0", VulkanDeviceSelector.Select(tiny, tinyInv, requiredMib: 6000).Device); // the 2 GB card cannot hold it
+    }
+
+    [Fact]
+    public async Task Free_memory_is_re_read_after_the_listing_goes_stale_and_the_cache_follows_the_runtime()
+    {
+        int listings = 0;
+        VulkanDeviceSelector.ListingFreshness = TimeSpan.Zero;
+        VulkanDeviceSelector.ListDevicesOverrideForTests = (_, _) =>
+        {
+            listings++;
+            return Task.FromResult("  Vulkan0: AMD Radeon 780M Graphics (19359 MiB, 18391 MiB free)\r\n  Vulkan1: NVIDIA GeForce RTX 5080 (16193 MiB, " + (listings == 1 ? 15000 : 500) + " MiB free)\r\n");
+        };
+        await VulkanDeviceSelector.ChooseAsync(Laptop, 8000, null, CancellationToken.None);
+        await Task.Delay(20);
+        await VulkanDeviceSelector.ChooseAsync(Laptop, 8000, null, CancellationToken.None);
+        Assert.Equal(2, listings); // a stale listing is not reused for the fit decision
+    }
+
+    [Fact]
+    public void Only_fast_device_failures_blacklist_a_device_and_a_healthy_launch_clears_it()
+    {
+        Assert.True(VulkanDeviceSelector.IsDeviceFailure("ggml_vulkan: out of memory while allocating"));
+        Assert.True(VulkanDeviceSelector.IsDeviceFailure("llama-server exited before it became healthy"));
+        Assert.False(VulkanDeviceSelector.IsDeviceFailure("The runtime did not become healthy: timed out after 5 minutes"));
+        Assert.False(VulkanDeviceSelector.IsDeviceFailure("Launch cancelled"));
+        Assert.False(VulkanDeviceSelector.IsDeviceFailure("A game is currently active"));
+        Assert.False(VulkanDeviceSelector.IsDeviceFailure("model too large for this device"));
+        Assert.False(VulkanDeviceSelector.IsDeviceFailure(null));
+
+        var devices = VulkanDeviceSelector.ParseDevices(IgpuFirst);
+        VulkanDeviceSelector.MarkFailed("Vulkan1");
+        VulkanDeviceSelector.ListDevicesOverrideForTests = (_, _) => Task.FromResult(IgpuFirst);
+        Assert.Equal("Vulkan0", VulkanDeviceSelector.ChooseAsync(Laptop, 0, null, CancellationToken.None).Result.Device);
+        VulkanDeviceSelector.ClearFailed();
+        Assert.Equal("Vulkan1", VulkanDeviceSelector.ChooseAsync(Laptop, 0, null, CancellationToken.None).Result.Device);
+        Assert.NotEmpty(devices);
+    }
+
+    [Fact]
+    public void When_every_device_is_blacklisted_the_argument_builders_fall_back_to_cpu_arguments()
+    {
+        VulkanDeviceSelector.ListDevicesOverrideForTests = (_, _) => Task.FromResult(IgpuFirst);
+        VulkanDeviceSelector.InventoryOverrideForTests = () => Laptop;
+        VulkanDeviceSelector.MarkFailed("Vulkan0");
+        VulkanDeviceSelector.MarkFailed("Vulkan1");
+
+        var profile = new LlamaPerformanceProfileDto { GpuLayers = -1, ContextSize = 8192 };
+        List<string> args = RuntimeLaunchOptimizer.BuildRuntimeArguments(profile, hasCuda: false);
+        Assert.DoesNotContain("--device", args);
+        Assert.DoesNotContain("Vulkan0", args);
+
+        var ladder = TextLaunchLadder.ArgumentsFor(
+            new TextLaunchLadder.Rung(TextLaunchLadder.Step.VulkanKeepFlash, TextLaunchLadder.Engine.Vulkan, "Vulkan", ""),
+            ["--model", "m.gguf", "--gpu-layers", "all", "--device", "CUDA0"]);
+        Assert.DoesNotContain("--device", ladder);
+        Assert.DoesNotContain("Vulkan0", ladder);
     }
 
     [Fact]

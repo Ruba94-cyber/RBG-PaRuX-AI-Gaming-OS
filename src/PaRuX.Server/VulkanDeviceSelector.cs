@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using PaRuX.Contracts;
@@ -19,6 +19,11 @@ internal static partial class VulkanDeviceSelector
     internal const string DefaultDevice = "Vulkan0";
     internal const string UserDeviceEnvironmentVariable = "PARUX_LLAMA_DEVICE";
     private const long IntegratedDedicatedCeilingBytes = 2L * 1024 * 1024 * 1024;
+    /// <summary>A discrete card below this is not assumed to beat an integrated GPU with a large shared pool.</summary>
+    internal const long MinimumUsefulDiscreteMib = 4096;
+    /// <summary>How long a device listing (names, indices and the free memory it reports) is trusted.</summary>
+    internal static TimeSpan ListingFreshness { get; set; } = TimeSpan.FromSeconds(20);
+    internal static Func<GpuInventoryStatus>? InventoryOverrideForTests;
 
     /// <param name="FreeMib">Free memory the driver reported, or -1 when the listing did not carry it.</param>
     internal readonly record struct VulkanDevice(int Index, string Name, long TotalMib, long FreeMib = -1)
@@ -83,11 +88,15 @@ internal static partial class VulkanDeviceSelector
         if (healthy.Count == 0)
             return new DeviceChoice(null, "Every GPU device failed its health probe; using the CPU.", UsedFallback: true, CpuFallback: true);
 
-        List<Ranked> pool = healthy;
+        // A discrete card of useful size always stays in the pool, even when the model does not fit it entirely: partial offload to the
+        // card beats running on the integrated GPU alone. Fit only chooses among devices of the same class, or decides when there is no
+        // useful discrete card (an iGPU-only machine, or a tiny dGPU that competes with the iGPU).
+        List<Ranked> pool = healthy.Where(r => !r.Integrated && r.DedicatedMib >= MinimumUsefulDiscreteMib).ToList();
+        if (pool.Count == 0) pool = healthy;
         bool noneFits = false;
         if (requiredMib > 0)
         {
-            List<Ranked> fitting = healthy.Where(r => FreeOrTotal(r.Device) >= requiredMib).ToList();
+            List<Ranked> fitting = pool.Where(r => FreeOrTotal(r.Device) >= requiredMib).ToList();
             if (fitting.Count > 0) pool = fitting; else noneFits = true;
         }
         Ranked best = pool
@@ -150,22 +159,45 @@ internal static partial class VulkanDeviceSelector
         return a.Length > 0 && b.Length > 0 && (a.Contains(b, StringComparison.Ordinal) || b.Contains(a, StringComparison.Ordinal));
     }
 
-    // A successful listing is kept for the life of the process; an empty one (timeout, antivirus scan) only for two minutes.
-    private static readonly Dictionary<string, (List<VulkanDevice> Devices, DateTime ExpiresUtc)> Cache = new(StringComparer.OrdinalIgnoreCase);
+    // The listing (names, indices and the free memory the driver reports) is trusted for a short time only: free memory changes with every
+    // game or app, and a removed eGPU or an upgraded runtime must not leave a stale --device VulkanN. The key includes the runtime file's
+    // timestamp. An empty listing (timeout, antivirus scan) is retried after two minutes.
+    private static readonly Dictionary<string, (List<VulkanDevice> Devices, DateTime FetchedUtc)> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, DateTime> FailedUntilUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object CacheLock = new();
+    private static (GpuInventoryStatus Inventory, DateTime FetchedUtc)? _inventoryCache;
     internal static Func<string, CancellationToken, Task<string>>? ListDevicesOverrideForTests;
 
-    /// <summary>Records that a launch on this device did not become healthy, so it is skipped for the next ten minutes.</summary>
+    /// <summary>Records that a launch failed fast on this device (load error or out of memory), so it is skipped for ten minutes.
+    /// Never call it for a timeout, a stop, a cancellation or a model that is simply too large.</summary>
     internal static void MarkFailed(string? device)
     {
         if (string.IsNullOrWhiteSpace(device)) return;
         lock (CacheLock) FailedUntilUtc[device.Trim()] = DateTime.UtcNow.AddMinutes(10);
     }
 
+    /// <summary>Any healthy launch proves the devices work again.</summary>
+    internal static void ClearFailed()
+    {
+        lock (CacheLock) FailedUntilUtc.Clear();
+    }
+
+    /// <summary>True when a failed launch message describes a device or driver problem rather than a timeout, stop or oversized model.</summary>
+    internal static bool IsDeviceFailure(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        string m = message.ToLowerInvariant();
+        if (m.Contains("timed out") || m.Contains("timeout") || m.Contains("cancel") || m.Contains("stopped") || m.Contains("game")
+            || m.Contains("too large") || m.Contains("does not fit")) return false;
+        return m.Contains("out of memory") || m.Contains("vk_error") || m.Contains("failed to load") || m.Contains("device lost")
+            || m.Contains("failed to create") || m.Contains("exited");
+    }
+
     internal static void ResetForTests()
     {
-        lock (CacheLock) { Cache.Clear(); FailedUntilUtc.Clear(); }
+        lock (CacheLock) { Cache.Clear(); FailedUntilUtc.Clear(); _inventoryCache = null; }
+        ListingFreshness = TimeSpan.FromSeconds(20);
+        InventoryOverrideForTests = null;
         ListDevicesOverrideForTests = null;
     }
 
@@ -177,9 +209,15 @@ internal static partial class VulkanDeviceSelector
     internal static string? UserDevice() =>
         Environment.GetEnvironmentVariable(UserDeviceEnvironmentVariable) is { } v && !string.IsNullOrWhiteSpace(v) ? v.Trim() : null;
 
-    /// <summary>Resolves the device for the installed Vulkan runtime; never throws and never blocks longer than a few seconds.</summary>
+    /// <summary>Resolves the device for the installed Vulkan runtime; never throws and never blocks longer than a few seconds.
+    /// When every device failed its probe the result is the default, so callers that must honour CPU fallback use <see cref="ChooseAsync"/>.</summary>
     internal static async Task<string> ResolveAsync(GpuInventoryStatus? inventory, CancellationToken ct) =>
         (await ChooseAsync(inventory, 0, null, ct).ConfigureAwait(false)).Device ?? DefaultDevice;
+
+    private static string RuntimeKey(string exe)
+    {
+        try { return exe + "|" + File.GetLastWriteTimeUtc(exe).Ticks; } catch { return exe; }
+    }
 
     /// <summary>The full decision with its surfaced reason. A user device (argument, else the environment variable) wins.</summary>
     internal static async Task<DeviceChoice> ChooseAsync(GpuInventoryStatus? inventory, long requiredMib, string? userDevice, CancellationToken ct)
@@ -191,9 +229,12 @@ internal static partial class VulkanDeviceSelector
             string exe = Path.Combine(LocalAiPaths.RuntimeVulkanPath, LocalAiPaths.LlamaServerExecutable);
             if (ListDevicesOverrideForTests == null && !File.Exists(exe))
                 return new DeviceChoice(DefaultDevice, "Vulkan runtime not installed; kept " + DefaultDevice + ".", UsedFallback: true);
+            string key = RuntimeKey(exe);
             List<VulkanDevice>? devices = null;
             lock (CacheLock)
-                if (Cache.TryGetValue(exe, out var cached) && cached.ExpiresUtc > DateTime.UtcNow) devices = cached.Devices;
+                if (Cache.TryGetValue(key, out var cached)
+                    && DateTime.UtcNow - cached.FetchedUtc <= (cached.Devices.Count > 0 ? ListingFreshness : TimeSpan.FromMinutes(2)))
+                    devices = cached.Devices;
             if (devices == null)
             {
                 try
@@ -205,7 +246,7 @@ internal static partial class VulkanDeviceSelector
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { devices = []; }
                 catch (Exception) when (!ct.IsCancellationRequested) { devices = []; }
-                lock (CacheLock) Cache[exe] = (devices, devices.Count > 0 ? DateTime.MaxValue : DateTime.UtcNow.AddMinutes(2));
+                lock (CacheLock) { Cache.Clear(); Cache[key] = (devices, DateTime.UtcNow); }
             }
             return Select(devices, inventory, requiredMib, null, d => !IsMarkedFailed(d));
         }
@@ -213,19 +254,36 @@ internal static partial class VulkanDeviceSelector
         catch { return new DeviceChoice(DefaultDevice, "Device selection failed; kept " + DefaultDevice + ".", UsedFallback: true); }
     }
 
-    /// <summary>Synchronous form for launch builders that have no async context; reads DXGI when no inventory is supplied.</summary>
-    internal static string ResolveBlocking(GpuInventoryStatus? inventory = null)
+    /// <summary>Synchronous form for launch builders that have no async context. The DXGI inventory is cached briefly and the device
+    /// listing shares the same short cache, so repeated argument building does not re-probe.</summary>
+    internal static DeviceChoice ResolveBlockingChoice(GpuInventoryStatus? inventory = null)
     {
         try
         {
             return Task.Run(async () =>
             {
-                GpuInventoryStatus inv = inventory ?? new GpuInventoryService().GetStatus();
-                return (await ChooseAsync(inv, 0, null, CancellationToken.None).ConfigureAwait(false)).Device ?? DefaultDevice;
+                GpuInventoryStatus inv;
+                if (inventory != null) inv = inventory;
+                else if (InventoryOverrideForTests != null) inv = InventoryOverrideForTests();
+                else
+                {
+                    (GpuInventoryStatus Inventory, DateTime FetchedUtc)? cached;
+                    lock (CacheLock) cached = _inventoryCache;
+                    if (cached is { } c && DateTime.UtcNow - c.FetchedUtc <= ListingFreshness) inv = c.Inventory;
+                    else
+                    {
+                        inv = new GpuInventoryService().GetStatus();
+                        lock (CacheLock) _inventoryCache = (inv, DateTime.UtcNow);
+                    }
+                }
+                return await ChooseAsync(inv, 0, null, CancellationToken.None).ConfigureAwait(false);
             }).GetAwaiter().GetResult();
         }
-        catch { return DefaultDevice; }
+        catch { return new DeviceChoice(DefaultDevice, "Device selection failed; kept " + DefaultDevice + ".", UsedFallback: true); }
     }
+
+    /// <summary>The value to pass to --device / -dev for a choice: the device, or "none" (no offload) when every device failed.</summary>
+    internal static string ArgumentFor(DeviceChoice choice) => choice.Device ?? "none";
 
     private static async Task<string> ListDevicesAsync(string exe, CancellationToken ct)
     {

@@ -495,8 +495,13 @@ public static class RuntimeLaunchOptimizer
         if (split == "tensor")
             throw new InvalidDataException("Experimental tensor-split launch requires the dedicated validated topology path.");
 
+        bool noHealthyDevice = false;
         if (!hasCuda && string.IsNullOrWhiteSpace(profile.Device))
-            args.AddRange(["--device", VulkanDeviceSelector.ResolveBlocking()]);
+        {
+            VulkanDeviceSelector.DeviceChoice choice = VulkanDeviceSelector.ResolveBlockingChoice();
+            noHealthyDevice = choice.CpuFallback;
+            if (!noHealthyDevice) args.AddRange(["--device", choice.Device ?? VulkanDeviceSelector.DefaultDevice]);
+        }
 
         // Routed-expert placement is set only by the launch planner, after the runtime build's flag was verified.
         if (profile.CpuMoeLayers > 0) args.AddRange(["--n-cpu-moe", profile.CpuMoeLayers.ToString()]);
@@ -504,7 +509,8 @@ public static class RuntimeLaunchOptimizer
 
         AppendSpeculativeArguments(args, profile);
         if (profile.BackendSampling) args.Add("--backend-sampling");
-        return args;
+        // Every GPU device failed its health probe: the same arguments rewritten for the CPU, like the main launch path does.
+        return noHealthyDevice ? ToCpuFallbackArguments(args) : args;
     }
 
     /// <summary>

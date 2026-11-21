@@ -1265,13 +1265,31 @@ public sealed class LocalAiProcessManager
         return text && media;
     }
 
+    // Cancelled (and replaced) by the Off action, so a start that is waiting for the gate or loading a model ends instead of
+    // finishing after Off and leaving a runtime running.
+    private CancellationTokenSource _offCts = new();
+    private const string OffDuringStartMessage = "Local AI was turned off while this start was in progress.";
+
     public async Task<RuntimeResult> StartTextAsync(CancellationToken ct, string? modelPathOverride = null,
         TextStartIntent intent = TextStartIntent.Ensure)
+    {
+        CancellationToken off = Volatile.Read(ref _offCts).Token;
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(ct, off);
+        try { return await StartTextCoreAsync(linked.Token, modelPathOverride, intent).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && off.IsCancellationRequested)
+        {
+            return new RuntimeResult(false, OffDuringStartMessage);
+        }
+    }
+
+    private async Task<RuntimeResult> StartTextCoreAsync(CancellationToken ct, string? modelPathOverride, TextStartIntent intent)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (GamingActive) return new RuntimeResult(false, "A game is currently active; local AI start is blocked.");
+            // OFF is a guarantee: a start that queued behind another one (or behind Gaming's eager restore) never runs after Off.
+            if (intent == TextStartIntent.Ensure && GetMode() == "OFF") return new RuntimeResult(false, "Local AI is in OFF mode.");
             // Lazy recovery after Gaming: an Ensure/Auto/On start with no model named reloads the model Gaming unloaded.
             if (modelPathOverride == null && intent == TextStartIntent.Ensure) modelPathOverride = ResolveGamingReloadOverride();
             // Corporate Lite stays CPU-only; a locally imported or explicitly downloaded GGUF can replace the starter.
@@ -1507,6 +1525,8 @@ public sealed class LocalAiProcessManager
             for (int index = 0; index < rungs.Count; index++)
             {
                 TextLaunchLadder.Rung rung = rungs[index];
+                ct.ThrowIfCancellationRequested();
+                if (intent == TextStartIntent.Ensure && GetMode() == "OFF") return new RuntimeResult(false, "Local AI is in OFF mode.");
                 if (index > 0 && !StopText())
                     return new RuntimeResult(false, (firstFailure?.Message ?? string.Empty) + " The text runtime did not stop, so the next launch rung was not started.");
 
@@ -1520,6 +1540,7 @@ public sealed class LocalAiProcessManager
                 trace.Add(rung.Label + (attempt.Success ? ": ready" : ": failed (" + FirstLine(attempt.Message) + ")"));
                 if (attempt.Success)
                 {
+                    VulkanDeviceSelector.ClearFailed(); // a healthy launch proves the devices work again
                     _lastTextLaunchTrace = trace.ToArray();
                     try { File.WriteAllText(LocalAiPaths.ActiveRoleFile, choice == "UNCENSORED" ? "uncensored" : "standard"); } catch { }
                     _lastTextLaunch = new TextLaunchSnapshot(model, rungExe, rungRuntime, rungArguments, rungProfile, optimization.Profile);
@@ -1530,7 +1551,8 @@ public sealed class LocalAiProcessManager
                 lastFailure = attempt;
                 // A Vulkan device whose launch never became healthy is skipped by the next device choice (bounded, ten minutes),
                 // unless the launch ended because of cancellation or a game rather than the device.
-                if (!ct.IsCancellationRequested && !GamingActive && rung.Engine == TextLaunchLadder.Engine.Vulkan
+                if (!ct.IsCancellationRequested && !GamingActive && GetMode() != "OFF" && rung.Engine == TextLaunchLadder.Engine.Vulkan
+                    && VulkanDeviceSelector.IsDeviceFailure(attempt.Message)
                     && TextLaunchLadder.ReadValue(rungArguments, TextLaunchLadder.DeviceFlag) is { } failedDevice
                     && failedDevice.StartsWith("Vulkan", StringComparison.OrdinalIgnoreCase)
                     && index + 1 < rungs.Count && rungs[index + 1].Engine == TextLaunchLadder.Engine.Cpu)
@@ -1702,7 +1724,7 @@ public sealed class LocalAiProcessManager
             "--reasoning-effort", "low", "--reasoning-budget", "768", "--temp", "0.8", "--top-p", "0.95", "--top-k", "40", "--min-p", "0.02",
             "--gpu-layers", "all", "--sleep-idle-seconds", "-1"
         };
-        if (PathsEqual(assistantRuntime, LocalAiPaths.RuntimeVulkanPath)) { args.Add("--device"); args.Add(VulkanDeviceSelector.ResolveBlocking(await Task.Run(InventoryProbe, ct).ConfigureAwait(false))); }
+        if (PathsEqual(assistantRuntime, LocalAiPaths.RuntimeVulkanPath)) { args.Add("--device"); args.Add(VulkanDeviceSelector.ArgumentFor(VulkanDeviceSelector.ResolveBlockingChoice(await Task.Run(InventoryProbe, ct).ConfigureAwait(false)))); }
         args.AddRange(WebUiArguments());
         onOutgoingTextReleased?.Invoke();
         var assistantWatch = Stopwatch.StartNew();
@@ -2591,10 +2613,21 @@ public sealed class LocalAiProcessManager
         {
             case "On": SetMode("ON"); return await StartTextAsync(ct).ConfigureAwait(false);
             case "Off":
+            {
                 SetMode("OFF");
-                return StopAll()
-                    ? new RuntimeResult(true, "Stopped.")
-                    : new RuntimeResult(false, "Local AI is set to OFF, but a process did not stop and is still running.");
+                // End any start in flight (queued for the gate or loading), then take the gate so that start has fully unwound before
+                // everything is stopped. Without this a start that finished after Off left a runtime running behind a "Stopped." answer.
+                CancellationTokenSource previousStarts = Interlocked.Exchange(ref _offCts, new CancellationTokenSource());
+                try { previousStarts.Cancel(); } catch (AggregateException) { }
+                await _gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    return StopAll()
+                        ? new RuntimeResult(true, "Stopped.")
+                        : new RuntimeResult(false, "Local AI is set to OFF, but a process did not stop and is still running.");
+                }
+                finally { _gate.Release(); }
+            }
             case "Auto":
                 // AUTO is the normal serving mode, not an OFF-like reset. Stopping the warmed
                 // model here made the next user message pay the entire model-load latency again.
