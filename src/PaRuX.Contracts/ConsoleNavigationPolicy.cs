@@ -26,6 +26,21 @@ public static class ConsoleNavigationPolicy
 {
     // VirtualKey codes are the Windows SDK's stable gamepad-navigation constants.
     // Keep this shared policy Windows-assembly-free for deterministic xUnit tests.
+    /// <summary>
+    /// Same mapping while a dialog, flyout, drop-down or the on-screen keyboard is open. Such an overlay is what the owner is
+    /// operating, so B/Escape (close it) and the directions stay available even though the library is "busy" behind it, while paging,
+    /// scrolling, search and workspace switching are suspended so they cannot act on the page underneath.
+    /// </summary>
+    public static ConsoleNavigationAction Resolve(int virtualKey, bool interactionBusy, bool overlayOpen)
+    {
+        if (!overlayOpen) return Resolve(virtualKey, interactionBusy);
+        return virtualKey switch
+        {
+            27 or 196 => ConsoleNavigationAction.Exit,
+            _ => Resolve(virtualKey, true)
+        };
+    }
+
     public static ConsoleNavigationAction Resolve(int virtualKey, bool interactionBusy)
     {
         return virtualKey switch

@@ -340,7 +340,7 @@ public sealed partial class MainWindow
         // Gamepad virtual keys (195..218) mean WinUI itself is delivering the pad: the direct reader must stand down.
         if ((int)e.Key is >= 195 and <= 218) _consoleRawPad?.NoteWinUiGamepadKeysSeen();
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
-            (int)e.Key, GameLibraryBusy);
+            (int)e.Key, GameLibraryBusy, ConsoleOverlayOpen);
         if (ApplyConsoleAction(action)) e.Handled = true;
     }
 
@@ -351,6 +351,9 @@ public sealed partial class MainWindow
     private bool ApplyConsoleAction(ConsoleNavigationAction action)
     {
         if (!_consoleModeActive || action == ConsoleNavigationAction.None) return false;
+
+        // A dialog, flyout, drop-down or the on-screen keyboard is what the pad operates: B closes it, directions stay inside it.
+        if (ConsoleOverlayOpen) return HandleConsoleOverlayAction(action);
 
         if (action == ConsoleNavigationAction.SwitchWorkspace)
             return SwitchConsoleWorkspace();
@@ -399,6 +402,7 @@ public sealed partial class MainWindow
             ConsoleNavigationAction.Right => FocusNavigationDirection.Right,
             _ => null
         };
+        if (TryAdjustFocusedSlider(action)) return true;
         return direction.HasValue && TryMoveConsoleFocus(direction.Value);
     }
 
@@ -408,7 +412,7 @@ public sealed partial class MainWindow
     /// </summary>
     private bool TryMoveConsoleFocus(FocusNavigationDirection direction)
     {
-        if (RootGrid.XamlRoot?.Content is not UIElement root) return false;
+        if (ConsoleFocusSearchRoot() is not DependencyObject root) return false;
         var options = new FindNextElementOptions { SearchRoot = root };
         return FocusManager.TryMoveFocus(direction, options);
     }
@@ -428,6 +432,7 @@ public sealed partial class MainWindow
                 _consoleRawPad.ActionRaised += action => { if (_consoleModeActive) ApplyConsoleAction(action); };
                 _consoleRawPad.AcceptRequested += AcceptFocusedConsoleControl;
             }
+            _consoleRawPad.OverlayOpen = () => ConsoleOverlayOpen;
             _consoleRawPad.Start(DispatcherQueue, () => GameLibraryBusy);
         }
         catch (Exception ex)
@@ -447,9 +452,11 @@ public sealed partial class MainWindow
     private void AcceptFocusedConsoleControl()
     {
         if (!_consoleModeActive || RootGrid.XamlRoot is null) return;
+        if (_keyboardOverlay?.IsOpen != true && TopInteractivePopup() is { } popup && RescueOverlayFocus(popup)) return;
         if (FocusManager.GetFocusedElement(RootGrid.XamlRoot) is not UIElement focused) return;
         try
         {
+            if (TryAcceptSpecialConsoleControl(focused)) return;
             var peer = Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(focused);
             if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)
                 is Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider invoke) { invoke.Invoke(); return; }

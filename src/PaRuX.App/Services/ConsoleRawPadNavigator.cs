@@ -58,6 +58,14 @@ public sealed class ConsoleRawPadNavigator : IDisposable
     [System.Runtime.InteropServices.DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
     private static extern uint XInputGetState(uint userIndex, out XInputState state);
 
+    /// <summary>True while a dialog, flyout, drop-down or the on-screen keyboard is open: B and the directions then stay available.</summary>
+    public Func<bool>? OverlayOpen { get; set; }
+
+    private bool OverlayOpenNow()
+    {
+        try { return OverlayOpen?.Invoke() ?? false; } catch (Exception) { return false; }
+    }
+
     public event Action<ConsoleNavigationAction>? ActionRaised;
     public event Action? AcceptRequested;
 
@@ -207,7 +215,7 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         bool busy;
         try { busy = _busy?.Invoke() ?? false; } catch (Exception) { busy = true; }
         Xbox360Report report = GenericPadMapper.Map(state, _mapping);
-        foreach (RawPadNavigationEvent e in _translator.Feed(report, _clock(), busy))
+        foreach (RawPadNavigationEvent e in _translator.Feed(report, _clock(), busy, OverlayOpenNow()))
             Dispatch(e);
     }
 
@@ -263,7 +271,7 @@ public sealed class ConsoleRawPadNavigator : IDisposable
                 _xinputTranslators[slot].Reset();   // the first frame after connecting is only a baseline
                 Log.Write("ConsoleRawPad: navigating with the XInput (Xbox-class) pad in slot " + slot + ".");
             }
-            foreach (RawPadNavigationEvent e in _xinputTranslators[slot].Feed(report, _clock(), busy))
+            foreach (RawPadNavigationEvent e in _xinputTranslators[slot].Feed(report, _clock(), busy, OverlayOpenNow()))
                 Dispatch(e);
         }
     }

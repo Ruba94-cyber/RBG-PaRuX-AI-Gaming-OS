@@ -53,7 +53,7 @@ public sealed class RawPadEdgeTranslator
         _moveSince = _scrollSince = 0;
     }
 
-    public IReadOnlyList<RawPadNavigationEvent> Feed(in Xbox360Report frame, long nowMs, bool interactionBusy)
+    public IReadOnlyList<RawPadNavigationEvent> Feed(in Xbox360Report frame, long nowMs, bool interactionBusy, bool overlayOpen = false)
     {
         var events = new List<RawPadNavigationEvent>(2);
 
@@ -75,11 +75,11 @@ public sealed class RawPadEdgeTranslator
 
         ushort pressed = (ushort)(frame.Buttons & ~_heldButtons);
         foreach (var (bit, action, accept) in ButtonEdges)
-            if ((pressed & bit) != 0) Emit(events, action, accept, interactionBusy);
+            if ((pressed & bit) != 0) Emit(events, action, accept, interactionBusy, overlayOpen);
         // The analog triggers never switch workspace (they are pressed by accident too easily); only View/Back does.
 
-        Repeat(events, move, ref _moveDir, ref _moveNext, ref _moveSince, nowMs, interactionBusy);
-        Repeat(events, scroll, ref _scrollDir, ref _scrollNext, ref _scrollSince, nowMs, interactionBusy);
+        Repeat(events, move, ref _moveDir, ref _moveNext, ref _moveSince, nowMs, interactionBusy, overlayOpen);
+        Repeat(events, scroll, ref _scrollDir, ref _scrollNext, ref _scrollSince, nowMs, interactionBusy, overlayOpen);
 
         _heldButtons = frame.Buttons;
         _leftTrigger = lt; _rightTrigger = rt;
@@ -100,7 +100,7 @@ public sealed class RawPadEdgeTranslator
     }
 
     private static void Repeat(List<RawPadNavigationEvent> events, ConsoleNavigationAction now, ref ConsoleNavigationAction current,
-        ref long next, ref long since, long nowMs, bool busy)
+        ref long next, ref long since, long nowMs, bool busy, bool overlayOpen)
     {
         if (now == ConsoleNavigationAction.None) { current = now; since = 0; return; }
         if (now != current)
@@ -108,7 +108,7 @@ public sealed class RawPadEdgeTranslator
             current = now;
             since = nowMs;
             next = nowMs + InitialRepeatMs;
-            Emit(events, now, false, busy);
+            Emit(events, now, false, busy, overlayOpen);
         }
         else if (nowMs - since > MaxHeldRepeatMs)
         {
@@ -117,11 +117,11 @@ public sealed class RawPadEdgeTranslator
         else if (nowMs >= next)
         {
             next = nowMs + RepeatMs; // no catch-up burst after a stalled tick
-            Emit(events, now, false, busy);
+            Emit(events, now, false, busy, overlayOpen);
         }
     }
 
-    private static void Emit(List<RawPadNavigationEvent> events, ConsoleNavigationAction action, bool accept, bool busy)
+    private static void Emit(List<RawPadNavigationEvent> events, ConsoleNavigationAction action, bool accept, bool busy, bool overlayOpen)
     {
         if (accept) { events.Add(new RawPadNavigationEvent(ConsoleNavigationAction.None, true)); return; }
         // Policy virtual keys: GamepadB 196, DPad 203-206, shoulders 200/199, right stick 215/216, Menu 207, View 208.
@@ -140,7 +140,7 @@ public sealed class RawPadEdgeTranslator
             ConsoleNavigationAction.SwitchWorkspace => 208,
             _ => 0
         };
-        ConsoleNavigationAction resolved = ConsoleNavigationPolicy.Resolve(vk, busy);
+        ConsoleNavigationAction resolved = ConsoleNavigationPolicy.Resolve(vk, busy, overlayOpen);
         if (resolved != ConsoleNavigationAction.None) events.Add(new RawPadNavigationEvent(resolved, false));
     }
 }
