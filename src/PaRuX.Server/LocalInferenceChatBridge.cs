@@ -242,8 +242,10 @@ public sealed class LocalInferenceChatBridge
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            await WriteErrorAsync(downstream, ex.Message, CancellationToken.None, errorType).ConfigureAwait(false);
-            return new LocalInferenceChatStreamResult(false, false, ex.Message);
+            // An unexpected exception's text can carry paths or addresses; the caller gets a fixed sentence instead.
+            const string unexpected = "The external server stream failed unexpectedly.";
+            await WriteErrorAsync(downstream, unexpected, CancellationToken.None, errorType).ConfigureAwait(false);
+            return new LocalInferenceChatStreamResult(false, false, unexpected);
         }
     }
 

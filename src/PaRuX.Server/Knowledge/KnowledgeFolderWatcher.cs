@@ -72,18 +72,30 @@ public sealed class KnowledgeFolderWatcher : IDisposable
         _gamingActive = gamingActive ?? GamingHardOffWatch.MarkerActive;
         _quiet = quiet ?? TimeSpan.FromSeconds(8);
         _gamingRetry = gamingRetry ?? TimeSpan.FromSeconds(30);
-        _dataRoot = Path.GetFullPath(dataRoot ?? PaRuXDataRoot.Path);
+        _dataRoot = Path.GetFullPath(dataRoot ?? PaRuXDataRoot.Path).TrimEnd(Path.DirectorySeparatorChar);
     }
 
     public bool IsWatching(string sourceId) { lock (_gate) return _entries.ContainsKey(sourceId); }
 
-    /// <summary>Starts watching. False when the folder is missing, blocked as sensitive, or inside PaRuX's own data.</summary>
-    public bool Watch(string sourceId, string folder)
+    /// <summary>What a refused <see cref="Watch"/> was refused for, so the caller can ask for consent instead of failing.</summary>
+    public SensitiveVerdict LastRefusal { get; private set; } = SensitiveVerdict.Allowed;
+
+    /// <summary>
+    /// Starts watching. False when the folder is missing, blocked as sensitive, inside PaRuX's own data, or broad/risky
+    /// (a whole drive or profile, application data) without <paramref name="consentBroad"/>.
+    /// </summary>
+    public bool Watch(string sourceId, string folder, bool consentBroad = false)
     {
+        LastRefusal = SensitiveVerdict.Allowed;
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return false;
         string full = Path.GetFullPath(folder);
-        if (full.StartsWith(_dataRoot, StringComparison.OrdinalIgnoreCase)) return false;
-        if (SensitivePathPolicy.EvaluateFolder(full).Verdict == SensitiveVerdict.Blocked) return false;
+        if (IsInsideDataRoot(full)) { LastRefusal = SensitiveVerdict.Blocked; return false; }
+        SensitiveVerdict verdict = SensitivePathPolicy.EvaluateFolder(full).Verdict;
+        if (verdict == SensitiveVerdict.Blocked || (verdict == SensitiveVerdict.NeedsConsent && !consentBroad))
+        {
+            LastRefusal = verdict;
+            return false;
+        }
         lock (_gate)
         {
             if (_disposed) return false;
@@ -117,9 +129,23 @@ public sealed class KnowledgeFolderWatcher : IDisposable
         }
     }
 
+    private bool IsInsideDataRoot(string path)
+    {
+        try
+        {
+            string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+            return string.Equals(full, _dataRoot, StringComparison.OrdinalIgnoreCase)
+                || full.StartsWith(_dataRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return true; }
+    }
+
     private void Changed(string sourceId, string path)
     {
         // Temporary and hidden files are editor noise; sensitive files are skipped by the index anyway.
+        // PaRuX's own files (the index database, logs, saved web pages' manifests) must never retrigger indexing: a watched
+        // parent of the data folder would otherwise re-index forever.
+        if (IsInsideDataRoot(path)) return;
         string name = Path.GetFileName(path);
         if (name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) || name.StartsWith("~$", StringComparison.Ordinal)) return;
         lock (_gate)

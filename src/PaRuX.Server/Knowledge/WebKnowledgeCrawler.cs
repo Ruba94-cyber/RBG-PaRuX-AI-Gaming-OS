@@ -81,6 +81,10 @@ public sealed class RobotsRules
 {
     private readonly List<(bool Allow, string Pattern)> _rules = new();
     public bool DisallowAll { get; private init; }
+    /// <summary>True when robots.txt could not be read (server error, timeout, network or redirect): everything is held back
+    /// and nothing already saved may be judged missing.</summary>
+    public bool Unavailable { get; private init; }
+    internal static RobotsRules CouldNotRead() => new() { DisallowAll = true, Unavailable = true };
     public TimeSpan? CrawlDelay { get; private set; }
 
     public static RobotsRules AllowEverything { get; } = new();
@@ -109,7 +113,7 @@ public sealed class RobotsRules
                 if (!inGroupHeader) { groupTargets = new List<RobotsRules>(); inGroupHeader = true; }
                 string agent = value.ToLowerInvariant();
                 if (agent == "*") groupTargets.Add(star);
-                else if (agentToken.Contains(agent, StringComparison.OrdinalIgnoreCase) && agent.Length > 0)
+                else if (AgentMatches(agent, agentToken))
                 {
                     groupTargets.Add(specific);
                     sawSpecific = true;
@@ -129,6 +133,15 @@ public sealed class RobotsRules
         }
         _ = current;
         return sawSpecific ? specific : star;
+    }
+
+    /// <summary>A group applies only when its product token IS ours (a "/version" suffix is ignored). A shorter or longer
+    /// token, such as "bot" or "p", names a different crawler.</summary>
+    internal static bool AgentMatches(string groupAgent, string ourToken)
+    {
+        int slash = groupAgent.IndexOf('/');
+        string product = (slash >= 0 ? groupAgent[..slash] : groupAgent).Trim();
+        return product.Length > 0 && string.Equals(product, ourToken, StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsAllowed(string pathAndQuery)
@@ -266,6 +279,7 @@ public sealed class WebKnowledgeCrawler
     private readonly Func<string, IPAddress, bool> _addressAllowed;
     private readonly ValidatedRemoteConnector.HostResolver? _resolver;
     private readonly Func<bool> _gamingActive;
+    private readonly Func<bool> _offlineBlocked;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 
     internal WebKnowledgeCrawler(
@@ -273,8 +287,10 @@ public sealed class WebKnowledgeCrawler
         Func<string, IPAddress, bool>? addressAllowed = null,
         ValidatedRemoteConnector.HostResolver? resolver = null,
         Func<bool>? gamingActive = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        Func<bool>? offlineBlocked = null)
     {
+        _offlineBlocked = offlineBlocked ?? (() => false);
         _options = options;
         _addressAllowed = addressAllowed ?? WebAddressRule.PublicOnly;
         _resolver = resolver;
@@ -304,17 +320,21 @@ public sealed class WebKnowledgeCrawler
         seen.Add(startKey);
         bool first = true;
         int processed = 0;
+        bool robotsUnavailable = false;
+        bool scoped = _options.MaxPages > 1 || _options.MaxDepth > 0;
 
         try
         {
             while (queue.Count > 0)
             {
+                if (_offlineBlocked()) { report.StoppedBecause = "offline"; break; }
                 if (processed >= _options.MaxPages) { report.StoppedBecause = "page_limit"; break; }
                 if (report.Bytes >= _options.MaxTotalBytes) { report.StoppedBecause = "byte_limit"; break; }
                 (Uri url, int depth) = queue.Dequeue();
                 string key = WebUrl.Normalize(url);
 
                 RobotsRules robots = await RobotsFor(http, url, robotsByOrigin, total.Token).ConfigureAwait(false);
+                if (robots.Unavailable) robotsUnavailable = true;
                 if (!robots.IsAllowed(url.PathAndQuery))
                 {
                     report.Pages.Add(new WebPageResult(key, "skipped", robots.DisallowAll ? "robots_unavailable" : "blocked_by_robots", null));
@@ -331,7 +351,7 @@ public sealed class WebKnowledgeCrawler
                 processed++;
                 reachedThisRun.Add(key);
 
-                PageFetch page = await FetchPageAsync(http, url, manifest.Pages.GetValueOrDefault(key), total.Token).ConfigureAwait(false);
+                PageFetch page = await FetchPageAsync(http, url, manifest.Pages.GetValueOrDefault(key), robots, scoped ? prefix : null, total.Token).ConfigureAwait(false);
                 report.Bytes += page.Bytes;
                 if (page.Failure != null)
                 {
@@ -348,7 +368,14 @@ public sealed class WebKnowledgeCrawler
                 }
                 else
                 {
-                    WebPageExtractor.Extracted extracted = WebPageExtractor.Extract(page.Body!, page.FinalUrl!);
+                    WebPageExtractor.Extracted extracted;
+                    try { extracted = WebPageExtractor.Extract(page.Body!, page.FinalUrl!); }
+                    catch (RegexMatchTimeoutException)
+                    {
+                        // A hostile or malformed page that defeats text extraction costs only that page.
+                        report.Pages.Add(new WebPageResult(key, "failed", "extraction_timeout", null));
+                        continue;
+                    }
                     links = extracted.Links;
                     if (extracted.NoIndex) { report.Pages.Add(new WebPageResult(key, "skipped", "noindex", null)); }
                     else if (extracted.Text.Length < 20) { report.Pages.Add(new WebPageResult(key, "skipped", "no_text", null)); }
@@ -367,8 +394,13 @@ public sealed class WebKnowledgeCrawler
                         string nextKey = WebUrl.Normalize(next);
                         if (seen.Add(nextKey)) queue.Enqueue((new Uri(nextKey), depth + 1));
                     }
-                }
             }
+        }
+
+            // Only after a finished walk with every robots.txt readable are pages that were not reached looked at again; one
+            // is forgotten only if the site itself now says 404 or 410.
+            if (report.StoppedBecause == "done" && !robotsUnavailable && _options.MaxDepth > 0)
+                report.Removed = await PruneGoneAsync(http, folder, manifest, reachedThisRun, robotsByOrigin, total.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -377,9 +409,6 @@ public sealed class WebKnowledgeCrawler
             else report.StoppedBecause = "timeout";
         }
 
-        // A page that was not reached is only forgotten when the walk really finished; a limit or stop proves nothing.
-        if (report.StoppedBecause == "done" && _options.MaxDepth > 0)
-            report.Removed = PruneMissing(folder, manifest, reachedThisRun, report);
         manifest.LastSyncUtc = DateTime.UtcNow;
         return report;
     }
@@ -419,15 +448,15 @@ public sealed class WebKnowledgeCrawler
                 rules = RobotsRules.Parse(text ?? string.Empty, "paruxknowledgebot");
             }
             else if (status is >= 400 and < 500) rules = RobotsRules.AllowEverything;   // no robots file: nothing is restricted
-            else rules = RobotsRules.BlockEverything;                                      // server error: assume disallowed
+            else rules = RobotsRules.CouldNotRead();                                       // server error or redirect: assume disallowed
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { rules = RobotsRules.BlockEverything; }
-        catch (HttpRequestException) { rules = RobotsRules.BlockEverything; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { rules = RobotsRules.CouldNotRead(); }
+        catch (HttpRequestException) { rules = RobotsRules.CouldNotRead(); }
         cache[origin] = rules;
         return rules;
     }
 
-    private async Task<PageFetch> FetchPageAsync(HttpClient http, Uri url, WebPageRecord? previous, CancellationToken ct)
+    private async Task<PageFetch> FetchPageAsync(HttpClient http, Uri url, WebPageRecord? previous, RobotsRules robots, string? scopePrefix, CancellationToken ct)
     {
         Uri current = url;
         for (int hop = 0; hop <= _options.MaxRedirects; hop++)
@@ -452,6 +481,9 @@ public sealed class WebKnowledgeCrawler
                     if (target == null) return Fail("redirect_without_target");
                     if (!string.Equals(target.Authority, url.Authority, StringComparison.OrdinalIgnoreCase)) return Fail("redirected_to_another_site", skip: true);
                     if (target.Scheme == Uri.UriSchemeHttp && current.Scheme == Uri.UriSchemeHttps) return Fail("redirected_to_plain_http", skip: true);
+                    // The target is a new page: robots.txt and the crawl scope apply to it exactly as to a link.
+                    if (!robots.IsAllowed(target.PathAndQuery)) return Fail("redirect_blocked_by_robots", skip: true);
+                    if (scopePrefix != null && !target.AbsolutePath.StartsWith(scopePrefix, StringComparison.Ordinal)) return Fail("redirected_outside_scope", skip: true);
                     current = target;
                     continue;
                 }
@@ -503,8 +535,9 @@ public sealed class WebKnowledgeCrawler
     {
         string contentHash = Sha(extracted.Text);
         manifest.Pages.TryGetValue(key, out WebPageRecord? record);
-        string fileName = record?.FileName is { Length: > 0 } existing ? existing : FileNameFor(key);
-        string path = Path.Combine(folder, fileName);
+        string fileName = record != null && SafePath(folder, record.FileName) != null ? record.FileName : FileNameFor(key);
+        if (record != null && fileName != record.FileName) record = null;   // a manifest entry that is not a plain file name is ignored
+        string path = SafePath(folder, fileName)!;
 
         if (record != null && record.ContentSha256 == contentHash && File.Exists(path))
         {
@@ -541,21 +574,39 @@ public sealed class WebKnowledgeCrawler
         return new WebPageResult(key, "written", null, fileName);
     }
 
-    private static int PruneMissing(string folder, WebSourceManifest manifest, HashSet<string> reached, WebCrawlReport report)
+    private async Task<int> PruneGoneAsync(HttpClient http, string folder, WebSourceManifest manifest, HashSet<string> reached,
+        Dictionary<string, RobotsRules> robotsByOrigin, CancellationToken ct)
     {
         int removed = 0;
         foreach (string key in manifest.Pages.Keys.Where(k => !reached.Contains(k)).ToList())
         {
             WebPageRecord record = manifest.Pages[key];
-            string path = Path.Combine(folder, record.FileName);
+            if (!Uri.TryCreate(key, UriKind.Absolute, out Uri? uri)) continue;
+            RobotsRules robots = await RobotsFor(http, uri, robotsByOrigin, ct).ConfigureAwait(false);
+            if (robots.Unavailable || !robots.IsAllowed(uri.PathAndQuery)) continue;
+            PageFetch check = await FetchPageAsync(http, uri, null, robots, null, ct).ConfigureAwait(false);
+            if (check.Failure is not ("http_404" or "http_410")) continue;   // still there, or unknown: keep it
+
+            string? path = SafePath(folder, record.FileName);
             try
             {
-                if (File.Exists(path) && Sha(File.ReadAllBytes(path)) == record.WrittenSha256) { File.Delete(path); removed++; }
+                if (path != null && File.Exists(path) && Sha(File.ReadAllBytes(path)) == record.WrittenSha256) { File.Delete(path); removed++; }
                 manifest.Pages.Remove(key);
             }
             catch (IOException) { }
         }
         return removed;
+    }
+
+    /// <summary>The file inside <paramref name="folder"/> for a manifest entry, or null when the entry is not a plain file name
+    /// there (a hand-edited manifest must not point deletes or writes elsewhere).</summary>
+    internal static string? SafePath(string folder, string? fileName)
+    {
+        if (string.IsNullOrEmpty(fileName) || !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal)) return null;
+        if (fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || fileName is "." or "..") return null;
+        string root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        string full = Path.GetFullPath(Path.Combine(folder, fileName));
+        return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? full : null;
     }
 
     internal static string FileNameFor(string url)

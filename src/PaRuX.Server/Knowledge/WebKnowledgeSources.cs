@@ -53,8 +53,14 @@ public sealed class WebKnowledgeSources
         _startIndex = startIndex;
         _offlineBlocked = offlineBlocked ?? (() => OfflinePolicy.IsBlocked());
         _gamingActive = gamingActive ?? GamingHardOffWatch.MarkerActive;
-        _crawlerFactory = crawlerFactory ?? (options => new WebKnowledgeCrawler(options, gamingActive: _gamingActive));
+        _crawlerFactory = crawlerFactory ?? (options => new WebKnowledgeCrawler(options, gamingActive: _gamingActive, offlineBlocked: _offlineBlocked));
     }
+
+    /// <summary>Set at startup so context assembly can tell saved web pages from the person's own documents.</summary>
+    public static WebKnowledgeSources? Shared { get; set; }
+
+    public static bool IsWebFile(string? filePath) =>
+        !string.IsNullOrEmpty(filePath) && Shared?.TryGetUrl(filePath) != null;
 
     public static string DefaultContentRoot() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PaRuX", "Web knowledge");
@@ -99,8 +105,11 @@ public sealed class WebKnowledgeSources
         EnsureAllowed();
         WebSourceManifest? manifest = Load(id);
         if (manifest == null) return null;
-        if (_jobs.TryGetValue(id, out Job? running) && !running.Task.IsCompleted) return Describe(manifest);
-        Launch(manifest);
+        lock (_gate)
+        {
+            if (_jobs.TryGetValue(id, out Job? running) && !running.Task.IsCompleted) return Describe(manifest);
+            Launch(manifest);
+        }
         return Describe(manifest);
     }
 
@@ -124,10 +133,10 @@ public sealed class WebKnowledgeSources
         _unregister(id);
         foreach (WebPageRecord record in manifest.Pages.Values)
         {
-            string path = Path.Combine(manifest.Folder, record.FileName);
+            string? path = WebKnowledgeCrawler.SafePath(manifest.Folder, record.FileName);
             try
             {
-                if (File.Exists(path) && Sha(File.ReadAllBytes(path)) == record.WrittenSha256) File.Delete(path);
+                if (path != null && File.Exists(path) && Sha(File.ReadAllBytes(path)) == record.WrittenSha256) File.Delete(path);
             }
             catch (IOException) { }
         }
@@ -147,7 +156,8 @@ public sealed class WebKnowledgeSources
                 string root = Path.GetFullPath(manifest.Folder);
                 if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
                 string name = Path.GetFileName(full);
-                WebPageRecord? page = manifest.Pages.Values.FirstOrDefault(p => string.Equals(p.FileName, name, StringComparison.OrdinalIgnoreCase));
+                WebPageRecord? page = manifest.Pages.Values.FirstOrDefault(p => string.Equals(p.FileName, name, StringComparison.OrdinalIgnoreCase)
+                    && WebKnowledgeCrawler.SafePath(manifest.Folder, p.FileName) != null);
                 if (page != null) return page.Url;
             }
         }
@@ -173,17 +183,26 @@ public sealed class WebKnowledgeSources
         {
             try
             {
-                WebKnowledgeCrawler crawler = _crawlerFactory(WebCrawlOptions.Crawl(manifest.MaxPages, manifest.MaxDepth));
-                if (manifest.Mode == "page") crawler = _crawlerFactory(WebCrawlOptions.SinglePage);
+                WebKnowledgeCrawler crawler = _crawlerFactory(manifest.Mode == "page" ? WebCrawlOptions.SinglePage : WebCrawlOptions.Crawl(manifest.MaxPages, manifest.MaxDepth));
                 job.Report = await crawler.CrawlAsync(new Uri(manifest.Url), manifest.Folder, manifest, job.Cts.Token).ConfigureAwait(false);
+                // Whatever was written is recorded even if indexing never happens, so later removal knows every file.
                 lock (_gate) Save(manifest);
-                if (job.Report.StoppedBecause == "gaming") { job.State = "stopped"; job.Error = "gaming_active"; return; }
+                if (job.Cts.IsCancellationRequested || job.Report.StoppedBecause is "cancelled" or "gaming" or "offline")
+                {
+                    job.State = "stopped";
+                    job.Error = job.Report.StoppedBecause == "gaming" ? "gaming_active" : job.Report.StoppedBecause == "offline" ? "offline_blocked" : null;
+                    return;
+                }
                 job.State = "indexing";
                 _startIndex(manifest.Id);
                 job.State = "ready";
             }
             catch (OperationCanceledException) { job.State = "stopped"; }
             catch (Exception ex) { job.State = "failed"; job.Error = ex.GetType().Name; }
+            finally
+            {
+                try { lock (_gate) Save(manifest); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
         });
     }
 
@@ -213,7 +232,8 @@ public sealed class WebKnowledgeSources
         try
         {
             string path = ManifestPath(id);
-            return File.Exists(path) ? JsonSerializer.Deserialize<WebSourceManifest>(File.ReadAllText(path), Json) : null;
+            WebSourceManifest? m = File.Exists(path) ? JsonSerializer.Deserialize<WebSourceManifest>(File.ReadAllText(path), Json) : null;
+            return m != null && UnderContentRoot(m.Folder) ? m : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException) { return null; }
     }
@@ -226,8 +246,20 @@ public sealed class WebKnowledgeSources
             WebSourceManifest? m = null;
             try { m = JsonSerializer.Deserialize<WebSourceManifest>(File.ReadAllText(file), Json); }
             catch (Exception ex) when (ex is IOException or JsonException) { }
-            if (m != null && !string.IsNullOrEmpty(m.Id)) yield return m;
+            if (m != null && !string.IsNullOrEmpty(m.Id) && UnderContentRoot(m.Folder)) yield return m;
         }
+    }
+
+    /// <summary>A manifest is a file on disk; its folder must be one PaRuX made under the web-pages root, or it is ignored.</summary>
+    private bool UnderContentRoot(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) return false;
+        try
+        {
+            string root = Path.GetFullPath(_contentRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return Path.GetFullPath(folder).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return false; }
     }
 
     private static void TryDeleteEmpty(string folder)

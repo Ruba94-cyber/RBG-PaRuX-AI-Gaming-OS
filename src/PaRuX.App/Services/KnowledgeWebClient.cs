@@ -48,8 +48,8 @@ namespace PaRuX.Services
         public async Task<HashSet<string>> WatchedAsync(CancellationToken ct) =>
             (await SendAsync<List<string>>(HttpMethod.Get, "/api/v1/knowledge/watched", null, ct).ConfigureAwait(false) ?? new List<string>()).ToHashSet(StringComparer.Ordinal);
 
-        public Task SetWatchedAsync(string id, bool enabled, CancellationToken ct) =>
-            SendAsync<object>(HttpMethod.Post, "/api/v1/knowledge/sources/" + Uri.EscapeDataString(id) + "/watch", new { enabled }, ct);
+        public Task SetWatchedAsync(string id, bool enabled, CancellationToken ct, bool consentBroad = false) =>
+            SendAsync<object>(HttpMethod.Post, "/api/v1/knowledge/sources/" + Uri.EscapeDataString(id) + "/watch", new { enabled, consentBroad }, ct);
 
         public Task<RetrievalView?> GetRetrievalAsync(CancellationToken ct) =>
             SendAsync<RetrievalView>(HttpMethod.Get, "/api/v1/knowledge/retrieval", null, ct);

@@ -12,6 +12,8 @@ public sealed class WebSourceRequest
 public sealed class WatchFolderRequest
 {
     public bool Enabled { get; set; }
+    /// <summary>True only after the person confirmed a broad or risky folder (whole drive, profile, application data).</summary>
+    public bool ConsentBroad { get; set; }
 }
 
 /// <summary>Desktop-owner routes for websites and watched folders as Local Knowledge sources.</summary>
@@ -60,9 +62,14 @@ public static class KnowledgeWebWatchEndpoints
                 watched.Set(id, false);
                 return Results.Ok(new { watching = false });
             }
-            if (!watcher.Watch(id, source.FolderPath))
+            if (!watcher.Watch(id, source.FolderPath, request.ConsentBroad))
+            {
+                if (watcher.LastRefusal == SensitiveVerdict.NeedsConsent)
+                    return Results.Json(new { error = "This folder is broad or holds application data. Confirm to keep it up to date.", code = "consent_required" },
+                        statusCode: StatusCodes.Status409Conflict);
                 return Results.Json(new { error = "This folder cannot be watched (missing, private application data or credentials).", code = "watch_refused" },
                     statusCode: StatusCodes.Status403Forbidden);
+            }
             watched.Set(id, true);
             return Results.Ok(new { watching = true });
         }).RequireDesktopOwner();
@@ -74,6 +81,6 @@ public static class KnowledgeWebWatchEndpoints
         IReadOnlySet<string> ids = watched.Get();
         if (ids.Count == 0) return;
         foreach (PaRuX.Contracts.RagSourceDto source in rag.ListSources())
-            if (ids.Contains(source.Id)) watcher.Watch(source.Id, source.FolderPath);
+            if (ids.Contains(source.Id)) watcher.Watch(source.Id, source.FolderPath, consentBroad: true);   // consent was given when it was turned on
     }
 }

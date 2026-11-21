@@ -465,6 +465,8 @@ public sealed class WebKnowledgeTests : IDisposable
         File.AppendAllText(bFile, "\nedited\n");
 
         site.Html("/g/index.html", Page("Index", "Index text long enough to be kept here."));   // both links gone
+        site.Routes.TryRemove("/g/a.html", out _);                                              // and the site now answers 404
+        site.Routes.TryRemove("/g/b.html", out _);
         WebCrawlReport report = await crawler.CrawlAsync(start, folder, manifest, default);
 
         Assert.Equal(1, report.Removed);
@@ -499,6 +501,228 @@ public sealed class WebKnowledgeTests : IDisposable
         Assert.EndsWith(".md", a);
         Assert.DoesNotContain(a, c => Path.GetInvalidFileNameChars().Contains(c));
         Assert.True(WebKnowledgeCrawler.FileNameFor("https://example.com/" + new string('z', 500)).Length < 120);
+    }
+
+
+    // ------------------------------------------------------------------ review fixes
+
+    [Fact]
+    public async Task A_robots_outage_on_resync_keeps_every_saved_page()
+    {
+        TestSite site = Site();
+        bool robotsDown = false;
+        site.Routes["/robots.txt"] = _ => robotsDown ? new Reply(503, "text/plain", "down") : new Reply(404, "text/plain", "");
+        site.Html("/k/index.html", Page("Index", "Index text long enough to be kept here.", "/k/a.html"));
+        site.Html("/k/a.html", Page("A", "Alpha text that is long enough to be kept here."));
+        (string folder, WebSourceManifest manifest) = NewFolder();
+        var crawler = Crawler(WebCrawlOptions.Crawl(10, 1));
+        Uri start = new(site.Origin + "/k/index.html");
+        await crawler.CrawlAsync(start, folder, manifest, default);
+        string[] files = Directory.GetFiles(folder);
+        Assert.Equal(2, files.Length);
+
+        robotsDown = true;
+        WebCrawlReport report = await crawler.CrawlAsync(start, folder, manifest, default);
+
+        Assert.Equal(0, report.Removed);
+        Assert.Equal(files.OrderBy(f => f), Directory.GetFiles(folder).OrderBy(f => f));
+        Assert.Equal(2, manifest.Pages.Count);
+    }
+
+    [Fact]
+    public async Task A_robots_redirect_or_timeout_also_counts_as_unreadable_and_prunes_nothing()
+    {
+        TestSite site = Site();
+        string mode = "ok";
+        site.Routes["/robots.txt"] = _ => mode == "redirect"
+            ? new Reply(302, "text/plain", "", new() { ["Location"] = "/elsewhere.txt" })
+            : new Reply(404, "text/plain", "");
+        site.Html("/q/index.html", Page("Index", "Index text long enough to be kept here.", "/q/a.html"));
+        site.Html("/q/a.html", Page("A", "Alpha text that is long enough to be kept here."));
+        (string folder, WebSourceManifest manifest) = NewFolder();
+        var crawler = Crawler(WebCrawlOptions.Crawl(10, 1));
+        Uri start = new(site.Origin + "/q/index.html");
+        await crawler.CrawlAsync(start, folder, manifest, default);
+        mode = "redirect";
+
+        WebCrawlReport report = await crawler.CrawlAsync(start, folder, manifest, default);
+
+        Assert.Equal(0, report.Removed);
+        Assert.Equal(2, Directory.GetFiles(folder).Length);
+    }
+
+    [Fact]
+    public async Task A_page_that_is_merely_no_longer_linked_but_still_exists_is_kept()
+    {
+        TestSite site = Site();
+        site.Html("/u/index.html", Page("Index", "Index text long enough to be kept here.", "/u/a.html"));
+        site.Html("/u/a.html", Page("A", "Alpha text that is long enough to be kept here."));
+        (string folder, WebSourceManifest manifest) = NewFolder();
+        var crawler = Crawler(WebCrawlOptions.Crawl(10, 1));
+        Uri start = new(site.Origin + "/u/index.html");
+        await crawler.CrawlAsync(start, folder, manifest, default);
+
+        site.Html("/u/index.html", Page("Index", "Index text long enough to be kept here."));   // link removed, page still served
+        WebCrawlReport report = await crawler.CrawlAsync(start, folder, manifest, default);
+
+        Assert.Equal(0, report.Removed);
+        Assert.Equal(2, Directory.GetFiles(folder).Length);
+    }
+
+    [Theory]
+    [InlineData("bot")]
+    [InlineData("p")]
+    [InlineData("paruxknowledgebotx")]
+    [InlineData("parux")]
+    public void A_robots_group_for_a_different_or_partial_crawler_name_does_not_apply(string agent)
+    {
+        RobotsRules rules = RobotsRules.Parse("User-agent: " + agent + "\nDisallow: /\n\nUser-agent: *\nDisallow:\n", "paruxknowledgebot");
+        Assert.True(rules.IsAllowed("/anything"));
+    }
+
+    [Theory]
+    [InlineData("PaRuXKnowledgeBot")]
+    [InlineData("paruxknowledgebot/1.0")]
+    public void A_robots_group_naming_this_crawler_applies(string agent)
+    {
+        RobotsRules rules = RobotsRules.Parse("User-agent: " + agent + "\nDisallow: /\n\nUser-agent: *\nDisallow:\n", "paruxknowledgebot");
+        Assert.False(rules.IsAllowed("/anything"));
+    }
+
+    [Fact]
+    public async Task A_same_host_redirect_into_a_robots_disallowed_path_or_out_of_scope_is_not_followed()
+    {
+        TestSite site = Site();
+        site.Routes["/robots.txt"] = _ => new Reply(200, "text/plain", "User-agent: *\nDisallow: /docs/private/\n");
+        site.Html("/docs/index.html", Page("Index", "Index text long enough to be kept here.", "/docs/jump.html", "/docs/away.html"));
+        site.Routes["/docs/jump.html"] = _ => new Reply(302, "text/plain", "", new() { ["Location"] = "/docs/private/secret.html" });
+        site.Routes["/docs/away.html"] = _ => new Reply(302, "text/plain", "", new() { ["Location"] = "/admin/panel.html" });
+        site.Html("/docs/private/secret.html", Page("Secret", "Secret text that must never be fetched at all."));
+        site.Html("/admin/panel.html", Page("Admin", "Admin text outside the crawl scope entirely, long."));
+        (string folder, WebSourceManifest manifest) = NewFolder();
+
+        WebCrawlReport report = await Crawler(WebCrawlOptions.Crawl(10, 1)).CrawlAsync(new Uri(site.Origin + "/docs/index.html"), folder, manifest, default);
+
+        Assert.Equal(0, site.Hits.GetValueOrDefault("/docs/private/secret.html"));
+        Assert.Equal(0, site.Hits.GetValueOrDefault("/admin/panel.html"));
+        Assert.Contains(report.Pages, p => p.Reason == "redirect_blocked_by_robots");
+        Assert.Contains(report.Pages, p => p.Reason == "redirected_outside_scope");
+    }
+
+    [Fact]
+    public async Task Turning_strict_offline_on_mid_crawl_stops_before_the_next_request()
+    {
+        TestSite site = Site();
+        bool offline = false;
+        site.Html("/o/index.html", Page("Index", "Index text long enough to be kept here.", "/o/a.html", "/o/b.html"));
+        site.Routes["/o/a.html"] = _ => { offline = true; return new Reply(200, "text/html", Page("A", "Alpha text that is long enough to be kept here.")); };
+        site.Html("/o/b.html", Page("B", "Beta text that is long enough to be kept here."));
+        (string folder, WebSourceManifest manifest) = NewFolder();
+        var crawler = new WebKnowledgeCrawler(WebCrawlOptions.Crawl(10, 1) with { PoliteDelay = TimeSpan.Zero }, Loopback, null, () => false,
+            (_, _) => Task.CompletedTask, () => offline);
+
+        WebCrawlReport report = await crawler.CrawlAsync(new Uri(site.Origin + "/o/index.html"), folder, manifest, default);
+
+        Assert.Equal("offline", report.StoppedBecause);
+        Assert.Equal(0, site.Hits.GetValueOrDefault("/o/b.html"));
+    }
+
+    [Theory]
+    [InlineData("..\\evil.txt")]
+    [InlineData("sub\\x.md")]
+    [InlineData("C:\\Windows\\win.ini")]
+    [InlineData("..")]
+    [InlineData("")]
+    public void Manifest_file_names_must_be_plain_names_inside_the_folder(string fileName)
+    {
+        Assert.Null(WebKnowledgeCrawler.SafePath(Path.Combine(_root, "folder"), fileName));
+    }
+
+    [Fact]
+    public void A_plain_file_name_resolves_inside_the_folder()
+    {
+        string folder = Path.Combine(_root, "folder");
+        Assert.Equal(Path.Combine(folder, "page-1.md"), WebKnowledgeCrawler.SafePath(folder, "page-1.md"));
+    }
+
+    [Fact]
+    public async Task A_tampered_manifest_cannot_make_removal_delete_files_elsewhere()
+    {
+        TestSite site = Site();
+        site.Html("/t/a.html", Page("A", "Alpha text that is long enough to be kept here."));
+        var (service, folders, _, _) = Service();
+        WebSourceInfo info = service.Begin(site.Origin + "/t/a.html", "page", null, null);
+        await service.WaitAsync(info.Id);
+
+        string victim = Path.Combine(_root, "victim.txt");
+        File.WriteAllText(victim, "precious");
+        string manifestPath = Path.Combine(_root, "manifests", info.Id + ".json");
+        string text = File.ReadAllText(manifestPath);
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<WebSourceManifest>(text)!;
+        WebPageRecord record = manifest.Pages.Values.Single();
+        record.FileName = "..\\..\\victim.txt";
+        record.WrittenSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("precious"))).ToLowerInvariant();
+        File.WriteAllText(manifestPath, System.Text.Json.JsonSerializer.Serialize(manifest));
+
+        service.Remove(info.Id);
+
+        Assert.True(File.Exists(victim));
+        _ = folders;
+    }
+
+    [Fact]
+    public async Task A_manifest_pointing_outside_the_web_pages_root_is_ignored()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "manifests"));
+        string outside = Path.Combine(_root, "not-web-root");
+        Directory.CreateDirectory(outside);
+        var manifest = new WebSourceManifest { Id = "evil", Url = "https://example.com/", Folder = outside };
+        File.WriteAllText(Path.Combine(_root, "manifests", "evil.json"), System.Text.Json.JsonSerializer.Serialize(manifest));
+        var (service, _, _, unregistered) = Service();
+
+        Assert.Null(service.Get("evil"));
+        Assert.False(service.Remove("evil"));
+        Assert.Empty(unregistered());
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task A_stopped_crawl_does_not_start_indexing()
+    {
+        TestSite site = Site();
+        site.Html("/a.html", Page("A", "Some text that is long enough to be kept here."));
+        var (service, _, indexed, _) = Service(gaming: () => false);
+        bool gaming = false;
+        var folders = new List<string>();
+        var gated = new WebKnowledgeSources(
+            Path.Combine(_root, "m3"), Path.Combine(_root, "c3"),
+            f => { folders.Add(f); return "g1"; }, _ => { }, id => { indexed().Add(id); return true; }, () => false, () => gaming,
+            options => new WebKnowledgeCrawler(options with { PoliteDelay = TimeSpan.Zero }, Loopback, null, () => true, (_, _) => Task.CompletedTask));
+
+        WebSourceInfo info = gated.Begin(site.Origin + "/a.html", "page", null, null);
+        await gated.WaitAsync(info.Id);
+
+        Assert.Equal("stopped", gated.Get(info.Id)!.State);
+        Assert.Equal("gaming_active", gated.Get(info.Id)!.Error);
+        Assert.Empty(indexed());
+        _ = service;
+    }
+
+    [Fact]
+    public async Task Two_quick_resyncs_start_one_crawl()
+    {
+        TestSite site = Site();
+        site.Routes["/s2/a.html"] = _ => new Reply(200, "text/html", Page("A", "Alpha text that is long enough to be kept here."), null, DelayMs: 700);
+        var (service, _, _, _) = Service();
+        WebSourceInfo info = service.Begin(site.Origin + "/s2/a.html", "page", null, null);
+        await service.WaitAsync(info.Id);
+        int before = site.Hits.GetValueOrDefault("/s2/a.html");
+
+        Task[] attempts = Enumerable.Range(0, 6).Select(_ => Task.Run(() => service.Resync(info.Id))).ToArray();
+        await Task.WhenAll(attempts);
+        await service.WaitAsync(info.Id);
+
+        Assert.Equal(before + 1, site.Hits.GetValueOrDefault("/s2/a.html"));
     }
 
     // ------------------------------------------------------------------ the source service (policy, index, citation, removal)

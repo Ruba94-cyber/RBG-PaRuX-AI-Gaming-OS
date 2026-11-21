@@ -296,6 +296,25 @@ internal sealed class KnowledgeWebPanel : StackPanel
         catch (Exception ex) { _webStatus.Text = T("Couldn't remove it: ", "Impossibile rimuoverlo: ") + ex.Message; }
     }
 
+    private async Task<bool> ConfirmBroadAsync(FrameworkElement anchor)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = anchor.XamlRoot,
+            Title = T("Keep this folder up to date?", "Mantenere aggiornata questa cartella?"),
+            Content = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Text = T("This folder is broad or holds application data. PaRuX will re-index it whenever its files change. Continue only if that is what you want.",
+                    "Questa cartella è ampia o contiene dati di applicazioni. PaRuX la reindicizzerà ogni volta che i suoi file cambiano. Continua solo se è ciò che vuoi.")
+            },
+            PrimaryButtonText = T("Keep it up to date", "Mantieni aggiornata"),
+            CloseButtonText = T("Cancel", "Annulla"),
+            DefaultButton = ContentDialogButton.Close
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
     private async Task RefreshWatchAsync()
     {
         try
@@ -326,6 +345,21 @@ internal sealed class KnowledgeWebPanel : StackPanel
                     {
                         await KnowledgeWebClient.Current.SetWatchedAsync(id, toggle.IsOn, CancellationToken.None);
                         _watchStatus.Text = string.Empty;
+                    }
+                    catch (KnowledgeWebException ex) when (ex.Code == "consent_required" && toggle.IsOn)
+                    {
+                        // A whole drive, profile or application-data folder: only after an explicit yes.
+                        bool yes = await ConfirmBroadAsync(toggle);
+                        try
+                        {
+                            if (!yes) throw new KnowledgeWebException(string.Empty, "declined");
+                            await KnowledgeWebClient.Current.SetWatchedAsync(id, true, CancellationToken.None, consentBroad: true);
+                            _watchStatus.Text = string.Empty;
+                        }
+                        catch (Exception)
+                        {
+                            reverting = true; toggle.IsOn = false; reverting = false;
+                        }
                     }
                     catch (KnowledgeWebException ex)
                     {

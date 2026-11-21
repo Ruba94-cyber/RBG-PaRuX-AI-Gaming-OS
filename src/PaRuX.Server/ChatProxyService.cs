@@ -1429,7 +1429,7 @@ public sealed class ChatProxyService
     // graph hints. The chat footer promises actual retrievable sources, so expose only documents
     // and web pages there. Keep the full pack for diagnostics and API users.
     internal static List<string> DisplaySources(ContextPackDto pack) => pack.Items
-        .Where(item => item.Kind is "rag" or "web" or "repository_file")
+        .Where(item => item.Kind is "rag" or "rag_web" or "web" or "repository_file")
         .Select(item => item.Kind == "web" ? item.Source : item.Title)
         .Where(label => !string.IsNullOrWhiteSpace(label))
         .Distinct(StringComparer.OrdinalIgnoreCase)
