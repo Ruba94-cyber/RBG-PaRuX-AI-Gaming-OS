@@ -105,6 +105,25 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Accent color" loc:Loc.ItText="Colore di accento" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                                <TextBlock x:Name="AccentStatusText" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                <ComboBox x:Name="AccentCombo" AutomationProperties.AutomationId="Settings_Accent_ComboBox" AutomationProperties.Name="Accent color" loc:Loc.ItName="Colore di accento" MinWidth="200"
+                                          CornerRadius="{StaticResource PaRuXRadiusSmall}" SelectionChanged="AccentCombo_SelectionChanged" />
+                                <TextBox x:Name="AccentCustomBox" AutomationProperties.AutomationId="Settings_Accent_CustomHex" AutomationProperties.Name="Custom accent color" loc:Loc.ItName="Colore di accento personalizzato"
+                                         PlaceholderText="#2563EB" MaxLength="7" Visibility="Collapsed" TextChanged="AccentCustomBox_TextChanged" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Style="{StaticResource PaRuXDividerStyle}" Margin="0,12,0,12" />
+
+                        <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock Text="Language" loc:Loc.ItText="Lingua" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                                 <TextBlock x:Name="LanguageHint"
                                     Text="English is the default. Italian is available as an alternative." loc:Loc.ItText="L&#x27;inglese è la lingua predefinita. L&#x27;italiano è disponibile in alternativa."
