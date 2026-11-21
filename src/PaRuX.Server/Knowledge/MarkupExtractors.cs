@@ -291,6 +291,7 @@ internal sealed class RtfExtractor : StreamExtractor
     public override void Read(Stream stream, string fileName, ExtractionSink sink)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         Encoding ansi = Encoding.GetEncoding(1252);
         stream.Position = 0;
         var head = new byte[5];
