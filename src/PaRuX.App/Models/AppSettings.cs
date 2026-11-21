@@ -152,6 +152,9 @@ namespace PaRuX.Models
         public bool NotifyOnGeneration { get; set; } = true;
         public bool NotifyOnDownloads { get; set; } = true;
         public bool NotifyOnInstalls { get; set; } = true;
+
+        /// <summary>Announce newly unlocked Steam / RetroAchievements achievements while a PaRuX-launched game runs (needs saved credentials and the Internet switch; on by default, owner can turn it off).</summary>
+        public bool AchievementToastsEnabled { get; set; } = true;
     }
 
     public sealed class EmulatorSetupSettings

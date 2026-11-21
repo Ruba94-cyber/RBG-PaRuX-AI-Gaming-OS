@@ -57,6 +57,15 @@ namespace PaRuX.Services
         public Task<SteamAchievementsResult> SteamAchievementsAsync(int appId, CancellationToken ct) =>
             Get<SteamAchievementsResult>("/api/v2/steam/achievements/" + appId, ct);
 
+        public Task<RetroAchievementsCredentialsStatus> RetroAchievementsStatusAsync(CancellationToken ct) =>
+            Get<RetroAchievementsCredentialsStatus>("/api/v2/retroachievements/credentials", ct);
+        public Task<RetroAchievementsCredentialsStatus> SaveRetroAchievementsAsync(RetroAchievementsCredentialsRequest request, CancellationToken ct) =>
+            Send<RetroAchievementsCredentialsStatus>(HttpMethod.Put, "/api/v2/retroachievements/credentials", request, ct);
+        public Task DeleteRetroAchievementsAsync(CancellationToken ct) => SendNoContent(HttpMethod.Delete, "/api/v2/retroachievements/credentials", ct);
+        public Task<RetroAchievementsResult> RetroAchievementsAsync(int gameId, string title, string platform, CancellationToken ct) =>
+            Get<RetroAchievementsResult>("/api/v2/retroachievements/achievements?gameId=" + gameId
+                + "&title=" + Uri.EscapeDataString(title ?? string.Empty) + "&platform=" + Uri.EscapeDataString(platform ?? string.Empty), ct);
+
         public Task<List<GameSmartCollection>> ListSmartCollectionsAsync(CancellationToken ct) =>
             Get<List<GameSmartCollection>>("/api/v1/gaming/smart-collections", ct);
         public Task<GameSmartCollection> SaveSmartCollectionAsync(GameSmartCollection collection, CancellationToken ct) =>

@@ -153,6 +153,7 @@ namespace PaRuX
             // while the game owns CPU/GPU/VRAM, even if Core is unreachable.
             GamingManager.Current.StateChanged += OnGamingModeChangedForIndicatorTimer;
             if (!GamingManager.Current.IsActive) _activeIndicatorTimer.Start();
+            InitializeAchievementToasts();
 
             OnboardingPage.Completed += OnOnboardingCompleted;
             OnboardingPage.FindModelRequested += OnFirstModelRequested;

@@ -302,9 +302,13 @@ namespace PaRuX.Services
             SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
                 "/api/v1/gaming/library/discover/epic/" + Uri.EscapeDataString(appId) + "/launch", null, ct);
 
-        public Task<GamingCallResult<ManualGameLaunchResult>> RequestSteamGameLaunchAsync(string appId, CancellationToken ct = default) =>
-            SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
-                "/api/v1/gaming/library/discover/steam/" + Uri.EscapeDataString(appId) + "/launch", null, ct);
+        public async Task<GamingCallResult<ManualGameLaunchResult>> RequestSteamGameLaunchAsync(string appId, CancellationToken ct = default)
+        {
+            GamingCallResult<ManualGameLaunchResult> result = await SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
+                "/api/v1/gaming/library/discover/steam/" + Uri.EscapeDataString(appId) + "/launch", null, ct).ConfigureAwait(false);
+            if (result.Succeeded && result.Value is { Launched: true }) AchievementToastService.Current.NoteSteamLaunch(appId, string.Empty);
+            return result;
+        }
 
         public Task<GamingCallResult<ManualGameLaunchResult>> RequestExtraStoreGameLaunchAsync(string providerId, string gameId, CancellationToken ct = default) =>
             SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
@@ -323,12 +327,16 @@ namespace PaRuX.Services
         public Task<GamingCallResult<ManualGameDto>> AddManualGameAsync(AddManualGameRequest request, CancellationToken ct = default) =>
             SendAsync<ManualGameDto>(HttpMethod.Post, "/api/v1/gaming/library", request, ct);
 
-        public Task<GamingCallResult<ManualGameLaunchResult>> LaunchManualGameAsync(
-            string id, CancellationToken ct = default, string? displayId = null) =>
-            SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
+        public async Task<GamingCallResult<ManualGameLaunchResult>> LaunchManualGameAsync(
+            string id, CancellationToken ct = default, string? displayId = null)
+        {
+            GamingCallResult<ManualGameLaunchResult> result = await SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
                 "/api/v1/gaming/library/" + Uri.EscapeDataString(id) + "/launch" +
                 (string.IsNullOrWhiteSpace(displayId) ? "" : "?displayId=" + Uri.EscapeDataString(displayId)),
-                null, ct);
+                null, ct).ConfigureAwait(false);
+            if (result.Succeeded && result.Value is { Launched: true }) AchievementToastService.Current.NoteManualLaunch(id);
+            return result;
+        }
 
         public Task<GamingCallResult<object>> RemoveManualGameAsync(string id, CancellationToken ct = default) =>
             SendAsync<object>(HttpMethod.Delete, "/api/v1/gaming/library/" + Uri.EscapeDataString(id), null, ct);

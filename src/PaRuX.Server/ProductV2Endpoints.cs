@@ -115,7 +115,8 @@ public static class ProductV2Endpoints
         {
             string path = context.Request.Path.Value ?? string.Empty;
             if (PaRuX.Contracts.CorporateMode.IsActive
-                && (path.StartsWith("/api/v2/webhooks", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/v2/steam", StringComparison.OrdinalIgnoreCase)))
+                && (path.StartsWith("/api/v2/webhooks", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/v2/steam", StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith("/api/v2/retroachievements", StringComparison.OrdinalIgnoreCase)))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new { error = "This feature is disabled in PaRuX Corporate Lite." });
@@ -143,6 +144,27 @@ public static class ProductV2Endpoints
 
         app.MapGet("/api/v2/steam/achievements/{appId:int}", async (int appId, CancellationToken ct) =>
             Results.Ok(await WebhookRuntime.SteamAchievements.GetAsync(appId, ct))).RequireDesktopOwner();
+
+        app.MapGet("/api/v2/retroachievements/credentials", () => Results.Ok(WebhookRuntime.RetroAchievements.Status())).RequireDesktopOwner();
+
+        app.MapPut("/api/v2/retroachievements/credentials", (RetroAchievementsCredentialsRequest request) =>
+        {
+            string? error = WebhookRuntime.RetroAchievements.Save(request);
+            if (error is not null) return Results.BadRequest(new { error });
+            AuditLogService.TryRecord("retroachievements.credentials", "saved");   // never the key
+            return Results.Ok(WebhookRuntime.RetroAchievements.Status());
+        }).RequireDesktopOwner();
+
+        app.MapDelete("/api/v2/retroachievements/credentials", () =>
+        {
+            bool cleared = WebhookRuntime.RetroAchievements.Clear();
+            if (cleared) AuditLogService.TryRecord("retroachievements.credentials", "removed");
+            return cleared ? Results.NoContent() : Results.NotFound();
+        }).RequireDesktopOwner();
+
+        // Query: gameId (optional explicit RetroAchievements id), title and platform (used to match when no id is given).
+        app.MapGet("/api/v2/retroachievements/achievements", async (int? gameId, string? title, string? platform, CancellationToken ct) =>
+            Results.Ok(await WebhookRuntime.RetroAchievements.GetAsync(gameId ?? 0, title, platform, ct))).RequireDesktopOwner();
 
         app.MapGet("/api/v2/webhooks", () => Results.Ok(WebhookRuntime.Service.List())).RequireDesktopOwner();
 

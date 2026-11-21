@@ -72,6 +72,7 @@ namespace PaRuX.Views
             if (!corporate) SettingsContentPanel.Children.Add(webhooks);
 
             if (!corporate) SettingsContentPanel.Children.Add(BuildSteamSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildRetroAchievementsSection());
 
             _ = RefreshInstalledPluginsAsync();
             _ = RefreshAuditAsync();

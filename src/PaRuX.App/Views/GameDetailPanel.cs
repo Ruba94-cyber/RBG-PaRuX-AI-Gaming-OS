@@ -432,6 +432,8 @@ internal sealed class GameDetailPanel : UserControl
         // Steam achievements (read-only, through the owner's own key; only for titles with a Steam installation)
         UIElement? achievements = BuildAchievementsSection(title);
         if (achievements is not null) _body.Children.Add(achievements);
+        UIElement? retroAchievements = BuildRetroAchievementsSection(title);
+        if (retroAchievements is not null) _body.Children.Add(retroAchievements);
 
         // private notes
         _body.Children.Add(BuildNotesEditor(title));
@@ -669,6 +671,52 @@ internal sealed class GameDetailPanel : UserControl
             catch (Exception ex) { summary.Text = ex.Message; }
         };
         panel.Children.Add(new TextBlock { Text = T("ACHIEVEMENTS", "RISULTATI"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(button);
+        panel.Children.Add(summary);
+        panel.Children.Add(list);
+        return panel;
+    }
+
+    /// <summary>RetroAchievements progress for an emulated installation (user-initiated, read-only, optional explicit game id).</summary>
+    private UIElement? BuildRetroAchievementsSection(GameTitleDto title)
+    {
+        GameInstallationDto? emulated = title.Installations.FirstOrDefault(i =>
+            !string.IsNullOrWhiteSpace(i.EmulatorName) && !string.IsNullOrWhiteSpace(i.Platform));
+        if (emulated is null) return null;
+        var panel = new StackPanel { Spacing = 6 };
+        var idBox = new TextBox
+        {
+            Header = T("RetroAchievements game id (optional)", "ID gioco RetroAchievements (facoltativo)"),
+            PlaceholderText = T("Empty: match by title", "Vuoto: ricerca per titolo"), MaxLength = 9,
+        };
+        AutomationProperties.SetAutomationId(idBox, "GameDetail_RetroAchievements_Id_TextBox");
+        var button = new Button { Content = T("Show RetroAchievements", "Mostra RetroAchievements") };
+        AutomationProperties.SetAutomationId(button, "GameDetail_RetroAchievements_Button");
+        var summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
+        AutomationProperties.SetAutomationId(summary, "GameDetail_RetroAchievements_Summary");
+        var list = new StackPanel { Spacing = 2 };
+        button.Click += async (_, _) =>
+        {
+            summary.Text = T("Asking RetroAchievements…", "Chiedo a RetroAchievements…");
+            list.Children.Clear();
+            try
+            {
+                int.TryParse(idBox.Text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int gameId);
+                RetroAchievementsResult r = await OwnerRecordsClient.Current.RetroAchievementsAsync(gameId, title.Name, emulated.Platform, CancellationToken.None);
+                if (r.Problem.Length > 0) { summary.Text = r.Problem; return; }
+                summary.Text = r.GameName + " - " + r.Unlocked + " / " + r.Total + T(" unlocked", " sbloccati");
+                foreach (AchievementEntryDto a in r.Achievements.OrderByDescending(x => x.Achieved).ThenBy(x => x.Name).Take(12))
+                    list.Children.Add(new TextBlock
+                    {
+                        Text = (a.Achieved ? "✔ " : "○ ") + a.Name + (string.IsNullOrWhiteSpace(a.Description) ? "" : " — " + a.Description),
+                        TextWrapping = TextWrapping.Wrap, Opacity = a.Achieved ? 1 : 0.6,
+                    });
+                if (r.Total > 12) list.Children.Add(new TextBlock { Text = T("…and " + (r.Total - 12) + " more", "…e altri " + (r.Total - 12)), Opacity = 0.6 });
+            }
+            catch (Exception ex) { summary.Text = ex.Message; }
+        };
+        panel.Children.Add(new TextBlock { Text = T("RETROACHIEVEMENTS", "RETROACHIEVEMENTS"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(idBox);
         panel.Children.Add(button);
         panel.Children.Add(summary);
         panel.Children.Add(list);
