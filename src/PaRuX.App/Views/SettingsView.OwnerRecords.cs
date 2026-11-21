@@ -73,6 +73,7 @@ namespace PaRuX.Views
 
             if (!corporate) SettingsContentPanel.Children.Add(BuildSteamSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildRetroAchievementsSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildGameExtensionsSection());
 
             _ = RefreshInstalledPluginsAsync();
             _ = RefreshAuditAsync();

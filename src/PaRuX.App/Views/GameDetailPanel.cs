@@ -434,6 +434,7 @@ internal sealed class GameDetailPanel : UserControl
         if (achievements is not null) _body.Children.Add(achievements);
         UIElement? retroAchievements = BuildRetroAchievementsSection(title);
         if (retroAchievements is not null) _body.Children.Add(retroAchievements);
+        _body.Children.Add(BuildExtensionLookupSection(title));
 
         // private notes
         _body.Children.Add(BuildNotesEditor(title));
@@ -720,6 +721,47 @@ internal sealed class GameDetailPanel : UserControl
         panel.Children.Add(button);
         panel.Children.Add(summary);
         panel.Children.Add(list);
+        return panel;
+    }
+
+    /// <summary>Lookup links from enabled game extensions. PaRuX never requests them: pressing one opens the address in the owner's browser.</summary>
+    private UIElement BuildExtensionLookupSection(GameTitleDto title)
+    {
+        var panel = new StackPanel { Spacing = 4, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetAutomationId(panel, "GameDetail_ExtensionLookups_Panel");
+        string platform = title.Installations.Select(i => i.Platform).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p)) ?? string.Empty;
+        Loaded += async (_, _) =>
+        {
+            if (panel.Children.Count > 0) return;
+            try
+            {
+                GamingCallResult<List<GameExtensionInfo>> result = await GamingOrchestratorClient.Current.ListExtensionsAsync(CancellationToken.None);
+                if (!result.Succeeded || result.Value is null) return;
+                foreach (GameExtensionInfo ext in result.Value.Where(e => e.Valid && e.Enabled))
+                    foreach (GameExtensionMetadataSource source in ext.MetadataSources)
+                    {
+                        string? url = GameExtensionManifestValidator.BuildLookupUrl(source, title.Name, platform);
+                        if (url is null) continue;
+                        var link = new HyperlinkButton { Content = source.Name + " (" + new Uri(url).Host + ")", Padding = new Thickness(0) };
+                        AutomationProperties.SetAutomationId(link, "GameDetail_ExtensionLookup_" + source.Id);
+                        link.Click += async (_, _) =>
+                        {
+                            try { await Windows.System.Launcher.LaunchUriAsync(new Uri(url)); } catch (Exception) { /* no browser: nothing else to do */ }
+                        };
+                        panel.Children.Add(link);
+                    }
+                if (panel.Children.Count > 0)
+                {
+                    panel.Children.Insert(0, new TextBlock
+                    {
+                        Text = T("LOOK THIS GAME UP (opens your browser)", "CERCA QUESTO GIOCO (apre il browser)"),
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0),
+                    });
+                    panel.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception) { /* the panel simply stays hidden */ }
+        };
         return panel;
     }
 

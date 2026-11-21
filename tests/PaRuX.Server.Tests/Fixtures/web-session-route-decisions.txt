@@ -31,6 +31,7 @@ DENY DELETE /api/v1/gaming/controller-profile/game/{titleKey}
 DENY DELETE /api/v1/gaming/discover/hidden/{store}/{id}
 DENY DELETE /api/v1/gaming/downloads/torrent-client
 DENY DELETE /api/v1/gaming/downloads/{id}
+DENY DELETE /api/v1/gaming/extensions/{id}
 DENY DELETE /api/v1/gaming/installers/staged/{id}
 DENY DELETE /api/v1/gaming/library/imported/{provider}/{externalId}
 DENY DELETE /api/v1/gaming/library/{id}
@@ -150,6 +151,7 @@ DENY GET /api/v1/gaming/downloads
 DENY GET /api/v1/gaming/downloads/torrent-client
 DENY GET /api/v1/gaming/downloads/torrent-engine
 DENY GET /api/v1/gaming/emulators
+DENY GET /api/v1/gaming/extensions
 DENY GET /api/v1/gaming/hidhide
 DENY GET /api/v1/gaming/hidhide/isolation
 DENY GET /api/v1/gaming/hooks
@@ -687,6 +689,7 @@ DENY PUT /api/v1/gaming/controller-profile/game/{titleKey}
 DENY PUT /api/v1/gaming/discover/settings
 DENY PUT /api/v1/gaming/downloads/limit
 DENY PUT /api/v1/gaming/downloads/torrent-client
+DENY PUT /api/v1/gaming/extensions/{id}/enabled
 DENY PUT /api/v1/gaming/hooks/enabled
 DENY PUT /api/v1/gaming/library/{id}
 DENY PUT /api/v1/gaming/save-backups/sync

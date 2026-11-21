@@ -81,6 +81,8 @@ internal sealed class GameLaunchProfileSection : StackPanel
         AutomationProperties.SetAutomationId(expander, "GameLaunchProfile_Advanced_" + gameKey);
         Children.Add(expander);
 
+        BuildExtensionPresets();
+
         _save.Content = T("Save launch profile", "Salva il profilo di avvio");
         _reset.Content = T("Reset to defaults", "Ripristina predefiniti");
         foreach (var b in new[] { _save, _reset, _retry }) { b.MinHeight = _target; b.FontSize = _body; }
@@ -103,6 +105,55 @@ internal sealed class GameLaunchProfileSection : StackPanel
 
         SetEditable(false);
         Loaded += async (_, _) => { if (!_loaded_ok) await LoadAsync(); };
+    }
+
+    private readonly ComboBox _presets = new() { Visibility = Visibility.Collapsed };
+    private readonly Button _applyPreset = new() { Visibility = Visibility.Collapsed };
+
+    /// <summary>
+    /// Launch presets from enabled game extensions. Pressing Apply only fills this form; nothing is stored until the owner
+    /// presses Save, and the Core validates the values on save like anything typed by hand.
+    /// </summary>
+    private void BuildExtensionPresets()
+    {
+        _presets.Header = T("Extension preset", "Preset da estensione");
+        _presets.FontSize = _body; _presets.MinHeight = _target; _presets.MinWidth = 260;
+        _presets.HorizontalAlignment = HorizontalAlignment.Stretch;
+        AutomationProperties.SetAutomationId(_presets, "GameLaunchProfile_ExtensionPreset_" + _key);
+        _applyPreset.Content = T("Fill the form from the preset", "Compila il modulo dal preset");
+        _applyPreset.MinHeight = _target; _applyPreset.FontSize = _body;
+        AutomationProperties.SetAutomationId(_applyPreset, "GameLaunchProfile_ApplyPreset_" + _key);
+        _applyPreset.Click += (_, _) =>
+        {
+            if (_presets.SelectedItem is not ComboBoxItem { Tag: GameExtensionLaunchPreset p }) return;
+            if (!string.IsNullOrEmpty(p.ControllerPreset)) Select(_controller, p.ControllerPreset);
+            if (!string.IsNullOrEmpty(p.PerformanceProfile)) Select(_performance, p.PerformanceProfile);
+            if (p.Fullscreen is bool fs) _fullscreen.IsChecked = fs;
+            if (p.LaunchArgs.Count > 0) _args.Text = GameLaunchProfileForm.JoinArgs(p.LaunchArgs);
+            ShowStatus(T("Preset filled in. Review it and press Save to keep it.", "Preset compilato. Controllalo e premi Salva per conservarlo."), false);
+        };
+        Children.Add(_presets);
+        Children.Add(_applyPreset);
+        Loaded += async (_, _) =>
+        {
+            try
+            {
+                GamingCallResult<List<GameExtensionInfo>> list = await GamingOrchestratorClient.Current.ListExtensionsAsync();
+                if (!list.Succeeded || list.Value is null) return;
+                _presets.Items.Clear();
+                foreach (GameExtensionInfo ext in list.Value.Where(e => e.Valid && e.Enabled))
+                    foreach (GameExtensionLaunchPreset p in ext.LaunchPresets)
+                        _presets.Items.Add(new ComboBoxItem
+                        {
+                            Content = p.Name + " - " + ext.Name + (p.Platforms.Count > 0 ? " (" + string.Join(", ", p.Platforms) + ")" : ""),
+                            Tag = p,
+                        });
+                bool any = _presets.Items.Count > 0;
+                if (any) _presets.SelectedIndex = 0;
+                _presets.Visibility = _applyPreset.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception) { /* presets are optional; the form works without them */ }
+        };
     }
 
     private TextBlock Note(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = _body - 2, Opacity = 0.8 };
@@ -143,7 +194,7 @@ internal sealed class GameLaunchProfileSection : StackPanel
 
     private void SetEditable(bool on)
     {
-        foreach (Control c in new Control[] { _display, _performance, _controller, _fullscreen, _width, _height, _refresh, _args, _save, _reset })
+        foreach (Control c in new Control[] { _display, _performance, _controller, _fullscreen, _width, _height, _refresh, _args, _save, _reset, _presets, _applyPreset })
             c.IsEnabled = on && !_busy;
     }
 

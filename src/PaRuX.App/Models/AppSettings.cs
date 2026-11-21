@@ -11,6 +11,8 @@ namespace PaRuX.Models
         public string AccentId { get; set; } = "orbit";
         /// <summary>#RRGGBB for the "custom" accent; ignored otherwise. An invalid value falls back to Orbit.</summary>
         public string? AccentCustomHex { get; set; }
+        /// <summary>Id of the enabled game extension whose library theme is applied on top of the accent (empty = none). The theme is dropped at start if the extension is no longer enabled and valid.</summary>
+        public string ActiveLibraryThemeExtensionId { get; set; } = string.Empty;
         /// <summary>Interface language: "en" (default, independent of the Windows display language) or "it".</summary>
         public string UiLanguage { get; set; } = "en";
         public bool StartWithWindows { get; set; }

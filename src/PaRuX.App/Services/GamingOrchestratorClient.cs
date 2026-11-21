@@ -321,6 +321,16 @@ namespace PaRuX.Services
             SendAsync<ManualGameLaunchResult>(HttpMethod.Post,
                 "/api/v1/gaming/library/discover/gog/" + Uri.EscapeDataString(gameId) + "/launch", null, ct);
 
+        public Task<GamingCallResult<List<GameExtensionInfo>>> ListExtensionsAsync(CancellationToken ct = default) =>
+            SendAsync<List<GameExtensionInfo>>(HttpMethod.Get, "/api/v1/gaming/extensions", null, ct);
+
+        public Task<GamingCallResult<List<GameExtensionInfo>>> SetExtensionEnabledAsync(string id, bool enabled, CancellationToken ct = default) =>
+            SendAsync<List<GameExtensionInfo>>(HttpMethod.Put, "/api/v1/gaming/extensions/" + Uri.EscapeDataString(id) + "/enabled",
+                new GameExtensionEnabledRequest { Enabled = enabled }, ct);
+
+        public Task<GamingCallResult<List<GameExtensionInfo>>> RemoveExtensionAsync(string id, CancellationToken ct = default) =>
+            SendAsync<List<GameExtensionInfo>>(HttpMethod.Delete, "/api/v1/gaming/extensions/" + Uri.EscapeDataString(id), null, ct);
+
         public Task<GamingCallResult<List<ManualGameDto>>> ListManualGamesAsync(CancellationToken ct = default) =>
             SendAsync<List<ManualGameDto>>(HttpMethod.Get, "/api/v1/gaming/library", null, ct);
 

@@ -154,6 +154,7 @@ namespace PaRuX
             GamingManager.Current.StateChanged += OnGamingModeChangedForIndicatorTimer;
             if (!GamingManager.Current.IsActive) _activeIndicatorTimer.Start();
             InitializeAchievementToasts();
+            InitializeGameExtensionTheme();
 
             OnboardingPage.Completed += OnOnboardingCompleted;
             OnboardingPage.FindModelRequested += OnFirstModelRequested;
