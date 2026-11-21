@@ -1060,7 +1060,7 @@ namespace PaRuX
                 {
                     App.ShowMainWindow();
                     ShowStudioWorkspace(StudioWorkspace.Runtime);
-                    RuntimeManagerPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Runtime);
                 },
                 _ => () => App.ShowMainWindow()
             };

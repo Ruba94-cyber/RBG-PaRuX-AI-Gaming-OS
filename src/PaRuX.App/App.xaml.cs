@@ -106,13 +106,6 @@ namespace PaRuX
                 SetupProfilePlan setup = SetupProfilePolicy.Plan(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId));
                 if (setup.StartLocalAi) LocalAiController.Current.StartWatching();
                 if (setup.StartGaming) GamingManager.Current.Start();
-                if (setup.StartAgentWorkers)
-                {
-                    AgentCodingWorkerService.Current.Start();
-                    AgentBinaryAnalysisWorkerService.Current.Start();
-                    UiVerificationWorkerService.Current.Start();
-                    ComputerUseWorkerService.Current.Start();
-                }
                 SetupProfileRuntime.MarkStartedBy(setup);
                 Log.Write("PaRuX starting (setup profile: " + SetupProfilePolicy.ToStorage(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId)) + ").");
 
@@ -132,15 +125,14 @@ namespace PaRuX
                 if (hasPlayRequest) PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
                 uiQueue.TryEnqueue(ProcessGameShortcutRequests);
 
-                BubbleWin = new BubbleWindow();
-                BubbleWin.ApplyVisibilityMode();
-
                 ApplyTheme();
 
-                // Start loading the selected text model as soon as the shell is usable. This is
-                // deliberately fire-and-forget: OFF and Gaming modes are respected by Core, while
-                // startup remains responsive and the first chat no longer pays avoidable idle time.
-                if (setup.StartLocalAi) _ = WarmLocalAiAsync();
+                // Not needed for the first paint: the Quick Chat bubble window, the agent worker poll loops and the model
+                // warmup start once the dispatcher has drained the shell's own first layout work (Low priority). Gaming and
+                // Local AI watching (the hard-off safety path) still start above, before any window exists. Every user of
+                // BubbleWin is null-safe and the workers only start polling.
+                if (!uiQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, FinishDeferredStartup))
+                    FinishDeferredStartup();
             }
             catch (Exception ex)
             {
@@ -152,6 +144,38 @@ namespace PaRuX
         }
 
         private static IDisposable? _playSignal;
+
+        /// <summary>Non-first-paint startup work, run after the main window is shown (see OnLaunched).</summary>
+        private static void FinishDeferredStartup()
+        {
+            try
+            {
+                BubbleWin = new BubbleWindow();
+                BubbleWin.ApplyVisibilityMode();
+                ApplyTheme();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Deferred Quick Chat window creation failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            // Honour a setup-profile switch or an exit that happened before this ran: start only what is still wanted.
+            if (IsShuttingDown) return;
+            // Start the model load (fire-and-forget; OFF and Gaming modes are respected by Core).
+            if (SetupProfileRuntime.Running.LocalAi) _ = WarmLocalAiAsync();
+            if (!SetupProfileRuntime.Running.AgentWorkers) return;
+            try
+            {
+                AgentCodingWorkerService.Current.Start();
+                AgentBinaryAnalysisWorkerService.Current.Start();
+                UiVerificationWorkerService.Current.Start();
+                ComputerUseWorkerService.Current.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Deferred agent worker start failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
 
         /// <summary>Takes the queued "--play" requests and opens the first one. One game at a time: starting several
         /// games from a burst of clicks would stack confirmation dialogs.</summary>

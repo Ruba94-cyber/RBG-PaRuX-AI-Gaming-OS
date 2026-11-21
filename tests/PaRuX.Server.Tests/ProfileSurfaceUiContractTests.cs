@@ -103,7 +103,7 @@ public sealed class ProfileSurfaceUiContractTests
         Assert.Contains("Chat_Documents_NextPage_Button", chat, StringComparison.Ordinal);
         Assert.Contains("DocumentSourcePicker.Filter(", chat, StringComparison.Ordinal);
         Assert.Contains("ChatDocumentScopeState.Prune(", chat, StringComparison.Ordinal);
-        Assert.Contains("DocumentSearchPage.OnHidden()", Read("src", "PaRuX.App", "MainWindow.Workspaces.cs"), StringComparison.Ordinal);
+        Assert.Contains("docs.OnHidden()", Read("src", "PaRuX.App", "MainWindow.LazyPages.cs"), StringComparison.Ordinal);
         Assert.Contains("!string.IsNullOrWhiteSpace(InputBox.Text)", chat, StringComparison.Ordinal);
         Assert.Contains("Chat_Documents_Skill_Summary", chat, StringComparison.Ordinal);
     }
