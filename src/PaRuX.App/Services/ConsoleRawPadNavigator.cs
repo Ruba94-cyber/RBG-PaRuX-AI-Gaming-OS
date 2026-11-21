@@ -173,6 +173,14 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         // read every tick; disconnected slots are probed about once a second (probing an empty slot every frame is slow).
         PollXInputSlots();
 
+        // A pad Windows already exposes as XInput (including a Stadia/other pad forwarded to a virtual Xbox pad) is THE navigation pad:
+        // the physical raw device it comes from stays unread, otherwise one press would move the focus twice.
+        if (_xinputConnected.Any(c => c))
+        {
+            if (_source is not null) Release();
+            return;
+        }
+
         if (_source is null)
         {
             if (_ticksToScan-- > 0) return;
