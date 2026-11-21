@@ -272,7 +272,8 @@ namespace PaRuX.Services
                 try
                 {
                     UndoRecord? record = System.Text.Json.JsonSerializer.Deserialize<UndoRecord>(File.ReadAllText(json));
-                    if (record != null && record.Id.Length == 32 && record.Id.All(Uri.IsHexDigit)
+                    if (record != null && record.Id is { Length: 32 } && !string.IsNullOrEmpty(record.Repository)
+                        && record.Id.All(c => char.IsAsciiHexDigitLower(c))
                         && File.Exists(Path.Combine(dir, record.Id + ".patch"))) list.Add(record);
                 }
                 catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
@@ -297,7 +298,11 @@ namespace PaRuX.Services
             foreach (string file in Directory.EnumerateFiles(dir))
             {
                 string name = Path.GetFileName(file);
-                string id = name.Length >= 32 ? name[..32] : string.Empty;
+                bool ours = name.Length > 32 && name[..32].All(c => char.IsAsciiHexDigitLower(c))
+                    && (name.EndsWith(".patch", StringComparison.Ordinal) || name.EndsWith(".json", StringComparison.Ordinal)
+                        || name.EndsWith(".patch.tmp", StringComparison.Ordinal));
+                if (!ours) continue;   // never touch a file PaRuX did not write
+                string id = name[..32];
                 if (known.Contains(id)) continue;
                 try { if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromDays(1)) File.Delete(file); }
                 catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -323,7 +328,7 @@ namespace PaRuX.Services
         /// </summary>
         public static async Task<CodeApplyResult> UndoAsync(string undoId, CancellationToken ct, string? undoStateDirectory = null)
         {
-            if (string.IsNullOrEmpty(undoId) || undoId.Length != 32 || !undoId.All(Uri.IsHexDigit))
+            if (string.IsNullOrEmpty(undoId) || undoId.Length != 32 || !undoId.All(c => char.IsAsciiHexDigitLower(c)))
                 return new CodeApplyResult(false, "That applied change is not known. Nothing was changed.");
             string dir = UndoDirectory(undoStateDirectory);
             UndoRecord? record = ReadUndoRecords(dir).FirstOrDefault(r => r.Id == undoId);
@@ -337,7 +342,9 @@ namespace PaRuX.Services
             if (record.Head != null)
             {
                 GitResult head = await GitAsync(record.Repository, ct, "rev-parse", "HEAD").ConfigureAwait(false);
-                if (head.Ok && !string.Equals(head.Output.Trim(), record.Head, StringComparison.Ordinal))
+                if (!head.Ok)
+                    return new CodeApplyResult(false, "PaRuX could not read the project's current commit, so it cannot undo safely. Nothing was changed.");
+                if (!string.Equals(head.Output.Trim(), record.Head, StringComparison.Ordinal))
                     return new CodeApplyResult(false,
                         "The project is now on a different commit than when the changes were applied (for example you committed them). Nothing was changed.");
             }

@@ -477,6 +477,29 @@ public sealed class CodeWorktreeApplyServiceTests : IDisposable
         Assert.False(File.Exists(orphan));                             // the stale orphan was removed
     }
 
+    [Fact]
+    public async Task Corrupt_records_and_foreign_files_never_break_or_get_deleted_by_the_undo_store()
+    {
+        string state = Path.Combine(_root, "state-corrupt");
+        string dir = Path.Combine(state, "apply-undo");
+        Directory.CreateDirectory(dir);
+        string id = new string('b', 32);
+        File.WriteAllText(Path.Combine(dir, id + ".patch"), "x");
+        File.WriteAllText(Path.Combine(dir, id + ".json"), "{\"Id\":null,\"Repository\":null}");
+        string foreign = Path.Combine(dir, "notes.txt");
+        File.WriteAllText(foreign, "owner file");
+        File.SetLastWriteTimeUtc(foreign, DateTime.UtcNow.AddDays(-30));
+
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);   // prunes while a corrupt record exists
+
+        Assert.True(applied.Success, applied.Message);
+        Assert.NotNull(applied.UndoId);
+        Assert.True(File.Exists(foreign));
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("../../evil")]
