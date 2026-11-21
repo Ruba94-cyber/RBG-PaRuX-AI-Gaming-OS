@@ -30,6 +30,16 @@ public sealed class ConsoleNavigationPolicyTests
     }
 
     [Theory]
+    [InlineData(208)] // View/Back
+    [InlineData(201)] // Left trigger
+    [InlineData(202)] // Right trigger
+    public void View_and_the_triggers_switch_between_gaming_and_ai_and_are_suspended_while_busy(int keyCode)
+    {
+        Assert.Equal(ConsoleNavigationAction.SwitchWorkspace, ConsoleNavigationPolicy.Resolve(keyCode, false));
+        Assert.Equal(ConsoleNavigationAction.None, ConsoleNavigationPolicy.Resolve(keyCode, true));
+    }
+
+    [Theory]
     [InlineData(195)] // Gamepad A: native WinUI control owns activation
     [InlineData(13)]  // Enter
     [InlineData(197)] // Gamepad X

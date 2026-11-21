@@ -17,7 +17,9 @@ public enum ConsoleNavigationAction
     NextPage,
     ScrollUp,
     ScrollDown,
-    FocusSearch
+    FocusSearch,
+    /// <summary>Switch between the Gaming library and the AI (Chat) workspace without leaving Console/TV mode.</summary>
+    SwitchWorkspace
 }
 
 public static class ConsoleNavigationPolicy
@@ -40,6 +42,9 @@ public static class ConsoleNavigationPolicy
             215 when !interactionBusy => ConsoleNavigationAction.ScrollUp,     // Right stick up
             216 when !interactionBusy => ConsoleNavigationAction.ScrollDown,   // Right stick down
             207 when !interactionBusy => ConsoleNavigationAction.FocusSearch,  // Menu
+            // View/Back (208) and the triggers (201 left, 202 right) switch between Gaming and AI, so the TV never needs a keyboard or mouse
+            // to reach the other workspace.
+            208 or 201 or 202 when !interactionBusy => ConsoleNavigationAction.SwitchWorkspace,
             _ => ConsoleNavigationAction.None
         };
     }
