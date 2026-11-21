@@ -115,9 +115,9 @@ internal static class TextLaunchLadder
                 return SetOption(arguments, GpuLayersFlag, ReducedGpuLayers(ReadValue(arguments, GpuLayersFlag)));
             case Step.VulkanEngine:
                 FlashOff(arguments);
-                return SetOption(arguments, DeviceFlag, VulkanDevice);
+                return SetOption(arguments, DeviceFlag, VulkanDeviceSelector.ResolveBlocking());
             case Step.VulkanKeepFlash:
-                return SetOption(arguments, DeviceFlag, VulkanDevice);
+                return SetOption(arguments, DeviceFlag, VulkanDeviceSelector.ResolveBlocking());
             case Step.CpuOnly:
                 return RuntimeLaunchOptimizer.ToCpuFallbackArguments(arguments);
             default:
@@ -162,7 +162,7 @@ internal static class TextLaunchLadder
     }
 
     /// <summary>The value following <paramref name="option"/>, or null when the option is absent.</summary>
-    private static string? ReadValue(IReadOnlyList<string> arguments, string option)
+    internal static string? ReadValue(IReadOnlyList<string> arguments, string option)
     {
         for (int i = 0; i < arguments.Count - 1; i++)
             if (arguments[i] == option) return arguments[i + 1];

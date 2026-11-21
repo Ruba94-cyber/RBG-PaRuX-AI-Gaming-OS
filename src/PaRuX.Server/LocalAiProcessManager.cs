@@ -1390,9 +1390,15 @@ public sealed class LocalAiProcessManager
             string? portRefusal = ChooseTextPortForLaunch();
             if (portRefusal != null) return new RuntimeResult(false, portRefusal);
 
-            (fallbackBatch, fallbackUbatch) = DefaultBatchSizes(heavyCuda, fallbackBatch, fallbackUbatch);
+            // The backend is what actually launches, not what the tier would prefer. An NVIDIA machine without the CUDA runtime
+            // installed runs the Vulkan build, and that build must get a real device choice (never a bare Vulkan0, which is the
+            // iGPU on a dGPU+iGPU laptop) and Vulkan-appropriate arguments.
+            bool cudaRuntime = heavyCuda && File.Exists(Path.Combine(LocalAiPaths.RuntimeCudaPath, LocalAiPaths.LlamaServerExecutable));
+            (fallbackBatch, fallbackUbatch) = DefaultBatchSizes(cudaRuntime, fallbackBatch, fallbackUbatch);
             RuntimeLaunchOptimization optimization = await RuntimeLaunchOptimizer.ResolveAsync(
-                model, "chat", hasGpu, fallbackBatch, fallbackUbatch, fallbackCache, ct, inventory).ConfigureAwait(false);
+                model, "chat", cudaRuntime, fallbackBatch, fallbackUbatch, fallbackCache, ct, inventory).ConfigureAwait(false);
+            // Every GPU device failed its health probe: launch CPU arguments directly rather than a device that is known bad.
+            if (optimization.DeviceCpuFallback) cpuOnly = true;
 
             // The user's own context choice wins over the tuned profile's, and is applied to the
             // profile rather than appended afterwards so --ctx-size and --cache-type-* keep a single
@@ -1402,7 +1408,7 @@ public sealed class LocalAiProcessManager
                 ContextPreferenceLaunch.ApplyTo(optimization.Profile, model);
 
             List<string> performanceArgs;
-            try { performanceArgs = RuntimeLaunchOptimizer.BuildLaunchArguments(optimization.Profile, heavyCuda, cpuOnly); }
+            try { performanceArgs = RuntimeLaunchOptimizer.BuildLaunchArguments(optimization.Profile, cudaRuntime, cpuOnly); }
             catch (InvalidDataException ex) { return new RuntimeResult(false, "Saved performance profile is not safe to apply: " + ex.Message); }
 
             var args = new List<string>
@@ -1426,7 +1432,7 @@ public sealed class LocalAiProcessManager
             {
                 try
                 {
-                    List<string> baselinePerformance = RuntimeLaunchOptimizer.BuildLaunchArguments(optimization.BaselineProfile, heavyCuda, cpuOnly);
+                    List<string> baselinePerformance = RuntimeLaunchOptimizer.BuildLaunchArguments(optimization.BaselineProfile, cudaRuntime, cpuOnly);
                     baselineArgs = new List<string>
                     {
                         "--model", model, "--alias", alias, "--host", "127.0.0.1", "--port", TextPort.ToString(),
@@ -1467,10 +1473,10 @@ public sealed class LocalAiProcessManager
             // then flash attention off, reduced GPU offload, the Vulkan engine for a CUDA primary, and CPU last. A rung that
             // fails has already stopped its own process, so the next one starts clean and the trace records every outcome.
             IReadOnlyList<TextLaunchLadder.Rung> rungs = TextLaunchLadder.Plan(
-                heavyCuda ? TextLaunchLadder.Engine.Cuda : TextLaunchLadder.Engine.Vulkan, cpuOnly, args,
+                cudaRuntime ? TextLaunchLadder.Engine.Cuda : TextLaunchLadder.Engine.Vulkan, cpuOnly, args,
                 vulkanAvailable: File.Exists(Path.Combine(LocalAiPaths.RuntimeVulkanPath, LocalAiPaths.LlamaServerExecutable)),
                 hasPlannedLaunch: baselineArgs != null,
-                primaryAvailable: !heavyCuda
+                primaryAvailable: !cudaRuntime
                     || File.Exists(Path.Combine(LocalAiPaths.RuntimeCudaPath, LocalAiPaths.LlamaServerExecutable)));
             if (intent != TextStartIntent.Ensure)
             {
@@ -1493,6 +1499,8 @@ public sealed class LocalAiProcessManager
             if (optimization.Plan is { Applied: true } appliedPlan)
                 _lastLaunchPlanExplanation = appliedPlan.Explain();
             else _lastLaunchPlanExplanation = optimization.Plan?.Summary ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(optimization.DeviceReason))
+                _lastLaunchPlanExplanation = (_lastLaunchPlanExplanation + " GPU device: " + optimization.DeviceReason).Trim();
             var trace = new List<string>();
             RuntimeResult? firstFailure = null;
             RuntimeResult? lastFailure = null;
@@ -1520,6 +1528,13 @@ public sealed class LocalAiProcessManager
                 }
                 firstFailure ??= attempt;
                 lastFailure = attempt;
+                // A Vulkan device whose launch never became healthy is skipped by the next device choice (bounded, ten minutes),
+                // unless the launch ended because of cancellation or a game rather than the device.
+                if (!ct.IsCancellationRequested && !GamingActive && rung.Engine == TextLaunchLadder.Engine.Vulkan
+                    && TextLaunchLadder.ReadValue(rungArguments, TextLaunchLadder.DeviceFlag) is { } failedDevice
+                    && failedDevice.StartsWith("Vulkan", StringComparison.OrdinalIgnoreCase)
+                    && index + 1 < rungs.Count && rungs[index + 1].Engine == TextLaunchLadder.Engine.Cpu)
+                    VulkanDeviceSelector.MarkFailed(failedDevice);
                 // Cancellation, and a game that started during the load, both end the ladder: a further rung would start a runtime during gaming.
                 if (ct.IsCancellationRequested || GamingActive) break;
             }
@@ -1687,7 +1702,7 @@ public sealed class LocalAiProcessManager
             "--reasoning-effort", "low", "--reasoning-budget", "768", "--temp", "0.8", "--top-p", "0.95", "--top-k", "40", "--min-p", "0.02",
             "--gpu-layers", "all", "--sleep-idle-seconds", "-1"
         };
-        if (PathsEqual(assistantRuntime, LocalAiPaths.RuntimeVulkanPath)) { args.Add("--device"); args.Add("Vulkan0"); }
+        if (PathsEqual(assistantRuntime, LocalAiPaths.RuntimeVulkanPath)) { args.Add("--device"); args.Add(VulkanDeviceSelector.ResolveBlocking(await Task.Run(InventoryProbe, ct).ConfigureAwait(false))); }
         args.AddRange(WebUiArguments());
         onOutgoingTextReleased?.Invoke();
         var assistantWatch = Stopwatch.StartNew();
