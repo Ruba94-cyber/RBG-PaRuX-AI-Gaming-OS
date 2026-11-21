@@ -262,6 +262,25 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Remove hesitation sounds from dictation" loc:Loc.ItText="Rimuovi i suoni di esitazione dalla dettatura" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                                <TextBlock Text="Off by default. When on, spoken um, uh, er and hmm are dropped from the transcript; no other word is changed. Dictation runs on this PC; hold the microphone button (or Ctrl+Space) to talk." loc:Loc.ItText="Disattivato di default. Se attivo, gli um, uh, er e hmm pronunciati vengono tolti dalla trascrizione; nessun'altra parola viene modificata. La dettatura gira su questo PC; tieni premuto il pulsante del microfono (o Ctrl+Spazio) per parlare." Style="{StaticResource PaRuXCaptionTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="DictationFillerSwitch"
+                                          AutomationProperties.AutomationId="Settings_DictationFillers_Toggle"
+                                          AutomationProperties.Name="Remove hesitation sounds from dictation" loc:Loc.ItName="Rimuovi i suoni di esitazione dalla dettatura"
+                                          AutomationProperties.AccessibilityView="Control"
+                                          Grid.Column="1" VerticalAlignment="Center" MinWidth="0" OnContent="" OffContent=""
+                                          Toggled="DictationFillerSwitch_Toggled" />
+                        </Grid>
+
+                        <Border Style="{StaticResource PaRuXDividerStyle}" Margin="0,12,0,12" />
+
+                        <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock Text="Runtime installs" loc:Loc.ItText="Installazioni dei runtime" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                                 <TextBlock Text="Notify when a runtime engine install completes or fails." loc:Loc.ItText="Avvisa quando l&#x27;installazione di un motore runtime termina o fallisce." Style="{StaticResource PaRuXCaptionTextStyle}" />
                             </StackPanel>

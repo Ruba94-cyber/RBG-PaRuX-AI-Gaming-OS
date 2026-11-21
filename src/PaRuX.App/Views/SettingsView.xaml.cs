@@ -2352,6 +2352,7 @@ namespace PaRuX.Views
                 StorageQuotaBox.Value = Math.Clamp(s.StorageQuotaGigabytes, 10, StorageQuotaService.MaximumQuotaGigabytes);
                 ComputerUseAutomationSwitch.IsOn = s.ComputerUseFullAutomationEnabled;
                 VoiceAutoSendSwitch.IsOn = s.SendVoiceMessagesAutomatically;
+                DictationFillerSwitch.IsOn = s.DictationRemoveFillers;
                 RefreshComputerApps();
                 RefreshGamingStatus();
                 PopulateLanAddresses();
@@ -2421,6 +2422,13 @@ namespace PaRuX.Views
             SettingsStore.Current.Data.Theme = tag;
             SettingsStore.Current.Save();
             App.ApplyTheme();
+        }
+
+        private void DictationFillerSwitch_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            SettingsStore.Current.Data.DictationRemoveFillers = DictationFillerSwitch.IsOn;
+            SettingsStore.Current.Save();
         }
 
         private void VoiceAutoSendSwitch_Toggled(object sender, RoutedEventArgs e)

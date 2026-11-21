@@ -121,6 +121,9 @@ namespace PaRuX.Models
         /// <summary>When on, a voice message recorded with the Chat microphone is sent right after transcription. Default off: the text is only placed in the prompt box.</summary>
         public bool SendVoiceMessagesAutomatically { get; set; }
 
+        /// <summary>Dictation clean-up: drop spoken hesitation sounds ("um", "uh", "ehm") from the transcript (off by default; no other word is changed).</summary>
+        public bool DictationRemoveFillers { get; set; }
+
         /// <summary>Coding agent may batch 2-6 independent read-only actions into one model step (default on).</summary>
         public bool CodingBatchReadEnabled { get; set; } = true;
 
