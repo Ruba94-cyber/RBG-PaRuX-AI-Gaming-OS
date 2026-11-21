@@ -38,6 +38,32 @@ public sealed class IconOnlyButtonAccessibilityTests
         Assert.Equal("Close Quick Chat", (string?)collapse.Attribute(AutomationName));
     }
 
+    [Fact]
+    public void Every_XAML_button_has_an_accessible_name_or_visible_text()
+    {
+        string root = FindRepositoryRoot();
+        var offenders = new List<string>();
+        string[] kinds = { "Button", "ToggleButton", "HyperlinkButton", "AppBarButton", "RepeatButton" };
+        foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "src", "PaRuX.App"), "*.xaml", SearchOption.AllDirectories))
+        {
+            XDocument document = XDocument.Load(file);
+            foreach (XElement button in document.Descendants().Where(e => kinds.Contains(e.Name.LocalName)))
+            {
+                bool named = !string.IsNullOrWhiteSpace((string?)button.Attribute(AutomationName))
+                    || !string.IsNullOrWhiteSpace((string?)button.Attribute("Content"))
+                    || !string.IsNullOrWhiteSpace((string?)button.Attribute("Label"))
+                    || button.Descendants().Any(d => d.Name.LocalName == "TextBlock")
+                    || button.Elements().Any(d => d.Name.LocalName.EndsWith(".Content", StringComparison.Ordinal) && d.HasElements);
+                if (named) continue;
+                // Content assigned (localized) in code-behind: OnboardingView.SetupProfile.cs sets it on load.
+                if ((string?)button.Attribute(Xaml + "Name") == "GamingOnlyStartButton") continue;
+                offenders.Add(Path.GetRelativePath(root, file) + " :: " + ((string?)button.Attribute(Xaml + "Name") ?? (string?)button.Attribute("Click") ?? "(unnamed)"));
+            }
+        }
+
+        Assert.True(offenders.Count == 0, "Buttons without an accessible name or visible text:\n" + string.Join("\n", offenders));
+    }
+
     private static XElement FindNamedButton(string relativePath, string buttonName)
     {
         string path = Path.Combine(FindRepositoryRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));

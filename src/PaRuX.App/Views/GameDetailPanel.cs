@@ -676,7 +676,7 @@ internal sealed class GameDetailPanel : UserControl
             try
             {
                 SteamAchievementsResult r = await OwnerRecordsClient.Current.SteamAchievementsAsync(appId, CancellationToken.None);
-                if (r.Problem.Length > 0) { summary.Text = r.Problem; return; }
+                if (r.Problem.Length > 0) { summary.Text = SteamAchievementsText.LocalizeProblem(r.Problem); return; }
                 summary.Text = r.Unlocked + " / " + r.Total + T(" unlocked", " sbloccati");
                 foreach (SteamAchievementDto a in r.Achievements.OrderByDescending(x => x.Achieved).ThenBy(x => x.Name).Take(12))
                     list.Children.Add(new TextBlock
@@ -686,7 +686,7 @@ internal sealed class GameDetailPanel : UserControl
                     });
                 if (r.Total > 12) list.Children.Add(new TextBlock { Text = T("…and " + (r.Total - 12) + " more", "…e altri " + (r.Total - 12)), Opacity = 0.6 });
             }
-            catch (Exception ex) { summary.Text = ex.Message; }
+            catch (Exception ex) { summary.Text = T("Could not read Steam achievements: ", "Impossibile leggere i risultati Steam: ") + ex.Message; }
         };
         panel.Children.Add(new TextBlock { Text = T("ACHIEVEMENTS", "RISULTATI"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         panel.Children.Add(button);

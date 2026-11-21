@@ -39,6 +39,7 @@
     <Compile Include="..\..\src\PaRuX.App\Services\CommandPaletteFilter.cs" Link="Linked\CommandPaletteFilter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiText.cs" Link="Linked\UiText.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SteamGridDbGallery.cs" Link="Linked\SteamGridDbGallery.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\SteamAchievementsText.cs" Link="Linked\SteamAchievementsText.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaRuX.Server\PaRuX.Server.csproj" />
