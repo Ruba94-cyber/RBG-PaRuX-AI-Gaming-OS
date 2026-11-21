@@ -73,14 +73,18 @@ public static class PadMappingPresets
 
         var list = new List<PadMappingPreset>
         {
-            // 15 buttons, 6 axes, 1 hat as observed on this PC for the BLE HID pad; layout follows the community SDL mapping.
+            // Google Stadia over Bluetooth LE, 15 buttons, 6 axes, 1 hat. Button and trigger indexes MEASURED on the owner's pad
+            // (2026-11-21, tools/PaRuX.PadProbe, pressed one control at a time): A0 B1 X2 Y3 LB4 RB5 Select6 Start7 Stadia8 L3 9 R3 10,
+            // Assistant 11 and Capture 12 (no Xbox equivalent, left unmapped); LT = axis 5 (+ digital button 14), RT = axis 4 (+ button 13);
+            // axes rest at 0.5 (sticks) and 0 (triggers). Not yet captured on hardware: the stick directions and the hat (the standard hat
+            // is assumed), so the preset stays flagged unverified until those are confirmed.
             new("stadia", "Google Stadia controller (USB or Bluetooth LE)", 0x18D1, 0x9400, "15 buttons, 6 axes, 1 hat",
                 Map(new[]
                 {
-                    (0, A), (1, B), (3, X), (4, Y), (6, LB), (7, RB), (10, Back), (11, Start), (12, Guide), (13, L3), (14, R3)
+                    (0, A), (1, B), (2, X), (3, Y), (4, LB), (5, RB), (6, Back), (7, Start), (8, Guide), (9, L3), (10, R3)
                 }, lx: 0, ly: 1, rx: 2, ry: 3, lt: 5, rt: 4), false)
             {
-                Note = "Unverified - derived from the community layout; the raw indexes of a Stadia pad could not be proven without pressing its buttons. Confirm in the mapping wizard."
+                Note = "Buttons and triggers measured on a real Stadia pad (2026-11-21); stick directions and the D-pad hat were not captured yet. Confirm in the mapping wizard."
             },
             // Observed raw layout: 15 buttons, 6 axes, 1 hat (generic D-input mode, not XInput mode).
             new("8bitdo-sn30pro", "8BitDo SN30 Pro (generic Bluetooth HID mode)", 0x2DC8, 0x2101, "15 buttons, 6 axes, 1 hat",
