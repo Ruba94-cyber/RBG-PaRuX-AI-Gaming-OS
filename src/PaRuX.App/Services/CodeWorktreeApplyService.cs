@@ -205,10 +205,11 @@ namespace PaRuX.Services
                             changedFiles, Bound(stat.Output.Trim(), 2_000));
 
                     // Keep the exact applied patch so the owner can reverse these changes later (never automatic).
-                    string? undoId = TryRecordUndo(undoStateDirectory, repository, patch, normalizeLineEndings);
+                    string? head = (await GitAsync(repository, CancellationToken.None, "rev-parse", "HEAD").ConfigureAwait(false)) is { Ok: true } h ? h.Output.Trim() : null;
+                    string? undoId = TryRecordUndo(undoStateDirectory, repository, patch, normalizeLineEndings, head);
                     return new CodeApplyResult(true,
                         "Applied the reviewed PaRuX task changes to the original repository as uncommitted local changes. No commit, push or rebase was performed."
-                        + (undoId == null ? string.Empty : " You can undo exactly these changes while the files are unchanged."),
+                        + (undoId == null ? string.Empty : " You can undo exactly these changes while the applied lines are still in the files and the commit has not changed."),
                         changedFiles, Bound(stat.Output.Trim(), 2_000), UndoId: undoId);
                 }
                 finally
@@ -231,26 +232,31 @@ namespace PaRuX.Services
         // The applied patch is kept under PaRuX state. Undo reverses exactly that patch, only when `git apply --reverse --check`
         // proves the files still hold the applied content; otherwise nothing is touched. It never commits or discards other edits.
 
-        private const int MaxUndoRecords = 10;
+        private const int MaxUndoRecordsPerRepository = 5;
+        private const int MaxUndoRecords = 40;
+        private const long MaxKeptPatchBytes = 32L * 1024 * 1024;
         private static readonly TimeSpan UndoRetention = TimeSpan.FromDays(30);
 
-        private sealed record UndoRecord(string Id, string Repository, DateTime AppliedUtc, bool NormalizeLineEndings);
+        private sealed record UndoRecord(string Id, string Repository, DateTime AppliedUtc, bool NormalizeLineEndings, string? Head = null);
 
         private static string UndoDirectory(string? stateDirectory) =>
             Path.Combine(stateDirectory ?? AppPaths.CodingAgentStateDir, "apply-undo");
 
-        private static string? TryRecordUndo(string? stateDirectory, string repository, string patchPath, bool normalize)
+        private static string? TryRecordUndo(string? stateDirectory, string repository, string patchPath, bool normalize, string? head)
         {
             try
             {
+                // A patch above the cap is not kept (the apply itself already succeeded); the card then simply offers no undo.
+                if (new FileInfo(patchPath).Length > MaxKeptPatchBytes) return null;
                 string dir = UndoDirectory(stateDirectory);
                 Directory.CreateDirectory(dir);
                 string id = Guid.NewGuid().ToString("N");
                 string temp = Path.Combine(dir, id + ".patch.tmp");
                 File.Copy(patchPath, temp, overwrite: true);
                 File.Move(temp, Path.Combine(dir, id + ".patch"), overwrite: true);
-                var record = new UndoRecord(id, repository, DateTime.UtcNow, normalize);
-                File.WriteAllText(Path.Combine(dir, id + ".json"), System.Text.Json.JsonSerializer.Serialize(record));
+                var record = new UndoRecord(id, repository, DateTime.UtcNow, normalize, head);
+                try { File.WriteAllText(Path.Combine(dir, id + ".json"), System.Text.Json.JsonSerializer.Serialize(record)); }
+                catch { DeleteUndo(dir, id); throw; }
                 PruneUndo(dir);
                 return id;
             }
@@ -277,8 +283,25 @@ namespace PaRuX.Services
         private static void PruneUndo(string dir)
         {
             List<UndoRecord> all = ReadUndoRecords(dir);
-            foreach (UndoRecord stale in all.Where((r, i) => i >= MaxUndoRecords || DateTime.UtcNow - r.AppliedUtc > UndoRetention))
-                DeleteUndo(dir, stale.Id);
+            var perRepository = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            int total = 0;
+            foreach (UndoRecord r in all)   // newest first
+            {
+                perRepository.TryGetValue(r.Repository, out int n);
+                perRepository[r.Repository] = n + 1;
+                if (++total > MaxUndoRecords || n + 1 > MaxUndoRecordsPerRepository || DateTime.UtcNow - r.AppliedUtc > UndoRetention)
+                    DeleteUndo(dir, r.Id);
+            }
+            // Orphans: a patch or temp copy without a readable record (failed write, corrupt json), older than a day.
+            HashSet<string> known = ReadUndoRecords(dir).Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (string file in Directory.EnumerateFiles(dir))
+            {
+                string name = Path.GetFileName(file);
+                string id = name.Length >= 32 ? name[..32] : string.Empty;
+                if (known.Contains(id)) continue;
+                try { if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromDays(1)) File.Delete(file); }
+                catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
         }
 
         private static void DeleteUndo(string dir, string id)
@@ -308,6 +331,16 @@ namespace PaRuX.Services
             if (!Directory.Exists(record.Repository))
                 return new CodeApplyResult(false, "The project folder no longer exists. Nothing was changed.");
             string patch = Path.Combine(dir, record.Id + ".patch");
+
+            // If the project moved to another commit (the owner committed the applied changes, switched branch), reversing the
+            // working tree would leave Git's history and files out of step: refuse and let the owner decide.
+            if (record.Head != null)
+            {
+                GitResult head = await GitAsync(record.Repository, ct, "rev-parse", "HEAD").ConfigureAwait(false);
+                if (head.Ok && !string.Equals(head.Output.Trim(), record.Head, StringComparison.Ordinal))
+                    return new CodeApplyResult(false,
+                        "The project is now on a different commit than when the changes were applied (for example you committed them). Nothing was changed.");
+            }
 
             string[] Args(params string[] a) => record.NormalizeLineEndings ? NormalizedApplyArguments(a) : a;
             GitResult check = await GitAsync(record.Repository, ct, Args("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);

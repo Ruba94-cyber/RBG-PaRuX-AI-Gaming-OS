@@ -431,6 +431,52 @@ public sealed class CodeWorktreeApplyServiceTests : IDisposable
         Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));   // still available once the file is restored
     }
 
+    [Fact]
+    public async Task Undo_refuses_when_the_owner_committed_the_applied_changes()
+    {
+        string state = Path.Combine(_root, "state-head");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        Git(_repo, "add", "tracked.txt");
+        Git(_repo, "commit", "-m", "owner committed the applied change");
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.False(undone.Success);
+        Assert.Contains("different commit", undone.Message);
+        Assert.Equal("after\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+    }
+
+    [Fact]
+    public async Task Kept_patches_are_bounded_per_repository_and_orphans_are_cleaned()
+    {
+        string state = Path.Combine(_root, "state-bounds");
+        string dir = Path.Combine(state, "apply-undo");
+        Directory.CreateDirectory(dir);
+        string orphan = Path.Combine(dir, new string('a', 32) + ".patch");
+        File.WriteAllText(orphan, "stale");
+        File.SetLastWriteTimeUtc(orphan, DateTime.UtcNow.AddDays(-3));
+
+        var ids = new List<string>();
+        for (int i = 0; i < 7; i++)
+        {
+            File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "round-" + i + "\n");
+            CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+                _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+            Assert.True(applied.Success, applied.Message);
+            ids.Add(applied.UndoId!);
+            Git(_repo, "checkout", "--", "tracked.txt");   // back to the baseline so the next round applies cleanly
+        }
+
+        string[] kept = Directory.EnumerateFiles(dir, "*.json").Select(f => Path.GetFileNameWithoutExtension(f)).ToArray();
+        Assert.Equal(5, kept.Length);                                  // the per-repository cap
+        Assert.DoesNotContain(ids[0], kept);                           // the oldest went first
+        Assert.Contains(ids[6], kept);
+        Assert.False(File.Exists(orphan));                             // the stale orphan was removed
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("../../evil")]

@@ -1420,6 +1420,8 @@ namespace PaRuX.Views
         {
             if (undoButton.Tag is not string undoId) return;
             undoButton.IsEnabled = false;
+            applyButton.IsEnabled = false;   // no apply while the reverse runs
+            bool undone = false;
             try
             {
                 CodeApplyResult result = await CodeWorktreeApplyService.UndoAsync(undoId, CancellationToken.None);
@@ -1431,11 +1433,11 @@ namespace PaRuX.Views
                     undoButton.Visibility = Visibility.Collapsed;
                     undoButton.Tag = null;
                     applyButton.Content = T("Apply changes to project", "Applica modifiche al progetto");
-                    applyButton.IsEnabled = true;
+                    undone = true;
                 }
                 else
                 {
-                    ShowTransientStatus(T("Could not undo: the files were edited since. Nothing was changed.", "Impossibile annullare: i file sono stati modificati dopo. Non è stato cambiato nulla."));
+                    ShowTransientStatus(T("Could not undo safely. Nothing was changed; the reason is in the chat note.", "Impossibile annullare in sicurezza. Non è stato cambiato nulla; il motivo è nella nota in chat."));
                     undoButton.IsEnabled = true;
                 }
             }
@@ -1444,6 +1446,11 @@ namespace PaRuX.Views
                 Log.Write("Undo applied changes failed: " + ex);
                 ShowTransientStatus(UserFailureRecoveryMapper.MapCodingTaskApply(ex).FormatStatusLine());
                 undoButton.IsEnabled = true;
+            }
+            finally
+            {
+                // After a real undo the changes can be applied again; otherwise the card stays in its "applied" state.
+                applyButton.IsEnabled = undone;
             }
         }
 
