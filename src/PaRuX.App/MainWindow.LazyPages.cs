@@ -20,29 +20,33 @@ namespace PaRuX
     {
         private sealed class LazyWorkspacePage
         {
-            public LazyWorkspacePage(string automationId, Func<FrameworkElement> factory)
+            public LazyWorkspacePage(string automationId, string nameEn, string nameIt, Func<FrameworkElement> factory)
             {
                 AutomationId = automationId;
+                NameEn = nameEn;
+                NameIt = nameIt;
                 Factory = factory;
             }
 
             public string AutomationId { get; }
+            public string NameEn { get; }
+            public string NameIt { get; }
             public Func<FrameworkElement> Factory { get; }
             public FrameworkElement? Instance { get; set; }
         }
 
         private readonly Dictionary<StudioWorkspace, LazyWorkspacePage> _lazyPages = new()
         {
-            [StudioWorkspace.Create] = new("Workspace_Create_Page", () => new CreateWorkspaceView()),
-            [StudioWorkspace.Projects] = new("Workspace_Projects_Page", () => new ProjectsWorkspaceView()),
-            [StudioWorkspace.DocumentSearch] = new("Workspace_DocumentSearch_Page", () => new DocumentSearchView()),
-            [StudioWorkspace.ModelRouting] = new("Workspace_ModelRouting_Page", () => new ModelRoutingPanel()),
-            [StudioWorkspace.Lifecycle] = new("Workspace_Lifecycle_Page", () => new LifecycleLabView()),
-            [StudioWorkspace.Workflows] = new("Workspace_Workflows_Page", () => new WorkflowWorkspaceView()),
-            [StudioWorkspace.Tools] = new("Workspace_Tools_Page", () => new ToolsAutomationView()),
-            [StudioWorkspace.Observability] = new("Workspace_Observability_Page", () => new ObservabilityView()),
-            [StudioWorkspace.Updates] = new("Workspace_Updates_Page", () => new UpdateManagerView()),
-            [StudioWorkspace.Runtime] = new("Workspace_Runtime_Page", () => new RuntimeManagerView()),
+            [StudioWorkspace.Create] = new("Workspace_Create_Page", "Create", "Crea", () => new CreateWorkspaceView()),
+            [StudioWorkspace.Projects] = new("Workspace_Projects_Page", "Projects", "Progetti", () => new ProjectsWorkspaceView()),
+            [StudioWorkspace.DocumentSearch] = new("Workspace_DocumentSearch_Page", "Document search", "Ricerca documenti", () => new DocumentSearchView()),
+            [StudioWorkspace.ModelRouting] = new("Workspace_ModelRouting_Page", "Model Intelligence", "Model Intelligence", () => new ModelRoutingPanel()),
+            [StudioWorkspace.Lifecycle] = new("Workspace_Lifecycle_Page", "Lifecycle Lab", "Lifecycle Lab", () => new LifecycleLabView()),
+            [StudioWorkspace.Workflows] = new("Workspace_Workflows_Page", "Workflows", "Workflow", () => new WorkflowWorkspaceView()),
+            [StudioWorkspace.Tools] = new("Workspace_Tools_Page", "Tools and automations", "Strumenti e automazioni", () => new ToolsAutomationView()),
+            [StudioWorkspace.Observability] = new("Workspace_Observability_Page", "Observability", "Osservabilità", () => new ObservabilityView()),
+            [StudioWorkspace.Updates] = new("Workspace_Updates_Page", "Updates", "Aggiornamenti", () => new UpdateManagerView()),
+            [StudioWorkspace.Runtime] = new("Workspace_Runtime_Page", "Runtime", "Runtime", () => new RuntimeManagerView()),
         };
 
         private Grid? _lazyPageErrorPanel;
@@ -73,6 +77,9 @@ namespace PaRuX
                 FrameworkElement page = lazy.Factory();
                 page.Visibility = Visibility.Collapsed;
                 AutomationProperties.SetAutomationId(page, lazy.AutomationId);
+                // A UserControl with only an id is dropped from the UIA tree; a name plus the Content view exposes the page root.
+                AutomationProperties.SetName(page, UiText.Pick(lazy.NameEn, lazy.NameIt));
+                AutomationProperties.SetAccessibilityView(page, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
                 WorkspacePagesHost.Children.Insert(0, page);
                 lazy.Instance = page;
                 Log.Write("Workspace page created on first open: " + workspace);
