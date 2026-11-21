@@ -61,16 +61,30 @@ internal sealed class GameShortcutsSection : StackPanel
         Children.Add(_status);
     }
 
-    private static string? PaRuXExecutable() =>
-        Environment.ProcessPath is { Length: > 0 } path && System.IO.File.Exists(path) ? path : null;
+    /// <summary>PaRuX.exe when a shortcut can safely point at it; otherwise null with the reason in <paramref name="problem"/>.</summary>
+    private static string? PaRuXExecutable(out string? problem)
+    {
+        problem = GameShortcuts.CheckExecutable(Environment.ProcessPath) switch
+        {
+            ShortcutExecutableProblem.None => null,
+            ShortcutExecutableProblem.MicrosoftStore => T(
+                "This copy of PaRuX is installed from the Microsoft Store, whose program path changes with every update, so a shortcut to it would break. Start games from inside PaRuX, or pin PaRuX itself to Start.",
+                "Questa copia di PaRuX è installata dal Microsoft Store, il cui percorso cambia a ogni aggiornamento, quindi un collegamento si romperebbe. Avvia i giochi da PaRuX, oppure fissa PaRuX stesso su Start."),
+            ShortcutExecutableProblem.NotPaRuXExe => T(
+                "Shortcuts can only point at PaRuX.exe, and this is not it.",
+                "I collegamenti possono puntare solo a PaRuX.exe, e questo non lo è."),
+            _ => T("PaRuX could not find its own program file.", "PaRuX non ha trovato il proprio file di programma."),
+        };
+        return problem is null ? Environment.ProcessPath : null;
+    }
 
     private async Task CreateDesktopAsync()
     {
         if (_busy) return;
-        string? exe = PaRuXExecutable();
+        string? exe = PaRuXExecutable(out string? exeProblem);
         if (exe is null)
         {
-            _status.Text = T("PaRuX could not find its own program file.", "PaRuX non ha trovato il proprio file di programma.");
+            _status.Text = T("No shortcut was created. ", "Nessun collegamento creato. ") + exeProblem;
             return;
         }
         _busy = true;
@@ -100,10 +114,10 @@ internal sealed class GameShortcutsSection : StackPanel
     private async Task AddToSteamAsync()
     {
         if (_busy) return;
-        string? exe = PaRuXExecutable();
+        string? exe = PaRuXExecutable(out string? exeProblem);
         if (exe is null)
         {
-            _status.Text = T("PaRuX could not find its own program file.", "PaRuX non ha trovato il proprio file di programma.");
+            _status.Text = T("No shortcut was created. ", "Nessun collegamento creato. ") + exeProblem;
             return;
         }
         _busy = true;

@@ -48,6 +48,7 @@ public static class OpenAiCompatibleStates
     public const string NoModels = "no_models";
     public const string ModelNotServed = "model_not_served";
     public const string ServerError = "server_error";
+    public const string GamingActive = "gaming_active";
 }
 
 public sealed class OpenAiCompatibleTestResult

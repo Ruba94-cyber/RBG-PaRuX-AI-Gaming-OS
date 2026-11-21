@@ -128,7 +128,10 @@ namespace PaRuX.Services
         /// </summary>
         public RewindResult RewindToMessage(ChatMessage message)
         {
-            if (IsBusy) return new RewindResult { Status = RewindStatus.Busy, ConversationId = Conversation.Id };
+            // IsBusy covers a chat turn; a coding task started from the chat keeps working (and appending notices and
+            // cards) without marking any message as streaming, so its execution lease is checked as well.
+            if (IsBusy || AgentCodingWorkerService.HasActiveExecutionLease)
+                return new RewindResult { Status = RewindStatus.Busy, ConversationId = Conversation.Id };
             RewindResult result = ConversationRewind.Rewind(Conversation, message, conversation =>
             {
                 conversation.Title = conversation.Title == "New chat" || string.IsNullOrWhiteSpace(conversation.Title)

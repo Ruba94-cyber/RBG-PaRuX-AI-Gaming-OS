@@ -5,6 +5,8 @@ using System.Text;
 
 namespace PaRuX.Contracts;
 
+public enum ShortcutExecutableProblem { None, NotFound, MicrosoftStore, NotPaRuXExe }
+
 public enum GameShortcutOutcome
 {
     Created,
@@ -38,6 +40,37 @@ public static class GameShortcuts
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
     };
 
+    /// <summary>
+    /// What is wrong with <paramref name="path"/> as a shortcut target. A shortcut can only point at an existing
+    /// PaRuX.exe that is not inside a packaged-app folder (WindowsApps): that path is version-specific, so a shortcut to
+    /// it would break at the next update.
+    /// </summary>
+    public static ShortcutExecutableProblem CheckExecutable(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) return ShortcutExecutableProblem.NotFound;
+        string full;
+        try { full = Path.GetFullPath(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        { return ShortcutExecutableProblem.NotFound; }
+        if (full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(part => string.Equals(part, "WindowsApps", StringComparison.OrdinalIgnoreCase)))
+            return ShortcutExecutableProblem.MicrosoftStore;
+        if (!string.Equals(Path.GetFileName(full), "PaRuX.exe", StringComparison.OrdinalIgnoreCase))
+            return ShortcutExecutableProblem.NotPaRuXExe;
+        return File.Exists(full) ? ShortcutExecutableProblem.None : ShortcutExecutableProblem.NotFound;
+    }
+
+    /// <summary>English message for <see cref="CheckExecutable"/>, or null when the program is fine.</summary>
+    public static string? ExecutableProblem(string? path) => CheckExecutable(path) switch
+    {
+        ShortcutExecutableProblem.None => null,
+        ShortcutExecutableProblem.MicrosoftStore =>
+            "This copy of PaRuX is installed from the Microsoft Store, whose program path changes with every update, so a shortcut to it would break. "
+            + "Start games from inside PaRuX, or pin PaRuX itself to Start.",
+        ShortcutExecutableProblem.NotPaRuXExe => "Shortcuts can only point at PaRuX.exe, and this is not it.",
+        _ => "PaRuX could not find its own program file to point the shortcut at."
+    };
+
     /// <summary>A file-name-safe version of the game name; never empty.</summary>
     public static string SafeFileName(string? gameName)
     {
@@ -65,8 +98,8 @@ public static class GameShortcuts
     {
         if (!GameLaunchRequestChannel.IsValidTitleKey(titleKey))
             return new GameShortcutResult(GameShortcutOutcome.InvalidRequest, null, "That game cannot be addressed by a shortcut.");
-        if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath) || !File.Exists(executablePath))
-            return new GameShortcutResult(GameShortcutOutcome.InvalidRequest, null, "PaRuX could not find its own program file to point the shortcut at.");
+        if (ExecutableProblem(executablePath) is { } problem)
+            return new GameShortcutResult(GameShortcutOutcome.InvalidRequest, null, problem);
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return new GameShortcutResult(GameShortcutOutcome.FolderUnavailable, null, "The shortcut folder does not exist.");
 

@@ -145,11 +145,15 @@ public sealed class ChatProxyService
 
         // Explicit opt-in: the user pointed chat at a USER_MANAGED OpenAI-compatible server. Per-turn forced routes and
         // structured-output turns (internal features) keep using PaRuX's own runtime.
-        if (_openAiProvider != null && request.ForcedModelRoute == null
+        // A verified tool-use turn arrives pinned to a local tool model (ForcedModelRoute set by the modality gate); with
+        // the external server switched on it is refused instead of silently running somewhere else.
+        bool toolUseTurn = modality.Route is { Capability: var capability }
+            && string.Equals(capability, PaRuX.Server.ModalityRoles.CapabilityFor(PaRuX.Server.ModalityRoles.ToolUse), StringComparison.Ordinal);
+        if (_openAiProvider != null && (request.ForcedModelRoute == null || toolUseTurn)
             && StructuredOutputRequestTransport.TryRead(request) == null
             && _openAiProvider.IsActiveForChat())
         {
-            await ServeFromOpenAiCompatibleAsync(request, hasVisualInput, documentMode, downstream, cancellationToken);
+            await ServeFromOpenAiCompatibleAsync(request, hasVisualInput, documentMode, toolUseTurn, downstream, cancellationToken);
             return;
         }
 
@@ -919,28 +923,39 @@ public sealed class ChatProxyService
     }
 
     /// <summary>
+    /// Why a turn may not go to the external OpenAI-compatible server, or null when it may. Gaming Mode comes first and
+    /// applies to loopback and LAN targets alike: no request is made while a game owns the PC.
+    /// </summary>
+    internal static (string Type, string Message)? OpenAiCompatibleRefusal(
+        bool gamingActive, bool hasVisualInput, bool toolUse, bool documentMode, bool continueFinalMessage)
+    {
+        if (gamingActive)
+            return (OpenAiCompatibleStates.GamingActive,
+                "Gaming Mode is active, so PaRuX does not contact the external server. Chat returns when the game closes.");
+        string? unsupported = hasVisualInput ? "Images are not sent to an external OpenAI-compatible server."
+            : toolUse ? "Tool use needs PaRuX's own verified tool-calling model, so it is not sent to an external server."
+            : documentMode ? "Document questions stay on PaRuX's own model, so your files are not sent to an external server."
+            : continueFinalMessage ? "Continuing an edited answer needs PaRuX's own runtime."
+            : null;
+        return unsupported == null ? null
+            : ("openai_compatible_unsupported",
+               unsupported + " Switch chat back to PaRuX's own model in Settings > Models, or send this without it.");
+    }
+
+    /// <summary>
     /// Plain chat to the OpenAI-compatible server the user switched on. Retrieval context, tools and images are not
     /// forwarded to a server PaRuX does not manage: a turn that needs them is refused with a clear message instead of
     /// being sent without them or silently answered by another model. Persona and skill prompts still apply.
     /// </summary>
     private async Task ServeFromOpenAiCompatibleAsync(
-        ChatCompletionRequest request, bool hasVisualInput, bool documentMode, HttpResponse downstream, CancellationToken cancellationToken)
+        ChatCompletionRequest request, bool hasVisualInput, bool documentMode, bool toolUse, HttpResponse downstream, CancellationToken cancellationToken)
     {
-        string? unsupported = hasVisualInput ? "Images are not sent to an external OpenAI-compatible server."
-            : documentMode ? "Document questions stay on PaRuX's own model, so your files are not sent to an external server."
-            : request.ContinueFinalMessage ? "Continuing an edited answer needs PaRuX's own runtime."
-            : null;
-        if (unsupported != null)
+        (string Type, string Message)? refusal = OpenAiCompatibleRefusal(
+            _runtime.GamingMode || _openAiProvider!.GamingActive(), hasVisualInput, toolUse, documentMode, request.ContinueFinalMessage);
+        if (refusal is { } refused)
         {
             downstream.StatusCode = StatusCodes.Status409Conflict;
-            await downstream.WriteAsJsonAsync(new
-            {
-                error = new
-                {
-                    message = unsupported + " Switch chat back to PaRuX's own model in Settings > Models, or send this without it.",
-                    type = "openai_compatible_unsupported"
-                }
-            }, cancellationToken);
+            await downstream.WriteAsJsonAsync(new { error = new { message = refused.Message, type = refused.Type } }, cancellationToken);
             return;
         }
 

@@ -96,6 +96,9 @@ public sealed class OpenAiCompatibleProviderTests : IDisposable
     [InlineData("http://127.0.0.1:8000/api/chat")]
     [InlineData("http://172.32.0.1:8000")]
     [InlineData("http://0.0.0.0:8000")]
+    [InlineData("http://169.254.169.254")]
+    [InlineData("http://169.254.1.20:8000")]
+    [InlineData("http://[fe80::1]:8000")]
     public void Public_named_or_ambiguous_addresses_are_refused_with_a_reason(string input)
     {
         Assert.False(OpenAiCompatibleProviderService.TryNormalizeBaseUrl(input, out string normalized, out string error));
@@ -476,7 +479,7 @@ public sealed class OpenAiCompatibleProviderTests : IDisposable
         var run = await RunChat(ctx => Json(ctx, 400, "{\"error\":{\"message\":\"context length exceeded\"}}"));
         Assert.False(run.Result.Completed);
         Assert.False(run.Result.CanFallbackToBaseline); // never silently answered by another model
-        Assert.Contains("context length exceeded", run.Sse);
+        Assert.DoesNotContain("context length exceeded", run.Sse); // the server's text is not reflected to chat callers
         Assert.Contains("HTTP 400", run.Sse);
     }
 
@@ -485,7 +488,8 @@ public sealed class OpenAiCompatibleProviderTests : IDisposable
     {
         var run = await RunChat(ctx => Sse(ctx, Chunk("content", "a"), "data: {\"error\":{\"message\":\"out of memory\"}}"));
         Assert.False(run.Result.Completed);
-        Assert.Contains("out of memory", run.Sse);
+        Assert.DoesNotContain("out of memory", run.Sse);
+        Assert.Contains("reported an error", run.Sse);
     }
 
     [Fact]

@@ -163,6 +163,9 @@ public static class SteamShortcutsFile
         if (directory == null || !Directory.Exists(Path.GetDirectoryName(directory) ?? directory))
             return new SteamShortcutResult(SteamShortcutOutcome.InvalidRequest, "That Steam account folder does not exist.");
 
+        if (GameShortcuts.ExecutableProblem(Unquote(entry.ExecutablePath)) is { } exeProblem)
+            return new SteamShortcutResult(SteamShortcutOutcome.InvalidRequest, exeProblem);
+
         if ((isSteamRunning ?? IsSteamRunning)())
             return new SteamShortcutResult(SteamShortcutOutcome.SteamRunning,
                 "Steam is running. Close Steam completely, then add the game again: Steam rewrites this list when it exits and would undo the change.");

@@ -57,7 +57,7 @@ namespace PaRuX.Views
         {
             if (message.IsStreaming || ChatSession.Current.IsBusy)
             {
-                ShowTransientStatus(ChatItalian ? "Attendi che la risposta sia completata prima di riavvolgere." : "Wait for the reply to finish before rewinding.");
+                ShowTransientStatus(ChatItalian ? "Attendi che la risposta o l'attività di programmazione sia completata prima di riavvolgere." : "Wait for the reply or coding task to finish before rewinding.");
                 return;
             }
             var messages = ChatSession.Current.Conversation.Messages;
@@ -117,7 +117,7 @@ namespace PaRuX.Views
                 RewindStatus.Rewound => result.Retained
                     ? (ChatItalian ? $"Chat riavvolta: tolti {result.RemovedCount} messaggi. La versione completa è in Versioni." : $"Chat rewound: removed {result.RemovedCount} messages. The full chat is in Versions.")
                     : (ChatItalian ? $"Chat riavvolta: tolti {result.RemovedCount} messaggi. Puoi annullare dal menu del messaggio." : $"Chat rewound: removed {result.RemovedCount} messages. You can undo it from a message's menu."),
-                RewindStatus.Busy => ChatItalian ? "Attendi che la risposta sia completata prima di riavvolgere." : "Wait for the reply to finish before rewinding.",
+                RewindStatus.Busy => ChatItalian ? "Attendi che la risposta o l'attività di programmazione sia completata prima di riavvolgere." : "Wait for the reply or coding task to finish before rewinding.",
                 RewindStatus.NothingToRewind => ChatItalian ? "Questo è già l'ultimo messaggio: niente da riavvolgere." : "This is already the last message: nothing to rewind.",
                 RewindStatus.NotRetained => ChatItalian ? "Non è stato possibile conservare la chat completa, quindi non è stato cambiato nulla." : "The full chat could not be kept, so nothing was changed.",
                 _ => ChatItalian ? "Non è stato possibile salvare la cronologia, quindi la chat è rimasta com'era." : "History could not be saved, so the chat was left as it was."

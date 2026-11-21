@@ -67,6 +67,15 @@ public sealed class OpenAiCompatibleProviderService
     internal TimeSpan FirstByteTimeout { get; set; } = TimeSpan.FromMinutes(3);
     internal TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(90);
 
+    /// <summary>True while Gaming Mode is active. Defaults to the persisted Gaming marker; tests inject their own.</summary>
+    internal Func<bool> GamingActive { get; set; } = GamingHardOffWatch.MarkerActive;
+    internal TimeSpan GamingPollInterval { get; set; } = GamingHardOffWatch.DefaultPollInterval;
+
+    private const string GamingMessage = "Gaming Mode is active, so PaRuX does not contact the external server. Chat returns when the game closes.";
+
+    private static OpenAiCompatibleProviderException GamingException() =>
+        new(OpenAiCompatibleStates.GamingActive, GamingMessage, StatusCodes.Status409Conflict);
+
     private string ConfigPath => Path.Combine(_stateDirectory, "openai-compatible-provider.json");
 
     // ---------------------------------------------------------------- configuration
@@ -176,6 +185,13 @@ public sealed class OpenAiCompatibleProviderService
                 + "because they could resolve to an address outside your network.";
             return false;
         }
+        // Link-local (169.254/16, fe80::/10) is excluded: it is what cloud metadata endpoints and unconfigured
+        // interfaces use, never a place a user's model server lives.
+        if (isIp && IsLinkLocal(address!))
+        {
+            error = "Link-local addresses (169.254.x.x) are not accepted. Use localhost or your server's normal LAN address.";
+            return false;
+        }
         if (isIp && !ExternalTextProviderService.IsLocalAddress(address!))
         {
             error = "That address is not on this PC or your private network. PaRuX only connects to a server it can reach locally.";
@@ -184,6 +200,17 @@ public sealed class OpenAiCompatibleProviderService
 
         normalized = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return true;
+    }
+
+    internal static bool IsLinkLocal(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            byte[] b = address.GetAddressBytes();
+            return b[0] == 169 && b[1] == 254;
+        }
+        return address.IsIPv6LinkLocal;
     }
 
     private static bool IsLoopbackHost(string baseUrl) =>
@@ -243,6 +270,7 @@ public sealed class OpenAiCompatibleProviderService
     /// </summary>
     public async Task<OpenAiCompatibleTestResult> TestAsync(OpenAiCompatibleProviderRequest? candidate, CancellationToken ct)
     {
+        if (GamingActive()) return Fail(OpenAiCompatibleStates.GamingActive, GamingMessage);
         Config? stored = Load();
         string baseUrl;
         string? apiKey;
@@ -278,7 +306,7 @@ public sealed class OpenAiCompatibleProviderService
         return result;
     }
 
-    private async Task<OpenAiCompatibleTestResult> QueryModelsAsync(string baseUrl, string? apiKey, CancellationToken ct)
+    private async Task<OpenAiCompatibleTestResult> QueryModelsAsync(string baseUrl, string? apiKey, CancellationToken ct, bool includeServerDetail = true)
     {
         using HttpClient http = ExternalTextProviderService.CreateProbeClient(ListTimeout, _resolver);
         using var request = new HttpRequestMessage(HttpMethod.Get, baseUrl + "/v1/models");
@@ -298,7 +326,7 @@ public sealed class OpenAiCompatibleProviderService
                 return Fail(OpenAiCompatibleStates.NotOpenAiCompatible, "The server answered with a redirect (HTTP " + status + "), which PaRuX does not follow.");
             if (!response.IsSuccessStatusCode)
             {
-                string detail = await ReadErrorDetailAsync(response, ct).ConfigureAwait(false);
+                string detail = includeServerDetail ? await ReadErrorDetailAsync(response, ct).ConfigureAwait(false) : string.Empty;
                 return status == 404
                     ? Fail(OpenAiCompatibleStates.NotOpenAiCompatible, "The server has no /v1/models endpoint, so it does not look OpenAI-compatible.")
                     : Fail(OpenAiCompatibleStates.ServerError, "The server answered HTTP " + status + (detail.Length > 0 ? ": " + detail : "."));
@@ -398,6 +426,8 @@ public sealed class OpenAiCompatibleProviderService
     /// </summary>
     internal async Task<ChatTarget> ResolveChatTargetAsync(CancellationToken ct)
     {
+        // Gaming hard-off covers this provider too, loopback or LAN: while a game owns the PC no request leaves PaRuX.
+        if (GamingActive()) throw GamingException();
         Config config = Load() ?? throw new OpenAiCompatibleProviderException(
             OpenAiCompatibleStates.InvalidConfig, "The local OpenAI-compatible server is not configured.", StatusCodes.Status409Conflict);
         string? apiKey = ReadKey(config);
@@ -407,7 +437,7 @@ public sealed class OpenAiCompatibleProviderService
                 "The stored API key cannot be read on this account. Enter the key again in Settings.", StatusCodes.Status409Conflict);
         }
 
-        OpenAiCompatibleTestResult probe = await QueryModelsAsync(config.BaseUrl, apiKey, ct).ConfigureAwait(false);
+        OpenAiCompatibleTestResult probe = await QueryModelsAsync(config.BaseUrl, apiKey, ct, includeServerDetail: false).ConfigureAwait(false);
         if (probe.State != OpenAiCompatibleStates.Ok)
         {
             throw new OpenAiCompatibleProviderException(probe.State,
@@ -444,8 +474,11 @@ public sealed class OpenAiCompatibleProviderService
         ChatTarget target, LocalInferenceRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         using HttpClient http = ExternalTextProviderService.CreateProbeClient(Timeout.InfiniteTimeSpan, _resolver);
-        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Gaming Mode starting cancels this stream (hard-off), distinct from the caller cancelling or a timeout.
+        using var gaming = new GamingHardOffWatch(GamingActive, ct, GamingPollInterval);
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(gaming.Token);
         idle.CancelAfter(FirstByteTimeout);
+        const string GamingStopped = "Gaming Mode started, so the answer from the external server was stopped.";
 
         var messages = new JsonArray();
         foreach ((string role, string content) in request.Messages)
@@ -469,7 +502,7 @@ public sealed class OpenAiCompatibleProviderService
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            failure = target.DisplayName + " did not start answering in time.";
+            failure = gaming.Triggered ? GamingStopped : target.DisplayName + " did not start answering in time.";
         }
         catch (HttpRequestException)
         {
@@ -486,16 +519,17 @@ public sealed class OpenAiCompatibleProviderService
             if (!response!.IsSuccessStatusCode)
             {
                 int status = (int)response.StatusCode;
-                string detail = await ReadErrorDetailAsync(response, ct).ConfigureAwait(false);
+                // The server's own error text is NOT passed on: the chat caller may be a paired device or API key, not the
+                // owner. The owner sees the detail in Settings > Test connection.
                 string text = status is 401 or 403
                     ? target.DisplayName + " rejected the API key (HTTP " + status + ")."
-                    : target.DisplayName + " answered HTTP " + status + (detail.Length > 0 ? ": " + detail : ".");
+                    : target.DisplayName + " answered HTTP " + status + ". Open Settings > Models > Local OpenAI-compatible server and test the connection for details.";
                 yield return new LocalInferenceChunk(null, null, false, text);
                 yield break;
             }
 
             Stream? body = null;
-            try { body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false); }
+            try { body = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false); }
             catch (Exception ex) when (ex is IOException or HttpRequestException) { }
             if (body == null)
             {
@@ -514,7 +548,9 @@ public sealed class OpenAiCompatibleProviderService
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
                     line = null;
-                    readError = target.DisplayName + " stopped answering (no data for " + (int)IdleTimeout.TotalSeconds + " seconds).";
+                    readError = gaming.Triggered
+                        ? GamingStopped
+                        : target.DisplayName + " stopped answering (no data for " + (int)IdleTimeout.TotalSeconds + " seconds).";
                 }
                 catch (IOException)
                 {
@@ -545,8 +581,7 @@ public sealed class OpenAiCompatibleProviderService
 
                 if (chunk["error"] is { } errorNode)
                 {
-                    string errorText = errorNode is JsonValue v ? v.ToString() : errorNode["message"]?.ToString() ?? "unknown error";
-                    yield return new LocalInferenceChunk(null, null, false, target.DisplayName + " reported an error: " + Truncate(errorText, 300));
+                    yield return new LocalInferenceChunk(null, null, false, target.DisplayName + " reported an error while answering.");
                     yield break;
                 }
 
