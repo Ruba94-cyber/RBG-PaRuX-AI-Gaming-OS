@@ -337,8 +337,8 @@ public sealed partial class MainWindow
     private void RootGrid_ConsoleKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (!_consoleModeActive) return;
-        // Event-driven Windows Gamepad UI Navigation: no XOutput/ViGEm, driver,
-        // virtual device, background polling or per-frame input worker.
+        // Gamepad virtual keys (195..218) mean WinUI itself is delivering the pad: the direct reader must stand down.
+        if ((int)e.Key is >= 195 and <= 218) _consoleRawPad?.NoteWinUiGamepadKeysSeen();
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
             (int)e.Key, GameLibraryBusy);
         if (ApplyConsoleAction(action)) e.Handled = true;
@@ -399,7 +399,18 @@ public sealed partial class MainWindow
             ConsoleNavigationAction.Right => FocusNavigationDirection.Right,
             _ => null
         };
-        return direction.HasValue && FocusManager.TryMoveFocus(direction.Value);
+        return direction.HasValue && TryMoveConsoleFocus(direction.Value);
+    }
+
+    /// <summary>
+    /// Moves the keyboard-style focus one step. The parameterless FocusManager.TryMoveFocus throws in this WinUI 3 desktop window (found
+    /// with a real controller), so the search root is given explicitly through the options overload.
+    /// </summary>
+    private bool TryMoveConsoleFocus(FocusNavigationDirection direction)
+    {
+        if (RootGrid.XamlRoot?.Content is not UIElement root) return false;
+        var options = new FindNextElementOptions { SearchRoot = root };
+        return FocusManager.TryMoveFocus(direction, options);
     }
 
     // ---- Driverless navigation for raw HID pads (for example Google Stadia) -------------------------------------------------

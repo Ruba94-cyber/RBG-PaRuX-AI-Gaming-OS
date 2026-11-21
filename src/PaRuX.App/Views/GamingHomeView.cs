@@ -1584,6 +1584,13 @@ internal sealed class GamingHomeView : StackPanel
 
     internal bool FocusSearch() => _search.Focus(FocusState.Programmatic);
 
+    /// <summary>Focuses the first realized game tile (null-safe when the library is empty or not yet loaded).</summary>
+    internal bool FocusFirstGame()
+    {
+        try { return _grid.FocusFirst(); }
+        catch (Exception) { return false; }
+    }
+
     private GameTitleListQuery CurrentQuery(bool refresh) => new()
     {
         Text = _search.Text,

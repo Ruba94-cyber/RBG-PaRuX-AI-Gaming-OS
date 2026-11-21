@@ -30,6 +30,33 @@ public sealed class ConsoleRawPadNavigator : IDisposable
     private PadMapping? _mapping;
     private int _ticksToScan;
     private bool _suspendedLogged;
+    // Every XInput slot is read independently (its own edge state), so any number of Xbox-class pads can navigate at once and a pad
+    // plugged in after the window opened is picked up without waiting for the raw pad to disappear.
+    private readonly bool[] _xinputConnected = new bool[4];
+    private readonly RawPadEdgeTranslator[] _xinputTranslators = { new(), new(), new(), new() };
+    private int _xinputScanTicks;
+    private bool _winUiKeysSeen;
+
+    /// <summary>
+    /// Called by the window when WinUI itself delivers a gamepad navigation key (an Xbox-class pad it handles natively). From then on
+    /// this navigator stays quiet for the session, so a press never moves the focus twice.
+    /// </summary>
+    public void NoteWinUiGamepadKeysSeen()
+    {
+        if (_winUiKeysSeen) return;
+        _winUiKeysSeen = true;
+        Release();
+        Log.Write("ConsoleRawPad: WinUI delivers gamepad keys itself; direct pad reading stays off for this session.");
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct XInputGamepad { public ushort Buttons; public byte LeftTrigger, RightTrigger; public short LeftX, LeftY, RightX, RightY; }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct XInputState { public uint PacketNumber; public XInputGamepad Gamepad; }
+
+    [System.Runtime.InteropServices.DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
+    private static extern uint XInputGetState(uint userIndex, out XInputState state);
 
     public event Action<ConsoleNavigationAction>? ActionRaised;
     public event Action? AcceptRequested;
@@ -71,8 +98,15 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         _timer.Start();
     }
 
+    private void ResetXInput()
+    {
+        for (int i = 0; i < 4; i++) { _xinputConnected[i] = false; _xinputTranslators[i].Reset(); }
+        _xinputScanTicks = 0;
+    }
+
     public void Stop()
     {
+        ResetXInput();
         if (_timer is { } timer)
         {
             timer.Stop();
@@ -85,7 +119,41 @@ public sealed class ConsoleRawPadNavigator : IDisposable
 
     public void Dispose() => Stop();
 
-    private void OnTick(DispatcherQueueTimer sender, object args) => Poll();
+    private DateTime _lastTickErrorUtc, _lastHandlerErrorUtc;
+
+    /// <summary>Raises one event; a failing handler (UI code) is logged (at most every 10 s) and never stops the polling loop.</summary>
+    private void Dispatch(RawPadNavigationEvent e)
+    {
+        try
+        {
+            if (e.IsAccept) AcceptRequested?.Invoke();
+            else ActionRaised?.Invoke(e.Action);
+        }
+        catch (Exception ex)
+        {
+            if (DateTime.UtcNow - _lastHandlerErrorUtc > TimeSpan.FromSeconds(10))
+            {
+                _lastHandlerErrorUtc = DateTime.UtcNow;
+                Log.Write("ConsoleRawPad: handling " + (e.IsAccept ? "Accept" : e.Action.ToString()) + " failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+    }
+
+    private void OnTick(DispatcherQueueTimer sender, object args)
+    {
+        try { Poll(); }
+        catch (Exception ex)
+        {
+            // One misbehaving device must never stop navigation (or the timer): drop the raw pad, keep reading the others.
+            if (DateTime.UtcNow - _lastTickErrorUtc > TimeSpan.FromSeconds(30))
+            {
+                _lastTickErrorUtc = DateTime.UtcNow;
+                Log.Write("ConsoleRawPad: poll failed and the raw pad was released: " + ex.GetType().Name + ": " + ex.Message);
+            }
+            Release();
+            _ticksToScan = ScanEveryTicks * 30;   // a pad that throws on read (seen with a Bluetooth 8BitDo) is retried every ~30 s, not every second
+        }
+    }
 
     /// <summary>One poll step (internal so a test can drive it without a dispatcher).</summary>
     internal void Poll()
@@ -94,9 +162,16 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         {
             if (!_suspendedLogged) { Log.Write("ConsoleRawPad: suspended, a game or Gaming mode is active."); _suspendedLogged = true; }
             Release();
+            ResetXInput();
             return;
         }
         _suspendedLogged = false;
+        if (_winUiKeysSeen) return;
+
+        // Any pad Windows exposes as an XInput gamepad (a real Xbox pad, DS4Windows/Steam Input output, or a pad forwarded to a virtual
+        // Xbox pad) is read directly: a WinUI 3 desktop window does not turn it into navigation keys on its own. Connected slots are
+        // read every tick; disconnected slots are probed about once a second (probing an empty slot every frame is slow).
+        PollXInputSlots();
 
         if (_source is null)
         {
@@ -113,14 +188,19 @@ public sealed class ConsoleRawPadNavigator : IDisposable
             return;
         }
 
+        // A Bluetooth pad that is asleep or not ready reports every axis at exactly zero, which a 0..1 axis mapping reads as the stick pushed
+        // fully up-left: ignore such a frame instead of navigating with it (seen with a real 8BitDo SN30 Pro).
+        if (state.HatDirection < 0 && state.Axes.Count > 0 && state.Axes.All(a => a <= 0.001))
+        {
+            _translator.Reset();
+            return;
+        }
+
         bool busy;
         try { busy = _busy?.Invoke() ?? false; } catch (Exception) { busy = true; }
         Xbox360Report report = GenericPadMapper.Map(state, _mapping);
         foreach (RawPadNavigationEvent e in _translator.Feed(report, _clock(), busy))
-        {
-            if (e.IsAccept) AcceptRequested?.Invoke();
-            else ActionRaised?.Invoke(e.Action);
-        }
+            Dispatch(e);
     }
 
     private void TryConnect()
@@ -128,14 +208,7 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         RawGamepadDeviceInfo? pick = null;
         try
         {
-            // If Windows already exposes an Xbox-class gamepad (a real one, or this pad forwarded as a virtual Xbox pad), WinUI
-            // navigates with its own gamepad keys: polling the raw pad too would move the focus twice per press.
-            if (Windows.Gaming.Input.Gamepad.Gamepads.Count > 0)
-            {
-                _ticksToScan = ScanEveryTicks;
-                return;
-            }
-            // Xbox-family pads already navigate through WinUI's own gamepad keys; only raw pads need this path.
+            // Xbox-family pads are read through XInput above; only non-XInput raw pads reach this path.
             pick = _list().FirstOrDefault(d => !PadMappingPresets.IsXInputFamily(d.VendorId, d.ProductId));
         }
         catch (Exception) { }
@@ -155,6 +228,49 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         _source = opened;
         _translator.Reset();
         Log.Write($"ConsoleRawPad: navigating with {Describe(pick)}; mapping source: {source}.");
+    }
+
+    private void PollXInputSlots()
+    {
+        bool probe = _xinputScanTicks-- <= 0;
+        if (probe) _xinputScanTicks = ScanEveryTicks;
+        bool busy;
+        try { busy = _busy?.Invoke() ?? false; } catch (Exception) { busy = true; }
+        for (int slot = 0; slot < 4; slot++)
+        {
+            if (!_xinputConnected[slot] && !probe) continue;
+            if (!TryReadXInput(slot, out Xbox360Report report))
+            {
+                if (_xinputConnected[slot])
+                {
+                    _xinputConnected[slot] = false;
+                    _xinputTranslators[slot].Reset();
+                    Log.Write("ConsoleRawPad: XInput pad in slot " + slot + " disappeared.");
+                }
+                continue;
+            }
+            if (!_xinputConnected[slot])
+            {
+                _xinputConnected[slot] = true;
+                _xinputTranslators[slot].Reset();   // the first frame after connecting is only a baseline
+                Log.Write("ConsoleRawPad: navigating with the XInput (Xbox-class) pad in slot " + slot + ".");
+            }
+            foreach (RawPadNavigationEvent e in _xinputTranslators[slot].Feed(report, _clock(), busy))
+                Dispatch(e);
+        }
+    }
+
+    private static bool TryReadXInput(int slot, out Xbox360Report report)
+    {
+        report = default;
+        try
+        {
+            if (XInputGetState((uint)slot, out XInputState st) != 0) return false;
+            XInputGamepad g = st.Gamepad;
+            report = new Xbox360Report(g.Buttons, g.LeftTrigger, g.RightTrigger, g.LeftX, g.LeftY, g.RightX, g.RightY);
+            return true;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { return false; }
     }
 
     private void Release()

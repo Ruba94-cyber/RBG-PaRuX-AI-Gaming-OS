@@ -109,6 +109,9 @@ internal sealed class UniversalLibraryPanel : StackPanel
     /// <summary>Console Menu button: jump to the Gaming home search field.</summary>
     internal bool FocusSearch() => _home.FocusSearch();
 
+    /// <summary>Console/TV: puts the focus on the first game so the pad starts where the owner wants to play.</summary>
+    internal bool FocusFirstGame() => _home.FocusFirstGame();
+
     private Task ReloadTitlesAsync() => _home.ReloadAsync();
     internal Task ReloadTitlesNowAsync() => _home.ReloadAsync(refresh: true);
 

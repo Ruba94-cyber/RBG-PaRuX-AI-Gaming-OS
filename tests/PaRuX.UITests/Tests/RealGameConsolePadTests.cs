@@ -141,12 +141,20 @@ public sealed class RealGameConsolePadTests
             UiWait.ById(app.MainWindow, "GameTitles_Search_TextBox");
             Mark("console mode open on the Gaming library");
 
+            // The owner is looking at the app: make it the foreground window, as it would be on the TV.
+            try { app.MainWindow.SetForeground(); } catch (FlaUI.Core.Exceptions.FlaUIException) { }
             using var pad = new PadSim();
-            Mark("simulated controller plugged");
+            Mark("simulated controller plugged; focused element: " + FocusedId(app) + " / " + FocusedName(app));
 
             // 1. The pad moves the focus (D-pad right, then down) and the focus really changes.
+            // The app attaches to a newly plugged pad within about a second (it scans for pads once a second): press until it reacts.
+            Thread.Sleep(2500);
             string before = FocusedId(app);
-            pad.Send("dpad right");
+            for (int attempt = 0; attempt < 6 && FocusedId(app) == before; attempt++)
+            {
+                pad.Send("dpad right");
+                Thread.Sleep(900);
+            }
             UiWait.For(() => FocusedId(app) != before, "focus moved after D-pad right");
             Mark("D-pad right moved focus: " + before + " -> " + FocusedId(app));
 
@@ -164,9 +172,12 @@ public sealed class RealGameConsolePadTests
             AutomationElement? tile = null;
             for (int step = 0; step < 40 && tile == null; step++)
             {
-                if (FocusedName(app).Contains(gameName, StringComparison.OrdinalIgnoreCase)) { tile = app.Automation.FocusedElement(); break; }
-                pad.Send(step % 7 == 6 ? "dpad down" : "dpad right");
-                Thread.Sleep(250);
+                if (FocusedName(app).Contains(gameName, StringComparison.OrdinalIgnoreCase)
+                    && !FocusedId(app).StartsWith("GameTitle_Play_", StringComparison.Ordinal)) { tile = app.Automation.FocusedElement(); break; }
+                // Down first (from the section strip into the library), then right along a row and down to the next row.
+                pad.Send(step < 3 || step % 7 == 6 ? "dpad down" : "dpad right");
+                Thread.Sleep(450);
+                Mark("step " + step + " focus: " + FocusedId(app) + " / " + FocusedName(app));
             }
             Assert.NotNull(tile);
             Mark("focused the game tile: " + FocusedId(app) + " / " + FocusedName(app));
@@ -178,7 +189,15 @@ public sealed class RealGameConsolePadTests
             while (DateTime.UtcNow < deadline && Process.GetProcessesByName(processName).Length == 0)
             {
                 string id = FocusedId(app);
-                if (id.StartsWith("GameTitle_Play_", StringComparison.Ordinal) || id.StartsWith("GameTilePlay_", StringComparison.Ordinal))
+                // The product asks before it starts a game (it pauses the local AI): confirm with A on the default "Launch" button.
+                if (app.FindRawDescendant(app.MainWindow, e => e.Properties.AutomationId.ValueOrDefault == "PrimaryButton"
+                        && (e.Properties.Name.ValueOrDefault ?? string.Empty).Length > 0) != null
+                    || app.Automation.GetDesktop().FindFirstDescendant(cf => cf.ByAutomationId("PrimaryButton")) != null)
+                {
+                    Mark("launch confirmation dialog shown (focus: " + id + "): pressing A");
+                    pad.Send("press a");
+                }
+                else if (id.StartsWith("GameTitle_Play_", StringComparison.Ordinal) || id.StartsWith("GameTilePlay_", StringComparison.Ordinal))
                 {
                     Mark("Play focused (" + id + "): pressing A");
                     pad.Send("press a");

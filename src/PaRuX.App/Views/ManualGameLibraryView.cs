@@ -557,7 +557,19 @@ public sealed class ManualGameLibraryView : UserControl
 
     /// <summary>Controller-first focus target; reuses the exact same UI actions
     /// as desktop and never installs an input remapper.</summary>
-    public void FocusConsoleHome() => _gamingStatusRefresh.Focus(FocusState.Programmatic);
+    public void FocusConsoleHome()
+    {
+        // TV mode starts on the first game; with an empty library (or before the list is realized) the status button is the fallback.
+        if (_universal?.FocusFirstGame() == true) return;
+        _gamingStatusRefresh.Focus(FocusState.Programmatic);
+        // The tiles realize a moment after the page shows: try once more shortly after.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            // Only if nothing moved the focus meanwhile: never pull it away from a user who already started navigating.
+            if (XamlRoot is not null && ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), _gamingStatusRefresh))
+                _ = _universal?.FocusFirstGame();
+        });
+    }
 
     /// <summary>While a consent dialog or command is active, Console-wide B/Escape
     /// must not tear down the fullscreen presenter beneath that interaction.</summary>
@@ -1618,7 +1630,9 @@ public sealed class ManualGameLibraryView : UserControl
                     "PaRuX sospenderà le risorse AI locali e avvierà solo questo eseguibile salvato. Non installerà software, non sospenderà il gioco né lo chiuderà forzatamente. Il ritorno automatico è disponibile solo quando Windows conferma il processo del gioco avviato."),
                 PrimaryButtonText = T("Launch", "Avvia"),
                 CloseButtonText = T("Cancel", "Annulla"),
-                DefaultButton = ContentDialogButton.Close
+                // Desktop keeps Cancel as the default (an accidental Enter never starts a game). In Console/TV mode the owner has just
+                // pressed Play with a controller and A must confirm: the default is Launch there (B still cancels).
+                DefaultButton = _consolePresentation ? ContentDialogButton.Primary : ContentDialogButton.Close
             };
             // Make the optional TV window routing visible BEFORE permission
             // to launch. A chosen TV does not promise fullscreen routing.

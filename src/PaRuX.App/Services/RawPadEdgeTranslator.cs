@@ -20,6 +20,9 @@ public sealed class RawPadEdgeTranslator
 {
     public const long InitialRepeatMs = 400;
     public const long RepeatMs = 110;
+    /// <summary>A direction held longer than this stops repeating until it is released or changes: a stuck stick or a pad that went to
+    /// sleep (all axes at zero) must not drive the focus forever.</summary>
+    public const long MaxHeldRepeatMs = 3000;
     /// <summary>Stick magnitude (of 32767) that counts as a push; below it the stick is in the dead zone.</summary>
     public const int StickThreshold = 16000;
     public const byte TriggerThreshold = 128;
@@ -38,7 +41,7 @@ public sealed class RawPadEdgeTranslator
     private ushort _heldButtons;
     private bool _leftTrigger, _rightTrigger;
     private ConsoleNavigationAction _moveDir, _scrollDir;
-    private long _moveNext, _scrollNext;
+    private long _moveNext, _scrollNext, _moveSince, _scrollSince;
 
     /// <summary>Forget all held state (disconnect, device change, suspension). The next frame becomes a new baseline.</summary>
     public void Reset()
@@ -47,6 +50,7 @@ public sealed class RawPadEdgeTranslator
         _heldButtons = 0;
         _leftTrigger = _rightTrigger = false;
         _moveDir = _scrollDir = ConsoleNavigationAction.None;
+        _moveSince = _scrollSince = 0;
     }
 
     public IReadOnlyList<RawPadNavigationEvent> Feed(in Xbox360Report frame, long nowMs, bool interactionBusy)
@@ -74,8 +78,8 @@ public sealed class RawPadEdgeTranslator
             if ((pressed & bit) != 0) Emit(events, action, accept, interactionBusy);
         // The analog triggers never switch workspace (they are pressed by accident too easily); only View/Back does.
 
-        Repeat(events, move, ref _moveDir, ref _moveNext, nowMs, interactionBusy);
-        Repeat(events, scroll, ref _scrollDir, ref _scrollNext, nowMs, interactionBusy);
+        Repeat(events, move, ref _moveDir, ref _moveNext, ref _moveSince, nowMs, interactionBusy);
+        Repeat(events, scroll, ref _scrollDir, ref _scrollNext, ref _scrollSince, nowMs, interactionBusy);
 
         _heldButtons = frame.Buttons;
         _leftTrigger = lt; _rightTrigger = rt;
@@ -96,14 +100,19 @@ public sealed class RawPadEdgeTranslator
     }
 
     private static void Repeat(List<RawPadNavigationEvent> events, ConsoleNavigationAction now, ref ConsoleNavigationAction current,
-        ref long next, long nowMs, bool busy)
+        ref long next, ref long since, long nowMs, bool busy)
     {
-        if (now == ConsoleNavigationAction.None) { current = now; return; }
+        if (now == ConsoleNavigationAction.None) { current = now; since = 0; return; }
         if (now != current)
         {
             current = now;
+            since = nowMs;
             next = nowMs + InitialRepeatMs;
             Emit(events, now, false, busy);
+        }
+        else if (nowMs - since > MaxHeldRepeatMs)
+        {
+            return;   // held "forever": stuck input, stop repeating until released
         }
         else if (nowMs >= next)
         {

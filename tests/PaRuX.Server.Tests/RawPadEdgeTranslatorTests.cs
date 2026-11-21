@@ -83,8 +83,21 @@ public sealed class RawPadEdgeTranslatorTests
     {
         var t = Primed();
         t.Feed(R(Xbox360Report.DpadDown), 0, false);
-        Assert.Single(Actions(t.Feed(R(Xbox360Report.DpadDown), 5000, false)));
-        Assert.Empty(t.Feed(R(Xbox360Report.DpadDown), 5050, false));
+        Assert.Single(Actions(t.Feed(R(Xbox360Report.DpadDown), 2000, false)));
+        Assert.Empty(t.Feed(R(Xbox360Report.DpadDown), 2050, false));
+    }
+
+    [Fact]
+    public void ADirectionHeldLongerThanTheCapStopsRepeatingUntilReleased()
+    {
+        var t = Primed();
+        int events = 0;
+        for (long now = 0; now <= 10_000; now += 16)
+            events += t.Feed(R(Xbox360Report.DpadUp), now, false).Count;
+        // About 3 s of repeats (400 ms, then every 110 ms), never the ~90 a stuck input would otherwise produce.
+        Assert.InRange(events, 1, 30);
+        t.Feed(R(), 10_100, false);
+        Assert.Single(Actions(t.Feed(R(Xbox360Report.DpadUp), 10_200, false)));   // released and pressed again: works at once
     }
 
     [Fact]
