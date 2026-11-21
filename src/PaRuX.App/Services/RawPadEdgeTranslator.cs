@@ -72,8 +72,7 @@ public sealed class RawPadEdgeTranslator
         ushort pressed = (ushort)(frame.Buttons & ~_heldButtons);
         foreach (var (bit, action, accept) in ButtonEdges)
             if ((pressed & bit) != 0) Emit(events, action, accept, interactionBusy);
-        if (lt && !_leftTrigger) Emit(events, ConsoleNavigationAction.SwitchWorkspace, false, interactionBusy);
-        if (rt && !_rightTrigger) Emit(events, ConsoleNavigationAction.SwitchWorkspace, false, interactionBusy);
+        // The analog triggers never switch workspace (they are pressed by accident too easily); only View/Back does.
 
         Repeat(events, move, ref _moveDir, ref _moveNext, nowMs, interactionBusy);
         Repeat(events, scroll, ref _scrollDir, ref _scrollNext, nowMs, interactionBusy);

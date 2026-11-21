@@ -1289,8 +1289,8 @@
                             IsOn="False" Toggled="ConsoleStartOnTvSwitch_Toggled" />
                         <TextBlock x:Name="ConsoleStartOnTvExplanation" TextWrapping="Wrap"
                             Style="{StaticResource PaRuXCaptionTextStyle}"
-                            Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View or the triggers switch between Gaming and AI, B goes back."
-                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View o i dorsali passano tra Gaming e AI, B torna indietro." />
+                            Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back."
+                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro." />
                         <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
                             Header="When the TV is not connected, start" loc:Loc.ItHeader="Se la TV non è collegata, avvia"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"

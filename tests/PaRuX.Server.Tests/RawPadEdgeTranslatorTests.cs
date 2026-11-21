@@ -138,14 +138,13 @@ public sealed class RawPadEdgeTranslatorTests
     }
 
     [Fact]
-    public void TriggersSwitchWorkspaceOncePerPull()
+    public void TriggersNeverSwitchWorkspace()
     {
         var t = Primed();
-        Assert.Equal(new[] { ConsoleNavigationAction.SwitchWorkspace }, Actions(t.Feed(R(lt: 255), 16, false)));
+        Assert.Empty(t.Feed(R(lt: 255), 16, false));
         Assert.Empty(t.Feed(R(lt: 255), 32, false));
         t.Feed(R(), 48, false);
-        Assert.Equal(new[] { ConsoleNavigationAction.SwitchWorkspace }, Actions(t.Feed(R(rt: 200), 64, false)));
-        Assert.Empty(t.Feed(R(lt: 100), 80, false));
+        Assert.Empty(t.Feed(R(rt: 200), 64, false));
     }
 
     [Fact]

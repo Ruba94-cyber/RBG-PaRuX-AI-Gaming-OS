@@ -32,11 +32,14 @@ public static class EmulatorRegistry
 
     private static readonly EmulatorDefinition[] HandTuned = new EmulatorDefinition[]
     {
-        new("eden", "Eden", "Nintendo Switch", new[] { "eden.exe" },
-            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca" }, None,
+        // "lichii.exe" is the GUI executable of the Eden 2 builds some users run (same command line as eden.exe); ".nup" is the
+        // package extension those builds accept. Found on the owner's PC (C:\Games\Mario Kart World\lichii.exe + games\MKW.nup):
+        // before this, PaRuX refused the executable and the game file, so the title could not be imported at all.
+        new("eden", "Eden", "Nintendo Switch", new[] { "eden.exe", "lichii.exe" },
+            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca", ".nup" }, None,
             new[] { "{extra}", "{fullscreen}", "{input-profile}", "-g", "{rom}" }, new[] { "-f" }, false),
         new("eden-cli", "Eden CLI", "Nintendo Switch", new[] { "eden-cli.exe" },
-            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca" }, None,
+            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca", ".nup" }, None,
             new[] { "{extra}", "{fullscreen}", "{input-profile}", "--game", "{rom}" },
             new[] { "--fullscreen" }, false),
         new("dolphin", "Dolphin", "GameCube / Wii", new[] { "Dolphin.exe" },
