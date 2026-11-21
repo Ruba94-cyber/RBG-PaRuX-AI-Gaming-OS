@@ -1278,7 +1278,11 @@ namespace PaRuX.Services
                         else
                             RecordExecutedCheck(checkpoint, action.Command ?? string.Empty, outcome.Description);
                     }
-                    if (outcome.VerificationAttempted && verificationRequired)
+                    // A scoped verifier (an unmodified, tracked "verify" script or project covering the change) that PASSED is real
+                    // evidence even when discovery found no root-level check and cleared the requirement above: without this the task
+                    // ran the owner's own verifier successfully and was still recorded "unverified: checks exited 0 but no accepted
+                    // command" (real-model run, python src/verify.py exit 0).
+                    if (outcome.VerificationAttempted && (verificationRequired || outcome.VerificationSucceeded))
                     {
                         bool acceptedForCurrentWorkspace = outcome.VerificationSucceeded;
                         if (acceptedForCurrentWorkspace)
