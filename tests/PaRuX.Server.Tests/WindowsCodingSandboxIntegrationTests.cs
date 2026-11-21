@@ -58,6 +58,12 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
         Assert.NotNull(first);
         Assert.StartsWith("S-1-15-3-", first!.Value.Text, StringComparison.Ordinal);   // a capability SID, never a user or group
         Assert.Equal(first.Value.Text, WindowsCodingSandbox.TryGetToolingCapability()!.Value.Text);
+
+        // Network runs carry a DIFFERENT capability, so grants made to offline sandboxes (npm caches, ~/go) are not readable by
+        // code that can also reach the Internet.
+        (IntPtr Sid, string Text)? network = WindowsCodingSandbox.TryGetToolingCapability(network: true);
+        Assert.NotNull(network);
+        Assert.NotEqual(first.Value.Text, network!.Value.Text);
     }
 
     [Fact]
