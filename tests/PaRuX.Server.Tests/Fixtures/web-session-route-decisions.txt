@@ -31,6 +31,7 @@ DENY DELETE /api/v1/gaming/controller-profile/game/{titleKey}
 DENY DELETE /api/v1/gaming/discover/hidden/{store}/{id}
 DENY DELETE /api/v1/gaming/downloads/torrent-client
 DENY DELETE /api/v1/gaming/downloads/{id}
+DENY DELETE /api/v1/gaming/extensions/{id}
 DENY DELETE /api/v1/gaming/installers/staged/{id}
 DENY DELETE /api/v1/gaming/library/imported/{provider}/{externalId}
 DENY DELETE /api/v1/gaming/library/{id}
@@ -66,6 +67,7 @@ DENY DELETE /api/v1/workflows/{id}
 DENY DELETE /api/v2/execution-profiles/models/{modelKey}
 DENY DELETE /api/v2/plugins/trusted-publishers/{fingerprint}
 DENY DELETE /api/v2/plugins/{pluginId}/{version}
+DENY DELETE /api/v2/retroachievements/credentials
 DENY DELETE /api/v2/sampling-presets/{id}
 DENY DELETE /api/v2/semantic-index/repositories/{alias}
 DENY DELETE /api/v2/steam/credentials
@@ -149,6 +151,7 @@ DENY GET /api/v1/gaming/downloads
 DENY GET /api/v1/gaming/downloads/torrent-client
 DENY GET /api/v1/gaming/downloads/torrent-engine
 DENY GET /api/v1/gaming/emulators
+DENY GET /api/v1/gaming/extensions
 DENY GET /api/v1/gaming/hidhide
 DENY GET /api/v1/gaming/hidhide/isolation
 DENY GET /api/v1/gaming/hooks
@@ -333,6 +336,8 @@ DENY GET /api/v2/observability/dashboard
 DENY GET /api/v2/observability/engine-races
 DENY GET /api/v2/plugins
 DENY GET /api/v2/plugins/trusted-publishers
+DENY GET /api/v2/retroachievements/achievements
+DENY GET /api/v2/retroachievements/credentials
 DENY GET /api/v2/roles
 DENY GET /api/v2/sampling-presets
 DENY GET /api/v2/semantic-index/repositories
@@ -684,6 +689,7 @@ DENY PUT /api/v1/gaming/controller-profile/game/{titleKey}
 DENY PUT /api/v1/gaming/discover/settings
 DENY PUT /api/v1/gaming/downloads/limit
 DENY PUT /api/v1/gaming/downloads/torrent-client
+DENY PUT /api/v1/gaming/extensions/{id}/enabled
 DENY PUT /api/v1/gaming/hooks/enabled
 DENY PUT /api/v1/gaming/library/{id}
 DENY PUT /api/v1/gaming/save-backups/sync
@@ -718,6 +724,7 @@ DENY PUT /api/v1/routing/capability-modes/{capability}
 DENY PUT /api/v2/execution-profiles/models/{modelKey}
 DENY PUT /api/v2/execution-profiles/quality
 DENY PUT /api/v2/mobile/execution-profile/quality
+DENY PUT /api/v2/retroachievements/credentials
 DENY PUT /api/v2/roles
 DENY PUT /api/v2/sampling-presets
 DENY PUT /api/v2/semantic-index/repositories

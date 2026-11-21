@@ -216,7 +216,8 @@ namespace PaRuX
         public static void ApplyTheme()
         {
             ElementTheme theme = CurrentElementTheme;
-            PaRuX.Services.AccentApplier.Apply(SettingsStore.Current.Data.AccentId, SettingsStore.Current.Data.AccentCustomHex);
+            (string? accentId, string? accentHex) = PaRuX.Services.LibraryThemeState.EffectiveAccent(SettingsStore.Current.Data.AccentId, SettingsStore.Current.Data.AccentCustomHex);
+            PaRuX.Services.AccentApplier.Apply(accentId, accentHex);
 
             if (MainWin != null)
             {

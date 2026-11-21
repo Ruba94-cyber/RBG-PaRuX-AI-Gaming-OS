@@ -64,6 +64,9 @@
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationBranching.cs" Link="Branching\ConversationBranching.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationRewind.cs" Link="Branching\ConversationRewind.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\AccentPalette.cs" Link="Linked\AccentPalette.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\AchievementSessionWatcher.cs" Link="Linked\AchievementSessionWatcher.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\LibraryThemeState.cs" Link="Linked\LibraryThemeState.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\DictationText.cs" Link="Linked\DictationText.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaPromptEnhancer.cs" Link="Branching\MediaPromptEnhancer.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingWorkspacePath.cs" Link="CodingAgent\CodingWorkspacePath.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ManagedRuntimeEndpoint.cs" Link="Runtime\ManagedRuntimeEndpoint.cs" />

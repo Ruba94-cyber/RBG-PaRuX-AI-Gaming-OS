@@ -450,6 +450,18 @@ public sealed class ManualGameLibraryView : UserControl
         bar.SelectedItem = bar.Items[0];
 
         Content = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
+        Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
+    }
+
+    /// <summary>Tints the library with the active extension theme's background (only when its appearance matches the app theme).</summary>
+    private void ApplyLibraryThemeBackground()
+    {
+        string? hex = LibraryThemeState.BackgroundHex(ActualTheme == ElementTheme.Dark);
+        if (hex is not null && GameExtensionManifestValidator.TryParseHex(hex, out (byte R, byte G, byte B) c))
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, c.R, c.G, c.B));
+        else
+            ClearValue(BackgroundProperty);
     }
 
     private void BuildGamingStrip()

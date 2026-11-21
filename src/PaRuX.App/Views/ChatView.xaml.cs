@@ -186,6 +186,18 @@ namespace PaRuX.Views
             ObserveVoiceGaming(GamingManager.Current.IsActive);
             PreviewKeyDown -= OnChatPreviewKeyDownVoice;
             PreviewKeyDown += OnChatPreviewKeyDownVoice;
+            LostFocus -= OnChatLostFocusPushToTalk;
+            LostFocus += OnChatLostFocusPushToTalk;
+            if (App.MainWin is { } mainWin)
+            {
+                mainWin.Activated -= OnWindowActivatedPushToTalk;
+                mainWin.Activated += OnWindowActivatedPushToTalk;
+            }
+            PreviewKeyUp -= OnChatPreviewKeyUpPushToTalk;
+            PreviewKeyUp += OnChatPreviewKeyUpPushToTalk;
+            MicButton.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(MicButton_PttPressed), true);
+            MicButton.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(MicButton_PttReleased), true);
+            MicButton.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(MicButton_PttReleased), true);
             _ = LoadSkillsAsync();
         }
 
@@ -2028,7 +2040,95 @@ namespace PaRuX.Views
         private Button? _readAloudButton;
         private bool _readAloudWired;
 
+        // Push-to-talk: press-and-hold on the microphone (or Ctrl+Space in the chat) records while held and transcribes on release;
+        // a quick tap keeps the click-to-start / click-to-stop behaviour. The policy is PushToTalkGesture (unit-tested).
+        private readonly PushToTalkGesture _ptt = new PushToTalkGesture();
+        private bool _pttStopWhenStarted;
+        private bool _pttKeyDown;
+
         private async void Mic_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ptt.ConsumeClick()) return;
+            await ToggleVoiceAsync();
+        }
+
+        private async void MicButton_PttPressed(object sender, PointerRoutedEventArgs e)
+        {
+            if (!e.GetCurrentPoint(MicButton).Properties.IsLeftButtonPressed) return;
+            await BeginPushToTalkAsync(fromClickableControl: true, () => MicButton.CapturePointer(e.Pointer));
+        }
+
+        private void MicButton_PttReleased(object sender, PointerRoutedEventArgs e)
+        {
+            try { MicButton.ReleasePointerCaptures(); } catch (Exception) { }
+            EndPushToTalk();
+            // The Click that follows a release is consumed by Mic_Click; anything left over (released elsewhere) is dropped.
+            _dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, _ptt.ClearClickSuppression);
+        }
+
+        private async Task BeginPushToTalkAsync(bool fromClickableControl, Action? capture)
+        {
+            bool idle = _voice.Phase == VoiceRecordingPhase.Idle && !_voiceStarting && _voiceConversation == null;
+            if (!_ptt.OnPress(idle, DateTime.UtcNow, fromClickableControl)) return;
+            _pttStopWhenStarted = false;
+            try { capture?.Invoke(); } catch (Exception) { }
+            await ToggleVoiceAsync();
+            if (_voice.Phase != VoiceRecordingPhase.Recording) { _ptt.OnStartFailed(); _pttStopWhenStarted = false; return; }
+            // Released while the microphone was still opening: finish the gesture now.
+            if (_pttStopWhenStarted) { _pttStopWhenStarted = false; await StopVoiceAndTranscribeAsync(limitReached: false); }
+        }
+
+        /// <summary>Focus left the chat, the window was deactivated or Gaming began while a hold was active: stop listening, never keep the microphone open.</summary>
+        private void AbortPushToTalk()
+        {
+            _pttKeyDown = false;
+            _pttStopWhenStarted = false;
+            if (!_ptt.IsHeld && _voice.Phase != VoiceRecordingPhase.Recording) return;
+            bool held = _ptt.IsHeld;
+            _ptt.Abort();
+            // A hold that was cut short is cancelled (no half-sentence is transcribed); a toggle-mode recording is left to the owner.
+            if (held && _voice.Phase == VoiceRecordingPhase.Recording) CancelVoiceRecording();
+        }
+
+        private void EndPushToTalk()
+        {
+            PushToTalkRelease release = _ptt.OnRelease(DateTime.UtcNow);
+            if (release != PushToTalkRelease.StopAndTranscribe) return;
+            if (_voice.Phase == VoiceRecordingPhase.Recording) _ = StopVoiceAndTranscribeAsync(limitReached: false);
+            else _pttStopWhenStarted = true;
+        }
+
+        private void OnChatLostFocusPushToTalk(object sender, RoutedEventArgs e)
+        {
+            // Focus moving between controls inside the chat still bubbles LostFocus: only abort when it really left the chat.
+            if (_ptt.IsHeld && !_pttKeyDown) return;   // a pointer hold keeps pointer capture on the mic button
+            if (_pttKeyDown && XamlRoot?.Content is UIElement && Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot) is DependencyObject focused
+                && IsInsideChat(focused)) return;
+            AbortPushToTalk();
+        }
+
+        private bool IsInsideChat(DependencyObject node)
+        {
+            for (DependencyObject? n = node; n != null; n = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(n))
+                if (ReferenceEquals(n, this)) return true;
+            return false;
+        }
+
+        private void OnWindowActivatedPushToTalk(object sender, Microsoft.UI.Xaml.WindowActivatedEventArgs e)
+        {
+            if (e.WindowActivationState == Microsoft.UI.Xaml.WindowActivationState.Deactivated) AbortPushToTalk();
+        }
+
+        private void OnChatPreviewKeyUpPushToTalk(object sender, KeyRoutedEventArgs e)
+        {
+            if (!_pttKeyDown) return;
+            if (e.Key != VirtualKey.Space && e.Key != VirtualKey.Control && e.Key != VirtualKey.LeftControl && e.Key != VirtualKey.RightControl) return;
+            _pttKeyDown = false;
+            e.Handled = true;
+            EndPushToTalk();
+        }
+
+        private async Task ToggleVoiceAsync()
         {
             if (_voiceStarting) return;
             if (_voiceConversation != null) { ShowTransientStatus(T("Voice mode is on. Turn it off (Esc) to dictate a single message.", "La modalità vocale è attiva. Disattivala (Esc) per dettare un singolo messaggio.")); return; }
@@ -2139,7 +2239,7 @@ namespace PaRuX.Views
                 : LocalBrush("PaRuXTextTertiaryBrush");
             ToolTipService.SetToolTip(MicButton, recording
                 ? T("Stop recording and transcribe (Esc cancels)", "Ferma la registrazione e trascrivi (Esc annulla)")
-                : T("Dictate: click to start recording, click again to stop (Esc cancels, 2 min max)", "Dettatura: clicca per iniziare a registrare, clicca di nuovo per fermare (Esc annulla, massimo 2 min)"));
+                : T("Dictate: hold to talk and release to transcribe (or Ctrl+Space), or click to start and click again to stop (Esc cancels, 2 min max)", "Dettatura: tieni premuto per parlare e rilascia per trascrivere (o Ctrl+Spazio), oppure clicca per iniziare e clicca di nuovo per fermare (Esc annulla, massimo 2 min)"));
             AutomationProperties.SetName(MicButton, recording ? T("Stop recording", "Ferma la registrazione") : T("Record voice message", "Registra un messaggio vocale"));
         }
 
@@ -2193,7 +2293,7 @@ namespace PaRuX.Views
                     using var timeout = new CancellationTokenSource(VoiceMessages.TranscribeTimeout);
                     TranscribeResponse result = await SpeechClient.Current.TranscribeAsync(
                         Convert.ToBase64String(wav), "voice-message.wav", timeout.Token);
-                    text = (result.Text ?? string.Empty).Trim();
+                    text = DictationText.Prepare(result.Text, SettingsStore.Current.Data.DictationRemoveFillers);
                     Log.Write("Voice transcription ok in " + sw.ElapsedMilliseconds + " ms: " + text.Length + " chars");
                 }
                 catch (OperationCanceledException)
@@ -2266,13 +2366,25 @@ namespace PaRuX.Views
             if (e.Key == VirtualKey.Escape && _voice.Phase == VoiceRecordingPhase.Recording)
             {
                 e.Handled = true;
+                _ptt.OnStartFailed();
                 CancelVoiceRecording();
+                return;
+            }
+            // Hold Ctrl+Space to talk, release to transcribe (key repeats are ignored).
+            if (e.Key == VirtualKey.Space && !e.KeyStatus.WasKeyDown && !_pttKeyDown
+                && Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+            {
+                e.Handled = true;
+                _pttKeyDown = true;
+                _ = BeginPushToTalkAsync(fromClickableControl: false, null);
             }
         }
 
         private void OnChatUnloadedStopVoice(object sender, RoutedEventArgs e)
         {
             GamingManager.Current.StateChanged -= OnVoiceGamingStateChanged;
+            if (App.MainWin is { } mw) mw.Activated -= OnWindowActivatedPushToTalk;
+            AbortPushToTalk();
             _voiceGamingTransitionInstance = null;
             StopVoiceUiResources();
         }
@@ -2287,6 +2399,9 @@ namespace PaRuX.Views
 
         private void StopVoiceUiResources()
         {
+            _pttKeyDown = false;
+            _pttStopWhenStarted = false;
+            _ptt.OnStartFailed();
             // Cancel client-side warmup admission as well as the visible UI.
             // Server-side owned process teardown is tracked separately.
             _speechWarmup.Cancel();

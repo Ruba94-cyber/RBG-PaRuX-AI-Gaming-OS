@@ -4200,6 +4200,7 @@ app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();
 PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
 app.MapGameSaveBackupEndpoints();
+app.MapGameExtensionEndpoints();
 app.MapOpenAiCompatibleProviderEndpoints();
 app.MapEmulatorEndpoints();
 PaRuX.Server.Orchestration.Gaming.QuickResumeEndpoints.MapQuickResumeEndpoints(app);

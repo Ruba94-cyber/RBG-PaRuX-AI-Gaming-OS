@@ -570,7 +570,7 @@
                             Height="36"
                             Width="36"
                             Padding="0"
-                            ToolTipService.ToolTip="Dictate: click to start recording, click again to stop (Esc cancels, 2 min max)" loc:Loc.ItToolTip="Dettatura: clicca per iniziare a registrare, clicca di nuovo per fermare (Esc annulla, massimo 2 min)">
+                            ToolTipService.ToolTip="Dictate: hold to talk and release to transcribe (or Ctrl+Space), or click to start and click again to stop (Esc cancels, 2 min max)" loc:Loc.ItToolTip="Dettatura: tieni premuto per parlare e rilascia per trascrivere (o Ctrl+Spazio), oppure clicca per iniziare e clicca di nuovo per fermare (Esc annulla, massimo 2 min)">
                             <FontIcon x:Name="MicIcon" Glyph="&#xE720;" FontSize="15" />
                         </Button>
                         <Button

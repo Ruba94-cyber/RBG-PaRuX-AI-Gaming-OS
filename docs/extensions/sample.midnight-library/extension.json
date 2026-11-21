@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "sample.midnight-library",
+  "name": "Midnight Library (sample)",
+  "version": "1.0.0",
+  "author": "PaRuX sample",
+  "description": "A sample data-only extension: a dark violet library theme, one lookup link and one launch preset.",
+  "theme": {
+    "name": "Midnight violet",
+    "appearance": "dark",
+    "accent": "#8B6CFF",
+    "background": "#14111F"
+  },
+  "metadataSources": [
+    {
+      "id": "sample-wiki-search",
+      "name": "Search the example wiki",
+      "urlTemplate": "https://wiki.example.org/search?q={title}"
+    }
+  ],
+  "launchPresets": [
+    {
+      "id": "sample-windowed-quiet",
+      "name": "Windowed and quiet",
+      "description": "Quiet performance profile with a gamepad layout; the window stays windowed.",
+      "platforms": ["PC"],
+      "controllerPreset": "xbox",
+      "performanceProfile": "quiet",
+      "fullscreen": false,
+      "launchArgs": ["-windowed"]
+    }
+  ]
+}

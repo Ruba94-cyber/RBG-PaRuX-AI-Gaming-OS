@@ -432,6 +432,9 @@ internal sealed class GameDetailPanel : UserControl
         // Steam achievements (read-only, through the owner's own key; only for titles with a Steam installation)
         UIElement? achievements = BuildAchievementsSection(title);
         if (achievements is not null) _body.Children.Add(achievements);
+        UIElement? retroAchievements = BuildRetroAchievementsSection(title);
+        if (retroAchievements is not null) _body.Children.Add(retroAchievements);
+        _body.Children.Add(BuildExtensionLookupSection(title));
 
         // private notes
         _body.Children.Add(BuildNotesEditor(title));
@@ -672,6 +675,93 @@ internal sealed class GameDetailPanel : UserControl
         panel.Children.Add(button);
         panel.Children.Add(summary);
         panel.Children.Add(list);
+        return panel;
+    }
+
+    /// <summary>RetroAchievements progress for an emulated installation (user-initiated, read-only, optional explicit game id).</summary>
+    private UIElement? BuildRetroAchievementsSection(GameTitleDto title)
+    {
+        GameInstallationDto? emulated = title.Installations.FirstOrDefault(i =>
+            !string.IsNullOrWhiteSpace(i.EmulatorName) && !string.IsNullOrWhiteSpace(i.Platform));
+        if (emulated is null) return null;
+        var panel = new StackPanel { Spacing = 6 };
+        var idBox = new TextBox
+        {
+            Header = T("RetroAchievements game id (optional)", "ID gioco RetroAchievements (facoltativo)"),
+            PlaceholderText = T("Empty: match by title", "Vuoto: ricerca per titolo"), MaxLength = 9,
+        };
+        AutomationProperties.SetAutomationId(idBox, "GameDetail_RetroAchievements_Id_TextBox");
+        var button = new Button { Content = T("Show RetroAchievements", "Mostra RetroAchievements") };
+        AutomationProperties.SetAutomationId(button, "GameDetail_RetroAchievements_Button");
+        var summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
+        AutomationProperties.SetAutomationId(summary, "GameDetail_RetroAchievements_Summary");
+        var list = new StackPanel { Spacing = 2 };
+        button.Click += async (_, _) =>
+        {
+            summary.Text = T("Asking RetroAchievements…", "Chiedo a RetroAchievements…");
+            list.Children.Clear();
+            try
+            {
+                int.TryParse(idBox.Text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int gameId);
+                RetroAchievementsResult r = await OwnerRecordsClient.Current.RetroAchievementsAsync(gameId, title.Name, emulated.Platform, CancellationToken.None);
+                if (r.Problem.Length > 0) { summary.Text = r.Problem; return; }
+                summary.Text = r.GameName + " - " + r.Unlocked + " / " + r.Total + T(" unlocked", " sbloccati");
+                foreach (AchievementEntryDto a in r.Achievements.OrderByDescending(x => x.Achieved).ThenBy(x => x.Name).Take(12))
+                    list.Children.Add(new TextBlock
+                    {
+                        Text = (a.Achieved ? "✔ " : "○ ") + a.Name + (string.IsNullOrWhiteSpace(a.Description) ? "" : " — " + a.Description),
+                        TextWrapping = TextWrapping.Wrap, Opacity = a.Achieved ? 1 : 0.6,
+                    });
+                if (r.Total > 12) list.Children.Add(new TextBlock { Text = T("…and " + (r.Total - 12) + " more", "…e altri " + (r.Total - 12)), Opacity = 0.6 });
+            }
+            catch (Exception ex) { summary.Text = ex.Message; }
+        };
+        panel.Children.Add(new TextBlock { Text = T("RETROACHIEVEMENTS", "RETROACHIEVEMENTS"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(idBox);
+        panel.Children.Add(button);
+        panel.Children.Add(summary);
+        panel.Children.Add(list);
+        return panel;
+    }
+
+    /// <summary>Lookup links from enabled game extensions. PaRuX never requests them: pressing one opens the address in the owner's browser.</summary>
+    private UIElement BuildExtensionLookupSection(GameTitleDto title)
+    {
+        var panel = new StackPanel { Spacing = 4, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetAutomationId(panel, "GameDetail_ExtensionLookups_Panel");
+        string platform = title.Installations.Select(i => i.Platform).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p)) ?? string.Empty;
+        Loaded += async (_, _) =>
+        {
+            if (panel.Children.Count > 0) return;
+            try
+            {
+                GamingCallResult<List<GameExtensionInfo>> result = await GamingOrchestratorClient.Current.ListExtensionsAsync(CancellationToken.None);
+                if (!result.Succeeded || result.Value is null) return;
+                foreach (GameExtensionInfo ext in result.Value.Where(e => e.Valid && e.Enabled))
+                    foreach (GameExtensionMetadataSource source in ext.MetadataSources)
+                    {
+                        string? url = GameExtensionManifestValidator.BuildLookupUrl(source, title.Name, platform);
+                        if (url is null) continue;
+                        var link = new HyperlinkButton { Content = source.Name + " (" + new Uri(url).Host + ")", Padding = new Thickness(0) };
+                        AutomationProperties.SetAutomationId(link, "GameDetail_ExtensionLookup_" + source.Id);
+                        link.Click += async (_, _) =>
+                        {
+                            try { await Windows.System.Launcher.LaunchUriAsync(new Uri(url)); } catch (Exception) { /* no browser: nothing else to do */ }
+                        };
+                        panel.Children.Add(link);
+                    }
+                if (panel.Children.Count > 0)
+                {
+                    panel.Children.Insert(0, new TextBlock
+                    {
+                        Text = T("LOOK THIS GAME UP (opens your browser)", "CERCA QUESTO GIOCO (apre il browser)"),
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0),
+                    });
+                    panel.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception) { /* the panel simply stays hidden */ }
+        };
         return panel;
     }
 
