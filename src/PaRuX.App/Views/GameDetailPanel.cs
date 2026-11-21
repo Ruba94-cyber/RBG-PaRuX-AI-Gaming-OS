@@ -585,6 +585,23 @@ internal sealed class GameDetailPanel : UserControl
             };
         };
         row.Children.Add(choose);
+
+        // SteamGridDB gallery: disabled with an honest reason when there is no saved key or Gaming mode is active.
+        string? artworkBlocked = SteamGridDbArtworkDialog.UnavailableReason();
+        var artwork = new Button { Content = T("Choose artwork…", "Scegli immagini…"), MinHeight = Target, FontSize = Body, IsEnabled = artworkBlocked is null };
+        AutomationProperties.SetAutomationId(artwork, "GameDetail_ArtworkChoose");
+        if (artworkBlocked is not null) ToolTipService.SetToolTip(artwork, artworkBlocked);
+        artwork.Click += async (_, _) =>
+            await SteamGridDbArtworkDialog.ShowAsync(XamlRoot, _title ?? title,
+                async () => { Apply(_title ?? title); if (_title is not null) await ShowAsync(_title); },
+                message => status.Text = message);
+        row.Children.Add(artwork);
+        if (artworkBlocked is not null)
+        {
+            var why = Label(artworkBlocked, Small, secondary: true);
+            AutomationProperties.SetAutomationId(why, "GameDetail_ArtworkDisabledReason");
+            panel.Children.Add(why);
+        }
         if (GameCoverStore.TryGetPath(key) is not null)
         {
             var remove = new Button { Content = T("Remove cover", "Rimuovi copertina"), MinHeight = Target, FontSize = Body };
