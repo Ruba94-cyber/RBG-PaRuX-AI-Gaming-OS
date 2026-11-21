@@ -120,6 +120,24 @@ builder.Services.AddSingleton<RagStore>(sp =>
 builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => new LegacyMiniLmEmbeddingProvider(sp.GetRequiredService<EmbeddingService>()));
 builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>()));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeJobService>();
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.WatchedFolderStore>();
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(sp =>
+{
+    var knowledgeJobs = sp.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
+    return new PaRuX.Server.Knowledge.KnowledgeFolderWatcher(id => knowledgeJobs.Start(id));
+});
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.WebKnowledgeSources>(sp =>
+{
+    var ragStore = sp.GetRequiredService<RagStore>();
+    var knowledgeJobs = sp.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
+    return new PaRuX.Server.Knowledge.WebKnowledgeSources(
+        PaRuXDataRoot.Combine("knowledge", "web-sources"),
+        PaRuX.Server.Knowledge.WebKnowledgeSources.DefaultContentRoot(),
+        folder => ragStore.AddSource(folder).Id,
+        id => { ragStore.RemoveSource(id); knowledgeJobs.Remove(id); },
+        id => knowledgeJobs.Start(id),
+        offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings));
+});
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<WebSearchService>();
 builder.Services.AddSingleton<InternetSettingsService>();
@@ -1152,10 +1170,16 @@ app.MapPost("/api/v1/rag/sources/{id}/reindex", async (string id, RagStore rag, 
 }).RequireDesktopOwner();
 
 PaRuX.Server.Knowledge.KnowledgeEndpoints.MapKnowledgeEndpoints(app);
+PaRuX.Server.Knowledge.KnowledgeWebWatchEndpoints.MapKnowledgeWebWatchEndpoints(app);
+PaRuX.Server.Knowledge.KnowledgeWebWatchEndpoints.RestoreWatchers(app.Services.GetRequiredService<RagStore>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.WatchedFolderStore>());
 PaRuX.Server.Knowledge.KnowledgeContextProvider.Current = app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
 
 app.MapDelete("/api/v1/rag/sources/{id}", (string id, RagStore rag) =>
 {
+    app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>().Unwatch(id);
+    app.Services.GetRequiredService<PaRuX.Server.Knowledge.WatchedFolderStore>().Set(id, false);
+    // A website source also owns the text files PaRuX saved for it: they are removed with it (edited copies are kept).
+    if (app.Services.GetRequiredService<PaRuX.Server.Knowledge.WebKnowledgeSources>().Remove(id)) return Results.NoContent();
     rag.RemoveSource(id);
     app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>().Remove(id);
     return Results.NoContent();
