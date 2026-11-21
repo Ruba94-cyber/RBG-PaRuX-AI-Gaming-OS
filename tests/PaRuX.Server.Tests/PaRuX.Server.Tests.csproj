@@ -29,6 +29,7 @@
     <None Include="Fixtures\ltx-video-2b-v0.9.5-header.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\tools\PaRuX.VirtualPadSim\PadScript.cs" Link="Linked\PadScript.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ChatDocumentScopeState.cs" Link="Linked\ChatDocumentScopeState.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\HistoryBackupSafety.cs" Link="Linked\HistoryBackupSafety.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiLanguage.cs" Link="Linked\UiLanguage.cs" />
