@@ -27,7 +27,7 @@ public sealed class AutoSetupNvidiaRuntimeRegressionTests
     public void Vulkan_launch_does_not_hardcode_the_first_adapter()
     {
         string source = File.ReadAllText(Path.Combine(Root(), "src", "PaRuX.Server", "RuntimeLaunchOptimizer.cs"));
-        Assert.Contains("VulkanDeviceSelector.ResolveAsync", source, StringComparison.Ordinal);
+        Assert.Contains("VulkanDeviceSelector.ChooseAsync", source, StringComparison.Ordinal);
         Assert.DoesNotContain("profile.Device = \"Vulkan0\";", source, StringComparison.Ordinal);
     }
 }

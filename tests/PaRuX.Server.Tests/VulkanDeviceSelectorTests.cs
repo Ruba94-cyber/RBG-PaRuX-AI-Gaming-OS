@@ -26,7 +26,7 @@ public sealed class VulkanDeviceSelectorTests
     {
         var devices = VulkanDeviceSelector.ParseDevices(MeasuredOutput);
         Assert.Equal(2, devices.Count);
-        Assert.Equal(new VulkanDeviceSelector.VulkanDevice(1, "NVIDIA GeForce RTX 5080", 16193), devices[1]);
+        Assert.Equal(new VulkanDeviceSelector.VulkanDevice(1, "NVIDIA GeForce RTX 5080", 16193, 15424), devices[1]);
         Assert.Empty(VulkanDeviceSelector.ParseDevices(null));
         Assert.Empty(VulkanDeviceSelector.ParseDevices("no devices here"));
     }
