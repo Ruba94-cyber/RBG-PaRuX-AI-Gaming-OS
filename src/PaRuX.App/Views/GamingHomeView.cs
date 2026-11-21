@@ -111,6 +111,7 @@ internal sealed class GamingHomeView : StackPanel
     private readonly Button _gameAssetStudio = new() { MinHeight = 44 };
     private readonly Button _installedMods = new() { MinHeight = 44 };
     private readonly QuickResumePanel _quickResume = new();
+    private readonly PausedGameBanner _pausedBanner = new();
     private List<GameTitleDto> _allTitles = new();
     private bool _recentOnly;
     private string _genre = string.Empty;
@@ -1376,6 +1377,9 @@ internal sealed class GamingHomeView : StackPanel
         _main.Children.Add(_mainColumn);
         _main.SizeChanged += (_, _) => ApplyMainLayout();
         ApplyMainLayout();
+        // Quick Resume comes FIRST: a paused game is offered above everything else, and nothing is shown when nothing is paused.
+        _pausedBanner.Resumed += () => _quickResume.RefreshAsync();
+        Children.Add(_pausedBanner);
         Children.Add(_main);
         Children.Add(_quickResume);
         XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
@@ -1549,13 +1553,17 @@ internal sealed class GamingHomeView : StackPanel
     // ------------------------------------------------------------------ data
 
     /// <summary>One-shot catalog refresh after a foreground return from Gaming. Never scan stores periodically or while a game owns the PC.</summary>
-    internal Task RefreshAfterGameAsync() => ReloadAsync(refresh: true);
+    internal Task RefreshAfterGameAsync() { _ = _pausedBanner.RefreshAsync(); return ReloadAsync(refresh: true); }
+
+    /// <summary>Console/TV start focus: the paused-game Resume button when one is offered.</summary>
+    internal bool FocusPausedResume() => _pausedBanner.FocusFirstResume();
 
     /// <summary>Refresh once when the Gaming workspace returns, without forcing
     /// an expensive store rediscovery or duplicating a pending load.</summary>
     internal Task RefreshWhenShownAsync()
     {
         ApplySetupProfilePresentation();
+        _ = _pausedBanner.RefreshAsync();
         return _cancellation == null || _cancellation.IsCancellationRequested
             ? ReloadAsync(refresh: false) : Task.CompletedTask;
     }

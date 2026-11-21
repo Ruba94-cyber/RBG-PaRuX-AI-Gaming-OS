@@ -560,6 +560,7 @@ public sealed class ManualGameLibraryView : UserControl
     public void FocusConsoleHome()
     {
         // TV mode starts on the first game; with an empty library (or before the list is realized) the status button is the fallback.
+        if (_universal?.FocusPausedResume() == true) return;   // a paused game comes first
         if (_universal?.FocusFirstGame() == true) return;
         _gamingStatusRefresh.Focus(FocusState.Programmatic);
         // The tiles realize a moment after the page shows: try once more shortly after.

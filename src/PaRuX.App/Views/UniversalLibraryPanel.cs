@@ -112,6 +112,9 @@ internal sealed class UniversalLibraryPanel : StackPanel
     /// <summary>Console/TV: puts the focus on the first game so the pad starts where the owner wants to play.</summary>
     internal bool FocusFirstGame() => _home.FocusFirstGame();
 
+    /// <summary>Console/TV: the paused game's Resume button takes the first focus when there is one.</summary>
+    internal bool FocusPausedResume() => _home.FocusPausedResume();
+
     private Task ReloadTitlesAsync() => _home.ReloadAsync();
     internal Task ReloadTitlesNowAsync() => _home.ReloadAsync(refresh: true);
 
