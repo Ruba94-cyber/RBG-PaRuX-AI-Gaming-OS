@@ -120,25 +120,7 @@ namespace PaRuX
             App.Hotkey.Pressed += OnHotkeyPressed;
             App.Hotkey.Register(SettingsStore.Current.Data.Hotkey);
 
-            // Game guides reuse the existing Chat composer and its exact
-            // selected-source document scope. No parallel chat implementation,
-            // no implicit send, and no AI launch while Gaming owns resources.
-            GameLibraryPage.GameGuideChatRequested += (question, sources) =>
-            {
-                if (GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive() ||
-                    sources is null || sources.Count is < 1 or > 64 ||
-                    sources.Any(id => string.IsNullOrWhiteSpace(id) ||
-                        id.Length > 200 || id.Any(char.IsControl)))
-                    return false;
-                // Refuse a busy Chat or unsent draft *before* navigation,
-                // so a failed handoff leaves the Games view and its notice.
-                if (!ChatPage.CanAcceptGameGuideDraft()) return false;
-                ShowChat();
-                if (!ChatPage.TryPrefillGameGuideDraft(question)) return false;
-                if (!ChatDocumentScopeState.TryUseExplicitSources(sources)) return false;
-                ChatPage.RefreshGuideDocumentScopeVisual();
-                return true;
-            };
+            // (The Games page is created on first open; its game-guide handoff is wired in CreateGameLibraryPage.)
 
             ChatSession.Current.ConversationChanged += OnConversationChanged;
             ChatSession.Current.MessageAdded += _ => OnConversationTouched();
@@ -195,6 +177,25 @@ namespace PaRuX
             // conversation started on a paired Android device shows up here too. Never
             // blocks startup and never throws if the server is unavailable.
             _ = SyncHistoryFromServerAsync();
+        }
+
+        /// <summary>Game guides reuse the existing Chat composer and its exact selected-source document scope. No parallel
+        /// chat implementation, no implicit send, and no AI launch while Gaming owns resources.</summary>
+        private bool OnGameGuideChatRequested(string question, IReadOnlyList<string> sources)
+        {
+            if (GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive() ||
+                sources is null || sources.Count is < 1 or > 64 ||
+                sources.Any(id => string.IsNullOrWhiteSpace(id) ||
+                    id.Length > 200 || id.Any(char.IsControl)))
+                return false;
+            // Refuse a busy Chat or unsent draft *before* navigation,
+            // so a failed handoff leaves the Games view and its notice.
+            if (!ChatPage.CanAcceptGameGuideDraft()) return false;
+            ShowChat();
+            if (!ChatPage.TryPrefillGameGuideDraft(question)) return false;
+            if (!ChatDocumentScopeState.TryUseExplicitSources(sources)) return false;
+            ChatPage.RefreshGuideDocumentScopeVisual();
+            return true;
         }
 
         private async Task SyncHistoryFromServerAsync()
@@ -283,7 +284,7 @@ namespace PaRuX
             if (App.IsShuttingDown) return;
             args.Cancel = true;
             ChatSession.Current.Persist();
-            GameLibraryPage.CancelExpensiveWork();
+            GameLibraryPageIfCreated?.CancelExpensiveWork();
             sender.Hide();
         }
 
@@ -323,7 +324,7 @@ namespace PaRuX
         {
             try
             {
-                _allConversations = HistoryStore.LoadAll()
+                _allConversations = HistoryStore.LoadAllUsingPreload()
                     .OrderByDescending(c => c.IsFavorite)
                     .ThenByDescending(c => c.UpdatedUtc)
                     .ToList();
@@ -781,7 +782,7 @@ namespace PaRuX
             }
             HideAllWorkspacePages();
             ChatPage.Visibility = Visibility.Visible;
-            SettingsPage.Visibility = Visibility.Collapsed;
+            if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             OnboardingPage.Visibility = Visibility.Collapsed;
             // Quick Chat is a separate always-on-top window. It is useful over other apps,
             // but must not sit over the main shell when returning from Settings.
@@ -817,7 +818,7 @@ namespace PaRuX
             NavView.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
             SetNavPaneVisible(false);
             ChatPage.Visibility = Visibility.Collapsed;
-            SettingsPage.Visibility = Visibility.Collapsed;
+            if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();
             OnboardingPage.Visibility = Visibility.Visible;
             OnboardingPage.OnReturnedFromModelHub(expandManualSetup: returningFromModelHub);

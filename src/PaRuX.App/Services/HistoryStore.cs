@@ -22,6 +22,14 @@ namespace PaRuX.Services
         private static bool _initialized;
         private static bool _backupChecked;
 
+        // Startup preload: the sidebar needs every conversation before the first paint, and reading them is independent
+        // of building the window, so the read starts early on a worker thread and the first sidebar build consumes it.
+        // Any write bumps _writeVersion, which invalidates a preload that raced with it (the consumer then reads fresh).
+        private static int _writeVersion;
+        private static readonly object PreloadGate = new object();
+        private static System.Threading.Tasks.Task<List<Conversation>>? _preload;
+        private static int _preloadVersion;
+
         /// <summary>The exact JSON shape stored per conversation row, reused by ConversationSyncClient
         /// so the server-pushed document round-trips identically to what is stored locally.</summary>
         public static string SerializeDocument(Conversation conversation) =>
@@ -218,6 +226,42 @@ CREATE INDEX IF NOT EXISTS ix_conversations_updated
             return result;
         }
 
+        /// <summary>Starts reading every conversation on a worker thread. Safe to call more than once.</summary>
+        public static void BeginPreload()
+        {
+            lock (PreloadGate)
+            {
+                if (_preload != null) return;
+                _preloadVersion = System.Threading.Volatile.Read(ref _writeVersion);
+                _preload = System.Threading.Tasks.Task.Run(LoadAll);
+            }
+        }
+
+        /// <summary>The preloaded list when one is pending and no write happened since it started (consumed once);
+        /// otherwise a normal <see cref="LoadAll"/>.</summary>
+        public static List<Conversation> LoadAllUsingPreload()
+        {
+            System.Threading.Tasks.Task<List<Conversation>>? pending;
+            int version;
+            lock (PreloadGate)
+            {
+                pending = _preload;
+                version = _preloadVersion;
+                _preload = null;
+            }
+            if (pending == null || version != System.Threading.Volatile.Read(ref _writeVersion)) return LoadAll();
+            try
+            {
+                List<Conversation> loaded = pending.GetAwaiter().GetResult();
+                // A write that landed while the worker was reading makes the snapshot suspect; read again.
+                return version == System.Threading.Volatile.Read(ref _writeVersion) ? loaded : LoadAll();
+            }
+            catch
+            {
+                return LoadAll();
+            }
+        }
+
         private static void CreateDailyBackup(SqliteConnection source)
         {
             if (_backupChecked) return;
@@ -309,6 +353,7 @@ CREATE INDEX IF NOT EXISTS ix_conversations_updated
         /// </summary>
         public static bool Save(Conversation conversation)
         {
+            System.Threading.Interlocked.Increment(ref _writeVersion);
             if (conversation == null) return false;
             // An untouched empty conversation is intentionally not materialized on disk.
             if (conversation.Messages == null || conversation.Messages.Count == 0) return true;
@@ -403,6 +448,7 @@ ON CONFLICT(id) DO UPDATE SET
         /// </summary>
         public static bool RestoreBranch(Conversation conversation, string branchId)
         {
+            System.Threading.Interlocked.Increment(ref _writeVersion);
             if (conversation == null || string.IsNullOrWhiteSpace(branchId) || conversation.Branches == null)
                 return false;
 
@@ -609,6 +655,7 @@ ON CONFLICT(id) DO UPDATE SET
 
         public static void Delete(string id)
         {
+            System.Threading.Interlocked.Increment(ref _writeVersion);
             Conversation? removed = Load(id);
             try
             {

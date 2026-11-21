@@ -49,6 +49,47 @@ namespace PaRuX
             [StudioWorkspace.Runtime] = new("Workspace_Runtime_Page", "Runtime", "Runtime", () => new RuntimeManagerView()),
         };
 
+        // Model Hub, Games and Settings are heavy to construct (about 120, 100 and 150 ms) and are not visible on a normal
+        // launch, so they are created on first use instead of by InitializeComponent. Code that only needs to HIDE or
+        // inspect a page uses the *IfCreated property (a page that was never built cannot be visible, busy or running);
+        // code that needs the page itself uses the creating property.
+        private ModelHubView? _modelHubPage;
+        private ManualGameLibraryView? _gameLibraryPage;
+        private SettingsView? _settingsPage;
+
+        private ModelHubView ModelHubPage => _modelHubPage ?? CreateModelHubPage();
+        private ManualGameLibraryView GameLibraryPage => _gameLibraryPage ?? CreateGameLibraryPage();
+        private SettingsView SettingsPage => _settingsPage ??= AddEagerPage(new SettingsView());
+        private ModelHubView? ModelHubPageIfCreated => _modelHubPage;
+        private ManualGameLibraryView? GameLibraryPageIfCreated => _gameLibraryPage;
+        private SettingsView? SettingsPageIfCreated => _settingsPage;
+
+        private T AddEagerPage<T>(T page) where T : FrameworkElement
+        {
+            page.Visibility = Visibility.Collapsed;
+            WorkspacePagesHost.Children.Insert(0, page);
+            return page;
+        }
+
+        private bool GameLibraryBusy => _gameLibraryPage?.IsInteractionBusy ?? false;
+
+        private ModelHubView CreateModelHubPage()
+        {
+            var page = new ModelHubView();
+            // Same state the page would have been told by the last mode switch had it existed all along.
+            page.ApplyInterfaceMode(StudioModeToggle.IsOn);
+            _modelHubPage = AddEagerPage(page);
+            return page;
+        }
+
+        private ManualGameLibraryView CreateGameLibraryPage()
+        {
+            var page = new ManualGameLibraryView();
+            page.GameGuideChatRequested += OnGameGuideChatRequested;
+            _gameLibraryPage = AddEagerPage(page);
+            return page;
+        }
+
         private Grid? _lazyPageErrorPanel;
         private TextBlock? _lazyPageErrorText;
         private StudioWorkspace _lazyPageErrorWorkspace;

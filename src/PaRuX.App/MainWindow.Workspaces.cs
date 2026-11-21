@@ -119,7 +119,7 @@ namespace PaRuX
             UpdatesNavItem.Visibility = advanced;
             RuntimeNavItem.Visibility = advanced;
             ChatPage.ApplyInterfaceMode(studio);
-            ModelHubPage.ApplyInterfaceMode(studio);
+            ModelHubPageIfCreated?.ApplyInterfaceMode(studio);
             ApplyModeTabVisibility();
 
             if (!studio && navigateHomeIfHidden && !IsGamingModeTab)
@@ -140,12 +140,12 @@ namespace PaRuX
 
         private void HideAllWorkspacePages()
         {
-            if (ModelHubPage.Visibility == Visibility.Visible)
-                ModelHubPage.OnHidden();
-            ModelHubPage.Visibility = Visibility.Collapsed;
+            if (ModelHubPageIfCreated is { Visibility: Visibility.Visible } visibleHub)
+                visibleHub.OnHidden();
+            if (ModelHubPageIfCreated is { } hub) hub.Visibility = Visibility.Collapsed;
             HideLazyPages();
-            GameLibraryPage.CancelExpensiveWork();
-            GameLibraryPage.Visibility = Visibility.Collapsed;
+            GameLibraryPageIfCreated?.CancelExpensiveWork();
+            if (GameLibraryPageIfCreated is { } games) games.Visibility = Visibility.Collapsed;
         }
 
         private bool _onboardingHandoffActive;
@@ -324,7 +324,7 @@ namespace PaRuX
             SyncModeTabToWorkspace(gaming: workspace == StudioWorkspace.Games);
             SetNavPaneVisible(true);
             ChatPage.Visibility = Visibility.Collapsed;
-            SettingsPage.Visibility = Visibility.Collapsed;
+            if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             OnboardingPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();
             SelectWorkspaceNavigationItem(NavigationItemFor(workspace));
@@ -373,10 +373,10 @@ namespace PaRuX
 
         private string? ActiveWorkspaceTag()
         {
-            if (GameLibraryPage.Visibility == Visibility.Visible) return "__games__";
+            if (GameLibraryPageIfCreated is { Visibility: Visibility.Visible }) return "__games__";
             if (IsLazyPageVisible(StudioWorkspace.Create)) return "__create__";
             if (IsLazyPageVisible(StudioWorkspace.Projects)) return "__projects__";
-            if (ModelHubPage.Visibility == Visibility.Visible) return "__modelhub__";
+            if (ModelHubPageIfCreated is { Visibility: Visibility.Visible }) return "__modelhub__";
             if (IsLazyPageVisible(StudioWorkspace.DocumentSearch)) return "__documents__";
             if (IsLazyPageVisible(StudioWorkspace.ModelRouting)) return "__modelrouting__";
             if (IsLazyPageVisible(StudioWorkspace.Lifecycle)) return "__lifecycle__";
@@ -386,7 +386,7 @@ namespace PaRuX
             if (IsLazyPageVisible(StudioWorkspace.Updates)) return "__updates__";
             if (IsLazyPageVisible(StudioWorkspace.Runtime)) return "__runtime__";
             if (ChatPage.Visibility == Visibility.Visible) return "__chat__";
-            if (SettingsPage.Visibility == Visibility.Visible) return "__settings__";
+            if (SettingsPageIfCreated is { Visibility: Visibility.Visible }) return "__settings__";
             return null;
         }
 

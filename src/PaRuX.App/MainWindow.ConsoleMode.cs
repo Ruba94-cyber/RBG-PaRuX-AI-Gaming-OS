@@ -61,7 +61,7 @@ public sealed partial class MainWindow
         // Console is closed, or user interaction makes focus restoration unsafe.
         _lastObservedVerifiedReturnUtc = notice.ExitUtc;
         if (!_consoleModeActive || !SettingsStore.Current.Data.AutoShowConsoleAfterVerifiedGameExit
-            || GameLibraryPage.IsInteractionBusy || LocalAiController.Current.IsGameActive())
+            || GameLibraryBusy || LocalAiController.Current.IsGameActive())
             return;
 
         _handlingVerifiedReturn = true;
@@ -70,7 +70,7 @@ public sealed partial class MainWindow
             GamingStatusDto? state = await GamingOrchestratorClient.Current.GetStatusAsync();
             if (App.IsShuttingDown || !ConsoleAutoReturnPolicy.CanActivate(
                 SettingsStore.Current.Data.AutoShowConsoleAfterVerifiedGameExit,
-                _consoleModeActive, GameLibraryPage.IsInteractionBusy,
+                _consoleModeActive, GameLibraryBusy,
                 LocalAiController.Current.IsGameActive(), state, notice, DateTime.UtcNow))
                 return;
 
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
                 if (selectedTv is null) return;
             }
             if (App.IsShuttingDown || !_consoleModeActive || _consoleRoutingInProgress ||
-                LocalAiController.Current.IsGameActive() || GameLibraryPage.IsInteractionBusy)
+                LocalAiController.Current.IsGameActive() || GameLibraryBusy)
                 return;
 
             // Windows can relocate our existing fullscreen presenter during a
@@ -119,7 +119,7 @@ public sealed partial class MainWindow
                     return;
             }
             if (App.IsShuttingDown || !_consoleModeActive || _consoleRoutingInProgress ||
-                LocalAiController.Current.IsGameActive() || GameLibraryPage.IsInteractionBusy)
+                LocalAiController.Current.IsGameActive() || GameLibraryBusy)
                 return;
 
             // This is the sole intentionally foregrounding behavior: explicitly
@@ -190,7 +190,7 @@ public sealed partial class MainWindow
                 Log.Write("Console fullscreen restore failed: " + restoreEx.GetType().Name);
             }
             _consoleModeActive = AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen;
-            if (!_consoleModeActive) GameLibraryPage.ApplyConsoleMode(false);
+            if (!_consoleModeActive) GameLibraryPageIfCreated?.ApplyConsoleMode(false);
             UpdateConsoleModeButton();
             return false;
         }
@@ -323,7 +323,7 @@ public sealed partial class MainWindow
     {
         AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         _consoleModeActive = false;
-        GameLibraryPage.ApplyConsoleMode(false);
+        GameLibraryPageIfCreated?.ApplyConsoleMode(false);
         RestorePreviousConsoleDisplay();
         if (AppWindow.Presenter is OverlappedPresenter presenter)
             presenter.Maximize();
@@ -337,7 +337,7 @@ public sealed partial class MainWindow
         // Event-driven Windows Gamepad UI Navigation: no XOutput/ViGEm, driver,
         // virtual device, background polling or per-frame input worker.
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
-            (int)e.Key, GameLibraryPage.IsInteractionBusy);
+            (int)e.Key, GameLibraryBusy);
 
         if (action == ConsoleNavigationAction.Exit)
         {

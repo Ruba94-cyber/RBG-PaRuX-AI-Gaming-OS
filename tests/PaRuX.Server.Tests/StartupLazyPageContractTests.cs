@@ -89,6 +89,47 @@ public sealed class StartupLazyPageContractTests
         Assert.Contains("ProcessGameShortcutRequests", app, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Model_hub_games_and_settings_pages_are_created_on_first_use_and_never_by_hiding_or_inspection()
+    {
+        string xaml = Read("src", "PaRuX.App", "MainWindow.xaml");
+        foreach (string view in new[] { "ModelHubView", "ManualGameLibraryView", "SettingsView" })
+            Assert.DoesNotContain("views:" + view, xaml, StringComparison.Ordinal);
+
+        string lazy = Read("src", "PaRuX.App", "MainWindow.LazyPages.cs");
+        Assert.Contains("ModelHubPage => _modelHubPage ?? CreateModelHubPage()", lazy, StringComparison.Ordinal);
+        Assert.Contains("GameLibraryPage => _gameLibraryPage ?? CreateGameLibraryPage()", lazy, StringComparison.Ordinal);
+        Assert.Contains("SettingsPage => _settingsPage ??= AddEagerPage(new SettingsView())", lazy, StringComparison.Ordinal);
+        // The game-guide handoff that used to be wired in the window constructor follows the page's creation.
+        Assert.Contains("page.GameGuideChatRequested += OnGameGuideChatRequested", lazy, StringComparison.Ordinal);
+
+        // Hiding, visibility checks and the busy flag must use the non-creating accessors so startup, Back/Hide and the
+        // Console activation handler never construct a page just to hide it.
+        string workspaces = Read("src", "PaRuX.App", "MainWindow.Workspaces.cs");
+        string window = Read("src", "PaRuX.App", "MainWindow.xaml.cs");
+        string console = Read("src", "PaRuX.App", "MainWindow.ConsoleMode.cs");
+        Assert.DoesNotContain("GameLibraryPage.Visibility == ", workspaces, StringComparison.Ordinal);
+        Assert.DoesNotContain("ModelHubPage.Visibility == ", workspaces, StringComparison.Ordinal);
+        Assert.DoesNotContain("SettingsPage.Visibility == ", workspaces, StringComparison.Ordinal);
+        Assert.DoesNotContain("SettingsPage.Visibility = Visibility.Collapsed", workspaces + window, StringComparison.Ordinal);
+        Assert.DoesNotContain("GameLibraryPage.IsInteractionBusy", console, StringComparison.Ordinal);
+        Assert.DoesNotContain("GameLibraryPage.CancelExpensiveWork()", window + workspaces, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sidebar_history_is_read_on_a_worker_during_window_construction_and_a_write_invalidates_it()
+    {
+        string app = Read("src", "PaRuX.App", "App.xaml.cs");
+        Assert.True(app.IndexOf("HistoryStore.BeginPreload()", StringComparison.Ordinal)
+            < app.IndexOf("new MainWindow()", StringComparison.Ordinal));
+        Assert.Contains("HistoryStore.LoadAllUsingPreload()", Read("src", "PaRuX.App", "MainWindow.xaml.cs"), StringComparison.Ordinal);
+
+        string store = Read("src", "PaRuX.App", "Services", "HistoryStore.cs");
+        // Every writer bumps the version so a snapshot read before a write is never shown afterwards.
+        Assert.Equal(3, Regex.Matches(store, "Interlocked\\.Increment\\(ref _writeVersion\\)").Count);
+        Assert.Contains("version != System.Threading.Volatile.Read(ref _writeVersion)", store, StringComparison.Ordinal);
+    }
+
     private static string Root()
     {
         string? dir = AppContext.BaseDirectory;

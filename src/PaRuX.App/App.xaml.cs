@@ -97,6 +97,8 @@ namespace PaRuX
             try
             {
                 AppPaths.EnsureCreated();
+                // Read the sidebar history on a worker while the window is built (consumed by the first RefreshHistory).
+                HistoryStore.BeginPreload();
                 SettingsStore.Current.Load();
                 // English is the base language; Italian only when chosen in Settings (not from the Windows language).
                 PaRuX.Services.UiLanguage.Apply(SettingsStore.Current.Data.UiLanguage);
