@@ -54,6 +54,24 @@ public static class GameSaveBackupEndpoints
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Results.Problem("The sync folder could not be saved."); }
         }).RequireDesktopOwner();
 
+        // Side-by-side metadata of games whose backups diverged between this PC and the mirror, plus the choices already made.
+        app.MapGet("/api/v1/gaming/save-backups/sync/conflicts", (GameSaveBackupService backup) =>
+        {
+            try { return Results.Ok(backup.SyncConflicts()); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+            catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Results.Problem("The conflicts could not be read."); }
+        }).RequireDesktopOwner();
+
+        app.MapPost("/api/v1/gaming/save-backups/sync/resolve", (GameSaveConflictChoiceRequest request, GameSaveBackupService backup) =>
+        {
+            if (request is null) return Results.BadRequest();
+            try { return Results.Ok(backup.ResolveConflict(request.Label, request.Choice)); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+            catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Results.Problem("The choice could not be saved."); }
+        }).RequireDesktopOwner();
+
         app.MapPost("/api/v1/gaming/save-backups/sync", async (GameSaveBackupService backup, CancellationToken ct) =>
         {
             try { return Results.Ok(await backup.SyncAsync(ct)); }

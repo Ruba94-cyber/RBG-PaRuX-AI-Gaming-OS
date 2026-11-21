@@ -133,6 +133,13 @@ namespace PaRuX.Services
         public Task<GamingCallResult<GameSaveSyncStatusDto>> SetGameSaveSyncFolderAsync(string? folder, CancellationToken ct = default) =>
             SendAsync<GameSaveSyncStatusDto>(HttpMethod.Put, "/api/v1/gaming/save-backups/sync", new GameSaveSyncFolderRequest(folder), ct);
 
+        /// <summary>Games whose save history forked between this PC and the mirror, with both sides' metadata.</summary>
+        public Task<GamingCallResult<GameSaveSyncConflictsDto>> GetGameSaveConflictsAsync(CancellationToken ct = default) =>
+            SendAsync<GameSaveSyncConflictsDto>(HttpMethod.Get, "/api/v1/gaming/save-backups/sync/conflicts", null, ct);
+
+        public Task<GamingCallResult<GameSaveSyncDecisionDto>> ResolveGameSaveConflictAsync(string label, string choice, CancellationToken ct = default) =>
+            SendAsync<GameSaveSyncDecisionDto>(HttpMethod.Post, "/api/v1/gaming/save-backups/sync/resolve", new GameSaveConflictChoiceRequest(label, choice), ct);
+
         public Task<GamingCallResult<GameSaveSyncResultDto>> RunGameSaveSyncAsync(CancellationToken ct = default) =>
             SendAsync<GameSaveSyncResultDto>(HttpMethod.Post, "/api/v1/gaming/save-backups/sync", null, ct, InspectionHttpClient);
 

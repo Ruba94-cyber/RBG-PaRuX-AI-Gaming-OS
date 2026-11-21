@@ -171,6 +171,7 @@ DENY GET /api/v1/gaming/providers
 DENY GET /api/v1/gaming/quick-resume
 DENY GET /api/v1/gaming/save-backups
 DENY GET /api/v1/gaming/save-backups/sync
+DENY GET /api/v1/gaming/save-backups/sync/conflicts
 DENY GET /api/v1/gaming/smart-collections
 DENY GET /api/v1/gaming/status
 DENY GET /api/v1/gaming/titles
@@ -466,6 +467,7 @@ DENY POST /api/v1/gaming/quick-resume/suspend
 DENY POST /api/v1/gaming/resume
 DENY POST /api/v1/gaming/save-backups
 DENY POST /api/v1/gaming/save-backups/sync
+DENY POST /api/v1/gaming/save-backups/sync/resolve
 DENY POST /api/v1/gaming/save-backups/{id}/restore
 DENY POST /api/v1/gaming/save-backups/{id}/restore-plan
 DENY POST /api/v1/gaming/save-backups/{id}/verify
