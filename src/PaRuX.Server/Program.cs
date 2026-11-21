@@ -333,6 +333,7 @@ builder.Services.AddSingleton<PaRuX.Server.Orchestration.Gaming.QuickResumeServi
 builder.Services.AddSingleton<TemporaryGameModService>();
 builder.Services.AddSingleton<GameSkinStudioService>();
 builder.Services.AddSingleton<GameAssetModService>();
+builder.Services.AddSingleton<GameModChangeSetService>();
 builder.Services.AddSingleton<GameModDropInService>();
 builder.Services.AddSingleton<ManualGameSessionService>();
 builder.Services.AddSingleton<SteamGameDiscoveryProvider>();
@@ -4194,6 +4195,7 @@ app.MapPlayniteImportEndpoints();
 app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
+app.MapGameModChangeSetEndpoints();
 app.MapLocalWishlistEndpoints();
 app.MapGgufQuantizeEndpoints();
 app.MapGameTitleEndpoints();
