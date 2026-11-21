@@ -128,6 +128,13 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         RawGamepadDeviceInfo? pick = null;
         try
         {
+            // If Windows already exposes an Xbox-class gamepad (a real one, or this pad forwarded as a virtual Xbox pad), WinUI
+            // navigates with its own gamepad keys: polling the raw pad too would move the focus twice per press.
+            if (Windows.Gaming.Input.Gamepad.Gamepads.Count > 0)
+            {
+                _ticksToScan = ScanEveryTicks;
+                return;
+            }
             // Xbox-family pads already navigate through WinUI's own gamepad keys; only raw pads need this path.
             pick = _list().FirstOrDefault(d => !PadMappingPresets.IsXInputFamily(d.VendorId, d.ProductId));
         }

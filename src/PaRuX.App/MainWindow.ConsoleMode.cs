@@ -286,9 +286,11 @@ public sealed partial class MainWindow
             GameLibraryPage.OnShown();
             UpdateConsoleModeButton();
             GameLibraryPage.FocusConsoleHome();
+            StartConsoleRawPad();
         }
         catch
         {
+            StopConsoleRawPad();
             if (_consoleModeActive)
             {
                 AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
@@ -321,6 +323,7 @@ public sealed partial class MainWindow
 
     private void ExitConsoleMode()
     {
+        StopConsoleRawPad();
         AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         _consoleModeActive = false;
         GameLibraryPageIfCreated?.ApplyConsoleMode(false);
@@ -338,48 +341,52 @@ public sealed partial class MainWindow
         // virtual device, background polling or per-frame input worker.
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
             (int)e.Key, GameLibraryBusy);
+        if (ApplyConsoleAction(action)) e.Handled = true;
+    }
+
+    /// <summary>
+    /// One place that turns a Console/TV navigation action into UI behaviour, shared by WinUI gamepad key events (Xbox-class pads)
+    /// and the driverless raw-pad navigator (for example a Stadia pad). Returns true when the action was handled.
+    /// </summary>
+    private bool ApplyConsoleAction(ConsoleNavigationAction action)
+    {
+        if (!_consoleModeActive || action == ConsoleNavigationAction.None) return false;
 
         if (action == ConsoleNavigationAction.SwitchWorkspace)
-        {
-            e.Handled = SwitchConsoleWorkspace();
-            return;
-        }
+            return SwitchConsoleWorkspace();
 
         // B on the AI page goes back to the Gaming library first; only B on the library leaves Console/TV mode.
         if (action == ConsoleNavigationAction.Exit && !ConsoleOnGamingWorkspace())
-        {
-            e.Handled = SwitchConsoleWorkspace();
-            return;
-        }
+            return SwitchConsoleWorkspace();
 
         if (action == ConsoleNavigationAction.Exit)
         {
             try
             {
                 ExitConsoleMode();
-                e.Handled = true;
+                return true;
             }
             catch (Exception ex)
             {
                 Log.Write("Console exit input failed: " + ex.GetType().Name);
                 _consoleModeActive = AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen;
                 UpdateConsoleModeButton();
+                return false;
             }
-            return;
         }
 
         if (!ConsoleOnGamingWorkspace()
             && action is ConsoleNavigationAction.PreviousPage or ConsoleNavigationAction.NextPage
                 or ConsoleNavigationAction.ScrollUp or ConsoleNavigationAction.ScrollDown or ConsoleNavigationAction.FocusSearch)
-            return;   // library-only actions are ignored on the AI page; native focus navigation below still works there
+            return false;   // library-only actions are ignored on the AI page; native focus navigation below still works there
 
         switch (action)
         {
-            case ConsoleNavigationAction.PreviousPage: GameLibraryPage.PageLists(-1); e.Handled = true; return;
-            case ConsoleNavigationAction.NextPage: GameLibraryPage.PageLists(1); e.Handled = true; return;
-            case ConsoleNavigationAction.ScrollUp: GameLibraryPage.ScrollBy(-240); e.Handled = true; return;
-            case ConsoleNavigationAction.ScrollDown: GameLibraryPage.ScrollBy(240); e.Handled = true; return;
-            case ConsoleNavigationAction.FocusSearch: GameLibraryPage.FocusSearch(); e.Handled = true; return;
+            case ConsoleNavigationAction.PreviousPage: GameLibraryPage.PageLists(-1); return true;
+            case ConsoleNavigationAction.NextPage: GameLibraryPage.PageLists(1); return true;
+            case ConsoleNavigationAction.ScrollUp: GameLibraryPage.ScrollBy(-240); return true;
+            case ConsoleNavigationAction.ScrollDown: GameLibraryPage.ScrollBy(240); return true;
+            case ConsoleNavigationAction.FocusSearch: GameLibraryPage.FocusSearch(); return true;
         }
 
         // The existing native WinUI control handles Accept (A/Enter) and text
@@ -392,8 +399,58 @@ public sealed partial class MainWindow
             ConsoleNavigationAction.Right => FocusNavigationDirection.Right,
             _ => null
         };
-        if (direction.HasValue && FocusManager.TryMoveFocus(direction.Value))
-            e.Handled = true;
+        return direction.HasValue && FocusManager.TryMoveFocus(direction.Value);
+    }
+
+    // ---- Driverless navigation for raw HID pads (for example Google Stadia) -------------------------------------------------
+    // WinUI only turns Xbox-class gamepads into navigation key events. A raw HID pad is read directly while Console/TV mode is
+    // open and no game is running; it never starts a virtual pad and stops the moment a game or Gaming mode takes over.
+    private ConsoleRawPadNavigator? _consoleRawPad;
+
+    private void StartConsoleRawPad()
+    {
+        try
+        {
+            if (_consoleRawPad == null)
+            {
+                _consoleRawPad = new ConsoleRawPadNavigator();
+                _consoleRawPad.ActionRaised += action => { if (_consoleModeActive) ApplyConsoleAction(action); };
+                _consoleRawPad.AcceptRequested += AcceptFocusedConsoleControl;
+            }
+            _consoleRawPad.Start(DispatcherQueue, () => GameLibraryBusy);
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Console raw-pad navigation could not start: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private void StopConsoleRawPad()
+    {
+        try { _consoleRawPad?.Stop(); }
+        catch (Exception ex) { Log.Write("Console raw-pad navigation stop failed: " + ex.GetType().Name); }
+    }
+
+    /// <summary>Accept (A) from a raw pad: invoke the focused control through UI Automation, exactly what a screen reader's Invoke does.
+    /// No mouse or keyboard input is synthesized.</summary>
+    private void AcceptFocusedConsoleControl()
+    {
+        if (!_consoleModeActive || RootGrid.XamlRoot is null) return;
+        if (FocusManager.GetFocusedElement(RootGrid.XamlRoot) is not UIElement focused) return;
+        try
+        {
+            var peer = Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(focused);
+            if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)
+                is Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider invoke) { invoke.Invoke(); return; }
+            if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Toggle)
+                is Microsoft.UI.Xaml.Automation.Provider.IToggleProvider toggle) { toggle.Toggle(); return; }
+            if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.SelectionItem)
+                is Microsoft.UI.Xaml.Automation.Provider.ISelectionItemProvider item) item.Select();
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Console raw-pad accept failed: " + ex.GetType().Name);
+        }
     }
 
     private void UpdateConsoleModeButton()
