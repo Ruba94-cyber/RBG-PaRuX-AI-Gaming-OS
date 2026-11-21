@@ -831,11 +831,20 @@ WHERE id = $id AND status = $running AND execution_attempt_id = $attempt;";
     execution_owner_pid = CASE WHEN $terminal = 1 THEN NULL ELSE execution_owner_pid END,
     execution_owner_start_ticks = CASE WHEN $terminal = 1 THEN NULL ELSE execution_owner_start_ticks END,
     updated_utc = $updated
-WHERE id = $id AND (status <> $cancelled OR $status = $cancelled);";
+WHERE id = $id AND (status <> $cancelled OR $status = $cancelled)
+  AND NOT (status = $waiting AND stage = $waitingStage AND $status = $running AND COALESCE($stage, '') <> $resumedStage);";
             // Cancelled is terminal (AgentTaskResumeService: "cancelled tasks are immutable"). Live
             // benchmark: a worker's per-step "running" stage update landed after an API cancel, the
             // worker's poll then saw "running" and never stopped, and the task resumed after restart.
             command.Parameters.AddWithValue("$cancelled", AgentTaskStatus.Cancelled);
+            // A task paused for a durable user question stays paused. Live real-model run: a per-step "running" stage update
+            // queued by the worker landed after the pause, flipped the task back to running, and the worker re-claimed it every
+            // few seconds (13 times) re-asking the same unanswered question. Only the answer path (ResumedStage) may leave the wait;
+            // cancel, fail and manual resume use other statuses or other store methods.
+            command.Parameters.AddWithValue("$waiting", AgentTaskStatus.Waiting);
+            command.Parameters.AddWithValue("$waitingStage", AgentUserQuestionService.WaitingStage);
+            command.Parameters.AddWithValue("$running", AgentTaskStatus.Running);
+            command.Parameters.AddWithValue("$resumedStage", AgentUserQuestionService.ResumedStage);
             command.Parameters.AddWithValue("$status", request.Status);
             command.Parameters.AddWithValue("$stage", (object?)request.Stage ?? DBNull.Value);
             command.Parameters.AddWithValue("$progress", (object?)request.ProgressPercent ?? DBNull.Value);
