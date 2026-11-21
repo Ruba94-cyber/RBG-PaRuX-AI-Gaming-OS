@@ -168,6 +168,11 @@ public sealed class GameExtensionManifestTests
     [InlineData("--x=..\\..\\boot", false)]
     [InlineData("C:\\tools\\evil.exe", false)]
     [InlineData("\\\\server\\share\\a.exe", false)]
+    [InlineData("--cfg=\\\\host\\s\\a", false)]
+    [InlineData("--cfg=C:\\x", false)]
+    [InlineData("--cfg=//host/s", false)]
+    [InlineData("file:x", false)]
+    [InlineData("--cfg=ok/value", true)]
     [InlineData("{width}", false)]
     [InlineData("two words", false)]
     [InlineData("", false)]
@@ -188,6 +193,34 @@ public sealed class GameExtensionManifestTests
         Assert.False(GameExtensionManifestValidator.Validate(B(Wrap(string.Join(",", Enumerable.Repeat(preset, 11))))).Valid);
         Assert.False(GameExtensionManifestValidator.Validate(B(Wrap(preset + "," + preset))).Valid);   // duplicate id
     }
+
+    [Theory]
+    [InlineData("{\"schema\":1,\"id\":\"demo.theme\",\"name\":\"\\ud800\",\"version\":\"1.0.0\",\"author\":\"A\",\"theme\":{\"appearance\":\"dark\",\"accent\":\"#112233\"}}")]
+    [InlineData("{\"schema\":1,\"\\ud800\":1,\"id\":\"demo.theme\",\"name\":\"N\",\"version\":\"1.0.0\",\"author\":\"A\"}")]
+    [InlineData("{\"schema\":1,\"\\udc00\":1,\"\\udc00\":2}")]
+    [InlineData("{\"schema\":1,\"id\":\"demo.theme\",\"name\":\"N\",\"version\":\"1.0.0\",\"author\":\"A\",\"theme\":{\"\\ud800\":\"x\"}}")]
+    public void Lone_surrogates_are_refused_without_throwing(string json)
+    {
+        GameExtensionValidationResult r = GameExtensionManifestValidator.Validate(B(json));
+        Assert.False(r.Valid);
+    }
+
+    [Theory]
+    [InlineData("\u061C")]
+    [InlineData("\u2028")]
+    [InlineData("\u2029")]
+    [InlineData("\u2060")]
+    [InlineData("\u200D")]
+    [InlineData("\u200C")]
+    [InlineData("\uFE0F")]
+    [InlineData("\udb40\udc01")]
+    [InlineData("\u202E")]
+    public void Invisible_format_characters_are_refused_in_display_text(string escape) =>
+        Assert.False(GameExtensionManifestValidator.Validate(B(Valid.Replace("\"Demo\"", "\"a" + escape + "b\""))).Valid);
+
+    [Fact]
+    public void Ordinary_international_text_is_still_accepted() =>
+        Assert.True(GameExtensionManifestValidator.Validate(B(Valid.Replace("\"Demo\"", "\"Libreria città 日本語\""))).Valid);
 
     [Fact]
     public void Too_many_metadata_sources_are_refused()
@@ -368,6 +401,20 @@ public sealed class GameExtensionStoreTests : IDisposable
     public void Enabling_an_extension_that_is_not_installed_is_refused()
     {
         Assert.Contains("not installed", Store().SetEnabled("ghost-ext", true));
+    }
+
+    [Fact]
+    public void A_surrogate_in_one_manifest_never_breaks_the_listing_of_the_others()
+    {
+        Install("good-one");
+        Install("bad-value", Manifest("bad-value").Replace("\"Demo\"", "\"\\ud800\""));
+        Install("bad-key", Manifest("bad-key").Replace("\"author\"", "\"\\ud800\":1,\"author\""));
+        Install("bad-dup", "{\"\\udc00\":1,\"\\udc00\":2}");
+        IReadOnlyList<GameExtensionInfo> all = Store().List();
+        Assert.Equal(4, all.Count);
+        Assert.True(all.Single(i => i.FolderName == "good-one").Valid);
+        Assert.All(all.Where(i => i.FolderName != "good-one"), i => Assert.False(i.Valid));
+        Assert.NotNull(Store().SetEnabled("bad-value", true));
     }
 
     [Fact]

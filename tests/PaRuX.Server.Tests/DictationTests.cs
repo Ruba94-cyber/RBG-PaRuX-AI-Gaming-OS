@@ -119,4 +119,16 @@ public sealed class PushToTalkGestureTests
         pointer.ClearClickSuppression();
         Assert.False(pointer.ConsumeClick());     // the next real click is not swallowed
     }
+
+    [Fact]
+    public void Aborting_a_hold_ends_it_without_a_transcription_and_without_swallowing_clicks()
+    {
+        var g = new PushToTalkGesture();
+        Assert.True(g.OnPress(true, T0, fromClickableControl: false));
+        g.Abort();                                   // focus left the chat / window deactivated / Gaming began
+        Assert.False(g.IsHeld);
+        Assert.Equal(PushToTalkRelease.None, g.OnRelease(T0.AddSeconds(5)));
+        Assert.False(g.ConsumeClick());
+        Assert.True(g.OnPress(true, T0.AddSeconds(6)));   // a new hold works afterwards
+    }
 }

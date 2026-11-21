@@ -33,7 +33,7 @@ public sealed class RetroAchievementsService
         _path = Path.Combine(_stateDirectory, "retroachievements-credentials.json");
         _internetEnabled = internetEnabled;
         _http = new HttpClient(handler ?? new SocketsHttpHandler { AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(8) })
-        { Timeout = TimeSpan.FromSeconds(20) };
+        { Timeout = TimeSpan.FromSeconds(20), MaxResponseContentBufferSize = 16 * 1024 * 1024 };
     }
 
     private ISecretProtector Protector => SecretProtection.For(_stateDirectory);

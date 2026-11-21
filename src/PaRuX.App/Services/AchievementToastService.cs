@@ -150,10 +150,28 @@ namespace PaRuX.Services
             };
         }
 
+        /// <summary>Server text is shown in a system notification: control, bidi and other invisible format characters are dropped and the length is bounded.</summary>
+        internal static string Printable(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            var sb = new System.Text.StringBuilder(Math.Min(text.Length, 200));
+            foreach (System.Text.Rune r in text.EnumerateRunes())
+            {
+                System.Globalization.UnicodeCategory c = System.Text.Rune.GetUnicodeCategory(r);
+                if (c is System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format
+                    or System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator
+                    or System.Globalization.UnicodeCategory.PrivateUse or System.Globalization.UnicodeCategory.Surrogate
+                    or System.Globalization.UnicodeCategory.OtherNotAssigned) continue;
+                sb.Append(r.ToString());
+                if (sb.Length >= 200) break;
+            }
+            return sb.ToString().Trim();
+        }
+
         private void OnUnlocked(string gameName, AchievementEntryDto a)
         {
-            string title = (string.IsNullOrWhiteSpace(gameName) ? "" : gameName + " - ") + UiText.Pick("Achievement unlocked", "Risultato sbloccato");
-            string body = a.Name + (string.IsNullOrWhiteSpace(a.Description) ? string.Empty : " - " + a.Description);
+            string title = (string.IsNullOrWhiteSpace(gameName) ? "" : Printable(gameName) + " - ") + UiText.Pick("Achievement unlocked", "Risultato sbloccato");
+            string body = Printable(a.Name) + (string.IsNullOrWhiteSpace(a.Description) ? string.Empty : " - " + Printable(a.Description));
             try { Announce?.Invoke(title, body); }
             catch (Exception ex) { Log.Write("Achievement toast failed: " + ex.GetType().Name); }
         }

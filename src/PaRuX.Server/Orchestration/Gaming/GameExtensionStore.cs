@@ -49,6 +49,8 @@ public sealed class GameExtensionStore
         {
             var result = new List<GameExtensionInfo>();
             if (!Directory.Exists(_root)) return result;
+            try { if (new DirectoryInfo(_root).Attributes.HasFlag(FileAttributes.ReparsePoint)) return result; }   // a linked root could point anywhere
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return result; }
             Dictionary<string, string> enabled = ReadState().Enabled;
             IEnumerable<string> dirs;
             try { dirs = Directory.EnumerateDirectories(_root).OrderBy(d => d, StringComparer.OrdinalIgnoreCase).Take(MaxExtensions).ToList(); }
@@ -64,6 +66,7 @@ public sealed class GameExtensionStore
         if (!GameExtensionManifestValidator.IsValidId(id)) return "Not a valid extension id.";
         lock (_gate)
         {
+            if (RootIsLink()) return "The extensions folder is a link, which is not allowed.";
             string dir = Path.Combine(_root, id);
             if (!Directory.Exists(dir)) return "That extension is not installed.";
             StateFile state = ReadState();
@@ -87,6 +90,7 @@ public sealed class GameExtensionStore
             string dir = Path.GetFullPath(Path.Combine(_root, id));
             if (!string.Equals(Path.GetDirectoryName(dir), _root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return "Not a valid extension id.";
             if (!Directory.Exists(dir)) return "That extension is not installed.";
+            if (RootIsLink()) return "The extensions folder is a link, which is not allowed.";
             try
             {
                 if (new DirectoryInfo(dir).Attributes.HasFlag(FileAttributes.ReparsePoint)) return "This folder is a link; remove it yourself in File Explorer.";
@@ -108,6 +112,12 @@ public sealed class GameExtensionStore
             if (state.Enabled.Remove(id)) WriteState(state);
             return null;
         }
+    }
+
+    private bool RootIsLink()
+    {
+        try { return Directory.Exists(_root) && new DirectoryInfo(_root).Attributes.HasFlag(FileAttributes.ReparsePoint); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
     }
 
     private GameExtensionInfo Inspect(string dir, Dictionary<string, string> enabled)
@@ -147,7 +157,7 @@ public sealed class GameExtensionStore
             }
             return Finish(info, issues, null, enabled);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or JsonException)
         {
             issues.Add("The folder could not be read.");
             return Finish(info, issues, null, enabled);

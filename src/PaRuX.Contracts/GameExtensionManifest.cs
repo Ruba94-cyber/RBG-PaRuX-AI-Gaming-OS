@@ -121,6 +121,14 @@ public static class GameExtensionManifestValidator
 
     public static GameExtensionValidationResult Validate(byte[]? utf8Json)
     {
+        try { return ValidateCore(utf8Json); }
+        // A lone surrogate escape in a value or a property name parses, then throws InvalidOperationException on read.
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or JsonException or FormatException)
+        { return Fail("$", "The manifest contains text that is not valid Unicode."); }
+    }
+
+    private static GameExtensionValidationResult ValidateCore(byte[]? utf8Json)
+    {
         var issues = new List<GameExtensionIssue>();
         if (utf8Json is null || utf8Json.Length == 0) return Fail("$", "The manifest is empty.");
         if (utf8Json.Length > MaxManifestBytes) return Fail("$", "The manifest is larger than " + MaxManifestBytes / 1024 + " KB.");
@@ -313,8 +321,11 @@ public static class GameExtensionManifestValidator
         if (arg.Any(c => char.IsWhiteSpace(c))) return "Each argument is one word without spaces.";
         foreach (string segment in arg.Split('/', '\\', '='))
             if (segment.Trim() == "..") return "Arguments cannot traverse parent folders.";
-        if (arg.Length >= 2 && (arg[1] == ':' || arg.StartsWith("\\\\", StringComparison.Ordinal) || arg.StartsWith("//", StringComparison.Ordinal)))
-            return "Arguments cannot be absolute or network paths.";
+        // Drive letters, UNC and alternate stream colons are refused anywhere in the argument, also after "=" ("--cfg=C:\\x").
+        if (arg.IndexOf(':') >= 0) return "Arguments cannot contain a colon (drive letters and network paths are not allowed).";
+        if (arg.Contains("\\\\", StringComparison.Ordinal) || arg.Contains("//", StringComparison.Ordinal)) return "Arguments cannot contain network paths.";
+        foreach (string segment in arg.Split('=', '/', '\\'))
+            if (segment.Length == 2 && segment[1] == ':') return "Arguments cannot be absolute paths.";
         return null;
     }
 
@@ -375,10 +386,23 @@ public static class GameExtensionManifestValidator
 
     private static bool HasUnsafeChars(string s)
     {
-        foreach (char c in s)
+        foreach (System.Text.Rune r in s.EnumerateRunes())
         {
-            if (char.IsControl(c)) return true;
-            if (c is >= '‪' and <= '‮' or >= '⁦' and <= '⁩' or '​' or '‎' or '‏' or '﻿') return true;
+            if (r.Value == 0xFFFD && !s.Contains('\uFFFD')) return true;   // an invalid surrogate was replaced
+            switch (System.Text.Rune.GetUnicodeCategory(r))
+            {
+                case UnicodeCategory.Control:
+                case UnicodeCategory.Format:            // bidi controls, zero-width joiners, word joiner, tag characters, U+061C
+                case UnicodeCategory.LineSeparator:
+                case UnicodeCategory.ParagraphSeparator:
+                case UnicodeCategory.PrivateUse:
+                case UnicodeCategory.Surrogate:
+                case UnicodeCategory.OtherNotAssigned:
+                    return true;
+            }
+            int v = r.Value;
+            if (v is >= 0xFE00 and <= 0xFE0F or >= 0xE0100 and <= 0xE01EF) return true;   // variation selectors
+            if (v is 0x180B or 0x180C or 0x180D or 0x180E or 0x3164 or 0xFFA0) return true;   // invisible filler characters
         }
         return false;
     }

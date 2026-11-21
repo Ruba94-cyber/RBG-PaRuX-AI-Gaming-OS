@@ -83,6 +83,9 @@ namespace PaRuX.Services
         /// <summary>The Click that follows a release arrives right after it; whatever is left of the suppression afterwards is dropped (release outside the control).</summary>
         public void ClearClickSuppression() => _suppressClick = false;
 
+        /// <summary>Focus left the chat, the window lost activation or Gaming began during a hold: the gesture ends without a transcription.</summary>
+        public void Abort() => OnStartFailed();
+
         /// <summary>The recording could not start (microphone blocked, Gaming Mode, no engine): the press has no further meaning.</summary>
         public void OnStartFailed()
         {
