@@ -11,7 +11,16 @@ using PaRuX.Services;
 namespace PaRuX.Views
 {
     /// <summary>One thing to map: a Windows-visible label, the box that receives the index, and whether it is a button or an axis.</summary>
-    internal sealed record MappingStep(string English, string Italian, NumberBox Target, bool IsButton);
+    /// <remarks>
+    /// <see cref="Control"/> selects what is detected (button, axis, stick-up, trigger as axis OR button, D-pad as hat, axes or buttons).
+    /// <see cref="Target"/> (optional) receives the detected index directly; <see cref="OnDetected"/> (optional) receives the full detection
+    /// and returns how many of the FOLLOWING steps to skip (a hat covers all four D-pad directions at once).
+    /// </remarks>
+    internal sealed record MappingStep(string English, string Italian, NumberBox? Target, bool IsButton)
+    {
+        public WizardControl Control { get; init; } = IsButton ? WizardControl.Button : WizardControl.Axis;
+        public Func<DetectedControl, int>? OnDetected { get; init; }
+    }
 
     /// <summary>
     /// Guided mapping in the style of XOutput and Steam's auto-configure: "Press A on your controller", then B, and so on. The index of
@@ -31,10 +40,9 @@ namespace PaRuX.Views
         private Action<PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.PadMappingPreset>? _applyPreset;
         private WindowsRawGamepadSource? _source;
         private int _index;
-        private bool[]? _baselineButtons;
-        private double[]? _baselineAxes;
+        private PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad.RawGamepadState? _baseline;
         private int _stableTicks;
-        private int? _candidate;
+        private DetectedControl _candidate;
         private DateTime _pauseUntil;
 
         public ControllerMappingWizard(IReadOnlyList<MappingStep> steps)
@@ -114,20 +122,30 @@ namespace PaRuX.Views
         {
             MappingStep step = _steps[_index];
             _progress.Text = T("Step ", "Passo ") + (_index + 1) + " / " + _steps.Count;
-            _prompt.Text = step.IsButton
-                ? T("Press and release ", "Premi e rilascia ") + T(step.English, step.Italian) + T(" on your controller", " sul tuo controller")
-                : T("Move ", "Muovi ") + T(step.English, step.Italian) + T(" all the way, then let it go", " fino in fondo, poi lascialo");
+            string what = T(step.English, step.Italian);
+            _prompt.Text = step.Control switch
+            {
+                WizardControl.Button => T("Press and release ", "Premi e rilascia ") + what + T(" on your controller", " sul tuo controller"),
+                WizardControl.Trigger => T("Pull ", "Premi a fondo ") + what + T(" all the way, then let it go (analogue or digital, both work)", ", poi rilascialo (analogico o digitale, vanno bene entrambi)"),
+                WizardControl.Dpad => T("Press ", "Premi ") + what + T(" on the D-pad (hat, axes or buttons are detected automatically)", " sulla croce direzionale (croce, assi o pulsanti vengono riconosciuti da soli)"),
+                _ => T("Move ", "Muovi ") + what + T(" all the way, then let it go", " fino in fondo, poi lascialo")
+            };
             _stableTicks = 0;
-            _candidate = null;
+            _candidate = default;
             _pauseUntil = DateTime.UtcNow.AddMilliseconds(600);   // let the previous press settle before listening again
-            _baselineButtons = null;
-            _baselineAxes = null;
+            _baseline = null;
         }
 
-        private void Advance(int? assigned)
+        private void Advance(DetectedControl? assigned)
         {
-            if (assigned is int value) _steps[_index].Target.Value = value;
-            _index++;
+            int skip = 0;
+            if (assigned is { } found && !found.IsNone)
+            {
+                MappingStep step = _steps[_index];
+                if (step.Target is not null) step.Target.Value = found.Index;
+                if (step.OnDetected is not null) skip = Math.Max(0, step.OnDetected(found));
+            }
+            _index += 1 + skip;
             if (_index >= _steps.Count)
             {
                 Finish(T("All steps done. Check the numbers, then press Save mapping.", "Tutti i passi completati. Controlla i numeri, poi premi Salva mappatura."));
@@ -143,18 +161,15 @@ namespace PaRuX.Views
                 Finish(T("The controller was disconnected.", "Il controller è stato scollegato."));
                 return;
             }
-            bool[] buttons = state.Buttons.ToArray();
-            double[] axes = state.Axes.ToArray();
-            if (_baselineButtons is null || DateTime.UtcNow < _pauseUntil)
+            if (_baseline is null || DateTime.UtcNow < _pauseUntil)
             {
-                _baselineButtons = buttons;
-                _baselineAxes = axes;
+                _baseline = state;
                 return;
             }
-            int? hit = ControllerLiveModel.DetectIndex(_baselineButtons, _baselineAxes, buttons, axes, _steps[_index].IsButton);
-            if (hit is null) { _stableTicks = 0; _candidate = null; return; }
+            DetectedControl hit = RawMappingWizardModel.Detect(_steps[_index].Control, _baseline, state);
+            if (hit.IsNone) { _stableTicks = 0; _candidate = default; return; }
             // The same control for three readings in a row (about 120 ms) is a deliberate press, not contact noise.
-            if (_candidate == hit) _stableTicks++; else { _candidate = hit; _stableTicks = 1; }
+            if (RawMappingWizardModel.SameControl(_candidate, hit)) _stableTicks++; else { _candidate = hit; _stableTicks = 1; }
             if (_stableTicks >= 3) Advance(hit);
         }
     }

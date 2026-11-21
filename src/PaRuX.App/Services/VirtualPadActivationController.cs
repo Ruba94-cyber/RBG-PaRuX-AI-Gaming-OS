@@ -54,12 +54,13 @@ internal sealed class VirtualPadActivationController
         info.Id, info.Name, info.VendorId, info.ProductId,
         WindowsRawGamepadSource.CountMatchingLiveIdentity(info));
 
-    public async Task<VirtualPadServiceStatus> StartAsync(RawGamepadDeviceInfo device, bool consentToHide, string? gameId)
+    /// <param name="allowUnhidden">The owner chose to forward with hiding OFF (HidHide is not needed then).</param>
+    public async Task<VirtualPadServiceStatus> StartAsync(RawGamepadDeviceInfo device, bool consentToHide, string? gameId, bool allowUnhidden = false)
     {
         Subscribe();
         try
         {
-            return await Service.StartAsync(IdentityFor(device), consentToHide, gameId).ConfigureAwait(false);
+            return await Service.StartAsync(IdentityFor(device), consentToHide, gameId, default, allowUnhidden).ConfigureAwait(false);
         }
         finally
         {

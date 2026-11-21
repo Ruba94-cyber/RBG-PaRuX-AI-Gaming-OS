@@ -46,6 +46,9 @@ public sealed class VirtualPadServiceOptions
 /// </summary>
 public sealed class VirtualPadForwardingService : IAsyncDisposable
 {
+    /// <summary>Appended to the running message when the physical pad is not hidden (the UI shows a localized equivalent).</summary>
+    public const string UnhiddenWarning = " The physical pad is NOT hidden: some games may see both the physical and the virtual pad. Turning hiding on is recommended.";
+
     private readonly IVirtualControllerBackend _backend;
     private readonly Func<string, IRawGamepadSource?> _openSource;
     private readonly Func<(bool Present, string? Message)> _driverProbe;
@@ -254,7 +257,7 @@ public sealed class VirtualPadForwardingService : IAsyncDisposable
                 ? "Forwarding with the game profile."
                 : "Forwarding with the controller mapping.";
             if (isolatedPath is null)
-                _message += " The physical pad is NOT hidden: some games may see both the physical and the virtual pad. Turning hiding on is recommended.";
+                _message += UnhiddenWarning;
         }
         return Status;
     }
