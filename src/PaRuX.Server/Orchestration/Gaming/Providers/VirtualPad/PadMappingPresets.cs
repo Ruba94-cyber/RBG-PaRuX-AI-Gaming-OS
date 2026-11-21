@@ -84,7 +84,7 @@ public static class PadMappingPresets
                     (0, A), (1, B), (2, X), (3, Y), (4, LB), (5, RB), (6, Back), (7, Start), (8, Guide), (9, L3), (10, R3)
                 }, lx: 0, ly: 1, rx: 2, ry: 3, lt: 5, rt: 4), false)
             {
-                Note = "Buttons and triggers measured on a real Stadia pad (2026-11-21); stick directions and the D-pad hat were not captured yet. Confirm in the mapping wizard."
+                Note = "Partly verified: buttons and triggers measured on a real Stadia pad (2026-11-21); stick directions and the D-pad hat are still unverified. Confirm in the mapping wizard."
             },
             // Observed raw layout: 15 buttons, 6 axes, 1 hat (generic D-input mode, not XInput mode).
             new("8bitdo-sn30pro", "8BitDo SN30 Pro (generic Bluetooth HID mode)", 0x2DC8, 0x2101, "15 buttons, 6 axes, 1 hat",

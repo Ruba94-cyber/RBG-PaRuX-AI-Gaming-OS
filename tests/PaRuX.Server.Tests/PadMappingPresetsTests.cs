@@ -86,7 +86,7 @@ public sealed class PadMappingPresetsTests
     {
         var buttons = new bool[15];
         buttons[rawButton] = true;
-        var state = new RawGamepadState(buttons, new double[] { 0.5, 0.5, 0.5, 0.5, 0, 0 }, -1);
+        var state = new RawGamepadState(buttons, new double[] { 0, 0, 0, 0, -1, -1 }, -1);
         Assert.Equal(expected, GenericPadMapper.Map(state, Get("stadia").Mapping).Buttons);
     }
 
@@ -94,12 +94,12 @@ public sealed class PadMappingPresetsTests
     public void Stadia_idle_frame_and_pulled_triggers_match_what_the_pad_reported()
     {
         PadMapping m = Get("stadia").Mapping;
-        var idle = GenericPadMapper.Map(new RawGamepadState(new bool[15], new double[] { 0.5, 0.5, 0.5, 0.5, 0, 0 }, -1), m);
+        var idle = GenericPadMapper.Map(new RawGamepadState(new bool[15], new double[] { 0, 0, 0, 0, -1, -1 }, -1), m);
         Assert.Equal((ushort)0, idle.Buttons);
         Assert.Equal(0, idle.LeftTrigger); Assert.Equal(0, idle.RightTrigger);
         Assert.InRange(idle.LeftX, -400, 400); Assert.InRange(idle.LeftY, -400, 400);
 
-        var pulled = GenericPadMapper.Map(new RawGamepadState(new bool[15], new double[] { 0.5, 0.5, 0.5, 0.5, 1.0, 1.0 }, -1), m);
+        var pulled = GenericPadMapper.Map(new RawGamepadState(new bool[15], new double[] { 0, 0, 0, 0, 1.0, 1.0 }, -1), m);
         Assert.Equal(255, pulled.LeftTrigger);    // LT = axis 5
         Assert.Equal(255, pulled.RightTrigger);   // RT = axis 4
     }
