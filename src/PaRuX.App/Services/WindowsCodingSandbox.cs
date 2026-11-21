@@ -56,6 +56,7 @@ namespace PaRuX.Services
         // safely run again; without this a single slow optional grant disabled every future
         // sandboxed command until the App restarted.
         private static Task? _aclBlockingOperation;
+        internal static readonly TimeSpan ToolingRootGrantTimeout = TimeSpan.FromSeconds(75);
         private static Task? _lastManagedAclTimeout;
         public enum NetworkMode
         {
@@ -928,7 +929,10 @@ namespace PaRuX.Services
                     }
 
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+                    // An inheritable read grant on an interpreter/toolchain root rewrites every file below it; on a host with live
+                    // antivirus that exceeded 15 s, the grant was silently abandoned (and then backed off), and the agent's verifier
+                    // failed with "python is not recognized" for the whole task (real-model run). Those roots get a longer budget.
+                    timeoutCts.CancelAfter(rights == "(OI)(CI)(RX)" ? ToolingRootGrantTimeout : TimeSpan.FromSeconds(15));
 
                     var info = new ProcessStartInfo
                     {

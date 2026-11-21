@@ -1135,7 +1135,10 @@ namespace PaRuX.Services
                     if (hasExactFileApproval)
                     {
                         CodingAgentFileApproval.ConsumeApproval(checkpoint);
-                        SaveCheckpoint(step);
+                        // Persist the consumed approval with the steps COMPLETED so far. Saving "step" here made the dispatch journal
+                        // below reject this very action ("untracked or overlapping": proposedStep <= StepsTaken), so every approved
+                        // file change in Ask mode failed right after the owner approved it (found in a real-model run).
+                        SaveCheckpoint(step - 1);
                     }
 
                     bool waitingForFileApproval = askForFileApproval && !hasExactFileApproval;

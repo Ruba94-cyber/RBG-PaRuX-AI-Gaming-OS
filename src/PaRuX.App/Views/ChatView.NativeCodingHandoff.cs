@@ -300,7 +300,7 @@ namespace PaRuX.Views
                 if (Application.Current.Resources.TryGetValue(brush, out object? b) && b is Brush bb)
                     badge.Background = bb;
             }
-            else if (string.Equals(statusStr, "awaiting-user-input", StringComparison.OrdinalIgnoreCase))
+            else if (AgentRunWaitPolicy.IsPausedForUserAnswer(statusStr, task?.Stage))
             {
                 badgeText.Text = T("Waiting for answer", "In attesa di risposta");
                 if (Application.Current.Resources.TryGetValue("SystemFillColorCautionBackgroundBrush", out object? b) && b is Brush bb)
@@ -1050,7 +1050,7 @@ namespace PaRuX.Views
                         AgentTaskLogListResponse logs = await AgentOrchestratorClient.Current.GetLogsAsync(taskId, cts.Token).ConfigureAwait(false);
                         AgentUserQuestionStateDto? question = null;
 
-                        if (string.Equals(task.Status, "awaiting-user-input", StringComparison.OrdinalIgnoreCase))
+                        if (AgentRunWaitPolicy.IsPausedForUserAnswer(task.Status, task.Stage))
                         {
                             question = await AgentOrchestratorClient.Current.GetUserQuestionStateAsync(taskId, cts.Token).ConfigureAwait(false);
                         }

@@ -33,6 +33,24 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_per_user_python_on_the_host_path_runs_inside_the_no_network_sandbox()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        if (WindowsCodingSandbox.ResolveHostToolDirectories(new[] { "python.exe" }).Count == 0) return;   // no per-user CPython on this host
+
+        // A fresh workspace gets a fresh AppContainer profile, exactly like a new coding task: the verifier command the
+        // agent runs ("python src/verify.py") must find the interpreter, not fail with 9009 / "not recognized".
+        File.WriteAllText(Path.Combine(_root, "probe.py"), "print('py-ok')");
+        WindowsCodingSandbox.Result result = await WindowsCodingSandbox.RunAsync(
+            _root, "python probe.py", CancellationToken.None, timeout: TimeSpan.FromMinutes(3),
+            networkMode: WindowsCodingSandbox.NetworkMode.None);
+
+        Assert.Null(result.Error);
+        Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output}");
+        Assert.Contains("py-ok", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Real_no_network_appcontainer_executes_in_workspace_and_scrubs_parent_secret()
     {
         if (!OperatingSystem.IsWindows()) return;

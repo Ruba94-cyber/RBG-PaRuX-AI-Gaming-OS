@@ -16,6 +16,19 @@ public enum AgentRunWaitDecision
 /// </summary>
 public static class AgentRunWaitPolicy
 {
+    /// <summary>The stage Core writes while a coding/agent task is paused for a durable user question.</summary>
+    public const string UserInputStage = "Waiting for user input";
+
+    /// <summary>
+    /// True while the task is paused for a user answer. Core reports this as status "waiting" with <see cref="UserInputStage"/>;
+    /// the desktop card used to look for a status ("awaiting-user-input") Core never writes, so the approval question was never shown.
+    /// The legacy spelling is still accepted.
+    /// </summary>
+    public static bool IsPausedForUserAnswer(string? status, string? stage) =>
+        string.Equals(status, "awaiting-user-input", StringComparison.OrdinalIgnoreCase)
+        || (string.Equals(status, AgentTaskStatus.Waiting, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(stage, UserInputStage, StringComparison.Ordinal));
+
     public static AgentRunWaitDecision Decide(string status, bool hasPendingUserQuestion, bool deadlinePassed)
     {
         if (AgentTaskStatus.Terminal.Contains(status)) return AgentRunWaitDecision.Finished;

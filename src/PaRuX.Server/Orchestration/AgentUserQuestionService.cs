@@ -10,7 +10,7 @@ namespace PaRuX.Server.Orchestration;
 /// </summary>
 public sealed class AgentUserQuestionService
 {
-    public const string WaitingStage = "Waiting for user input";
+    public const string WaitingStage = PaRuX.Contracts.AgentRunWaitPolicy.UserInputStage;
     /// <summary>Stage written when an answer resumes the task; the only way a user-input wait may return to Running.</summary>
     public const string ResumedStage = "Resumed after user input";
     private const string Prefix = "[parux:user-question:v1] ";
