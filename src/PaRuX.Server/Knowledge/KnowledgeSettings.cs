@@ -22,6 +22,8 @@ public sealed class KnowledgeSettings
     public KnowledgeProfile? Profile { get; set; }
     /// <summary>Blocks every model download and update check this feature could make. Off by default.</summary>
     public bool StrictOffline { get; set; }
+    /// <summary>"auto" (hybrid when the search model is installed) or "keyword" (never use the embedder).</summary>
+    public string SearchMethod { get; set; } = KnowledgeSearchMethods.Auto;
 }
 
 public sealed class KnowledgeSettingsStore
@@ -62,7 +64,7 @@ public sealed class KnowledgeSettingsStore
     }
 
     private static KnowledgeSettings Clone(KnowledgeSettings s) =>
-        new() { OcrEnabled = s.OcrEnabled, OcrLanguage = s.OcrLanguage, Profile = s.Profile, StrictOffline = s.StrictOffline };
+        new() { OcrEnabled = s.OcrEnabled, OcrLanguage = s.OcrLanguage, Profile = s.Profile, StrictOffline = s.StrictOffline, SearchMethod = s.SearchMethod };
 }
 
 /// <summary>The single answer to "may this feature touch the network?". Corporate Lite is always offline.</summary>

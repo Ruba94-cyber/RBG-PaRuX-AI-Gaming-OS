@@ -48,6 +48,8 @@ public sealed class KnowledgeJobService
     private readonly ConcurrentDictionary<string, KnowledgeJobStatus> _status = new();
 
     public KnowledgeIndex Index { get; }
+    public IRetrievalEmbeddingProvider? Embedder { get; }
+    public IRetrievalRerankerProvider? Reranker { get; }
     public KnowledgeSettingsStore Settings => _settings;
 
     public KnowledgeJobService(RagStore sources, KnowledgeSettingsStore? settings = null, EmbeddingService? embeddings = null,
@@ -58,7 +60,10 @@ public sealed class KnowledgeJobService
         _settings = settings ?? KnowledgeSettingsStore.Shared;
         _embeddings = embeddings;
         _ocr = ocr ?? new WindowsOcrEngine();
-        Index = index ?? CreateIndex(PaRuXDataRoot.Combine("knowledge", "knowledge.db"), embedder, BuildOptions(), reranker);
+        // The person's search-method choice can switch the embedder off without uninstalling it.
+        Embedder = embedder == null ? null : new SwitchableEmbedder(embedder, () => KnowledgeSearchMethods.Normalize(_settings.Get().SearchMethod) == KnowledgeSearchMethods.Keyword);
+        Reranker = reranker;
+        Index = index ?? CreateIndex(PaRuXDataRoot.Combine("knowledge", "knowledge.db"), Embedder, BuildOptions(), reranker);
         if (embeddings != null)
             _unloader = new IdleModelUnloader(embeddings, () => CurrentPlan().IdleUnload);
     }
@@ -185,6 +190,7 @@ public sealed class KnowledgeSettingsUpdate
     public bool? OcrEnabled { get; set; }
     public string? OcrLanguage { get; set; }
     public bool? StrictOffline { get; set; }
+    public string? SearchMethod { get; set; }
     public string? Profile { get; set; }
 }
 
@@ -192,13 +198,13 @@ public static class KnowledgeEndpoints
 {
     public static void MapKnowledgeEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/v1/knowledge/search", (string q, string? mode, int? k, KnowledgeJobService svc) =>
+        app.MapGet("/api/v1/knowledge/search", (string q, string? mode, int? k, KnowledgeJobService svc, WebKnowledgeSources web) =>
         {
             var m = Enum.TryParse(mode, true, out KnowledgeSearchMode parsed) ? parsed : KnowledgeSearchMode.Auto;
             IReadOnlyList<KnowledgeHit> hits = svc.Index.Search(q ?? string.Empty, m, Math.Clamp(k ?? 10, 1, 50), svc.EnabledSourceIds());
             return Results.Ok(hits.Select(h => new
             {
-                h.FileName, h.FilePath, citation = h.Citation, text = h.Text, match = h.Match, score = h.Score,
+                h.FileName, h.FilePath, citation = h.Citation, text = h.Text, match = h.Match, score = h.Score, sourceUrl = web.TryGetUrl(h.FilePath),
                 page = h.Position.Page, sheet = h.Position.Sheet, cellRange = h.Position.CellRange, slide = h.Position.Slide, heading = h.Position.Heading
             }));
         });
@@ -242,6 +248,11 @@ public static class KnowledgeEndpoints
             if (update.OcrEnabled.HasValue) s.OcrEnabled = update.OcrEnabled.Value;
             if (update.OcrLanguage != null) s.OcrLanguage = update.OcrLanguage.Length == 0 ? null : update.OcrLanguage;
             if (update.StrictOffline.HasValue) s.StrictOffline = update.StrictOffline.Value;
+            if (update.SearchMethod != null)
+            {
+                if (!KnowledgeSearchMethods.IsValid(update.SearchMethod)) return Results.BadRequest(new { error = "searchMethod must be auto or keyword." });
+                s.SearchMethod = update.SearchMethod;
+            }
             if (update.Profile != null)
             {
                 if (update.Profile.Equals("auto", StringComparison.OrdinalIgnoreCase)) s.Profile = null;
@@ -252,6 +263,10 @@ public static class KnowledgeEndpoints
             svc.Index.UpdateOptions(svc.BuildOptions());
             return Results.NoContent();
         }).RequireDesktopOwner();
+        // What search does right now (hybrid or keyword) and why, plus the method choices.
+        app.MapGet("/api/v1/knowledge/retrieval", (KnowledgeJobService svc) =>
+            Results.Ok(KnowledgeRetrieval.Describe(svc.Settings.Get().SearchMethod, svc.Embedder,
+                svc.Reranker is { IsAvailable: true }, OfflinePolicy.IsBlocked(svc.Settings))));
         app.MapPost("/api/v1/knowledge/sources/{id}/pause", (string id, KnowledgeJobService svc) => svc.Pause(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
         app.MapPost("/api/v1/knowledge/sources/{id}/resume", (string id, KnowledgeJobService svc) => svc.Resume(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
         app.MapPost("/api/v1/knowledge/sources/{id}/cancel", (string id, KnowledgeJobService svc) => svc.Cancel(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();

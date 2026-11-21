@@ -1505,6 +1505,14 @@
                 </Border>
             </StackPanel>
 
+            <!-- ==================== Websites, watched folders and search method ==================== -->
+            <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Chat Behavior">
+                <TextBlock Text="KNOWLEDGE: WEBSITES, WATCHED FOLDERS, SEARCH" loc:Loc.ItText="CONOSCENZA: SITI WEB, CARTELLE MONITORATE, RICERCA" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
+                <Border Style="{StaticResource PaRuXCardStyle}">
+                    <loc:KnowledgeWebPanel />
+                </Border>
+            </StackPanel>
+
             <!-- ==================== Personas ==================== -->
             <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Chat Behavior">
                 <TextBlock Text="PERSONAS" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
