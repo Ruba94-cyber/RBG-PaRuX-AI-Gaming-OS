@@ -133,16 +133,19 @@ public sealed class GamingLibraryGroupingUiTests
             OpenLibrary(app);
             string first = "GameTile_" + SyntheticGameLibrary.KeyOf(0);
             double WidthOf() => ById(app, first).BoundingRectangle.Width;
+            // A tile in the repeater's cache is in the UIA tree but off screen, and an off-screen element has an empty bounding
+            // rectangle: it has to be on screen before its width means anything.
+            bool FirstTileOnScreen() => TryById(app, first) is { } tile && !tile.Properties.IsOffscreen.ValueOrDefault;
 
             ById(app, "GameHome_CoverSize").AsComboBox().Select(0); // small
             CloseViewMenu();
-            GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, () => TryById(app, first) != null, "first tile after choosing small covers");
+            GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, FirstTileOnScreen, "first tile on screen after choosing small covers");
             double small = 0;
             UiWait.ForStable(() => (small = WidthOf()) > 0, "small tile measured");
 
             ById(app, "GameHome_CoverSize").AsComboBox().Select(2); // large
             CloseViewMenu();
-            GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, () => TryById(app, first) != null, "first tile after choosing large covers");
+            GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, FirstTileOnScreen, "first tile on screen after choosing large covers");
             double large = 0;
             UiWait.ForStable(() => (large = WidthOf()) > small * 1.3, "large tiles wider than small tiles (small " + small + ")");
             Assert.True(large > small, "large " + large + " vs small " + small);

@@ -97,8 +97,11 @@ public sealed class GamingLibraryVirtualizationUiTests
                 catch (System.Runtime.InteropServices.COMException) { /* layout in progress: try again */ }
                 Thread.Sleep(250);
             }
-            amount = amount == FlaUI.Core.Definitions.ScrollAmount.LargeIncrement
-                ? FlaUI.Core.Definitions.ScrollAmount.LargeDecrement : FlaUI.Core.Definitions.ScrollAmount.LargeIncrement;
+            // Walking back up one page at a time can stop short of the top when a virtualized grid re-estimates its extent; the
+            // return trip jumps straight to the top, then the next sweep walks down from a known position.
+            try { PageScroller(app)?.SetScrollPercent(FlaUI.Core.Patterns.ScrollPatternConstants.NoScroll, 0); }
+            catch (System.Runtime.InteropServices.COMException) { /* layout in progress: the next sweep retries */ }
+            Thread.Sleep(250);
         }
         throw new TimeoutException("Timed out waiting for " + description + ".");
     }
