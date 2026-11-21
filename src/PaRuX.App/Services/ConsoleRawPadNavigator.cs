@@ -187,6 +187,9 @@ public sealed class ConsoleRawPadNavigator : IDisposable
         PadMappingPreset? preset = PadMappingPresets.Find(device.VendorId, device.ProductId);
         if (preset is not null)
             return (preset.Mapping.Clone(), $"built-in preset '{preset.Id}' ({(preset.Verified ? "verified" : "UNVERIFIED on hardware")})");
-        return (null, "no saved mapping and no preset");
+        // Last resort: a conservative generic HID layout (UNVERIFIED), only for devices that look like a gamepad.
+        if (GenericRawPadMapping.TryBuild(device.ButtonCount, device.AxisCount, device.SwitchCount, out PadMapping? generic, out string why) && generic is not null)
+            return (generic, "generic fallback (UNVERIFIED for this model)");
+        return (null, $"no saved mapping, no preset, and the generic fallback refused it: {why}");
     }
 }
