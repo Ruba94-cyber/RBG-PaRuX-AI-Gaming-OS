@@ -17,7 +17,7 @@ public sealed class PlayniteComponentDto
     public bool Detected { get; set; }
     /// <summary>"installed" | "portable" | "running" | "located" | "none"</summary>
     public string InstallKind { get; set; } = "none";
-    /// <summary>"registry" | "local-app-data" | "app-data" | "process" | "user-located" | "none"</summary>
+    /// <summary>"registry" | "local-app-data" | "app-data" | "program-files" | "process" | "user-located" | "none"</summary>
     public string Source { get; set; } = "none";
     public string? Folder { get; set; }
     public string? DesktopExe { get; set; }
