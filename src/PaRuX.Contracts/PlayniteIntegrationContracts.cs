@@ -75,6 +75,19 @@ public static class PlayniteReturnWatchPolicy
         current is not null &&
         current.Settings.ReturnToPaRuXOnClose &&
         !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount == 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+
+    /// <summary>
+    /// A game can outlive Playnite itself. Do not steal focus while it is running;
+    /// keep the old counter until its tracked process exits, then return to PaRuX.
+    /// </summary>
+    public static bool KeepPendingClose(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount > 0 &&
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
 }
 
