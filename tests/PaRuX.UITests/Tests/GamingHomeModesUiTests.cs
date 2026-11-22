@@ -243,10 +243,11 @@ public sealed class GamingHomeModesUiTests
             GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, () => Buttons(app, "GameShelfTile_").Length > 0, "shelf tiles realized");
             Assert.NotNull(TryById(app, "GameHome_Hero_Title"));
             AutomationElement tile = Buttons(app, "GameShelfTile_").First();
+            tile.Focus();   // brings the first shelf row into view
+            Thread.Sleep(900);
+            tile = ById(app, tile.Properties.AutomationId.Value);
             // Console covers are TV-scale: clearly larger than the desktop tile footprint (about 176 x 220 DIP).
             Assert.True(tile.BoundingRectangle.Width >= 200, "console cover width " + tile.BoundingRectangle.Width);
-            tile.Focus();
-            Thread.Sleep(600);
             Keyboard.Type(VirtualKeyShort.RIGHT);
             Thread.Sleep(900);
             AssertNothingClippedHorizontally(app, name);
@@ -288,7 +289,10 @@ public sealed class GamingHomeModesUiTests
                     if (en == it || en.Length < 5) continue;
                     foreign.Add(language == "it" ? en : it);
                 }
+            // The window's caption buttons (Minimize/Maximize/Restore/Close) are drawn and named by Windows in its own language.
+            string[] caption = { "Close", "Minimize", "Maximize", "Restore", "SystemMenuBar", "TitleBar" };
             var seen = app.MainWindow.FindAllDescendants()
+                .Where(e => !caption.Contains(e.Properties.AutomationId.ValueOrDefault ?? string.Empty))
                 .SelectMany(e => new[] { e.Properties.Name.ValueOrDefault, e.Properties.HelpText.ValueOrDefault })
                 .Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
             string[] mixed = seen.Where(s => foreign.Contains(s!.Trim())).ToArray()!;
