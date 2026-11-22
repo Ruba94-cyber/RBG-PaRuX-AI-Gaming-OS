@@ -22,6 +22,7 @@ public sealed partial class MainWindow
     internal async Task RunStartupSequenceAsync(bool hasPlayRequest)
     {
         if (!hasPlayRequest) await ApplyConsoleStartupPreferenceAsync();
+        await ApplyPlayniteStartupAsync(hasPlayRequest);
         await RunSignInAppListAfterStartupAsync();
     }
 

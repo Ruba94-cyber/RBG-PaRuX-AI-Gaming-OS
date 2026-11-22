@@ -20,7 +20,8 @@ public enum PadActionId
     Dictation,
     Screenshot,
     PauseResumeGame,
-    OpenSettings
+    OpenSettings,
+    SwitchPlaynite
 }
 
 public sealed record PadActionInfo(PadActionId Id, string Key, string En, string It, bool NeedsLocalAi, bool Available)
@@ -41,6 +42,7 @@ public static class PadActionCatalog
         new PadActionInfo(PadActionId.Screenshot, "screenshot", "Screenshot of the focused window", "Screenshot della finestra attiva", false, true),
         new PadActionInfo(PadActionId.PauseResumeGame, "pauseResume", "Pause / resume the running game", "Pausa / riprendi il gioco in corso", false, true),
         new PadActionInfo(PadActionId.OpenSettings, "openSettings", "Open Settings > Controller buttons", "Apri Impostazioni > Pulsanti del controller", false, true),
+        new PadActionInfo(PadActionId.SwitchPlaynite, "switchPlaynite", "Switch Playnite Console / Desktop", "Passa Playnite tra Console e Desktop", false, true),
     };
 
     public static PadActionInfo Get(PadActionId id) => All.First(a => a.Id == id);

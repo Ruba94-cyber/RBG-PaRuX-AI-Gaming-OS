@@ -88,6 +88,9 @@ public sealed partial class MainWindow
                 case PadActionId.PauseResumeGame:
                     await PadPauseResumeAsync();
                     break;
+                case PadActionId.SwitchPlaynite:
+                    await PadSwitchPlayniteAsync();
+                    break;
                 case PadActionId.OpenSettings:
                     PadBringForward();
                     ShowSettings();

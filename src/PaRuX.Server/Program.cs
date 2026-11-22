@@ -347,6 +347,7 @@ builder.Services.AddSingleton<GameLaunchHookStore>();
 builder.Services.AddSingleton<GameLaunchHookService>();
 builder.Services.AddSingleton<GamingDisplayTopologyService>();
 builder.Services.AddSingleton<OwnedGameWindowPlacementService>();
+PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.AddPlayniteIntegration(builder.Services);
 builder.Services.AddSingleton<GamingDisplayModeService>();
 builder.Services.AddSingleton<IStreamingHost, WindowsStreamingHost>();
 builder.Services.AddSingleton<IStreamingDisplayController>(sp =>
@@ -389,6 +390,7 @@ builder.Services.AddMcpServer().WithHttpTransport().WithToolsFromAssembly();
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHostedService<GamingGuardService>();
+    PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.AddPlayniteSessionWatcher(builder.Services);
     builder.Services.AddHostedService<PaRuX.Server.Orchestration.Gaming.QuickResumeRecoveryHostedService>();
     builder.Services.AddHostedService<PaRuX.Server.Orchestration.Gaming.TemporaryGameModRecoveryHostedService>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkloadOrchestrator>());
@@ -4203,6 +4205,7 @@ app.MapPost("/api/v1/music/generate", async (MusicGenerateRequest request, Music
 
 app.MapGamingEndpoints();
 app.MapPlayniteImportEndpoints();
+PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.MapPlayniteEndpoints(app);
 app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
