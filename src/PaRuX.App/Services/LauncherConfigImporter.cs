@@ -21,15 +21,15 @@ public sealed record LauncherImportResult(
 public static class LauncherConfigImporter
 {
     public const int MaxBytes = 256 * 1024;
-    private const string StadiaDevice = "18D1:9400";
 
-    // Stadia raw indexes measured on a real pad (see PadActionSettings.DefaultBindings).
-    private static readonly Dictionary<string, (string Control, PadTrigger Trigger)> Buttons = new(StringComparer.Ordinal)
+    // Legacy launcher buttons are Stadia-named but are logical buttons: each resolves per pad through PadLogicalButtons
+    // (Xbox/XInput Guide, preset raw indexes, Stadia measured indexes). Pads without a sourced index are left to the mapping wizard.
+    private static readonly Dictionary<string, (PadLogicalButton Button, PadTrigger Trigger)> Buttons = new(StringComparer.Ordinal)
     {
-        ["assistant"] = (PadControlId.Raw(11), PadTrigger.Tap),
-        ["capture"] = (PadControlId.Raw(12), PadTrigger.Tap),
-        ["stadia_short"] = (PadControlId.Raw(8), PadTrigger.Tap),
-        ["stadia_long"] = (PadControlId.Raw(8), PadTrigger.Hold),
+        ["assistant"] = (PadLogicalButton.Assistant, PadTrigger.Tap),
+        ["capture"] = (PadLogicalButton.Capture, PadTrigger.Tap),
+        ["stadia_short"] = (PadLogicalButton.Guide, PadTrigger.Tap),
+        ["stadia_long"] = (PadLogicalButton.Guide, PadTrigger.Hold),
     };
 
     private static readonly Dictionary<string, PadActionId> Actions = new(StringComparer.Ordinal)
@@ -101,8 +101,22 @@ public static class LauncherConfigImporter
                 continue;
             }
             if (id == PadActionId.None) continue;
-            bindings.Add(PadButtonBinding.Make(StadiaDevice, slot.Control, id, slot.Trigger));
-            imported.Add($"buttons.{b.Name}: {action} -> {PadActionCatalog.KeyOf(id)} ({slot.Trigger}).");
+            var rows = PadLogicalButtons.Expand(slot.Button, id, slot.Trigger);
+            if (rows.Count == 0) { skipped.Add($"buttons.{b.Name}: no known pad mapping for this button; assign it in the mapping wizard."); continue; }
+            bindings.AddRange(rows);
+            string pads = string.Join(", ", rows.Select(r => r.Device == PadControlId.Any ? "any Xbox/XInput pad" : r.Device));
+            imported.Add($"buttons.{b.Name}: {action} -> {PadActionCatalog.KeyOf(id)} ({slot.Trigger.ToString().ToLowerInvariant()}) on {pads}.");
         }
+    }
+
+    /// <summary>Adds the imported rows to the current table. A row for the same device, control and trigger is replaced; everything else is kept.
+    /// Pure: the caller persists the result only after the owner confirmed.</summary>
+    public static List<PadButtonBinding> Merge(IEnumerable<PadButtonBinding> current, IEnumerable<PadButtonBinding> imported)
+    {
+        var incoming = PadActionSettings.Normalize(imported);
+        var keys = incoming.Select(b => (b.Device, b.Control, b.Trigger)).ToHashSet();
+        var merged = PadActionSettings.Normalize(current).Where(b => !keys.Contains((b.Device, b.Control, b.Trigger))).ToList();
+        merged.AddRange(incoming);
+        return PadActionSettings.Normalize(merged);
     }
 }

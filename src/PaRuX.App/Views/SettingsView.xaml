@@ -1313,6 +1313,7 @@
                             <Button x:Name="PadButtonsRefreshButton" Content="Detect pads" loc:Loc.ItContent="Rileva i controller" AutomationProperties.AutomationId="Settings_PadButtons_Refresh_Button" Click="PadButtonsRefreshButton_Click" />
                             <Button x:Name="PadButtonsDetectButton" Content="Detect button" loc:Loc.ItContent="Rileva pulsante" AutomationProperties.AutomationId="Settings_PadButtons_Detect_Button" Click="PadButtonsDetectButton_Click" />
                             <Button x:Name="PadButtonsRestoreButton" Content="Restore defaults (this pad)" loc:Loc.ItContent="Ripristina predefiniti (questo controller)" AutomationProperties.AutomationId="Settings_PadButtons_Restore_Button" Click="PadButtonsRestoreButton_Click" />
+                            <Button x:Name="PadButtonsImportButton" Content="Import from legacy launcher config" loc:Loc.ItContent="Importa dalla configurazione del vecchio launcher" AutomationProperties.AutomationId="Settings_PadButtons_Import_Button" Click="PadButtonsImportButton_Click" />
                         </StackPanel>
                         <TextBlock x:Name="PadButtonsLive" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Live_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
                         <TextBlock x:Name="PadButtonsStatus" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Status_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
