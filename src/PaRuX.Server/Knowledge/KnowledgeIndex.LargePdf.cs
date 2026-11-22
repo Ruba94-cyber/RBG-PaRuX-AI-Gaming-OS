@@ -383,8 +383,8 @@ WHERE source_id=$s AND path=$p AND ord>$last ORDER BY ord LIMIT $n;";
         using SqliteCommand command = db.CreateCommand();
         command.Transaction = tx;
         command.CommandText = @"INSERT INTO kn_chunks
-(file_id,ord,text,heading,page,sheet,cell_range,slide,char_offset,embedding)
-VALUES($f,$o,$t,$h,$pg,NULL,NULL,NULL,$offset,$v);
+(file_id,ord,text,heading,page,sheet,cell_range,slide,char_offset,embedding,embed_key)
+VALUES($f,$o,$t,$h,$pg,NULL,NULL,NULL,$offset,$v,$ek);
 SELECT last_insert_rowid();";
         command.Parameters.AddWithValue("$f", fileId);
         command.Parameters.AddWithValue("$o", ordinal);
@@ -393,6 +393,7 @@ SELECT last_insert_rowid();";
         command.Parameters.AddWithValue("$pg", (object?)pos.Page ?? DBNull.Value);
         command.Parameters.AddWithValue("$offset", pos.CharOffset);
         command.Parameters.AddWithValue("$v", vector == null ? DBNull.Value : ToBlob(vector));
+        command.Parameters.AddWithValue("$ek", vector == null || _embedder == null ? DBNull.Value : _embedder.Identity.StableKey);
         long id = (long)command.ExecuteScalar()!;
         if (!_hasFts5) return;
         using SqliteCommand lex = db.CreateCommand();

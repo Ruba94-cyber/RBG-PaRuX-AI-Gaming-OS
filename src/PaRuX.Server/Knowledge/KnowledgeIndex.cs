@@ -9,7 +9,8 @@ using Microsoft.Data.Sqlite;
 
 namespace PaRuX.Server.Knowledge;
 
-public enum KnowledgeSearchMode { Auto, Exact, Lexical, Semantic, Hybrid }
+/// <summary>Keyword = exact identifiers first, then full text (and the reranker); never the embedder. Auto = hybrid when an embedder is usable.</summary>
+public enum KnowledgeSearchMode { Auto, Exact, Lexical, Semantic, Hybrid, Keyword }
 
 /// <param name="Relevance">Cross-encoder score of this passage for the query (a logit: above zero means
 /// "answers the query"), set only when the reranker scored it. Null for exact hits and unreranked searches.</param>
@@ -120,7 +121,63 @@ public sealed partial class KnowledgeIndex : IDisposable
         return connection;
     }
 
+    /// <summary>Set when a damaged index file was moved aside and an empty one created (the file is kept, never deleted).</summary>
+    public string? LastCorruptionRecoveryPath { get; private set; }
+
+    internal static bool IsCorrupt(SqliteException ex) => ex.SqliteErrorCode is 11 or 26 || ex.Message.Contains("malformed", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("not a database", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Moves a damaged database (and its WAL/SHM) aside to <c>*.corrupt-yyyyMMddHHmmss</c> so the next use starts empty. Nothing is deleted.</summary>
+    public string? RecoverFromCorruption()
+    {
+        lock (_gate)
+        {
+            SqliteConnection.ClearAllPools();
+            string stamp = ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            string? moved = null;
+            foreach (string suffix in new[] { string.Empty, "-wal", "-shm" })
+            {
+                string src = _dbPath + suffix;
+                if (!File.Exists(src)) continue;
+                try { File.Move(src, _dbPath + stamp + suffix); if (suffix.Length == 0) moved = _dbPath + stamp; }
+                catch (Exception) { /* a locked sidecar is left in place; the main file move is what matters */ }
+            }
+            _ready = false;
+            LastCorruptionRecoveryPath = moved;
+            return moved;
+        }
+    }
+
+    /// <summary>Runs SQLite's quick integrity check. False means damaged (call <see cref="RecoverFromCorruption"/>).</summary>
+    public bool VerifyIntegrity()
+    {
+        try
+        {
+            EnsureSchema();
+            lock (_gate)
+            {
+                using SqliteConnection c = Open();
+                return string.Equals(Scalar(c, "PRAGMA quick_check;") as string, "ok", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { return false; }
+    }
+
     private void EnsureSchema()
+    {
+        lock (_gate)
+        {
+            if (_ready) return;
+            try { EnsureSchemaCore(); }
+            catch (SqliteException ex) when (IsCorrupt(ex) && File.Exists(_dbPath))
+            {
+                RecoverFromCorruption();
+                EnsureSchemaCore();
+            }
+        }
+    }
+
+    private void EnsureSchemaCore()
     {
         lock (_gate)
         {
@@ -154,6 +211,14 @@ CREATE INDEX IF NOT EXISTS ix_kn_pdf_stage_source ON kn_pdf_staging(source_id,pa
             // Upgrade databases created by earlier Corporate versions without
             // discarding any indexed passages, citations or user documents.
             try { Exec(c, "ALTER TABLE kn_files ADD COLUMN ocr_mode INTEGER NOT NULL DEFAULT 0;"); }
+            catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)) { }
+            try
+            {
+                Exec(c, "ALTER TABLE kn_chunks ADD COLUMN embed_key TEXT;");
+                // Every vector stored before this column existed came from the one embedder this index ever used (MiniLM):
+                // tag it so a later embedder switch can tell them apart. Metadata only, no vector is touched.
+                Exec(c, "UPDATE kn_chunks SET embed_key=$k WHERE embedding IS NOT NULL;", ("$k", LegacyMiniLmEmbeddingProvider.DefaultIdentity.StableKey));
+            }
             catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)) { }
             try { Exec(c, "ALTER TABLE kn_pdf_progress ADD COLUMN ocr_mode INTEGER NOT NULL DEFAULT 0;"); }
             catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)) { }
@@ -522,13 +587,14 @@ VALUES($s,$p,$n,$z,$m,$h,$t,$e,$o,$d,$u,$ocr); SELECT last_insert_rowid();";
                 using (SqliteCommand ic = c.CreateCommand())
                 {
                     ic.Transaction = tx;
-                    ic.CommandText = @"INSERT INTO kn_chunks(file_id,ord,text,heading,page,sheet,cell_range,slide,char_offset,embedding)
-VALUES($f,$o,$t,$h,$pg,$sh,$cr,$sl,$co,$e); SELECT last_insert_rowid();";
+                    ic.CommandText = @"INSERT INTO kn_chunks(file_id,ord,text,heading,page,sheet,cell_range,slide,char_offset,embedding,embed_key)
+VALUES($f,$o,$t,$h,$pg,$sh,$cr,$sl,$co,$e,$ek); SELECT last_insert_rowid();";
                     ic.Parameters.AddWithValue("$f", fileId); ic.Parameters.AddWithValue("$o", ord++); ic.Parameters.AddWithValue("$t", text);
                     ic.Parameters.AddWithValue("$h", (object?)pos.Heading ?? DBNull.Value); ic.Parameters.AddWithValue("$pg", (object?)pos.Page ?? DBNull.Value);
                     ic.Parameters.AddWithValue("$sh", (object?)pos.Sheet ?? DBNull.Value); ic.Parameters.AddWithValue("$cr", (object?)pos.CellRange ?? DBNull.Value);
                     ic.Parameters.AddWithValue("$sl", (object?)pos.Slide ?? DBNull.Value); ic.Parameters.AddWithValue("$co", pos.CharOffset);
                     ic.Parameters.AddWithValue("$e", vec == null ? DBNull.Value : ToBlob(vec));
+                    ic.Parameters.AddWithValue("$ek", vec == null || _embedder == null ? DBNull.Value : _embedder.Identity.StableKey);
                     chunkId = (long)ic.ExecuteScalar()!;
                 }
                 if (!_hasFts5) continue;
@@ -880,7 +946,9 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
         if (string.IsNullOrWhiteSpace(query) || sourceIds is { Count: 0 })
             return Array.Empty<KnowledgeHit>();
         IReadOnlyList<string> exactTerms = ExactTerms(query);
-        bool semanticPossible = _embedder is { IsAvailable: true };
+        bool keywordOnly = mode == KnowledgeSearchMode.Keyword;
+        if (keywordOnly) mode = KnowledgeSearchMode.Auto;
+        bool semanticPossible = !keywordOnly && _embedder is { IsAvailable: true };
 
         if (mode == KnowledgeSearchMode.Auto)
         {
@@ -1086,8 +1154,9 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
             using SqliteConnection c = Open();
             using SqliteCommand cmd = c.CreateCommand();
             cmd.CommandText = @"SELECT k.id, k.embedding FROM kn_chunks k
-JOIN kn_files f ON f.id=k.file_id WHERE k.embedding IS NOT NULL"
+JOIN kn_files f ON f.id=k.file_id WHERE k.embedding IS NOT NULL AND k.embed_key=$embedKey"
                 + AppendSourceRestriction(cmd, sources, "f") + ";";
+            cmd.Parameters.AddWithValue("$embedKey", _embedder.Identity.StableKey);
             using SqliteDataReader r = cmd.ExecuteReader();
             while (r.Read())
             {

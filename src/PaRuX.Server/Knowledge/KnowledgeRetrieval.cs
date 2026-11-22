@@ -18,22 +18,26 @@ public static class KnowledgeSearchMethods
 /// </summary>
 public sealed class SwitchableEmbedder : IRetrievalEmbeddingProvider
 {
-    private readonly IRetrievalEmbeddingProvider _inner;
+    private readonly Func<IRetrievalEmbeddingProvider> _resolve;
     private readonly Func<bool> _keywordOnly;
 
     public SwitchableEmbedder(IRetrievalEmbeddingProvider inner, Func<bool> keywordOnly)
+        : this(inner == null ? throw new ArgumentNullException(nameof(inner)) : () => inner, keywordOnly) { }
+
+    /// <summary>The inner embedder is resolved on every call, so the person's embedder choice takes effect without a restart.</summary>
+    public SwitchableEmbedder(Func<IRetrievalEmbeddingProvider> resolve, Func<bool> keywordOnly)
     {
-        _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        _resolve = resolve ?? throw new ArgumentNullException(nameof(resolve));
         _keywordOnly = keywordOnly ?? throw new ArgumentNullException(nameof(keywordOnly));
     }
 
-    public IRetrievalEmbeddingProvider Inner => _inner;
-    public RetrievalEmbeddingIdentity Identity => _inner.Identity;
-    public bool IsAvailable => !_keywordOnly() && _inner.IsAvailable;
-    public float RelevanceThreshold => _inner.RelevanceThreshold;
-    public float[]? TryEmbed(string text) => _keywordOnly() ? null : _inner.TryEmbed(text);
+    public IRetrievalEmbeddingProvider Inner => _resolve();
+    public RetrievalEmbeddingIdentity Identity => _resolve().Identity;
+    public bool IsAvailable => !_keywordOnly() && _resolve().IsAvailable;
+    public float RelevanceThreshold => _resolve().RelevanceThreshold;
+    public float[]? TryEmbed(string text) => _keywordOnly() ? null : _resolve().TryEmbed(text);
     public IReadOnlyList<float[]?> TryEmbedBatch(IReadOnlyList<string> texts) =>
-        _keywordOnly() ? texts.Select(_ => (float[]?)null).ToList() : _inner.TryEmbedBatch(texts);
+        _keywordOnly() ? texts.Select(_ => (float[]?)null).ToList() : _resolve().TryEmbedBatch(texts);
 }
 
 public sealed record KnowledgeSearchChoice(string Id, string Label, string Description, bool Selected);

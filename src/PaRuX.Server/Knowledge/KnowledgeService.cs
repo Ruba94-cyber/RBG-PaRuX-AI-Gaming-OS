@@ -51,17 +51,20 @@ public sealed class KnowledgeJobService
     public IRetrievalEmbeddingProvider? Embedder { get; }
     public IRetrievalRerankerProvider? Reranker { get; }
     public KnowledgeSettingsStore Settings => _settings;
+    public KnowledgeEmbedderCatalog Embedders { get; }
 
     public KnowledgeJobService(RagStore sources, KnowledgeSettingsStore? settings = null, EmbeddingService? embeddings = null,
         KnowledgeIndex? index = null, IOcrEngine? ocr = null, IRetrievalEmbeddingProvider? embedder = null,
-        IRetrievalRerankerProvider? reranker = null)
+        IRetrievalRerankerProvider? reranker = null, KnowledgeEmbedderCatalog? embedderCatalog = null)
     {
         _sources = sources;
         _settings = settings ?? KnowledgeSettingsStore.Shared;
         _embeddings = embeddings;
         _ocr = ocr ?? new WindowsOcrEngine();
         // The person's search-method choice can switch the embedder off without uninstalling it.
-        Embedder = embedder == null ? null : new SwitchableEmbedder(embedder, () => KnowledgeSearchMethods.Normalize(_settings.Get().SearchMethod) == KnowledgeSearchMethods.Keyword);
+        Embedders = embedderCatalog ?? new KnowledgeEmbedderCatalog(embedder == null ? Array.Empty<IRetrievalEmbeddingProvider>() : new[] { embedder });
+        // Off only when every workspace is keyword-only; the embedder choice is resolved on each call.
+        Embedder = Embedders.IsEmpty ? null : new SwitchableEmbedder(() => Embedders.Resolve(_settings.Get().EmbedderId)!, () => !_settings.Get().EmbeddingNeeded());
         Reranker = reranker;
         Index = index ?? CreateIndex(PaRuXDataRoot.Combine("knowledge", "knowledge.db"), Embedder, BuildOptions(), reranker);
         if (embeddings != null)
@@ -148,6 +151,83 @@ public sealed class KnowledgeJobService
         return true;
     }
 
+    // ---------------------------------------------------------------------------------------- retrieval mode and re-embed
+
+    /// <summary>The search a workspace gets right now: its chosen mode, degraded honestly to keyword when no usable vectors exist.</summary>
+    public KnowledgeEffectiveSearch ResolveSearch(string? workspace)
+    {
+        string requested = _settings.Get().EffectiveMode(workspace);
+        if (requested == KnowledgeRetrievalModes.Keyword) return new(KnowledgeSearchMode.Keyword, requested, requested, null);
+        if (Embedder is not { IsAvailable: true })
+            return new(KnowledgeSearchMode.Keyword, KnowledgeRetrievalModes.Keyword, requested, "The search model is not installed or is switched off, so keyword search is used.");
+        if (requested == KnowledgeRetrievalModes.Embedding)
+            return Index.HasCurrentVectors()
+                ? new(KnowledgeSearchMode.Semantic, requested, requested, null)
+                : new(KnowledgeSearchMode.Keyword, KnowledgeRetrievalModes.Keyword, requested, "No passage has a vector from the chosen search model yet; re-embed the index. Keyword search is used meanwhile.");
+        return new(KnowledgeSearchMode.Auto, requested, requested, null);
+    }
+
+    private readonly object _reembedGate = new();
+    private CancellationTokenSource? _reembedCts;
+    private Task? _reembedTask;
+    private volatile KnowledgeReembedStatus _reembed = new("idle", 0, 0, 0, 0, 0, null, false, DateTime.UtcNow);
+
+    public KnowledgeReembedStatus ReembedStatus => _reembed;
+    public bool ReembedRunning { get { lock (_reembedGate) return _reembedTask is { IsCompleted: false }; } }
+
+    /// <summary>Starts the bounded background re-embed. False with a reason when it cannot start; true when started or already running.</summary>
+    public bool StartReembed(out string? refusal)
+    {
+        refusal = null;
+        lock (_reembedGate)
+        {
+            if (_reembedTask is { IsCompleted: false }) return true;
+            if (GamingActive()) { refusal = "gaming_active"; return false; }
+            if (Embedder is not { IsAvailable: true }) { refusal = "no_embedder"; return false; }
+            Index.UpdateOptions(BuildOptions());
+            var cts = new CancellationTokenSource();
+            _reembedCts = cts;
+            _reembed = new KnowledgeReembedStatus("running", 0, 0, 0, 0, 0, null, false, DateTime.UtcNow);
+            var progress = new Progress<KnowledgeReembedProgress>(p =>
+                _reembed = new KnowledgeReembedStatus("running", p.Processed, p.Updated, p.Failed, p.Total, 0, null, false, DateTime.UtcNow));
+            _reembedTask = Task.Run(async () =>
+            {
+                try
+                {
+                    KnowledgeReembedResult r = await Index.ReembedAsync(progress, KnowledgeIndex.DefaultReembedLimit, cts.Token).ConfigureAwait(false);
+                    string state = r.Cancelled ? "cancelled" : r.RecoveredFromCorruption ? "recovered" : r.Remaining > 0 ? "partial" : "done";
+                    _reembed = new KnowledgeReembedStatus(state, r.Processed, r.Updated, r.Failed, r.Processed, r.Remaining, null, r.RecoveredFromCorruption, DateTime.UtcNow);
+                }
+                catch (Exception ex) { _reembed = new KnowledgeReembedStatus("failed", 0, 0, 0, 0, 0, ex.GetType().Name, false, DateTime.UtcNow); }
+            });
+            return true;
+        }
+    }
+
+    /// <summary>The Gaming hard-off signal (the persisted marker); replaceable so tests need not touch the real marker file.</summary>
+    internal Func<bool> GamingActive { get; set; } = GamingHardOffWatch.MarkerActive;
+
+    private int _benchmarkRunning;
+    public bool TryBeginBenchmark() => Interlocked.CompareExchange(ref _benchmarkRunning, 1, 0) == 0;
+    public void EndBenchmark() => Interlocked.Exchange(ref _benchmarkRunning, 0);
+
+    public bool CancelReembed()
+    {
+        lock (_reembedGate)
+        {
+            if (_reembedTask is not { IsCompleted: false }) return false;
+            _reembedCts?.Cancel();
+            return true;
+        }
+    }
+
+    /// <summary>Test/shutdown helper: waits for the re-embed job to finish.</summary>
+    public async Task WaitForReembedAsync(TimeSpan timeout)
+    {
+        Task? t; lock (_reembedGate) t = _reembedTask;
+        if (t != null) await Task.WhenAny(t, Task.Delay(timeout)).ConfigureAwait(false);
+    }
+
     public KnowledgeJobStatus? Status(string sourceId) => _status.TryGetValue(sourceId, out var s) ? s : null;
     public OcrAvailability OcrAvailability() => _ocr.CheckAvailability();
 
@@ -185,6 +265,22 @@ public sealed class KnowledgeJobService
     }
 }
 
+public sealed record KnowledgeReembedStatus(string State, int Processed, int Updated, int Failed, int Total, int Remaining, string? Error,
+    bool RecoveredFromCorruption, DateTime UpdatedUtc);
+
+public sealed class KnowledgeRetrievalUpdate
+{
+    public string? Workspace { get; set; }
+    public string? Mode { get; set; }
+    public string? EmbedderId { get; set; }
+}
+
+public sealed class KnowledgeBenchmarkRequest
+{
+    public int? Documents { get; set; }
+    public int? Seed { get; set; }
+}
+
 public sealed class KnowledgeSettingsUpdate
 {
     public bool? OcrEnabled { get; set; }
@@ -196,11 +292,31 @@ public sealed class KnowledgeSettingsUpdate
 
 public static class KnowledgeEndpoints
 {
+    private static object DescribePlan(KnowledgeJobService svc, string? workspace)
+    {
+        KnowledgeSettings s = svc.Settings.Get();
+        KnowledgeEffectiveSearch effective = svc.ResolveSearch(workspace);
+        KnowledgeEmbeddingState state = svc.Index.EmbeddingState();
+        return new
+        {
+            workspace = KnowledgeRetrievalModes.WorkspaceKey(workspace),
+            modes = KnowledgeRetrievalModes.All,
+            requestedMode = effective.RequestedMode, effectiveMode = effective.EffectiveMode, degradedReason = effective.DegradedReason,
+            embedders = svc.Embedders.Options(s.EmbedderId),
+            rerankerInstalled = svc.Reranker is { IsAvailable: true },
+            embedding = new { state.EmbedderAvailable, state.TotalChunks, state.Current, state.Stale, state.Missing, needsReembed = state.NeedsReembed },
+            reembed = svc.ReembedStatus,
+            offlineBlocked = OfflinePolicy.IsBlocked(svc.Settings)
+        };
+    }
+
     public static void MapKnowledgeEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/v1/knowledge/search", (string q, string? mode, int? k, KnowledgeJobService svc, WebKnowledgeSources web) =>
+        app.MapGet("/api/v1/knowledge/search", (string q, string? mode, int? k, string? workspace, KnowledgeJobService svc, WebKnowledgeSources web) =>
         {
             var m = Enum.TryParse(mode, true, out KnowledgeSearchMode parsed) ? parsed : KnowledgeSearchMode.Auto;
+            // An explicit mode is honoured; "auto" (the default) follows the workspace's chosen retrieval mode.
+            if (string.IsNullOrWhiteSpace(mode) || m == KnowledgeSearchMode.Auto) m = svc.ResolveSearch(workspace).Mode;
             IReadOnlyList<KnowledgeHit> hits = svc.Index.Search(q ?? string.Empty, m, Math.Clamp(k ?? 10, 1, 50), svc.EnabledSourceIds());
             return Results.Ok(hits.Select(h => new
             {
@@ -252,6 +368,9 @@ public static class KnowledgeEndpoints
             {
                 if (!KnowledgeSearchMethods.IsValid(update.SearchMethod)) return Results.BadRequest(new { error = "searchMethod must be auto or keyword." });
                 s.SearchMethod = update.SearchMethod;
+                // Keep the default workspace's per-workspace choice in step with the legacy toggle.
+                s.WorkspaceRetrievalModes[KnowledgeRetrievalModes.DefaultWorkspace] =
+                    KnowledgeSearchMethods.Normalize(update.SearchMethod) == KnowledgeSearchMethods.Keyword ? KnowledgeRetrievalModes.Keyword : KnowledgeRetrievalModes.Hybrid;
             }
             if (update.Profile != null)
             {
@@ -267,6 +386,50 @@ public static class KnowledgeEndpoints
         app.MapGet("/api/v1/knowledge/retrieval", (KnowledgeJobService svc) =>
             Results.Ok(KnowledgeRetrieval.Describe(svc.Settings.Get().SearchMethod, svc.Embedder,
                 svc.Reranker is { IsAvailable: true }, OfflinePolicy.IsBlocked(svc.Settings))));
+        // Embedder picker + per-workspace retrieval mode + embedding state, in one truthful read.
+        app.MapGet("/api/v1/knowledge/retrieval/plan", (string? workspace, KnowledgeJobService svc) => Results.Ok(DescribePlan(svc, workspace)));
+        app.MapPut("/api/v1/knowledge/retrieval", (KnowledgeRetrievalUpdate update, KnowledgeJobService svc) =>
+        {
+            if (svc.ReembedRunning) return Results.Json(new { error = "A re-embed is running; cancel it or wait before changing the search model.", code = "reembed_running" }, statusCode: 409);
+            KnowledgeSettings s = svc.Settings.Get();
+            if (update.Mode != null)
+            {
+                if (!KnowledgeRetrievalModes.IsValid(update.Mode)) return Results.BadRequest(new { error = "mode must be keyword, embedding or hybrid." });
+                string ws = KnowledgeRetrievalModes.WorkspaceKey(update.Workspace);
+                s.WorkspaceRetrievalModes[ws] = KnowledgeRetrievalModes.Normalize(update.Mode);
+                if (ws == KnowledgeRetrievalModes.DefaultWorkspace)
+                    s.SearchMethod = s.WorkspaceRetrievalModes[ws] == KnowledgeRetrievalModes.Keyword ? KnowledgeSearchMethods.Keyword : KnowledgeSearchMethods.Auto;
+            }
+            if (update.EmbedderId != null)
+            {
+                KnowledgeEmbedderOption? option = svc.Embedders.Options(null).FirstOrDefault(o => string.Equals(o.Id, update.EmbedderId, StringComparison.OrdinalIgnoreCase));
+                if (option == null) return Results.BadRequest(new { error = "Unknown search model." });
+                if (!option.Installed) return Results.Json(new { error = "That search model is not installed.", code = "embedder_not_installed" }, statusCode: 409);
+                s.EmbedderId = option.Id;
+            }
+            svc.Settings.Save(s);
+            return Results.Ok(DescribePlan(svc, update.Workspace));
+        }).RequireDesktopOwner();
+        app.MapGet("/api/v1/knowledge/reembed", (KnowledgeJobService svc) => Results.Ok(svc.ReembedStatus));
+        app.MapPost("/api/v1/knowledge/reembed", (KnowledgeJobService svc) =>
+        {
+            if (svc.StartReembed(out string? refusal)) return Results.Accepted();
+            return Results.Json(new { error = refusal == "gaming_active" ? "Gaming Mode is active; re-embedding waits until it ends." : "No search model is installed to re-embed with.", code = refusal }, statusCode: 409);
+        }).RequireDesktopOwner();
+        app.MapPost("/api/v1/knowledge/reembed/cancel", (KnowledgeJobService svc) => svc.CancelReembed() ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
+        // "Check retrieval quality": synthetic labelled corpus, all three modes, never real documents.
+        app.MapPost("/api/v1/knowledge/benchmark", async (KnowledgeBenchmarkRequest? request, KnowledgeJobService svc, HttpContext http) =>
+        {
+            if (svc.GamingActive()) return Results.Json(new { error = "Gaming Mode is active; the retrieval check is unavailable until it ends.", code = "gaming_active" }, statusCode: 409);
+            if (!svc.TryBeginBenchmark()) return Results.Json(new { error = "A retrieval check is already running.", code = "benchmark_running" }, statusCode: 409);
+            try
+            {
+                var reports = await KnowledgeBenchmark.CompareModesAsync(svc.Embedder, request?.Documents ?? 60, request?.Seed ?? 7, svc.BuildOptions().Plan, http.RequestAborted);
+                return Results.Ok(reports);
+            }
+            catch (OperationCanceledException) { return Results.StatusCode(499); }
+            finally { svc.EndBenchmark(); }
+        }).RequireDesktopOwner();
         app.MapPost("/api/v1/knowledge/sources/{id}/pause", (string id, KnowledgeJobService svc) => svc.Pause(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
         app.MapPost("/api/v1/knowledge/sources/{id}/resume", (string id, KnowledgeJobService svc) => svc.Resume(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
         app.MapPost("/api/v1/knowledge/sources/{id}/cancel", (string id, KnowledgeJobService svc) => svc.Cancel(id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();

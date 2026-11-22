@@ -243,7 +243,7 @@ namespace PaRuX.Views
                 };
 
                 KnowledgeSettingsPanel.Children.Clear();
-                foreach (UIElement e in new UIElement[] { ocr, ocrNote, profile, profileNote, offline, offlineNote, wipe, wipeNote }) KnowledgeSettingsPanel.Children.Add(e);
+                foreach (UIElement e in new UIElement[] { ocr, ocrNote, profile, profileNote, offline, offlineNote }.Concat(await BuildRetrievalControlsAsync()).Concat(new UIElement[] { wipe, wipeNote })) KnowledgeSettingsPanel.Children.Add(e);
             }
             catch (Exception ex)
             {
@@ -251,6 +251,132 @@ namespace PaRuX.Views
                 Log.Write("EnsureKnowledgeSettingsPanelAsync failed: " + ex.Message);
             }
             finally { _knowledgeSettingsLoading = false; }
+        }
+
+        private static string ModeLabel(string mode) => mode switch
+        {
+            "keyword" => KT("Keyword only", "Solo parole chiave"),
+            "embedding" => KT("Meaning only (embeddings)", "Solo significato (embedding)"),
+            _ => KT("Hybrid (keyword + meaning)", "Ibrida (parole chiave + significato)")
+        };
+
+        /// <summary>Embedder picker, per-workspace retrieval mode, bounded re-embed and the in-app retrieval check. The Core owns every state.</summary>
+        private async Task<UIElement[]> BuildRetrievalControlsAsync()
+        {
+            const string workspace = "default";
+            bool loading = true;
+            var embedder = new ComboBox { Header = KT("Search model (embedder)", "Modello di ricerca (embedder)"), MinWidth = 260 };
+            AutomationProperties.SetAutomationId(embedder, "Settings_Rag_Embedder_ComboBox");
+            var mode = new ComboBox { Header = KT("Retrieval mode", "Modalità di recupero"), MinWidth = 260 };
+            foreach (string m in new[] { "hybrid", "embedding", "keyword" }) mode.Items.Add(new ComboBoxItem { Tag = m, Content = ModeLabel(m) });
+            AutomationProperties.SetAutomationId(mode, "Settings_Rag_RetrievalMode_ComboBox");
+            var note = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            ApplyCaptionStyle(note);
+            AutomationProperties.SetAutomationId(note, "Settings_Rag_RetrievalNote");
+            var reembed = new Button { Content = KT("Re-embed index", "Rigenera i vettori dell’indice"), Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAutomationId(reembed, "Settings_Rag_Reembed_Button");
+            var cancel = new Button { Content = KT("Cancel", "Annulla"), Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAutomationId(cancel, "Settings_Rag_ReembedCancel_Button");
+            var reembedStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            ApplyCaptionStyle(reembedStatus);
+            AutomationProperties.SetAutomationId(reembedStatus, "Settings_Rag_ReembedStatus");
+            var bench = new Button { Content = KT("Check retrieval quality", "Verifica la qualità del recupero") };
+            AutomationProperties.SetAutomationId(bench, "Settings_Rag_Benchmark_Button");
+            var benchResult = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            ApplyCaptionStyle(benchResult);
+            AutomationProperties.SetAutomationId(benchResult, "Settings_Rag_Benchmark_Result");
+            benchResult.Text = KT("Runs a short test on a built-in synthetic corpus (no personal documents) and compares keyword, meaning and hybrid search.",
+                "Esegue un breve test su un corpus sintetico incluso (nessun documento personale) e confronta ricerca per parole chiave, per significato e ibrida.");
+            DispatcherTimer? poll = null;
+
+            void Apply(KnowledgeRetrievalPlanView plan)
+            {
+                loading = true;
+                embedder.Items.Clear();
+                foreach (KnowledgeEmbedderView o in plan.Embedders)
+                    embedder.Items.Add(new ComboBoxItem { Tag = o.Id, Content = o.Label + " (" + o.Dimensions + ")" + (o.Installed ? string.Empty : KT(" - not installed", " - non installato")) });
+                embedder.SelectedIndex = Math.Max(0, plan.Embedders.ToList().FindIndex(o => o.Selected));
+                embedder.IsEnabled = plan.Embedders.Count > 0 && plan.ReembedState != "running";
+                mode.SelectedIndex = Math.Max(0, new[] { "hybrid", "embedding", "keyword" }.ToList().IndexOf(plan.RequestedMode));
+                mode.IsEnabled = plan.ReembedState != "running";
+                string text = KT("Search now: ", "Ricerca attuale: ") + ModeLabel(plan.EffectiveMode)
+                    + (plan.RerankerInstalled ? KT(" · local reranker on", " · riordino locale attivo") : KT(" · local reranker not installed", " · riordino locale non installato"));
+                if (plan.DegradedReason != null)
+                    text += "\n" + KT("Not as chosen: ", "Non come scelto: ") + plan.DegradedReason;
+                if (plan.TotalChunks > 0)
+                    text += "\n" + plan.CurrentVectors + "/" + plan.TotalChunks + KT(" passages have a vector from this model", " passaggi hanno un vettore di questo modello")
+                        + (plan.StaleVectors > 0 ? " · " + plan.StaleVectors + KT(" from another model (kept, not used)", " da un altro modello (conservati, non usati)") : string.Empty);
+                note.Text = text;
+                bool running = plan.ReembedState == "running";
+                reembed.Visibility = plan.NeedsReembed && !running ? Visibility.Visible : Visibility.Collapsed;
+                cancel.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+                reembedStatus.Text = plan.ReembedState switch
+                {
+                    "running" => KT("Re-embedding: ", "Rigenerazione: ") + plan.ReembedProcessed + "/" + plan.ReembedTotal,
+                    "cancelled" => KT("Re-embed stopped. Nothing was lost; run it again to finish.", "Rigenerazione interrotta. Nulla è andato perso; riavviala per completare."),
+                    "partial" => KT("Re-embed reached its limit; ", "La rigenerazione ha raggiunto il limite; ") + plan.ReembedRemaining + KT(" passages remain.", " passaggi rimasti."),
+                    "recovered" => KT("The index file was damaged and was moved aside (not deleted). Re-index your folders.", "Il file dell’indice era danneggiato ed è stato spostato (non eliminato). Reindicizza le cartelle."),
+                    "failed" => KT("Re-embed failed.", "Rigenerazione non riuscita."),
+                    _ => plan.NeedsReembed ? KT("The index has passages without a vector from this model. Re-embed to use meaning search on all of them.",
+                        "L’indice ha passaggi senza vettore di questo modello. Rigenera per usare la ricerca per significato su tutti.") : string.Empty
+                };
+                loading = false;
+                if (running && poll == null)
+                {
+                    poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    poll.Tick += async (a, b) =>
+                    {
+                        try
+                        {
+                            KnowledgeRetrievalPlanView p = await KnowledgeClient.Current.GetRetrievalPlanAsync(workspace, CancellationToken.None);
+                            Apply(p);
+                            if (p.ReembedState != "running") { poll?.Stop(); poll = null; }
+                        }
+                        catch (Exception) { poll?.Stop(); poll = null; }
+                    };
+                    Unloaded += (a, b) => poll?.Stop();
+                    poll.Start();
+                }
+            }
+
+            async Task Change(string? newMode, string? newEmbedder)
+            {
+                try { Apply(await KnowledgeClient.Current.SetRetrievalAsync(workspace, newMode, newEmbedder, CancellationToken.None)); }
+                catch (Exception ex) { note.Text = KT("Could not change the setting: ", "Impossibile cambiare l’impostazione: ") + ex.Message; }
+            }
+            embedder.SelectionChanged += async (a, b) => { if (!loading && embedder.SelectedItem is ComboBoxItem { Tag: string id }) await Change(null, id); };
+            mode.SelectionChanged += async (a, b) => { if (!loading && mode.SelectedItem is ComboBoxItem { Tag: string m }) await Change(m, null); };
+            reembed.Click += async (a, b) =>
+            {
+                try
+                {
+                    await KnowledgeClient.Current.StartReembedAsync(CancellationToken.None);
+                    Apply(await KnowledgeClient.Current.GetRetrievalPlanAsync(workspace, CancellationToken.None));
+                }
+                catch (Exception ex) { reembedStatus.Text = KT("Could not start: ", "Impossibile avviare: ") + ex.Message; }
+            };
+            cancel.Click += async (a, b) =>
+            {
+                try { await KnowledgeClient.Current.CancelReembedAsync(CancellationToken.None); } catch (Exception ex) { reembedStatus.Text = ex.Message; }
+            };
+            bench.Click += async (a, b) =>
+            {
+                bench.IsEnabled = false;
+                benchResult.Text = KT("Running the check...", "Verifica in corso...");
+                try
+                {
+                    IReadOnlyList<KnowledgeBenchmarkRow> rows = await KnowledgeClient.Current.RunBenchmarkAsync(CancellationToken.None);
+                    benchResult.Text = string.Join("\n", rows.Select(r => ModeLabel(r.Mode) + ": " + KT("precision ", "precisione ") + r.Precision.ToString("0.00") + ", " + KT("recall ", "richiamo ") + r.Recall.ToString("0.00")
+                        + ", MRR " + r.Mrr.ToString("0.00") + ", " + KT("latency ", "latenza ") + r.MedianLatencyMs.ToString("0.0") + " ms (p95 " + r.P95LatencyMs.ToString("0.0") + "), "
+                        + r.DocumentsPerSecond.ToString("0") + KT(" docs/s", " doc/s") + (r.Note != null ? " - " + r.Note : string.Empty)));
+                }
+                catch (Exception ex) { benchResult.Text = KT("The check could not run (it is unavailable during Gaming Mode): ", "La verifica non è partita (non è disponibile durante la modalità Gaming): ") + ex.Message; }
+                finally { bench.IsEnabled = true; }
+            };
+
+            try { Apply(await KnowledgeClient.Current.GetRetrievalPlanAsync(workspace, CancellationToken.None)); }
+            catch (Exception ex) { Log.Write("BuildRetrievalControlsAsync failed: " + ex.Message); note.Text = KT("Search status unavailable: ", "Stato della ricerca non disponibile: ") + ex.Message; loading = false; }
+            return new UIElement[] { embedder, mode, note, reembed, cancel, reembedStatus, bench, benchResult };
         }
     }
 }
