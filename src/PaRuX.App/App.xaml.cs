@@ -75,10 +75,19 @@ namespace PaRuX
             // "PaRuX.exe --play key" comes from a desktop or Steam shortcut for one library game.
             bool hasPlayRequest = PaRuX.Contracts.GameLaunchRequestChannel.TryParseCommandLine(Environment.GetCommandLineArgs(), out string playTitleKey);
 
+            // "PaRuX.exe --playnite-console | --playnite-desktop | --streaming | --playnite-settings | --playnite-launcher": Playnite Console Mode.
+            PaRuX.Contracts.PlayniteLauncherRequest launcherRequest = PaRuX.Contracts.PlayniteLauncherArguments.Parse(Environment.GetCommandLineArgs());
+
             _singleInstanceMutex = new Mutex(true, mutexName, out createdNew);
             if (!createdNew)
             {
                 Log.Write("PaRuX already running - activating existing instance and exiting.");
+                if (launcherRequest.HasAction)
+                {
+                    // Only an explicit argument is forwarded (never a held key): the running instance opens its launcher or runs the action.
+                    bool queued = PaRuX.Contracts.PlayniteLauncherRequestChannel.TrySubmit(AppPaths.PaRuXRoot, launcherRequest.Action, out _);
+                    Log.Write("Playnite launcher request " + (queued ? "handed to the running instance." : "could not be queued."));
+                }
                 if (hasPlayRequest)
                 {
                     // Hand the request to the running instance; it shows the normal Play confirmation.
@@ -94,6 +103,13 @@ namespace PaRuX
             // prerequisite fails before MainWindow exists, swallowing the WinUI unhandled event
             // can leave an invisible process holding the single-instance mutex. Fail closed here:
             // preserve the full diagnostic and terminate instead of creating a zombie instance.
+            // Start-up resolution input for this (first) instance: the explicit argument, else Ctrl/Shift held right now (read-only).
+            StartupLauncherRequest = launcherRequest;
+            if (!launcherRequest.HasAction && !hasPlayRequest)
+            {
+                (StartupCtrlHeld, StartupShiftHeld) = PaRuX.Services.LauncherModifierKeys.Sample(TimeSpan.Zero);
+            }
+
             try
             {
                 AppPaths.EnsureCreated();
@@ -127,6 +143,10 @@ namespace PaRuX
                 if (hasPlayRequest) PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
                 uiQueue.TryEnqueue(ProcessGameShortcutRequests);
 
+                // Console Mode launcher requests from other PaRuX processes (shortcut, Jump List task, second launch).
+                _launcherSignal = PaRuX.Contracts.PlayniteLauncherRequestChannel.Listen(AppPaths.PaRuXRoot, () =>
+                    uiQueue.TryEnqueue(ProcessPlayniteLauncherRequests));
+
                 ApplyTheme();
 
                 // Console/TV start preference (opt-in): TV connected -> fullscreen Gaming library on it; otherwise the chosen
@@ -151,6 +171,29 @@ namespace PaRuX
         }
 
         private static IDisposable? _playSignal;
+        private static IDisposable? _launcherSignal;
+
+        /// <summary>What this process was asked at start (argument) and which modifiers were held; read once by the start-up sequence.</summary>
+        internal static PaRuX.Contracts.PlayniteLauncherRequest StartupLauncherRequest { get; private set; } = PaRuX.Contracts.PlayniteLauncherRequest.Nothing;
+        internal static bool StartupCtrlHeld { get; private set; }
+        internal static bool StartupShiftHeld { get; private set; }
+
+        /// <summary>Takes queued launcher requests from other processes; the latest wins and opens the launcher (or runs its action) in this instance.</summary>
+        private static void ProcessPlayniteLauncherRequests()
+        {
+            try
+            {
+                var actions = PaRuX.Contracts.PlayniteLauncherRequestChannel.Drain(AppPaths.PaRuXRoot);
+                PaRuX.Contracts.PlayniteLauncherAction winner = PaRuX.Contracts.PlayniteLauncherRequestChannel.PickWinner(actions);
+                if (winner == PaRuX.Contracts.PlayniteLauncherAction.None || MainWin == null) return;
+                Log.Write("Playnite launcher request from another process: " + winner + ".");
+                MainWin.ShowPlayniteLauncher(winner, gamepad: false, fromRequest: true);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("ProcessPlayniteLauncherRequests failed: " + ex.Message);
+            }
+        }
 
         /// <summary>Non-first-paint startup work, run after the main window is shown (see OnLaunched).</summary>
         private static void FinishDeferredStartup()

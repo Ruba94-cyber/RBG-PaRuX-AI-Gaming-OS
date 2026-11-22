@@ -280,6 +280,16 @@ public sealed partial class SettingsView
     // ---- Import from legacy launcher config -------------------------------------------------------------------------------------
     private bool _pbImporting;
 
+    /// <summary>Entry for the Console Mode launcher: the same read-only import with its preview, run once at a time.</summary>
+    internal async System.Threading.Tasks.Task ImportLegacyLauncherAsync()
+    {
+        if (_pbImporting) return;
+        _pbImporting = true;
+        try { await PbImportLauncherAsync(); }
+        catch (Exception ex) { PadButtonsStatus.Text = PbT("Import failed: ", "Importazione non riuscita: ") + ex.Message; }
+        finally { _pbImporting = false; }
+    }
+
     private async void PadButtonsImportButton_Click(object sender, RoutedEventArgs e)
     {
         if (_pbImporting) return;

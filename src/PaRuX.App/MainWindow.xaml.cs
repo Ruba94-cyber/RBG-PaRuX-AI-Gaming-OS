@@ -79,6 +79,8 @@ namespace PaRuX
             TrayAiOnItem.Command = new ActionCommand(() => RunAiAction("On"));
             TrayAiOffItem.Command = new ActionCommand(() => RunAiAction("Off"));
             TraySettingsItem.Command = new ActionCommand(TraySettings);
+            TrayPlayniteItem.Command = new ActionCommand(() => ShowPlayniteLauncher(PlayniteLauncherAction.Open));
+            if (CorporateMode.IsActive) TrayPlayniteItem.Visibility = Visibility.Collapsed;
             TrayExitItem.Command = new ActionCommand(App.ExitApplication);
 
             _dispatcher = DispatcherQueue.GetForCurrentThread();

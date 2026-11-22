@@ -79,6 +79,7 @@
                     <MenuFlyoutItem x:Name="TrayAiOnItem" Text="AI On" />
                     <MenuFlyoutItem x:Name="TrayAiOffItem" Text="AI Off" loc:Loc.ItText="IA disattivata" />
                     <MenuFlyoutSeparator />
+                    <MenuFlyoutItem x:Name="TrayPlayniteItem" Text="Playnite Console Mode" loc:Loc.ItText="Playnite Modalità Console" />
                     <MenuFlyoutItem x:Name="TraySettingsItem" Text="Settings" loc:Loc.ItText="Impostazioni" />
                     <MenuFlyoutItem x:Name="TrayExitItem" Text="Exit" loc:Loc.ItText="Esci" />
                 </MenuFlyout>

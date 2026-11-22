@@ -339,7 +339,7 @@ public sealed partial class MainWindow
 
     private void RootGrid_ConsoleKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (!_consoleModeActive) return;
+        if (!_consoleModeActive && !PlayniteLauncherOpen) return;   // the Playnite launcher dialog is operated by the same pad navigation
         // Gamepad virtual keys (195..218) mean WinUI itself is delivering the pad: the direct reader must stand down.
         if ((int)e.Key is >= 195 and <= 218) _consoleRawPad?.NoteWinUiGamepadKeysSeen();
         ConsoleNavigationAction action = ConsoleNavigationPolicy.Resolve(
@@ -353,7 +353,7 @@ public sealed partial class MainWindow
     /// </summary>
     private bool ApplyConsoleAction(ConsoleNavigationAction action)
     {
-        if (!_consoleModeActive || action == ConsoleNavigationAction.None) return false;
+        if ((!_consoleModeActive && !PlayniteLauncherOpen) || action == ConsoleNavigationAction.None) return false;
 
         // A dialog, flyout, drop-down or the on-screen keyboard is what the pad operates: B closes it, directions stay inside it.
         if (ConsoleOverlayOpen) return HandleConsoleOverlayAction(action);
@@ -502,9 +502,9 @@ public sealed partial class MainWindow
             if (_consoleRawPad == null)
             {
                 _consoleRawPad = new ConsoleRawPadNavigator();
-                _consoleRawPad.ActionRaised += action => { if (_consoleModeActive) ApplyConsoleAction(action); };
+                _consoleRawPad.ActionRaised += action => { if (_consoleModeActive || PlayniteLauncherOpen) ApplyConsoleAction(action); };
                 _consoleRawPad.AcceptRequested += AcceptFocusedConsoleControl;
-                _consoleRawPad.PadKeyRaised += vk => { if (_consoleModeActive && _keyboardOverlay?.IsOpen == true) _keyboardOverlay.HandlePadKey(vk); };
+                _consoleRawPad.PadKeyRaised += vk => { if ((_consoleModeActive || PlayniteLauncherOpen) && _keyboardOverlay?.IsOpen == true) _keyboardOverlay.HandlePadKey(vk); };
             }
             _consoleRawPad.OverlayOpen = () => ConsoleOverlayOpen;
             _consoleRawPad.Start(DispatcherQueue, () => GameLibraryBusy);
@@ -525,7 +525,7 @@ public sealed partial class MainWindow
     /// No mouse or keyboard input is synthesized.</summary>
     private void AcceptFocusedConsoleControl()
     {
-        if (!_consoleModeActive || RootGrid.XamlRoot is null) return;
+        if ((!_consoleModeActive && !PlayniteLauncherOpen) || RootGrid.XamlRoot is null) return;
         if (_keyboardOverlay?.IsOpen != true && TopInteractivePopup() is { } popup && RescueOverlayFocus(popup)) return;
         if (FocusManager.GetFocusedElement(RootGrid.XamlRoot) is not UIElement focused) return;
         try

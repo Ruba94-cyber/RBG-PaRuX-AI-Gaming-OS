@@ -21,8 +21,10 @@ public sealed partial class MainWindow
     /// <summary>Start sequence: the Console/TV start preference first (unless a game shortcut started us), then the sign-in list.</summary>
     internal async Task RunStartupSequenceAsync(bool hasPlayRequest)
     {
-        if (!hasPlayRequest) await ApplyConsoleStartupPreferenceAsync();
-        await ApplyPlayniteStartupAsync(hasPlayRequest);
+        // An explicit launcher request (argument, shortcut, held Ctrl/Shift) replaces the automatic Console/TV and Playnite starts for this launch.
+        bool launcherTookOver = !hasPlayRequest && ApplyPlayniteLauncherStartup();
+        if (!hasPlayRequest && !launcherTookOver) await ApplyConsoleStartupPreferenceAsync();
+        if (!launcherTookOver) await ApplyPlayniteStartupAsync(hasPlayRequest);
         await RunSignInAppListAfterStartupAsync();
     }
 
