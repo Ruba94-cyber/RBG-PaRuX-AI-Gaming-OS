@@ -39,13 +39,14 @@ namespace PaRuX.Views
                 (T("Open Playnite Console", "Apri Playnite Console"), () => _ = LaunchPlayniteAsync(PlayniteModes.Console)),
                 (T("Switch Console / Desktop", "Passa Console / Desktop"), () => _ = SwitchPlayniteAsync()),
                 (T("Skip Playnite", "Salta Playnite"), () => _ = TogglePlayniteSkipAsync()),
-                (T("Install Playnite (official release)", "Installa Playnite (versione ufficiale)"), () => _ = PlayniteInstallPlanAsync()));
+                (T("Install Playnite (official release)", "Installa Playnite (versione ufficiale)"), () => _ = PlayniteInstallPlanAsync()),
+                (T("Open the Console Mode launcher", "Apri il launcher Console Mode"), () => App.MainWin?.ShowPlayniteLauncher(PlayniteLauncherAction.Open)));
             AutomationProperties.SetAutomationId(section, PlayniteIdPrefix + "_Section");
             var card = (StackPanel)((Border)section.Children[1]).Child;
 
             if (card.Children.LastOrDefault() is StackPanel buttons)
             {
-                string[] ids = { "Refresh", "LaunchDesktop", "LaunchConsole", "Switch", "Skip", "Install" };
+                string[] ids = { "Refresh", "LaunchDesktop", "LaunchConsole", "Switch", "Skip", "Install", "OpenLauncher" };
                 for (int i = 0; i < buttons.Children.Count && i < ids.Length; i++)
                     AutomationProperties.SetAutomationId(buttons.Children[i], PlayniteIdPrefix + "_" + ids[i] + "_Button");
                 _plSkip = buttons.Children[4] as Button;
@@ -266,38 +267,17 @@ namespace PaRuX.Views
         private async Task PlayniteInstallPlanAsync()
         {
             SetPlayniteStatus(T("Checking the latest official Playnite release...", "Controllo l'ultima versione ufficiale di Playnite..."));
-            var plan = await PlayniteClient.Current.GetInstallPlanAsync();
-            if (!plan.Succeeded || plan.Value is null) { SetPlayniteStatus(plan.Error ?? string.Empty); return; }
-            _plPlan = plan.Value;
-            if (!plan.Value.Available)
-            {
-                SetPlayniteStatus(plan.Value.Message ?? T("No installable release.", "Nessuna versione installabile."));
-                if (_plInstallConfirm is not null) _plInstallConfirm.Visibility = Visibility.Collapsed;
-                return;
-            }
-            string sha = plan.Value.Sha256 is { Length: > 0 } h ? "SHA-256 " + h : T("no checksum published by the release (unverified)", "nessun checksum pubblicato dalla release (non verificabile)");
-            SetPlayniteStatus(T("Official release ", "Versione ufficiale ") + plan.Value.Version + ", " + plan.Value.AssetName + ", " + (plan.Value.SizeBytes / 1048576) + " MB, " + sha +
-                T(". It installs for your user only into ", ". Si installa solo per il tuo utente in ") + plan.Value.TargetFolder + T(". Press confirm to download and install.", ". Premi conferma per scaricare e installare."));
-            if (_plInstallConfirm is not null) _plInstallConfirm.Visibility = Visibility.Visible;
+            (PlayniteInstallPlanDto? plan, string text) = PlayniteSetupFlow.Describe(await PlayniteClient.Current.GetInstallPlanAsync());
+            _plPlan = plan;
+            SetPlayniteStatus(text);
+            if (_plInstallConfirm is not null) _plInstallConfirm.Visibility = plan is null ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private async Task PlayniteInstallConfirmAsync()
         {
             if (_plPlan is not { Available: true } plan) return;
             if (_plInstallConfirm is not null) _plInstallConfirm.Visibility = Visibility.Collapsed;
-            var started = await PlayniteClient.Current.InstallAsync(new PlayniteInstallRequest
-            {
-                Consent = true, Version = plan.Version ?? string.Empty, Sha256 = plan.Sha256, AcceptUnverified = false
-            });
-            if (!started.Succeeded) { SetPlayniteStatus(started.Error ?? string.Empty); return; }
-            for (int i = 0; i < 1800; i++)
-            {
-                await Task.Delay(1000);
-                var st = await PlayniteClient.Current.GetInstallStatusAsync();
-                if (st.Value is not { } s) continue;
-                SetPlayniteStatus(T("Install: ", "Installazione: ") + s.Stage + (s.TotalBytes > 0 ? " " + (s.BytesDownloaded * 100 / Math.Max(1, s.TotalBytes)) + "%" : string.Empty) + (s.Error is null ? string.Empty : " - " + s.Error));
-                if (s.Stage is "completed" or "failed" or "cancelled") break;
-            }
+            SetPlayniteStatus(await PlayniteSetupFlow.InstallAsync(plan, SetPlayniteStatus));
             await RefreshPlayniteAsync();
         }
 

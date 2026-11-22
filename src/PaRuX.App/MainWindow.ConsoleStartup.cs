@@ -32,14 +32,14 @@ public sealed partial class MainWindow
                 for (int probe = 0; probe < ConsoleStartupMaxProbes && !App.IsShuttingDown; probe++)
                 {
                     var topology = await GamingOrchestratorClient.Current.GetDisplayTopologyAsync();
-                    if (topology.Succeeded)
-                    {
-                        tvPresent = ConsoleDisplaySelectionPolicy.SelectTarget(
-                            topology.Value, SettingsStore.Current.Data.ConsoleDisplays, targetId) is not null;
-                        if (tvPresent) break;
-                        // Readable but absent: confirm once more (a TV that just woke can take a moment to be enumerated).
-                        if (++absentSeen >= ConsoleStartupAbsentConfirmations) break;
-                    }
+                    bool readable = topology.Succeeded;
+                    bool present = readable && ConsoleDisplaySelectionPolicy.SelectTarget(
+                        topology.Value, SettingsStore.Current.Data.ConsoleDisplays, targetId) is not null;
+                    if (readable && !present) absentSeen++;
+                    // Pure, tested decision: present stops, a TV absent twice stops (a TV that just woke can take a moment), otherwise wait and retry within the budget.
+                    ConsoleProbeStep step = ConsoleStartupProbePolicy.Next(probe, ConsoleStartupMaxProbes, readable, present, absentSeen, ConsoleStartupAbsentConfirmations);
+                    tvPresent = step == ConsoleProbeStep.Present;
+                    if (step is ConsoleProbeStep.Present or ConsoleProbeStep.Absent or ConsoleProbeStep.GiveUp) break;
                     await Task.Delay(ConsoleStartupProbeInterval);
                 }
             }
