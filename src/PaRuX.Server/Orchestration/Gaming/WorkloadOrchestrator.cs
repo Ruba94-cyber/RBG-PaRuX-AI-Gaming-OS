@@ -326,6 +326,51 @@ public sealed class WorkloadOrchestrator : BackgroundService
         return entered && ActiveManualGameSessionVersion.HasValue;
     }
 
+    /// <summary>Trigger id of a Gaming session driven by the Playnite game-session signal.</summary>
+    internal const string PlayniteGameTrigger = "playnite-game";
+
+    /// <summary>
+    /// Enter Gaming because a game started by Playnite (observed, never started or controlled by this call) is running.
+    /// Same hard-off, VRAM-release verification and rollback as the manual path. The profile never reloads the runtime on exit:
+    /// AI availability returns, models load only on demand. Returns the session version, or null when Gaming was not entered
+    /// by this call (another session is active, or entry failed and was rolled back).
+    /// </summary>
+    internal async Task<long?> EnterPlayniteGameSessionAsync(CancellationToken ct = default)
+    {
+        var profile = new GamingProfileDto
+        {
+            Id = "transient-playnite-game",
+            Name = "Playnite Game",
+            Enabled = false,
+            SessionType = "local",
+            TriggerProvider = "manual",
+            LauncherProvider = "none",
+            InputProvider = "native",
+            SuspendProvider = "none",
+            QuickResumePolicy = "off",
+            RestoreAiOnExit = false,
+            AiResourcePolicy = "release_gpu"
+        };
+        bool entered = await TransitionToGamingAsync(profile, PlayniteGameTrigger, ct).ConfigureAwait(false);
+        return entered ? ActivePlayniteGameSessionVersion : null;
+    }
+
+    internal long? ActivePlayniteGameSessionVersion
+    {
+        get
+        {
+            lock (_stateGate)
+                return _state == "GamingLocal" &&
+                    string.Equals(_activeTriggerId, PlayniteGameTrigger, StringComparison.Ordinal)
+                    ? _transitionVersion
+                    : null;
+        }
+    }
+
+    /// <summary>Only the exact observed Playnite session may be closed by a process-exit notification.</summary>
+    internal Task<bool> ExitPlayniteGameSessionAsync(long observedVersion, CancellationToken ct) =>
+        ExitManualGameSessionAfterProcessExitAsync(observedVersion, ct);
+
     internal long? ActiveManualGameSessionVersion
     {
         get
@@ -649,7 +694,7 @@ public sealed class WorkloadOrchestrator : BackgroundService
             if (observedVersion.HasValue &&
                 (_transitionVersion != observedVersion.Value ||
                  !(_state == "GamingRemote" ||
-                   (_state == "GamingLocal" && _activeTriggerId == "manual-game"))))
+                   (_state == "GamingLocal" && _activeTriggerId is "manual-game" or PlayniteGameTrigger))))
                 return false;
             // "AiReady" is only really ready when the runtime agrees: after a restart during a
             // gaming session the runtime's persisted gaming flag stayed on while this state said
@@ -1093,7 +1138,7 @@ public sealed class WorkloadOrchestrator : BackgroundService
     {
         OwnedGameProcess? owned;
         lock (_stateGate) owned = _ownedGame;
-        int? pid = ValidateOwnedProcess(owned, ActiveManualGameSessionVersion);
+        int? pid = ValidateOwnedProcess(owned, ActiveManualGameSessionVersion ?? ActivePlayniteGameSessionVersion);
         if (pid is null && owned is not null) ClearOwnedGameProcess();
         return pid;
     }

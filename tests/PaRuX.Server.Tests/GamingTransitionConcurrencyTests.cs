@@ -209,6 +209,42 @@ public sealed class GamingTransitionConcurrencyTests : IDisposable
     }
 
     [Fact]
+    public async Task Playnite_game_session_enters_and_restores_ai_without_reloading_models()
+    {
+        var (orchestrator, _, _) = MakeOrchestrator();
+        long? version = await orchestrator.EnterPlayniteGameSessionAsync();
+        Assert.NotNull(version);
+        Assert.Equal(version, orchestrator.ActivePlayniteGameSessionVersion);
+        Assert.Null(orchestrator.ActiveManualGameSessionVersion);
+        Assert.Equal("GamingLocal", orchestrator.CurrentState);
+        Assert.True(await orchestrator.ExitPlayniteGameSessionAsync(version!.Value, CancellationToken.None));
+        Assert.Equal("AiReady", orchestrator.CurrentState);
+        Assert.Null(orchestrator.ActivePlayniteGameSessionVersion);
+    }
+
+    [Fact]
+    public async Task Playnite_game_session_does_not_take_over_another_active_gaming_session()
+    {
+        var (orchestrator, _, _) = MakeOrchestrator();
+        Assert.True(await orchestrator.EnterManualGameSessionAsync());
+        Assert.Null(await orchestrator.EnterPlayniteGameSessionAsync());
+        Assert.Null(orchestrator.ActivePlayniteGameSessionVersion);
+        Assert.True(await orchestrator.ExitGamingSessionAsync());
+    }
+
+    [Fact]
+    public async Task Stale_playnite_exit_cannot_end_a_newer_playnite_session()
+    {
+        var (orchestrator, _, _) = MakeOrchestrator();
+        long old = (await orchestrator.EnterPlayniteGameSessionAsync())!.Value;
+        Assert.True(await orchestrator.ExitGamingSessionAsync());
+        Assert.NotNull(await orchestrator.EnterPlayniteGameSessionAsync());
+        Assert.False(await orchestrator.ExitPlayniteGameSessionAsync(old, CancellationToken.None));
+        Assert.Equal("GamingLocal", orchestrator.CurrentState);
+        Assert.True(await orchestrator.ExitGamingSessionAsync());
+    }
+
+    [Fact]
     public async Task Verified_owned_process_exit_reports_automatic_AI_return_only_for_its_session()
     {
         var (orchestrator, _, _) = MakeOrchestrator();

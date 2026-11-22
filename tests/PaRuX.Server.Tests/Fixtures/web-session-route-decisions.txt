@@ -749,3 +749,15 @@ DENY POST /api/v1/knowledge/benchmark
 DENY POST /api/v1/knowledge/reembed
 DENY POST /api/v1/knowledge/reembed/cancel
 DENY PUT /api/v1/knowledge/retrieval
+DENY GET /api/v1/gaming/playnite/status
+DENY GET /api/v1/gaming/playnite/settings
+DENY GET /api/v1/gaming/playnite/install/plan
+DENY GET /api/v1/gaming/playnite/install/status
+DENY PUT /api/v1/gaming/playnite/settings
+DENY POST /api/v1/gaming/playnite/locate
+DENY POST /api/v1/gaming/playnite/skip
+DENY POST /api/v1/gaming/playnite/unskip
+DENY POST /api/v1/gaming/playnite/launch
+DENY POST /api/v1/gaming/playnite/switch
+DENY POST /api/v1/gaming/playnite/install
+DENY POST /api/v1/gaming/playnite/install/cancel
