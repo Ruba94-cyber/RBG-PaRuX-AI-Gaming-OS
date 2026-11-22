@@ -426,6 +426,24 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
     internal static int ResolveWallClockMinutes(ModelExecutionProfile? profile) =>
         Math.Clamp(profile?.Budget?.MaxWallClockMinutes ?? 60, 1, 1_440);
 
+    /// <summary>Folder the runner writes its result to: a PEFT adapter, or - for full 16-bit fine-tuning - a
+    /// complete model directory. Mirrors the runner script, which cannot share this constant.</summary>
+    internal static string ArtifactDirectoryName(string? precision) =>
+        string.Equals(precision, TrainingPrecision.Full16Bit, StringComparison.OrdinalIgnoreCase) ? "full-model" : "lora-adapter";
+
+    internal static bool IsFullModelOutput(TrainingJobRequest? request) =>
+        request != null && string.Equals(request.Precision, TrainingPrecision.Full16Bit, StringComparison.OrdinalIgnoreCase);
+
+    private void MarkFullModelSaved(Entry entry)
+    {
+        lock (entry.Gate)
+        {
+            entry.Status.Stage = "Completed - full model saved (not an adapter; export it from the Export step)";
+            entry.Status.UpdatedUtc = DateTime.UtcNow;
+        }
+        TryPersistEntry(entry);
+    }
+
     internal static string NormalizeMethod(string? rawMethod) => TrainingMethod.Normalize(rawMethod);
 
     internal static void ValidateDpoJsonlShape(string path) =>
@@ -526,6 +544,13 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
                 || request.BaseModel.Contains("bnb-4bit", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidDataException(
                 "16-bit LoRA needs a true unquantized Hugging Face checkpoint, not a prequantized 4-bit model.");
+        // One shared rule set with the preflight planner: full 16-bit only for SFT/CPT, no DoRA on full
+        // fine-tuning, embedding fine-tuning only as 16-bit LoRA, DoRA only for text/embedding methods.
+        string? admission = TrainingPrecisionAdmission.Refusal(method, precision, request.BaseModel, request.UseDora);
+        if (admission != null) throw new InvalidDataException(admission);
+        if (precision == TrainingPrecision.Full16Bit && request.PackSequences && method != TrainingMethod.Sft
+            && method != TrainingMethod.ContinuedPretraining)
+            throw new InvalidDataException("Sequence packing requires text SFT or continued pretraining.");
         if (precision == TrainingPrecision.Lora16Bit
             && (method is TrainingMethod.VisionSft or TrainingMethod.TtsSft))
             throw new InvalidDataException(
@@ -656,7 +681,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         try
         {
             string outputDir = TrainingJobDurability.OutputDirectory(RuntimeRoot, entry.Status.Id);
-            string adapterPath = Path.Combine(outputDir, "lora-adapter");
+            string adapterPath = Path.Combine(outputDir, ArtifactDirectoryName(entry.Request.Precision));
             string completionMarker = Path.Combine(outputDir, "parux-training-complete");
             if (File.Exists(completionMarker) && Directory.Exists(adapterPath))
             {
@@ -669,6 +694,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
                     entry.Status.UpdatedUtc = DateTime.UtcNow;
                 }
                 TryPersistEntry(entry);
+                if (IsFullModelOutput(entry.Request)) { MarkFullModelSaved(entry); return; }
                 try { _adapters.RegisterFromTrainingJob(Snapshot(entry), entry.Request); }
                 catch (Exception ex)
                 {
@@ -827,6 +853,8 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             precision = TrainingPrecision.Normalize(request.Precision),
             target_preset = TrainingTargetPreset.Normalize(request.TargetPreset),
             pack_sequences = request.PackSequences,
+            use_dora = request.UseDora,
+            gradient_checkpointing = request.GradientCheckpointing,
             grpo_reward_mode = GrpoRewardMode.Normalize(request.GrpoRewardMode),
             grpo_generations = request.GrpoGenerations,
             text_field = request.TextField,
@@ -888,7 +916,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
                 }
                 else if (process.ExitCode == 0)
                 {
-                    string adapterPath = Path.Combine(outputDir, "lora-adapter");
+                    string adapterPath = Path.Combine(outputDir, ArtifactDirectoryName(request.Precision));
                     string completionMarker = Path.Combine(outputDir, "parux-training-complete");
                     if (Directory.Exists(adapterPath) && File.Exists(completionMarker))
                     {
@@ -916,7 +944,8 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             }
             TryPersistEntry(entry);
 
-            if (justCompleted)
+            if (justCompleted && IsFullModelOutput(request)) MarkFullModelSaved(entry);
+            else if (justCompleted)
             {
                 try { _adapters.RegisterFromTrainingJob(Snapshot(entry), request); }
                 catch (Exception ex)
@@ -1178,7 +1207,7 @@ with open(sys.argv[1], encoding="utf-8") as f:
 method = cfg.get("method", "sft")
 base_model = cfg["base_model"]
 out_dir = cfg["output_dir"]
-adapter_dir = os.path.join(out_dir, "lora-adapter")
+adapter_dir = os.path.join(out_dir, "full-model" if cfg.get("precision") == "full-16bit" else "lora-adapter")
 resume_checkpoint = cfg.get("resume_checkpoint") or None
 checkpoint_steps = max(1, min(int(cfg.get("checkpoint_steps", 50)), int(cfg["max_steps"])))
 os.makedirs(out_dir, exist_ok=True)
@@ -1261,6 +1290,97 @@ if method == "tts-sft":
     trainer.train(resume_from_checkpoint=resume_checkpoint)
     model.save_pretrained(adapter_dir)
     processor.save_pretrained(adapter_dir)
+elif method == "embedding-ft":
+    # Contrastive fine-tune of an embedding / retrieval encoder: InfoNCE over in-batch negatives
+    # (plus an explicit hard negative per row when the dataset provides one), trained as a LoRA/DoRA
+    # adapter. No Trainer is involved, so the loop below emits the same log line the metrics parser reads.
+    import random, time, torch, torch.nn.functional as F
+    from transformers import AutoTokenizer, AutoModel
+    from peft import LoraConfig, get_peft_model
+
+    data = []
+    for record in rows():
+        item = {"q": record["query"], "p": record["positive"]}
+        if isinstance(record.get("negative"), str) and record["negative"].strip():
+            item["n"] = record["negative"]
+        data.append(item)
+    if len(data) < 2:
+        raise ValueError("Embedding fine-tuning needs at least two query/positive rows")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    use_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    model = AutoModel.from_pretrained(base_model, torch_dtype=torch.bfloat16 if use_bf16 else torch.float32).to(device)
+    decoder = bool(getattr(model.config, "is_decoder", False)) or getattr(model.config, "model_type", "") in (
+        "qwen2", "qwen3", "llama", "gemma", "gemma2", "gemma3", "mistral", "phi3")
+    if decoder:
+        tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    names = [name for name, _ in model.named_modules()]
+    targets = None
+    for candidate in (["q_proj", "k_proj", "v_proj", "o_proj"], ["query", "key", "value"]):
+        if all(any(n == t or n.endswith("." + t) for n in names) for t in candidate):
+            targets = candidate
+            break
+    if targets is None:
+        raise ValueError("No supported attention projections were found in this embedding model")
+    if cfg.get("gradient_checkpointing", True):
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
+    model = get_peft_model(model, LoraConfig(
+        r=cfg["lora_rank"], lora_alpha=cfg["lora_rank"] * 2, target_modules=targets,
+        lora_dropout=0.0, bias="none", use_dora=bool(cfg.get("use_dora"))))
+
+    counted = {"tokens": 0}
+    def embed(texts):
+        batch = tokenizer(texts, padding=True, truncation=True, max_length=cfg["max_seq_length"],
+                          return_tensors="pt").to(device)
+        counted["tokens"] += int(batch["attention_mask"].sum().item())
+        hidden = model(**batch).last_hidden_state
+        if decoder:
+            vector = hidden[:, -1]
+        else:
+            mask = batch["attention_mask"].unsqueeze(-1).to(hidden.dtype)
+            vector = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1)
+        return F.normalize(vector.float(), dim=-1)
+
+    micro = min(max(int(cfg.get("batch_size", 1)), 4), len(data))
+    accumulation = max(1, round(int(cfg.get("batch_size", 1)) * int(cfg.get("gradient_accumulation_steps", 1)) / micro))
+    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(params, lr=cfg["learning_rate"], weight_decay=0.0)
+    total = int(cfg["max_steps"])
+    warmup = max(1, total // 10)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lambda s: min((s + 1) / warmup, max(0.0, (total - s) / max(1, total - warmup))))
+    rng = random.Random(3407)
+    order = []
+    model.train()
+    started = time.time()
+    for step in range(1, total + 1):
+        optimizer.zero_grad(set_to_none=True)
+        step_loss = 0.0
+        for _ in range(accumulation):
+            if len(order) < micro:
+                order = rng.sample(range(len(data)), len(data))
+            picked = [order.pop() for _ in range(micro)]
+            query = embed([data[i]["q"] for i in picked])
+            candidates = embed([data[i]["p"] for i in picked])
+            hard = [data[i]["n"] for i in picked if "n" in data[i]]
+            if hard:
+                candidates = torch.cat([candidates, embed(hard)])
+            logits = query @ candidates.T / 0.05
+            loss = F.cross_entropy(logits, torch.arange(len(picked), device=device)) / accumulation
+            loss.backward()
+            step_loss += loss.item()
+        grad_norm = float(torch.nn.utils.clip_grad_norm_(params, 1.0))
+        optimizer.step()
+        scheduler.step()
+        elapsed = max(time.time() - started, 1e-6)
+        print("{'loss': %.6f, 'grad_norm': %.6f, 'learning_rate': %.8g, 'epoch': %.4f, 'tokens_per_second': %.1f}" % (
+            step_loss, grad_norm, optimizer.param_groups[0]["lr"], step * micro * accumulation / len(data),
+            counted["tokens"] / elapsed), flush=True)
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
 else:
     import torch
     from datasets import Dataset
@@ -1314,29 +1434,41 @@ else:
     else:
         from unsloth import FastLanguageModel
         precision = cfg.get("precision", "qlora-4bit")
-        if precision not in ("qlora-4bit", "lora-16bit"):
+        if precision not in ("qlora-4bit", "lora-16bit", "full-16bit"):
             raise ValueError("Unrecognized training precision")
+        full_finetune = precision == "full-16bit"
         preset = cfg.get("target_preset", "attention")
         if preset not in ("attention", "all-linear"):
             raise ValueError("Unrecognized LoRA target preset")
         targets = ["q_proj", "k_proj", "v_proj", "o_proj"]
         if preset == "all-linear":
             targets += ["gate_proj", "up_proj", "down_proj"]
-        if precision == "lora-16bit" and "4bit" in base_model.lower():
-            raise ValueError("16-bit LoRA requires an unquantized base model, not a bnb-4bit checkpoint")
+        if precision != "qlora-4bit" and "4bit" in base_model.lower():
+            raise ValueError("16-bit LoRA / full fine-tuning requires an unquantized base model, not a bnb-4bit checkpoint")
+        # Unsloth offloaded gradient checkpointing is the default memory saver; the Teach-your-model
+        # policy turns it off only when the activations clearly fit in the detected VRAM.
+        ckpt_mode = "unsloth" if cfg.get("gradient_checkpointing", True) else False
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=base_model, max_seq_length=cfg["max_seq_length"], dtype=None,
-            load_in_4bit=(precision == "qlora-4bit"))
-        # Fail with a useful explanation instead of letting PEFT silently skip
-        # missing layers in a model family that uses different projection names.
-        names = tuple(name for name, _ in model.named_modules())
-        missing = [t for t in targets if not any(n == t or n.endswith("." + t) for n in names)]
-        if missing:
-            raise ValueError("Selected LoRA target preset is incompatible with this model: missing " + ", ".join(missing))
-        model = FastLanguageModel.get_peft_model(
-            model, r=cfg["lora_rank"], target_modules=targets,
-            lora_alpha=cfg["lora_rank"] * 2, lora_dropout=0, bias="none",
-            use_gradient_checkpointing="unsloth", random_state=3407)
+            load_in_4bit=(precision == "qlora-4bit"), full_finetuning=full_finetune,
+            use_gradient_checkpointing=ckpt_mode)
+        if full_finetune:
+            # Every weight trains in bf16/fp16; there is no adapter to attach. 8-bit Adam keeps the
+            # optimizer state (otherwise 8 bytes/parameter) small enough for a consumer GPU.
+            extra_optim = {"optim": "adamw_8bit"}
+        else:
+            extra_optim = {}
+            # Fail with a useful explanation instead of letting PEFT silently skip
+            # missing layers in a model family that uses different projection names.
+            names = tuple(name for name, _ in model.named_modules())
+            missing = [t for t in targets if not any(n == t or n.endswith("." + t) for n in names)]
+            if missing:
+                raise ValueError("Selected LoRA target preset is incompatible with this model: missing " + ", ".join(missing))
+            peft_kwargs = {"use_dora": True} if cfg.get("use_dora") else {}
+            model = FastLanguageModel.get_peft_model(
+                model, r=cfg["lora_rank"], target_modules=targets,
+                lora_alpha=cfg["lora_rank"] * 2, lora_dropout=0, bias="none",
+                use_gradient_checkpointing=ckpt_mode, random_state=3407, **peft_kwargs)
 
         if method == "kto":
             # KTO learns from independent binary judgements instead of paired ranked
@@ -1480,7 +1612,7 @@ else:
                     max_steps=cfg["max_steps"], learning_rate=cfg["learning_rate"], logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[], fp16=not torch.cuda.is_bf16_supported(),
-                    bf16=torch.cuda.is_bf16_supported()))
+                    bf16=torch.cuda.is_bf16_supported(), **extra_optim))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
 
     model.save_pretrained(adapter_dir)

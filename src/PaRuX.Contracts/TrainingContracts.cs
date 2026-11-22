@@ -56,7 +56,10 @@ public static class TrainingMethod
     public const string Grpo = "grpo";
     public const string VisionSft = "vision-sft";
     public const string TtsSft = "tts-sft";
-    public static readonly string[] All = { Sft, Dpo, Orpo, Kto, ContinuedPretraining, Grpo, VisionSft, TtsSft };
+    /// <summary>Contrastive (in-batch-negatives) LoRA fine-tune of an embedding / retrieval model.
+    /// Rows are {query, positive[, negative]}; the output is a PEFT adapter that merges into the encoder.</summary>
+    public const string EmbeddingFt = "embedding-ft";
+    public static readonly string[] All = { Sft, Dpo, Orpo, Kto, ContinuedPretraining, Grpo, VisionSft, TtsSft, EmbeddingFt };
 
     public static string Normalize(string? value)
     {
@@ -68,14 +71,18 @@ public static class TrainingMethod
 }
 
 /// <summary>
-/// PaRuX's supported LLM base loading modes. Full-model and FP8 training are deliberately
-/// not advertised until the native runner, hardware admission and benchmarks exist.
+/// PaRuX's supported LLM base loading modes. 16-bit full fine-tuning is admitted only by the VRAM
+/// policy (<c>TrainingPrecisionAdmission</c>); FP8 stays deliberately unadvertised until the native
+/// runner, hardware admission and benchmarks exist.
 /// </summary>
 public static class TrainingPrecision
 {
     public const string Qlora4Bit = "qlora-4bit";
     public const string Lora16Bit = "lora-16bit";
-    public static readonly string[] All = { Qlora4Bit, Lora16Bit };
+    /// <summary>Every weight is trained in bf16/fp16 (Unsloth <c>full_finetuning</c>). The result is a
+    /// complete model directory, not a LoRA adapter.</summary>
+    public const string Full16Bit = "full-16bit";
+    public static readonly string[] All = { Qlora4Bit, Lora16Bit, Full16Bit };
     public static string Normalize(string? value)
     {
         string precision = string.IsNullOrWhiteSpace(value) ? Qlora4Bit : value.Trim().ToLowerInvariant();
@@ -143,6 +150,11 @@ public sealed class TrainingJobRequest
     public string TargetPreset { get; set; } = TrainingTargetPreset.Attention;
     /// <summary>Optional SFT-only sequence packing; continued pretraining always packs.</summary>
     public bool PackSequences { get; set; }
+    /// <summary>Weight-decomposed LoRA (DoRA). Ignored by full fine-tuning; slower and heavier than plain LoRA.</summary>
+    public bool UseDora { get; set; }
+    /// <summary>Unsloth offloaded gradient checkpointing. On by default; turning it off is only safe when
+    /// the activations clearly fit (the Teach-your-model policy decides that from detected VRAM).</summary>
+    public bool GradientCheckpointing { get; set; } = true;
 
     // GRPO is deliberately restricted to built-in deterministic reward functions. Training data may
     // not inject Python/code into the managed runner.
@@ -204,6 +216,7 @@ public sealed class TrainingPlanRequest
     public string TargetPreset { get; set; } = TrainingTargetPreset.Attention;
     /// <summary>Optional SFT-only sequence packing; continued pretraining always packs.</summary>
     public bool PackSequences { get; set; }
+    public bool UseDora { get; set; }
     /// <summary>Opt in to a bounded full-file SFT/DPO scan instead of only 2,000 rows.
     /// Intended for Quick Training; Advanced can continue using sampled previews.</summary>
     public bool ValidateEntireDataset { get; set; }
