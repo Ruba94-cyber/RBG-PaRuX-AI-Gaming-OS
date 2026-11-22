@@ -100,6 +100,10 @@ public static class GameLaunchRequestChannel
     public static IDisposable Listen(string dataRoot, Action onRequest) =>
         RepeatingListener.Start(EventNameFor(dataRoot), onRequest);
 
+    /// <summary>Same wake-up listener for another named request channel (the Playnite launcher uses its own event name).</summary>
+    [SupportedOSPlatform("windows")]
+    internal static IDisposable ListenOn(string eventName, Action onRequest) => RepeatingListener.Start(eventName, onRequest);
+
     /// <summary>
     /// Takes the queued requests (oldest first), deleting each file. Invalid, oversized, stale and duplicate requests
     /// are dropped. At most <see cref="MaxQueuedRequests"/> files are looked at.
