@@ -16,6 +16,9 @@ internal interface IGameTileSurface
     event Action<GameTitleDto>? OpenRequested;
     event Action<GameTitleDto>? PlayRequested;
     event Action<GameTitleDto>? SelectionToggled;
+    /// <summary>A tile took focus or was hovered; the flag is true when the user (not the program) caused it. Feeds the hero preview.</summary>
+    event Action<GameTitleDto, GameHeroSource, bool>? TileEntered;
+    event Action<GameHeroSource>? TileLeft;
     void SetConsole(bool enabled);
     void SetSelectMode(bool enabled);
     void SetCoverSize(string size);

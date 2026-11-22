@@ -42,6 +42,8 @@ internal sealed class GroupedGameLibrary : StackPanel, IGameTileSurface
     public event Action<GameTitleDto>? OpenRequested;
     public event Action<GameTitleDto>? PlayRequested;
     public event Action<GameTitleDto>? SelectionToggled;
+    public event Action<GameTitleDto, GameHeroSource, bool>? TileEntered;
+    public event Action<GameHeroSource>? TileLeft;
 
     internal GroupedGameLibrary(GameTileGrid.Presentation presentation, string mode)
     {
@@ -160,6 +162,8 @@ internal sealed class GroupedGameLibrary : StackPanel, IGameTileSurface
         grid.OpenRequested += t => OpenRequested?.Invoke(t);
         grid.PlayRequested += t => PlayRequested?.Invoke(t);
         grid.SelectionToggled += t => SelectionToggled?.Invoke(t);
+        grid.TileEntered += (t, source, user) => TileEntered?.Invoke(t, source, user);
+        grid.TileLeft += source => TileLeft?.Invoke(source);
 
         var section = new Section { Key = key, Header = header, Grid = grid };
         _sections[key] = section;
@@ -212,6 +216,7 @@ internal sealed class GroupedGameLibrary : StackPanel, IGameTileSurface
         (int nextGroup, int nextIndex) = GameLibraryGrouping.Move(
             _ordered.Select(s => s.Grid.Count).ToList(), _ordered[group].Grid.ColumnCount, group, index, direction);
         if (nextGroup < 0 || (nextGroup == group && nextIndex == index)) return;
+        GameTileGrid.NoteUserNavigation();
         if (_ordered[nextGroup].Grid.FocusIndex(nextIndex)) e.Handled = true;
     }
 }

@@ -263,3 +263,15 @@ A gaming console interface with high visual fidelity must not degrade accessibil
 ## 5. Verification Gate & Deliverable Integrity
 
 This review was conducted strictly through static inspection of tracked codebase files without executing terminal commands or modifying non-review files. All evidence matches code at HEAD on 2026-11-22. Implementation of Slices 1 through 6 should proceed in the numbered order, verifying each milestone against the specified xUnit and FlaUI test gates before moving to the next.
+
+---
+
+## 7. Implementation status of Slices 3-5 (verified against code, 2026-11-22)
+
+Corrections to this review found while implementing: `IGameTileSurface.TileFocused/TileHovered` did not exist (added as `TileEntered/TileLeft` with a user-initiated flag); `GameCoverSizes` had no extra-large size (added `xlarge`, scale 1.6); the Continue shelf was a non-virtualized `StackPanel`; the `GroupedGameLibrary` key handler is on `KeyDown`, which an inner horizontal `ScrollViewer` can pre-empt, so the shelf feed uses `PreviewKeyDown`.
+
+- Slice 3: `GameHeroSyncPolicy` (pure, 120 ms debounce, 1.5 s revert, hold while pointer/focus is on the hero, ignores non-user focus) + `GameHeroCard.Preview`. The hero never pops in when there is no last-played title.
+- Slice 4: `GameShelfFeedModel` (Continue, Favorites, Recently added, up to 8 collections) + `GameShelfFeed` + `GameTileGrid.Presentation.Row` (horizontal `ItemsRepeater`, pool cap 12, shared bounded cover cache, decode width = displayed width x 1.5, decode cancelled on recycle). Enabled with the "View: Shelves" option of the group selector.
+- Slice 5: focus-within border + 1.05 composited scale (off when Windows animations are off or in high contrast), `xlarge` covers, console scale 1.3 kept.
+
+Measured (xUnit, 5,000 synthetic games, this PC, Debug): `GameShelfFeedModel.Build` 0.64 ms/run (average of 20), `Move` 0.044 us/call; 11 shelves (20/500/40/60... tiles). That is the pure model only. Real app (FlaUI, 2,000 synthetic games, 2586x1626): 15 `GameShelfTile_*` buttons in the UIA tree at first sight (6 in the visible row, 1 in each row below the viewport). Not measured: frame time while scrolling, memory, 5,000 games in the real app, Console/TV and Italian rendering of the feed, real gamepad input, high-contrast and reduced-motion runs.

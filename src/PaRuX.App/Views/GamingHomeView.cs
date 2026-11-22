@@ -102,6 +102,11 @@ internal sealed class GamingHomeView : StackPanel
     private readonly StackPanel _libraryColumn = new() { Spacing = 10 };
     private readonly GameDetailPanel _detail;
     private readonly GameHeroCard _hero = new();
+    // The hero follows the tile the user focuses or hovers (debounced, see GameHeroSyncPolicy); it never changes by itself.
+    private readonly GameHeroSyncPolicy _heroSync = new();
+    private DispatcherTimer? _heroTimer;
+    private GameTitleDto? _heroCandidate;
+    private bool _heroFocusWithin, _heroPointerWithin;
     private readonly GameSideFilterPanel _side = new();
     private readonly Expander _compactFilters = new();
     private readonly Grid _main = new();
@@ -197,9 +202,12 @@ internal sealed class GamingHomeView : StackPanel
     private IGameTileSurface NewSurface()
     {
         string mode = GameGroupModes.Normalize(TagOf(_group));
-        IGameTileSurface surface = mode == GameGroupModes.None
-            ? new GameTileGrid(_libraryPresentation)
-            : new GroupedGameLibrary(_libraryPresentation, mode);
+        IGameTileSurface surface = mode switch
+        {
+            GameGroupModes.None => new GameTileGrid(_libraryPresentation),
+            GameGroupModes.Shelves => new GameShelfFeed { IncludeHidden = _showHidden.IsChecked == true },
+            _ => new GroupedGameLibrary(_libraryPresentation, mode),
+        };
         surface.SetCoverSize(GameCoverSizes.Normalize(TagOf(_coverSize)));
         return surface;
     }
@@ -444,6 +452,7 @@ internal sealed class GamingHomeView : StackPanel
         _group.Items.Add(Choice(T("Group: Platform", "Raggruppa: Piattaforma"), GameGroupModes.Platform));
         _group.Items.Add(Choice(T("Group: Source", "Raggruppa: Origine"), GameGroupModes.Source));
         _group.Items.Add(Choice(T("Group: Status", "Raggruppa: Stato"), GameGroupModes.Status));
+        _group.Items.Add(Choice(T("View: Shelves", "Vista: Scaffali"), GameGroupModes.Shelves));
         _group.SelectedIndex = 0;
         Track(_group, "GameHome_Group", T("Group games by", "Raggruppa i giochi per"));
         _group.SelectionChanged += (_, _) =>
@@ -456,6 +465,7 @@ internal sealed class GamingHomeView : StackPanel
         _coverSize.Items.Add(Choice(T("Covers: Small", "Copertine: Piccole"), GameCoverSizes.Small));
         _coverSize.Items.Add(Choice(T("Covers: Medium", "Copertine: Medie"), GameCoverSizes.Medium));
         _coverSize.Items.Add(Choice(T("Covers: Large", "Copertine: Grandi"), GameCoverSizes.Large));
+        _coverSize.Items.Add(Choice(T("Covers: Extra large", "Copertine: Molto grandi"), GameCoverSizes.ExtraLarge));
         _coverSize.SelectedIndex = 1;
         Track(_coverSize, "GameHome_CoverSize", T("Cover size", "Dimensione copertine"));
         _coverSize.SelectionChanged += (_, _) =>
@@ -1292,6 +1302,8 @@ internal sealed class GamingHomeView : StackPanel
         AutomationProperties.SetName(_shelf, T("Continue playing", "Continua a giocare"));
         _shelf.OpenRequested += async t => await OpenAsync(t);
         _shelf.PlayRequested += async t => await PlayAsync(t);
+        WireHeroSync(_shelf);
+        WireHeroHold();
 
         Children.Add(_continueHeading);
         Children.Add(_shelf);
@@ -1397,6 +1409,7 @@ internal sealed class GamingHomeView : StackPanel
             _grid.RefreshState(_selected, _openKey);
             UpdateBulkBar();
         };
+        WireHeroSync(grid);
         AutomationProperties.SetAutomationId(grid.View, "GameHome_Grid");
         AutomationProperties.SetName(grid.View, T("Game library", "Libreria giochi"));
     }
@@ -1412,6 +1425,98 @@ internal sealed class GamingHomeView : StackPanel
         _libraryColumn.Children.Add(_grid.View);
         _grid.Render(_titles, _selected, _openKey);
         UpdateCoversPrompt();
+        // The old surface is gone with whatever tile the user was on: forget its preview, and let the feed own the Continue row.
+        ResetHeroSync();
+        _continueHeading.Visibility = _shelf.Visibility = _shelf.Count > 0 && _grid is not GameShelfFeed ? Visibility.Visible : Visibility.Collapsed;
+        ApplyCompactTop();
+    }
+
+    // ------------------------------------------------------------------ hero follows the focused / hovered tile
+
+    private static long HeroNow => Environment.TickCount64;
+
+    private void WireHeroSync(IGameTileSurface surface)
+    {
+        surface.TileEntered += OnTileEntered;
+        surface.TileLeft += OnTileLeft;
+    }
+
+    private void WireHeroHold()
+    {
+        // While the pointer or focus is on the hero (Play, Details) it keeps its title: it must not change under a click.
+        _hero.GotFocus += (_, _) => { _heroFocusWithin = true; UpdateHeroHold(); };
+        _hero.LostFocus += (_, _) => { _heroFocusWithin = false; UpdateHeroHold(); };
+        _hero.PointerEntered += (_, _) => { _heroPointerWithin = true; UpdateHeroHold(); };
+        _hero.PointerExited += (_, _) => { _heroPointerWithin = false; UpdateHeroHold(); };
+    }
+
+    private void UpdateHeroHold()
+    {
+        _heroSync.Hold(_heroFocusWithin || _heroPointerWithin, HeroNow);
+        ArmHeroTimer();
+    }
+
+    private void OnTileEntered(GameTitleDto title, GameHeroSource source, bool userInitiated)
+    {
+        // Only a user action on a visible hero counts; programmatic focus (start-up, refresh, Console home focus) never moves it.
+        if (!userInitiated || _hero.Visibility != Visibility.Visible) return;
+        _heroCandidate = title;
+        _heroSync.Enter(source, title.TitleKey, userInitiated, HeroNow);
+        ArmHeroTimer();
+    }
+
+    private void OnTileLeft(GameHeroSource source)
+    {
+        _heroSync.Leave(source, HeroNow);
+        ArmHeroTimer();
+    }
+
+    private void ResetHeroSync()
+    {
+        _heroTimer?.Stop();
+        _heroCandidate = null;
+        if (_hero.Previewing) _hero.Preview(null);
+        _heroSync.Reset(_hero.BaseTitle?.TitleKey);
+        _heroSync.Hold(_heroFocusWithin || _heroPointerWithin, HeroNow);
+    }
+
+    private void ArmHeroTimer()
+    {
+        if (_heroSync.DueAt is not { } due)
+        {
+            _heroTimer?.Stop();
+            return;
+        }
+        if (_heroTimer is null)
+        {
+            _heroTimer = new DispatcherTimer();
+            _heroTimer.Tick += (_, _) =>
+            {
+                _heroTimer?.Stop();
+                ApplyHeroDecision();
+                ArmHeroTimer();
+            };
+        }
+        _heroTimer.Stop();
+        _heroTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(due - HeroNow, 16, 2000));
+        _heroTimer.Start();
+    }
+
+    private void ApplyHeroDecision()
+    {
+        GameHeroSyncDecision decision = _heroSync.Poll(HeroNow);
+        switch (decision.Kind)
+        {
+            case GameHeroSyncKind.Preview:
+                GameTitleDto? title = _heroCandidate is { } candidate && candidate.TitleKey == decision.Key
+                    ? candidate
+                    : _allTitles.Concat(_titles).FirstOrDefault(t => t.TitleKey == decision.Key);
+                if (title is not null) _hero.Preview(title);
+                break;
+            case GameHeroSyncKind.Revert:
+                _hero.Preview(null);
+                break;
+        }
     }
 
     private void ApplyBrushes()
@@ -1587,6 +1692,7 @@ internal sealed class GamingHomeView : StackPanel
         ++_generation;
         ++_searchEditGeneration;
         _reloadRetries = 0;
+        _heroTimer?.Stop();
         _cancellation?.Cancel(); // the owning ReloadAsync disposes its CTS
     }
 
@@ -2004,6 +2110,7 @@ internal sealed class GamingHomeView : StackPanel
                 : T("No games yet. Open “Add & import” to add a game, scan your stores or import an emulator folder.",
                     "Ancora nessun gioco. Apri “Aggiungi e importa” per aggiungere un gioco, cercare negli store o importare una cartella di emulatore.")
             : T($"{_titles.Count} games", $"{_titles.Count} giochi");
+        if (_grid is GameShelfFeed feed) feed.IncludeHidden = _showHidden.IsChecked == true;
         _grid.Render(_titles, _selected, _openKey);
         UpdateCoversPrompt();
         UpdateBulkBar();
@@ -2059,13 +2166,16 @@ internal sealed class GamingHomeView : StackPanel
         _continueLoaded = result.Succeeded && result.Value is not null;
         GameTitleDto? hero = GameLibraryHome.PickHero(_allTitles);
         _hero.Show(hero);
+        ResetHeroSync();
         List<GameTitleDto> recent = _allTitles
             .Where(t => !t.Hidden && (t.LastPlayedUtc.HasValue || t.PlaySeconds > 0) && (hero is null || t.TitleKey != hero.TitleKey))
             .OrderByDescending(t => t.LastPlayedUtc.HasValue).ThenByDescending(t => t.LastPlayedUtc).ThenByDescending(t => t.PlaySeconds)
             .Take(10).ToList();
         bool any = recent.Count > 0;
-        _continueHeading.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        _shelf.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        // In the shelf view the feed has its own Continue shelf, so the standalone row would show it twice.
+        bool showContinue = any && _grid is not GameShelfFeed;
+        _continueHeading.Visibility = showContinue ? Visibility.Visible : Visibility.Collapsed;
+        _shelf.Visibility = showContinue ? Visibility.Visible : Visibility.Collapsed;
         _shelf.Render(recent, new HashSet<string>(StringComparer.Ordinal), null);
         ApplyCompactTop();
         _side.Update(GameLibraryHome.Facets(_allTitles, GenresOf, DateTime.UtcNow), ActiveSideFilter());

@@ -43,6 +43,10 @@ internal sealed class GameHeroCard : UserControl
     private readonly Button _play = new() { MinHeight = 44, MinWidth = 140 };
     private readonly Button _details = new() { MinHeight = 44, MinWidth = 120 };
     private GameTitleDto? _title;
+    // The last-played title the hero is for. While the user moves over tiles the hero may show another title (a preview) and returns here.
+    private GameTitleDto? _base;
+    private bool _previewing;
+    private BitmapImage? _fanartBitmap;
 
     internal event Action<GameTitleDto>? PlayRequested;
     internal event Action<GameTitleDto>? DetailsRequested;
@@ -56,7 +60,9 @@ internal sealed class GameHeroCard : UserControl
         AutomationProperties.SetAutomationId(this, "GameHome_Hero");
         AutomationProperties.SetName(this, T("Continue playing", "Continua a giocare"));
 
-        _kicker.Text = T("CONTINUE PLAYING", "CONTINUA A GIOCARE");
+        _kicker.Text = KickerText(false);
+        // The text block cross-fades when the previewed title changes (see Preview); decorative only, never a live region.
+        _text.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(140) };
         AutomationProperties.SetAutomationId(_name, "GameHome_Hero_Title");
         AutomationProperties.SetHeadingLevel(_name, AutomationHeadingLevel.Level3);
         AutomationProperties.SetAutomationId(_logo, "GameHome_Hero_Logo");
@@ -200,16 +206,57 @@ internal sealed class GameHeroCard : UserControl
 
     internal GameTitleDto? Current => _title;
 
+    /// <summary>The hero's own (last-played) title, whatever is previewed right now.</summary>
+    internal GameTitleDto? BaseTitle => _base;
+
     internal bool FocusPlay() => _play.Focus(FocusState.Programmatic);
 
-    /// <summary>Shows the title (or hides the hero for null). The cover is the user's or the cached one; the lettered fallback otherwise.</summary>
+    private static string KickerText(bool preview) => preview
+        ? T("SELECTED GAME", "GIOCO SELEZIONATO")
+        : T("CONTINUE PLAYING", "CONTINUA A GIOCARE");
+
+    /// <summary>True while the hero shows a title the user is pointing at instead of the last-played one.</summary>
+    internal bool Previewing => _previewing;
+
+    /// <summary>
+    /// Makes <paramref name="title"/> the hero's own (last-played) title, or hides the hero for null. Any preview in progress ends.
+    /// </summary>
     internal void Show(GameTitleDto? title)
     {
+        _base = title;
+        _previewing = false;
+        Present(title, fade: false);
+    }
+
+    /// <summary>
+    /// Shows the title the user focuses or hovers (null, or the hero's own title, returns to the last-played one). Only a hero that
+    /// is already showing a last-played title previews; a library without play history never gets a hero that pops in and moves the
+    /// tiles under the user's focus. The change is silent for assistive technology: no live region, focus stays on the tile.
+    /// </summary>
+    internal void Preview(GameTitleDto? title)
+    {
+        if (_base is null) return;
+        bool toBase = title is null || string.Equals(title.TitleKey, _base.TitleKey, StringComparison.Ordinal);
+        if (toBase && !_previewing) return;
+        _previewing = !toBase;
+        Present(toBase ? _base : title, fade: true);
+    }
+
+    private void Present(GameTitleDto? title, bool fade)
+    {
         _title = title;
+        _kicker.Text = KickerText(_previewing);
+        if (fade && title is not null && GameMotion.Allowed(this))
+        {
+            _text.Opacity = 0.25;
+            DispatcherQueue?.TryEnqueue(() => _text.Opacity = 1);
+        }
+        else _text.Opacity = 1;
         if (title is null)
         {
             Visibility = Visibility.Collapsed;
             _artGeneration++;
+            CancelFanartDecode();
             _cover.Background = _backdrop.Background = _fanart.Background = null;
             _logo.Source = null;
             _hasFanart = _hasLogo = false;
@@ -227,6 +274,7 @@ internal sealed class GameHeroCard : UserControl
         AutomationProperties.SetName(_details, T("Details of ", "Dettagli di ") + title.Name);
 
         int generation = ++_artGeneration;
+        CancelFanartDecode();
         _fanart.Background = null;
         _logo.Source = null;
         _hasFanart = _hasLogo = false;
@@ -251,6 +299,15 @@ internal sealed class GameHeroCard : UserControl
             bitmap.UriSource = new Uri(path);
         }
         catch (Exception) { ShowFallback(title.Name); }
+    }
+
+    // A preview that is replaced before its landscape art finished decoding gives the decode back (the source is cleared).
+    private void CancelFanartDecode()
+    {
+        BitmapImage? old = _fanartBitmap;
+        _fanartBitmap = null;
+        if (old is null) return;
+        try { old.UriSource = null; } catch (Exception) { /* Already torn down. */ }
     }
 
     /// <summary>
@@ -286,6 +343,7 @@ internal sealed class GameHeroCard : UserControl
                     ApplyArtState();
                 };
                 _fanart.Background = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill, AlignmentY = AlignmentY.Center };
+                _fanartBitmap = bitmap;
                 bitmap.UriSource = new Uri(hero.Path);
                 _hasFanart = true;
             }
