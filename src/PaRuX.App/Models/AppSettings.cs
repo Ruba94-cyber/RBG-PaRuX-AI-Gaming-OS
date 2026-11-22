@@ -98,6 +98,10 @@ namespace PaRuX.Models
         public int CapabilityRoutingMirrorVersion { get; set; }
         public List<ScopedRoutingOverrideDto> CapabilityRoutingOverrides { get; set; } = new List<ScopedRoutingOverrideDto>();
         public string ChatModelSelection { get; set; } = "parux-auto:balanced";
+        /// <summary>Model files the user starred in the Chat picker (installed file names, never aliases).</summary>
+        public List<string> ChatModelFavourites { get; set; } = new List<string>();
+        /// <summary>Most recent manual Chat model choices, newest first.</summary>
+        public List<string> ChatModelRecents { get; set; } = new List<string>();
         public string ChatRoutingAutoProfile { get; set; } = "balanced";
         public double ChatAutoMinimumCapabilityRatio { get; set; } = 0.68;
         public double ChatAutoComplexityFloorBoost { get; set; } = 0.24;

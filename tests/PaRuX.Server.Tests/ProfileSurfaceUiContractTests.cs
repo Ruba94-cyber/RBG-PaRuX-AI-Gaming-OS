@@ -134,7 +134,7 @@ public sealed class ProfileSurfaceUiContractTests
     public void Standard_and_portable_chat_has_a_bounded_local_model_menu_and_full_search_browser()
     {
         string chat = Read("src", "PaRuX.App", "Views", "ChatView.SimpleMode.cs");
-        Assert.Contains("ChatModelPickerPolicy.Quick(_chatModelCatalog, pinnedFile)", chat, StringComparison.Ordinal);
+        Assert.Contains("ChatModelPickerPolicy.QuickLayout(", chat, StringComparison.Ordinal);
         Assert.Contains("Chat_SimpleMode_ModelPicker_BrowseAll", chat, StringComparison.Ordinal);
         Assert.Contains("Chat_ModelBrowser_Filter_TextBox", chat, StringComparison.Ordinal);
         Assert.Contains("Chat_ModelBrowser_Sort_Combo", chat, StringComparison.Ordinal);

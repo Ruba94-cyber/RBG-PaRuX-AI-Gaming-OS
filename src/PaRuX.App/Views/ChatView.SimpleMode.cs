@@ -30,6 +30,7 @@ namespace PaRuX.Views
         {
             bool loadedBefore = ModelSelector.Items.Count > 0;
             BuildSimpleModeModelMenu();
+            _ = RefreshPickerContextAsync();
             if (loadedBefore) return;
             await LoadModelSelectorAsync();
             BuildSimpleModeModelMenu();
@@ -65,12 +66,10 @@ namespace PaRuX.Views
             }
             else
             {
-                items.Add(new MenuFlyoutItem { Text = it ? "I tuoi modelli (usa sempre quello scelto)" : "Your models (always uses the one you pick)", IsEnabled = false });
-                // The default Chat picker must not become a 500-item flyout.
-                // Keep the exact manually chosen model visible even when it
-                // sorts outside the first twelve; the full list is searchable.
                 string pinnedFile = current.StartsWith("parux-manual:", StringComparison.OrdinalIgnoreCase)
                     ? current.Substring("parux-manual:".Length) : string.Empty;
+                // Keep the exact manually chosen model visible even when it would sort outside the quick list; the
+                // full list stays searchable. Favourites and recents come first so switching is one click.
                 if (!string.IsNullOrEmpty(pinnedFile) && !_chatModelCatalog.Any(m =>
                         string.Equals(m.FileName, pinnedFile, StringComparison.OrdinalIgnoreCase)))
                     items.Add(new MenuFlyoutItem
@@ -78,24 +77,37 @@ namespace PaRuX.Views
                         Text = it ? "Il modello fissato non è più disponibile" : "Pinned model is no longer available",
                         IsEnabled = false
                     });
-                foreach (ManagedModelInfo model in ChatModelPickerPolicy.Quick(_chatModelCatalog, pinnedFile))
+                ChatModelPickerPolicy.QuickLayoutResult layout = ChatModelPickerPolicy.QuickLayout(
+                    _chatModelCatalog, pinnedFile, SettingsStore.Current.Data.ChatModelFavourites,
+                    SettingsStore.Current.Data.ChatModelRecents);
+                void AddGroup(string headerEn, string headerIt, IReadOnlyList<ManagedModelInfo> group)
                 {
-                    string selector = "parux-manual:" + model.FileName;
-                    string size = model.SizeBytes > 0 ? " · " + ModelHubStartPresenter.FormatSize(model.SizeBytes) : string.Empty;
-                    var item = new RadioMenuFlyoutItem
+                    if (group.Count == 0) return;
+                    items.Add(new MenuFlyoutItem { Text = it ? headerIt : headerEn, IsEnabled = false });
+                    foreach (ManagedModelInfo model in group) items.Add(BuildQuickModelItem(model, current, it));
+                }
+                AddGroup("Favourites", "Preferiti", layout.Favourites);
+                AddGroup("Recent", "Recenti", layout.Recent);
+                AddGroup("Your models (always uses the one you pick)", "I tuoi modelli (usa sempre quello scelto)", layout.Others);
+
+                if (!string.IsNullOrEmpty(pinnedFile) && _chatModelCatalog.Any(m =>
+                        string.Equals(m.FileName, pinnedFile, StringComparison.OrdinalIgnoreCase)))
+                {
+                    bool starred = SettingsStore.Current.Data.ChatModelFavourites.Contains(pinnedFile, StringComparer.OrdinalIgnoreCase);
+                    var star = new MenuFlyoutItem
                     {
-                        Text = ModelHubRowPresentation.CompactManualLabel(model.Alias, model.FileName) + size,
-                        GroupName = "ChatModel",
-                        IsChecked = string.Equals(current, selector, StringComparison.OrdinalIgnoreCase)
+                        Text = starred
+                            ? (it ? "Rimuovi il modello attuale dai preferiti" : "Remove current model from favourites")
+                            : (it ? "Aggiungi il modello attuale ai preferiti" : "Add current model to favourites"),
+                        Icon = new FontIcon { Glyph = starred ? "" : "" }
                     };
-                    ToolTipService.SetToolTip(item, model.FileName + " · " + model.Quantization);
-                    AutomationProperties.SetName(item, T("Model ", "Modello ") + ModelHubRowPresentation.CompactManualLabel(model.Alias, model.FileName)
-                        + ". File " + model.FileName + " · " + model.Quantization);
-                    item.Click += async (_, _) => await ApplyChatModelChoiceAsync(selector);
-                    items.Add(item);
+                    AutomationProperties.SetAutomationId(star, "Chat_SimpleMode_ModelPicker_Favourite");
+                    star.Click += (_, _) => ToggleCurrentModelFavourite(pinnedFile);
+                    items.Add(star);
                 }
             }
 
+            AppendPickerHonestState(items, it);
             items.Add(new MenuFlyoutSeparator());
             if (_chatModelCatalog.Count > ChatModelPickerPolicy.QuickChoices)
             {
@@ -107,10 +119,136 @@ namespace PaRuX.Views
                 browse.Click += async (_, _) => await BrowseAllLocalModelsAsync();
                 items.Add(browse);
             }
-            var more = new MenuFlyoutItem { Text = it ? "Scarica altri modelli…" : "Get more models…", Icon = new FontIcon { Glyph = "" } };
+            var more = new MenuFlyoutItem { Text = it ? "Scopri e scarica modelli…" : "Discover and download models…", Icon = new FontIcon { Glyph = "" } };
             AutomationProperties.SetAutomationId(more, "Chat_SimpleMode_ModelPicker_GetMore");
-            more.Click += (_, _) => App.MainWin?.ShowModelHub();
+            more.Click += (_, _) => App.MainWin?.ShowModelHubDiscover();
             items.Add(more);
+        }
+
+        // ---- Picker context: real hardware fit and transfer state ---------------------------------------------------------
+        private RuntimeManagerHardwareStatus? _pickerHardware;
+        private List<ModelDownloadStatus> _pickerDownloads = new List<ModelDownloadStatus>();
+        private DateTime _pickerContextAtUtc = DateTime.MinValue;
+        private bool _pickerContextBusy;
+
+        /// <summary>Reads the detected hardware and the model transfers once every few seconds so the picker can show a fit
+        /// badge per model and say honestly when a download is running or needs attention. Failure leaves the menu without
+        /// badges; it never blocks opening it.</summary>
+        private async Task RefreshPickerContextAsync()
+        {
+            if (_pickerContextBusy || (DateTime.UtcNow - _pickerContextAtUtc).TotalSeconds < 5) return;
+            _pickerContextBusy = true;
+            try
+            {
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(4));
+                Task<RuntimeManagerHardwareStatus?> hw = Task.Run<RuntimeManagerHardwareStatus?>(async () =>
+                {
+                    try { return await RuntimeManagerClient.Current.GetStatusAsync(cts.Token); } catch { return null; }
+                });
+                Task<List<ModelDownloadStatus>?> dl = Task.Run<List<ModelDownloadStatus>?>(async () =>
+                {
+                    try { return await ModelDownloadClient.Current.ListDownloadsAsync(cts.Token); } catch { return null; }
+                });
+                await Task.WhenAll(hw, dl);
+                bool changed = hw.Result != null && _pickerHardware == null
+                    || (dl.Result?.Count ?? 0) != _pickerDownloads.Count
+                    || (dl.Result != null && dl.Result.Any(j => !_pickerDownloads.Any(o => o.Id == j.Id && o.Status == j.Status)));
+                if (hw.Result != null) _pickerHardware = hw.Result;
+                if (dl.Result != null) _pickerDownloads = dl.Result;
+                _pickerContextAtUtc = DateTime.UtcNow;
+                if (changed) BuildSimpleModeModelMenu();
+            }
+            finally { _pickerContextBusy = false; }
+        }
+
+        private MenuFlyoutItemBase BuildQuickModelItem(ManagedModelInfo model, string current, bool it)
+        {
+            string selector = "parux-manual:" + model.FileName;
+            string label = ModelHubRowPresentation.CompactManualLabel(model.Alias, model.FileName);
+            string size = model.SizeBytes > 0 ? " · " + ModelHubStartPresenter.FormatSize(model.SizeBytes) : string.Empty;
+            DiscoverFit fit = PickerFit(model);
+            string fitText = fit == DiscoverFit.Unknown ? string.Empty
+                : " · " + ModelDiscoverPolicy.FitGlyph(fit) + " " + ModelDiscoverPolicy.FitLabel(fit, it);
+            var item = new RadioMenuFlyoutItem
+            {
+                Text = label + size + fitText,
+                GroupName = "ChatModel",
+                IsChecked = string.Equals(current, selector, StringComparison.OrdinalIgnoreCase)
+            };
+            ToolTipService.SetToolTip(item, model.FileName + " · " + model.Quantization);
+            AutomationProperties.SetName(item, (it ? "Modello " : "Model ") + label + ". File " + model.FileName + " · " + model.Quantization
+                + (fit == DiscoverFit.Unknown ? string.Empty : ". " + ModelDiscoverPolicy.FitLabel(fit, it)));
+            item.Click += async (_, _) => await ApplyChatModelChoiceAsync(selector);
+            return item;
+        }
+
+        private DiscoverFit PickerFit(ManagedModelInfo model)
+        {
+            if (_pickerHardware == null || model.SizeBytes <= 0) return DiscoverFit.Unknown;
+            try
+            {
+                ModelHardwareFitEstimate estimate = ModelHardwareFitEstimator.Estimate(model.SizeBytes, _pickerHardware);
+                return ModelDiscoverPolicy.FitFromEstimate(estimate, _pickerHardware.GpuDetected);
+            }
+            catch { return DiscoverFit.Unknown; }
+        }
+
+        private void ToggleCurrentModelFavourite(string file)
+        {
+            (List<string> list, bool changed) = ChatModelPickerPolicy.ToggleFavourite(
+                SettingsStore.Current.Data.ChatModelFavourites, file);
+            if (!changed)
+            {
+                ShowTransientStatus(ChatItalian
+                    ? "Hai già " + ChatModelPickerPolicy.MaxFavourites + " preferiti. Rimuovine uno prima."
+                    : "You already have " + ChatModelPickerPolicy.MaxFavourites + " favourites. Remove one first.");
+                return;
+            }
+            SettingsStore.Current.Data.ChatModelFavourites = list;
+            SettingsStore.Current.Save();
+            ShowTransientStatus(list.Contains(file, StringComparer.OrdinalIgnoreCase)
+                ? (ChatItalian ? "Aggiunto ai preferiti." : "Added to favourites.")
+                : (ChatItalian ? "Rimosso dai preferiti." : "Removed from favourites."));
+        }
+
+        /// <summary>Plain-language transfer state at the foot of the picker: what is downloading, and what needs a click.</summary>
+        private void AppendPickerHonestState(IList<MenuFlyoutItemBase> items, bool it)
+        {
+            ModelDownloadStatus? active = _pickerDownloads.Where(j => ModelDownloadStatusPolicy.IsActive(j.Status))
+                .OrderByDescending(j => j.UpdatedUtc).FirstOrDefault();
+            ModelDownloadStatus? stuck = active != null ? null : _pickerDownloads
+                .Where(j => j.Status is "failed" or "paused" && j.BytesDownloaded > 0)
+                .OrderByDescending(j => j.UpdatedUtc).FirstOrDefault();
+            if (active == null && stuck == null) return;
+            items.Add(new MenuFlyoutSeparator());
+            if (active != null)
+            {
+                string percent = active.TotalBytes > 0
+                    ? " · " + Math.Clamp((int)Math.Round(100.0 * active.BytesDownloaded / active.TotalBytes), 0, 100) + "%" : "…";
+                var line = new MenuFlyoutItem
+                {
+                    Text = (it ? "Download in corso: " : "Downloading: ") + active.FileName + percent,
+                    Icon = new FontIcon { Glyph = "" }
+                };
+                AutomationProperties.SetAutomationId(line, "Chat_SimpleMode_ModelPicker_DownloadState");
+                line.Click += (_, _) => App.MainWin?.ShowModelHubDiscover();
+                items.Add(line);
+            }
+            else if (stuck != null)
+            {
+                var line = new MenuFlyoutItem
+                {
+                    Text = (stuck.Status == "paused"
+                        ? (it ? "Download in pausa: " : "Download paused: ")
+                        : (it ? "Download interrotto: " : "Download stopped: ")) + stuck.FileName
+                        + (it ? " · tocca per riprendere" : " · tap to resume"),
+                    Icon = new FontIcon { Glyph = "" }
+                };
+                AutomationProperties.SetAutomationId(line, "Chat_SimpleMode_ModelPicker_DownloadAttention");
+                ToolTipService.SetToolTip(line, ModelDiscoverPolicy.FailureFix(stuck.FailureClass, it));
+                line.Click += (_, _) => App.MainWin?.ShowModelHubDiscover();
+                items.Add(line);
+            }
         }
 
         /// <summary>

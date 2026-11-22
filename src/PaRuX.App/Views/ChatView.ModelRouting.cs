@@ -557,6 +557,9 @@ namespace PaRuX.Views
                     RequestForSelector(selector), CancellationToken.None);
                 string canonical = NormalizeSavedModelSelection(persisted.Selector);
                 SettingsStore.Current.Data.ChatModelSelection = canonical;
+                if (canonical.StartsWith("parux-manual:", StringComparison.OrdinalIgnoreCase))
+                    SettingsStore.Current.Data.ChatModelRecents = ChatModelPickerPolicy.RecordRecent(
+                        SettingsStore.Current.Data.ChatModelRecents, canonical.Substring("parux-manual:".Length));
                 SettingsStore.Current.Save();
                 RefreshSimpleModeAnsweringModel();
                 ShowTransientStatus(canonical.StartsWith("parux-manual:", StringComparison.OrdinalIgnoreCase)
