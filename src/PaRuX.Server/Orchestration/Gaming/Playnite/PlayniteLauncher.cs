@@ -179,8 +179,16 @@ internal sealed class PlayniteLauncher
                 _owned = started;
                 _ownedMode = mode;
                 LastExePath = exe;
-                started.Exited += () => Interlocked.Increment(ref _closedCounter);
-                if (started.HasExited) Interlocked.Increment(ref _closedCounter);
+                // An exit that races event subscription and the initial HasExited
+                // check must advance the return-watch counter exactly once.
+                int exitRecorded = 0;
+                void RecordExit()
+                {
+                    if (Interlocked.Exchange(ref exitRecorded, 1) == 0)
+                        Interlocked.Increment(ref _closedCounter);
+                }
+                started.Exited += RecordExit;
+                if (started.HasExited) RecordExit();
                 return new PlayniteLaunchResultDto { Ok = true, Outcome = "started", Mode = mode, Message = note };
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException)
