@@ -126,6 +126,13 @@ public sealed class VulkanDeviceChoiceTests : IDisposable
             ["--model", "m.gguf", "--gpu-layers", "all", "--device", "CUDA0"]);
         Assert.DoesNotContain("--device", ladder);
         Assert.DoesNotContain("Vulkan0", ladder);
+
+        // The flash-off retry rung falls back to CPU arguments the same way.
+        var retry = TextLaunchLadder.ArgumentsFor(
+            new TextLaunchLadder.Rung(TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Engine.Vulkan, "Vulkan", ""),
+            ["--model", "m.gguf", "--gpu-layers", "all", "--flash-attn", "on", "--device", "CUDA0"]);
+        Assert.DoesNotContain("--device", retry);
+        Assert.DoesNotContain("Vulkan0", retry);
     }
 
     [Fact]

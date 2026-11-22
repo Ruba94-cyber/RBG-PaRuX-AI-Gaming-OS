@@ -110,8 +110,25 @@ Qwen3-4B-Q4_K_M, `-ngl 99`, one slot, 124-token prompt, 128-token greedy complet
 | Vulkan, same args (flash-attn on) | 172.5 / 176.9 / 168.1 (mean 172.5) | 42 / 31 / 30 | ~4400 | 4655 MiB |
 | Vulkan, PaRuX Vulkan-fallback args (flash-attn OFF, K q8_0, V f16, ctx 16384) | 37.9 / 38.4 / 40.2 (mean 38.8) | 3304 / 135 / 137 | ~950 | 9214 MiB |
 
-- Finding (not changed, recommended): the CUDA->Vulkan rung (`TextLaunchLadder.Step.VulkanEngine`) turns flash attention off, which on Vulkan costs about 4.4x decode (38.8 vs 172.5 tok/s), ~4.6x prompt speed and doubles VRAM for the same model on the same GPU. The "27 tok/s Vulkan vs 178 tok/s CUDA" comment in `LocalAiProcessManager` is therefore mostly an argument choice, not the Vulkan backend (bare Vulkan matches CUDA at default flags). Suggested change: try Vulkan with the planned flash attention first (the existing `VulkanKeepFlash` step) and keep the flash-off Vulkan rung as the retry; that needs the 6-rung cap and four ladder test files adjusted, so it is left for a dedicated change.
+- Finding (now fixed, see section 4b): the CUDA->Vulkan rung (`TextLaunchLadder.Step.VulkanEngine`) turned flash attention off, which on Vulkan cost about 4.4x decode (38.8 vs 172.5 tok/s), ~4.6x prompt speed and doubled VRAM for the same model on the same GPU. The "27 tok/s Vulkan vs 178 tok/s CUDA" comment in `LocalAiProcessManager` was therefore mostly an argument choice, not the Vulkan backend.
 - Caveat: Vulkan is build 10549, CUDA is build 12109; differences of a few percent cannot be attributed to the backend alone. The first Vulkan run also pays shader warm-up (the 3304 ms TTFT).
+
+### 4b. Vulkan flash attention decision (2026-11-22, follow-up)
+- Why it was off: the flash-off Vulkan rung exists since the first source import (release 1.9.6); git history carries no comment, issue or test recording a crash or driver bug behind it, and nothing in the repository documents a failing device. The only related note is `RuntimeHardwareSearchSpace` ("non-flash path can be faster on non-NVIDIA"), a hypothesis the optimizer measures per candidate, not a recorded failure.
+- Change: the CUDA->Vulkan ladder is now `... ReduceOffload, VulkanKeepFlash (Vulkan, planned flash on), VulkanEngine (Vulkan, flash off, retry only if the flash-on launch fails), CPU`. `MaxRungs` 6 -> 7 (planned launch + CUDA + Vulkan with both Vulkan rungs is exactly 7; CPU stays last). A remembered flash-off retry rung makes the next launch start there. No per-device branch was added: on both Vulkan devices present here flash ON is faster, and the automatic retry covers a device where it fails.
+- Measurement: Vulkan b10549 (same build for every row), Qwen3-4B-Q4_K_M, `-ngl 99 -c 16384 -b 2048 -ub 1024 -np 1`, K q8_0, V q8_0 (flash on) or f16 (flash off), 109-token prompt, 128-token greedy completion, 1 warm-up + 3 timed repetitions. VRAM = `nvidia-smi` used-memory delta after load.
+
+| Device | Flash | Decode tok/s (3 reps) | TTFT ms (3 reps) | Prompt tok/s | VRAM delta |
+| --- | --- | --- | --- | --- | --- |
+| RTX 5080 (Vulkan1), run 1 | on | 152.9 / 148.4 / 143.8 | 63 / 47 / 32 | ~3450-3620 | 3885 MiB |
+| RTX 5080, run 1 | off | 33.8 / 34.1 / 26.6 | 3936 / 147 / 129 | ~500-1020 | 8426 MiB |
+| RTX 5080, run 2 | on | 147.6 / 160.5 / 157.2 | 65 / 44 / 51 | ~3640-3810 | 3904 MiB |
+| RTX 5080, run 2 | off | 38.3 / 44.3 / 42.0 | 3200 / 138 / 133 | ~980-990 | 8431 MiB |
+| Radeon 780M (Vulkan0, shared memory) | on | 30.6 / 28.8 / 28.8 | 347 / 346 / 310 | ~375-381 | n/a (system memory) |
+| Radeon 780M | off | 10.1 / 9.6 / 11.1 | 6722 / 6376 / 2166 | ~46-50 | n/a |
+
+- Result: flash ON is ~3.5-4x faster at decode on the 5080 (mean about 153 vs 36 tok/s), ~4x faster on prompt processing, and halves VRAM (3.9 vs 8.4 GiB). On the 780M it is ~2.9x faster decode and ~8x faster prompt, with no crash or load error. The large first-rep TTFT with flash off is shader/graph warm-up. Absolute numbers are lower than the 172 tok/s of section 4 because the desktop and PaRuX Core were running during this run; the on/off ratio is the finding. Run on a shared desktop, not a quiet benchmark.
+- NOT verified: a real CUDA-failure ladder run through PaRuX Core on the GPU after the change (the ladder is covered by the intercepted-launch tests); the retry rung after a real flash-on Vulkan failure; other drivers/GPUs (older NVIDIA drivers, AMD discrete, Intel).
 - Ollama and the LM Studio CLI: NOT RUN (`ollama`, `lms` not on PATH).
 
 ### Tests added

@@ -7,7 +7,8 @@ namespace PaRuX.Server;
 /// <item>the primary engine with the tuned profile;</item>
 /// <item>the same engine with flash attention off (only when the profile enables it);</item>
 /// <item>the same engine with reduced GPU offload (only when the profile offloads layers);</item>
-/// <item>the Vulkan engine, only for a CUDA primary and only when the Vulkan build is installed;</item>
+/// <item>the Vulkan engine with the planned flash attention, only for a CUDA primary and only when the Vulkan build is installed;</item>
+/// <item>the Vulkan engine with flash attention off, only when the profile enables it (the retry if the flash-on Vulkan launch fails);</item>
 /// <item>CPU, always last.</item>
 /// </list>
 /// A CPU-only launch is already the CPU attempt and has exactly one rung. The plan is capped at <see cref="MaxRungs"/>.
@@ -16,7 +17,7 @@ namespace PaRuX.Server;
 internal static class TextLaunchLadder
 {
     /// <summary>Hard bound on attempts per launch, so recovery always terminates.</summary>
-    internal const int MaxRungs = 6;
+    internal const int MaxRungs = 7;
 
     /// <summary>GPU layers used by the reduced-offload rung when the profile asks for every layer (the layer count is unknown here).</summary>
     internal const int ReducedGpuLayersWhenAll = 24;
@@ -87,7 +88,13 @@ internal static class TextLaunchLadder
             rungs.Add(new Rung(Step.ReduceOffload, primary, engineLabel + " with reduced GPU offload", " (reduced GPU offload)"));
 
         if (primary == Engine.Cuda && vulkanAvailable)
-            rungs.Add(new Rung(Step.VulkanEngine, Engine.Vulkan, "Vulkan", " (Vulkan fallback)"));
+        {
+            // Flash attention is what makes Vulkan fast and small (measured on the RTX 5080: ~4.4x decode and half the VRAM),
+            // so the first Vulkan rung keeps it; the flash-off Vulkan rung only runs if that exact launch fails.
+            rungs.Add(new Rung(Step.VulkanKeepFlash, Engine.Vulkan, "Vulkan", " (Vulkan fallback)"));
+            if (!string.Equals(flash, "off", StringComparison.OrdinalIgnoreCase))
+                rungs.Add(new Rung(Step.VulkanEngine, Engine.Vulkan, "Vulkan without flash attention", " (Vulkan fallback, flash attention off)"));
+        }
 
         rungs.Add(new Rung(Step.CpuOnly, Engine.Cpu, "CPU", " (CPU fallback)"));
         return rungs.Count > MaxRungs ? rungs.Take(MaxRungs).ToList() : rungs;
