@@ -187,7 +187,7 @@ internal sealed class PlayniteLauncher
         if (settings.Skipped) return Refused("Playnite is skipped. Choose it again in Settings before switching modes.");
         if (!component.Detected || string.IsNullOrWhiteSpace(component.Folder))
             return Refused("Playnite was not found. Locate it before switching modes.");
-        (string resolvedMode, _, _) = ResolveMode(settings, target, displayId);
+        var (resolvedMode, _, _) = ResolveMode(settings, target, displayId);
         if (resolvedMode != target)
             return Refused("The chosen display is not connected. Playnite was left running in its current mode.");
         string? targetExe = target == PlayniteModes.Console ? component.FullscreenExe : component.DesktopExe;
