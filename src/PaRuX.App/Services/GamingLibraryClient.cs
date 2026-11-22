@@ -305,6 +305,9 @@ namespace PaRuX.Services
         private static readonly object Gate = new();
 
         private static string Folder => Path.Combine(AppPaths.PaRuXRoot, "game-covers");
+
+        /// <summary>Folder holding every stored cover/hero/logo copy (used to contain resolved art paths).</summary>
+        public static string StorageFolder => Folder;
         private static string IndexPath => Path.Combine(Folder, "covers.json");
 
         // The index is read from disk once and again only when covers.json changes (checked at most every 1.5 s), so a library of
