@@ -732,3 +732,11 @@ DENY PUT /api/v2/roles
 DENY PUT /api/v2/sampling-presets
 DENY PUT /api/v2/semantic-index/repositories
 DENY PUT /api/v2/steam/credentials
+DENY GET /api/v1/gaming/sign-in-apps
+DENY POST /api/v1/gaming/sign-in-apps/cancel
+DENY POST /api/v1/gaming/sign-in-apps/import
+DENY POST /api/v1/gaming/sign-in-apps/import-preview
+DENY POST /api/v1/gaming/sign-in-apps/run
+DENY POST /api/v1/gaming/sign-in-apps/shell-state
+DENY POST /api/v1/gaming/sign-in-apps/trigger
+DENY PUT /api/v1/gaming/sign-in-apps
