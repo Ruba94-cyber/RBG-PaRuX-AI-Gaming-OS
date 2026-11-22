@@ -192,6 +192,7 @@ if (-not $SkipPublish) {
 
     Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $publishDir "LICENSE.txt") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot "NVIDIA_CUDA_NOTICE.txt") -Destination (Join-Path $publishDir "NVIDIA_CUDA_NOTICE.txt") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $publishDir "LICENSE-llama.cpp.txt") -Force
     if (Test-Path -LiteralPath (Join-Path $repoRoot "THIRD_PARTY_NOTICES.md")) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD_PARTY_NOTICES.md") -Destination (Join-Path $publishDir "THIRD_PARTY_NOTICES.md") -Force
     }
@@ -214,7 +215,8 @@ $requiredPublishFiles = @(
     $updateHelperExe,
     (Join-Path $publishDir "LICENSE.txt"),
     (Join-Path $publishDir "THIRD_PARTY_NOTICES.md"),
-    (Join-Path $publishDir "NVIDIA_CUDA_NOTICE.txt")
+    (Join-Path $publishDir "NVIDIA_CUDA_NOTICE.txt"),
+    (Join-Path $publishDir "LICENSE-llama.cpp.txt")
 )
 foreach ($required in $requiredPublishFiles) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {

@@ -124,7 +124,8 @@ if (-not $SkipPublish) {
 if (-not (Test-Path -LiteralPath (Join-Path $stageDir "PaRuX.exe") -PathType Leaf)) { throw "Nothing staged at $stageDir. Run without -SkipPublish first." }
 if (-not (Test-Path -LiteralPath (Join-Path $stageDir "PaRuX.Server\PaRuX.Server.exe") -PathType Leaf)) { throw "Core is missing from the layout." }
 
-foreach ($notice in @("LICENSE:LICENSE.txt", "NVIDIA_CUDA_NOTICE.txt:NVIDIA_CUDA_NOTICE.txt", "THIRD_PARTY_NOTICES.md:THIRD_PARTY_NOTICES.md", "OPEN_SOURCE_PROVENANCE.md:OPEN_SOURCE_PROVENANCE.md")) {
+# No NVIDIA_CUDA_NOTICE.txt here: the Store package contains no CUDA runtime (Vulkan/CPU llama.cpp only).
+foreach ($notice in @("LICENSE:LICENSE.txt", "llama-cpp-conversion/LICENSE-llama.cpp:LICENSE-llama.cpp.txt", "THIRD_PARTY_NOTICES.md:THIRD_PARTY_NOTICES.md", "OPEN_SOURCE_PROVENANCE.md:OPEN_SOURCE_PROVENANCE.md")) {
     $src, $dst = $notice.Split(':')
     if (Test-Path -LiteralPath (Join-Path $repoRoot $src)) { Copy-Item -LiteralPath (Join-Path $repoRoot $src) -Destination (Join-Path $stageDir $dst) -Force }
 }

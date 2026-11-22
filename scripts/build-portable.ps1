@@ -139,6 +139,8 @@ foreach ($notice in @("LICENSE:LICENSE.txt", "NVIDIA_CUDA_NOTICE.txt:NVIDIA_CUDA
     $src, $dst = $notice.Split(':')
     if (Test-Path -LiteralPath (Join-Path $repoRoot $src)) { Copy-Item -LiteralPath (Join-Path $repoRoot $src) -Destination (Join-Path $stageDir $dst) -Force }
 }
+# llama.cpp is MIT: its copyright/permission text travels with the package root and with the bundled CPU engine.
+Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $stageDir "LICENSE-llama.cpp.txt") -Force
 
 # A REAL portable package carries ALL durable state beside its own EXE. This
 # applies to double-clicking PaRuX.exe, not merely a special batch-file launch.
@@ -172,6 +174,7 @@ if ($fullyStandalone) {
     if (-not (Test-Path -LiteralPath (Join-Path $cpuDest "llama-server.exe") -PathType Leaf)) {
         throw "Full Portable package is missing the actual native CPU llama-server.exe."
     }
+    Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $cpuDest "LICENSE-llama.cpp.txt") -Force
     # No prerequisites on the target PC: llama.cpp and ONNX Runtime import the Visual C++
     # runtime. It ships app-local beside the CPU engine and the Core; the Core adds its own
     # folder to the PATH of the engines it starts, which covers the Vulkan engine as well.
