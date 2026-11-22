@@ -4117,6 +4117,7 @@ app.MapDelete("/api/v1/media/workflows/{id}", (string id, [FromServices] CustomW
 
 ComfyWorkflowImportEndpoints.Map(app);
 PaRuX.Server.AgentSkills.AgentSkillEndpoints.Map(app);
+PaRuX.Server.Gateway.OpenApiEndpoints.Map(app);
 
 app.MapGet("/api/v1/compare/available-models", (ModelCompareService compare) => Results.Ok(compare.ListAvailableModels()));
 

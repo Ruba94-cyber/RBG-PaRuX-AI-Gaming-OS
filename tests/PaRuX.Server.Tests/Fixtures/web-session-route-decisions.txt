@@ -765,3 +765,4 @@ DENY DELETE /api/v1/agent-skills/data-sources/{name}
 DENY GET /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/sql/query
+DENY GET /openapi.json

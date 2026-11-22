@@ -17,7 +17,7 @@ internal static class DesktopOwnerRouteExtensions
     /// so the desktop reaches it exactly as before.
     /// </summary>
     internal static RouteHandlerBuilder RequireDesktopOwner(this RouteHandlerBuilder route) =>
-        route.AddEndpointFilter(async (invocation, next) =>
+        route.WithMetadata(PaRuX.Server.Gateway.DesktopOwnerOnlyMarker.Instance).AddEndpointFilter(async (invocation, next) =>
         {
             if (IsDesktopOwner(invocation.HttpContext)) return await next(invocation);
             return Results.StatusCode(StatusCodes.Status403Forbidden);
