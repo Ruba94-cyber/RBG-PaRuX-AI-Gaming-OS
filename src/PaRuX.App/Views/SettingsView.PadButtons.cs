@@ -277,6 +277,77 @@ public sealed partial class SettingsView
         PbRebuildTable();
     }
 
+    // ---- Import from legacy launcher config -------------------------------------------------------------------------------------
+    private bool _pbImporting;
+
+    private async void PadButtonsImportButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pbImporting) return;
+        _pbImporting = true;
+        try { await PbImportLauncherAsync(); }
+        catch (Exception ex) { PadButtonsStatus.Text = PbT("Import failed: ", "Importazione non riuscita: ") + ex.Message; }
+        finally { _pbImporting = false; }
+    }
+
+    /// <summary>File picker, read-only parse, preview of Imported / Not imported, and nothing is saved until the owner confirms. The source file is only read.</summary>
+    private async System.Threading.Tasks.Task PbImportLauncherAsync()
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary };
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
+        Windows.Storage.StorageFile? file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        if (new System.IO.FileInfo(file.Path).Length > LauncherConfigImporter.MaxBytes)
+        {
+            PadButtonsStatus.Text = PbT("Cannot import: the file is larger than 256 KB.", "Impossibile importare: il file supera i 256 KB.");
+            return;
+        }
+        string json = await System.IO.File.ReadAllTextAsync(file.Path);
+        LauncherImportResult result = LauncherConfigImporter.Parse(json);
+        if (!result.Parsed)
+        {
+            PadButtonsStatus.Text = PbT("Cannot import: ", "Impossibile importare: ") + string.Join(" ", result.NotImported);
+            return;
+        }
+
+        var content = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock { Text = PbT($"Imported ({result.Imported.Count})", $"Importati ({result.Imported.Count})"), Style = (Style)Application.Current.Resources["PaRuXBodyStrongTextStyle"] });
+        content.Children.Add(new TextBlock
+        {
+            Text = result.Imported.Count == 0 ? PbT("Nothing can be imported.", "Niente da importare.") : string.Join(Environment.NewLine, result.Imported),
+            TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true
+        });
+        content.Children.Add(new TextBlock { Text = PbT($"Not imported ({result.NotImported.Count})", $"Non importati ({result.NotImported.Count})"), Style = (Style)Application.Current.Resources["PaRuXBodyStrongTextStyle"] });
+        content.Children.Add(new TextBlock
+        {
+            Text = result.NotImported.Count == 0 ? PbT("Nothing was skipped.", "Nulla è stato saltato.") : string.Join(Environment.NewLine, result.NotImported),
+            TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = PbT("Existing assignments for the same pad, control and tap/hold are replaced; all others are kept. The file you picked is never changed.",
+                       "Le assegnazioni esistenti per lo stesso pad, controllo e tocco/pressione lunga vengono sostituite; le altre restano. Il file scelto non viene mai modificato."),
+            TextWrapping = TextWrapping.Wrap, Opacity = 0.75
+        });
+        AutomationProperties.SetAutomationId(content, "Settings_PadButtons_Import_Preview");
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = PbT("Import from legacy launcher config", "Importa dalla configurazione del vecchio launcher"),
+            Content = new ScrollViewer { Content = content, MaxHeight = 420 },
+            PrimaryButtonText = PbT("Apply", "Applica"),
+            CloseButtonText = PbT("Cancel", "Annulla"),
+            DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = result.Bindings.Count > 0
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        PbSaveBindings(LauncherConfigImporter.Merge(PbEditable(), result.Bindings));
+        PadButtonsStatus.Text = PbT($"Imported {result.Bindings.Count} assignment(s). Review them in the table below.", $"Importate {result.Bindings.Count} assegnazioni. Controllale nella tabella qui sotto.");
+        PbRebuildTable();
+    }
+
     // ---- TV mode table -----------------------------------------------------------------------------------------------------------
     private void PbRebuildTv()
     {
