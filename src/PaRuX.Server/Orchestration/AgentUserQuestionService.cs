@@ -10,7 +10,9 @@ namespace PaRuX.Server.Orchestration;
 /// </summary>
 public sealed class AgentUserQuestionService
 {
-    public const string WaitingStage = "Waiting for user input";
+    public const string WaitingStage = PaRuX.Contracts.AgentRunWaitPolicy.UserInputStage;
+    /// <summary>Stage written when an answer resumes the task; the only way a user-input wait may return to Running.</summary>
+    public const string ResumedStage = "Resumed after user input";
     private const string Prefix = "[parux:user-question:v1] ";
     private const int MaxQuestionCharacters = 2_000;
     private const int MaxAnswerCharacters = 4_000;
@@ -166,7 +168,7 @@ public sealed class AgentUserQuestionService
         _tasks.UpdateStatus(taskId, new UpdateAgentTaskStatusRequest
         {
             Status = AgentTaskStatus.Running,
-            Stage = "Resumed after user input",
+            Stage = ResumedStage,
             ProgressPercent = current.ProgressPercent
         });
         _tasks.AppendLog(taskId, "User answered durable question " + questionId + "; task resumed from preserved state.");

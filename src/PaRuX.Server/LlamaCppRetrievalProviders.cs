@@ -125,7 +125,7 @@ internal sealed class LlamaRetrievalServer : IAsyncDisposable, IGamingHardOffPar
                     Add(start, "--embedding");
                 else
                     Add(start, "--reranking");
-                if (!cuda) Add(start, "--device", "Vulkan0");
+                if (!cuda) Add(start, "--device", VulkanDeviceSelector.ArgumentFor(VulkanDeviceSelector.ResolveBlockingChoice()));
             }
             // SEC-F01: this isolated server gets its own per-launch key, through its environment only.
             string apiKey = ManagedRuntimeCredentials.ApplyTo(start);

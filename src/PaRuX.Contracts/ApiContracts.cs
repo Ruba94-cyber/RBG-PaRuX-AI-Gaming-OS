@@ -862,6 +862,12 @@ public sealed class GamingStatusDto
     /// Optional additions so existing clients can deserialize older Core responses.</summary>
     public DateTime? LastVerifiedOwnedGameExitUtc { get; set; }
     public bool? LastVerifiedOwnedGameExitRestoredAi { get; set; }
+
+    /// <summary>Result of the post-release GPU check for the current session: "verified", "unverified"
+    /// (degraded: telemetry missing or memory still moving) or "not_released". Null when no check ran.</summary>
+    public string? AiReleaseVerification { get; set; }
+    /// <summary>MiB freed on the GPU by the hard-off when both samples were readable; null means unknown.</summary>
+    public long? AiVramReleasedMib { get; set; }
 }
 
 public sealed class GamingProviderStatusDto

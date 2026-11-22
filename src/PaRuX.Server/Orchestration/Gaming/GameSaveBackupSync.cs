@@ -79,6 +79,8 @@ public sealed partial class GameSaveBackupService
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _gamingToken());
         int pushed = 0, pulled = 0, already = 0;
         var problems = new List<string>();
+        // Games whose histories forked are not merged silently: both sides' newer backups stay where they are until the owner chooses.
+        (HashSet<string> held, List<string> heldLabels) = UndecidedConflicts(target);
 
         // Push: local backups the mirror lacks.
         foreach (GameSaveBackupDto backup in List())
@@ -87,6 +89,7 @@ public sealed partial class GameSaveBackupService
             if (_gaming()) throw new InvalidOperationException("Gaming interrupted the sync.");
             string zipName = "save-" + backup.Id + ".zip", jsonName = "save-" + backup.Id + ".json";
             if (File.Exists(Path.Combine(target, jsonName)) && File.Exists(Path.Combine(target, zipName))) { already++; continue; }
+            if (held.Contains(backup.Id)) continue;
             try
             {
                 await CopyVerifiedAsync(Path.Combine(_root, zipName), Path.Combine(target, zipName), backup.ArchiveSha256, linked.Token);
@@ -105,7 +108,7 @@ public sealed partial class GameSaveBackupService
             string name = Path.GetFileNameWithoutExtension(manifestPath);
             if (name.Length != 37) continue;
             string id = name[5..];
-            if (!ValidId(id) || local.Contains(id)) continue;
+            if (!ValidId(id) || local.Contains(id) || held.Contains(id)) continue;
             string remoteZip = Path.Combine(target, "save-" + id + ".zip");
             if (!File.Exists(remoteZip)) continue;
             if (local.Count >= MaxArchives) { problems.Add("The local capacity of 100 backups was reached."); break; }
@@ -130,7 +133,7 @@ public sealed partial class GameSaveBackupService
                 problems.Add("Could not bring " + Shorten(id) + " from the sync folder.");
             }
         }
-        return new GameSaveSyncResultDto(pushed, pulled, already, problems);
+        return new GameSaveSyncResultDto(pushed, pulled, already, problems) { Conflicts = heldLabels };
     }
 
     private static string Shorten(string id) => id.Length > 8 ? id[..8] : id;

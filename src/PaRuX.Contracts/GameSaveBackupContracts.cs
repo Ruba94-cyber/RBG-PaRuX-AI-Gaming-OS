@@ -35,4 +35,34 @@ public sealed record GameSaveSyncStatusDto(string Folder, bool Configured);
 public sealed record GameSaveSyncFolderRequest(string? Folder);
 
 /// <summary>What one sync did: backups copied out, backups brought in, backups both sides already had, and anything skipped with the reason.</summary>
-public sealed record GameSaveSyncResultDto(int Pushed, int Pulled, int AlreadyThere, IReadOnlyList<string> Problems);
+public sealed record GameSaveSyncResultDto(int Pushed, int Pulled, int AlreadyThere, IReadOnlyList<string> Problems)
+{
+    /// <summary>Additive: games whose backups diverged on this PC and in the mirror and were held back until the owner chooses. Older payloads omit it.</summary>
+    public IReadOnlyList<string> Conflicts { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>Metadata of one backup on one side of a conflict (never the files themselves).</summary>
+public sealed record GameSaveSideDto(string Id, DateTime CreatedUtc, int Files, long Bytes);
+
+/// <summary>
+/// One game whose save history diverged: this PC and the mirror each have newer backups the other lacks. Neither side is
+/// "right"; the owner compares the metadata and chooses. Decision is null until chosen.
+/// </summary>
+public sealed record GameSaveSyncConflictDto(
+    string Label, GameSaveSideDto Local, GameSaveSideDto Mirror, int LocalOnlyCount, int MirrorOnlyCount, int CommonCount, string? Decision);
+
+/// <summary>A recorded choice. PreferredId is the backup marked as the current one (null for keep-both).</summary>
+public sealed record GameSaveSyncDecisionDto(string Label, string Choice, string? PreferredId, DateTime DecidedUtc);
+
+public sealed record GameSaveSyncConflictsDto(IReadOnlyList<GameSaveSyncConflictDto> Conflicts, IReadOnlyList<GameSaveSyncDecisionDto> Decisions);
+
+/// <summary>Choice for one game: "keep-local", "keep-mirror" or "keep-both". Every backup on both sides is kept either way.</summary>
+public sealed record GameSaveConflictChoiceRequest(string Label, string Choice);
+
+public static class GameSaveConflictChoices
+{
+    public const string KeepLocal = "keep-local";
+    public const string KeepMirror = "keep-mirror";
+    public const string KeepBoth = "keep-both";
+    public static bool IsValid(string? choice) => choice is KeepLocal or KeepMirror or KeepBoth;
+}

@@ -209,6 +209,41 @@ public sealed class ConsoleAndLanguageUiTests
     }
 
     [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI"), Trait("Category", "Settings"), Trait("Category", "Persistence")]
+    public void Tv_start_preference_and_its_fallback_persist_across_restart()
+    {
+        const string testName = nameof(Tv_start_preference_and_its_fallback_persist_across_restart);
+        using var initial = new UiTestApplication(testName);
+        OpenGamingDisplaySettings(initial);
+
+        var startOnTv = UiWait.ById(initial.MainWindow, "Settings_ConsoleDisplays_StartOnTv_Toggle", ControlType.Button);
+        UiWait.For(() => ToggleOf(startOnTv) == ToggleState.Off, "start-in-TV-mode defaults to off");
+        Assert.NotEqual(true, ReadBool(initial.SettingsPath, "ConsoleStartOnTvWhenPresent"));
+        startOnTv.Patterns.Toggle.Pattern.Toggle();
+        UiWait.For(() => ReadBool(initial.SettingsPath, "ConsoleStartOnTvWhenPresent") == true,
+            "ConsoleStartOnTvWhenPresent=true persisted");
+
+        var fallback = UiWait.ById(initial.MainWindow, "Settings_ConsoleDisplays_StartWithoutTv_Combo", ControlType.ComboBox);
+        Assert.Contains("Normal window", fallback.AsComboBox().SelectedItem?.Name ?? string.Empty, StringComparison.Ordinal);   // the default
+        fallback.AsComboBox().Select(1);   // Minimized
+        UiWait.For(() => ReadString(initial.SettingsPath, "StartupWithoutTv") == "minimized", "StartupWithoutTv=minimized persisted");
+
+        using var restarted = initial.Restart("tv-start-preference-restart");
+        try
+        {
+            Assert.Equal(true, ReadBool(restarted.SettingsPath, "ConsoleStartOnTvWhenPresent"));
+            Assert.Equal("minimized", ReadString(restarted.SettingsPath, "StartupWithoutTv"));
+            // The launch behaviour of these persisted values is proven by ConsoleStartupUiTests; here the values themselves must survive.
+            Assert.Equal(true, ReadBool(restarted.SettingsPath, "ConsoleStartOnTvWhenPresent"));
+            Assert.Equal("minimized", ReadString(restarted.SettingsPath, "StartupWithoutTv"));
+        }
+        catch (Exception ex)
+        {
+            restarted.CaptureFailure("tv-start-preference-restart", ex);
+            throw;
+        }
+    }
+
+    [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI"), Trait("Category", "Settings"), Trait("Category", "Persistence")]
     public void Gaming_display_role_persists_across_restart_and_never_selects_a_console_target()
     {
         const string testName = nameof(Gaming_display_role_persists_across_restart_and_never_selects_a_console_target);

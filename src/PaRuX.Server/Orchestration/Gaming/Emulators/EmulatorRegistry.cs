@@ -32,11 +32,14 @@ public static class EmulatorRegistry
 
     private static readonly EmulatorDefinition[] HandTuned = new EmulatorDefinition[]
     {
-        new("eden", "Eden", "Nintendo Switch", new[] { "eden.exe" },
-            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca" }, None,
+        // "lichii.exe" is the GUI executable of the Eden 2 builds some users run (same command line as eden.exe); ".nup" is the
+        // package extension those builds accept. Found on the owner's PC (C:\Games\Mario Kart World\lichii.exe + games\MKW.nup):
+        // before this, PaRuX refused the executable and the game file, so the title could not be imported at all.
+        new("eden", "Eden", "Nintendo Switch", new[] { "eden.exe", "lichii.exe" },
+            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca", ".nup" }, None,
             new[] { "{extra}", "{fullscreen}", "{input-profile}", "-g", "{rom}" }, new[] { "-f" }, false),
         new("eden-cli", "Eden CLI", "Nintendo Switch", new[] { "eden-cli.exe" },
-            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca" }, None,
+            new[] { ".nsp", ".xci", ".nro", ".nso", ".nca", ".nup" }, None,
             new[] { "{extra}", "{fullscreen}", "{input-profile}", "--game", "{rom}" },
             new[] { "--fullscreen" }, false),
         new("dolphin", "Dolphin", "GameCube / Wii", new[] { "Dolphin.exe" },
@@ -63,6 +66,26 @@ public static class EmulatorRegistry
             new[] { ".iso", ".cso", ".pbp", ".elf" }, None,
             new[] { "{extra}", "{fullscreen}", "{rom}" }, new[] { "--fullscreen" }, false,
             WindowedArguments: new[] { "--windowed" }),
+        // Added after the competitor review. Each recipe follows the emulator's own documented command line; they stay
+        // "unverified" until tried against an installed build (see EmulatorRecipeValidator for the static checks).
+        new("shadps4", "shadPS4", "PlayStation 4", new[] { "shadPS4.exe" },
+            new[] { ".elf" }, new[] { "eboot.bin" },
+            new[] { "{extra}", "{fullscreen}", "-g", "{rom}" }, new[] { "-f", "true" }, false,
+            WindowedArguments: new[] { "-f", "false" }),
+        new("mgba", "mGBA", "Game Boy / Game Boy Color / Game Boy Advance", new[] { "mGBA.exe" },
+            new[] { ".gba", ".gb", ".gbc", ".sgb", ".zip", ".7z" }, None,
+            new[] { "{extra}", "{fullscreen}", "{rom}" }, new[] { "-f" }, false),
+        new("scummvm", "ScummVM", "Point-and-click adventures (ScummVM)", new[] { "scummvm.exe" },
+            new[] { ".scummvm" }, None,
+            new[] { "{extra}", "{fullscreen}", "--path={romdir}", "--auto-detect" }, new[] { "--fullscreen" }, false,
+            WindowedArguments: new[] { "--no-fullscreen" }),
+        new("xenia", "Xenia", "Xbox 360", new[] { "xenia.exe", "xenia_canary.exe" },
+            new[] { ".iso", ".xex", ".zar" }, None,
+            new[] { "{extra}", "{fullscreen}", "{rom}" }, new[] { "--fullscreen" }, false,
+            WindowedArguments: new[] { "--fullscreen=false" }),
+        new("snes9x", "Snes9x", "Super Nintendo", new[] { "snes9x-x64.exe", "snes9x.exe" },
+            new[] { ".sfc", ".smc", ".swc", ".fig" }, None,
+            new[] { "{extra}", "{fullscreen}", "{rom}" }, new[] { "-fullscreen" }, false),
         new("retroarch", "RetroArch", "Retro systems (needs a core)", new[] { "retroarch.exe" },
             new[] { ".nes", ".sfc", ".smc", ".gb", ".gbc", ".gba", ".md", ".gen", ".sms", ".gg", ".pce", ".a26", ".n64", ".z64" }, None,
             new[] { "{extra}", "{fullscreen}", "-L", "{core}", "{rom}" }, new[] { "-f" }, true),

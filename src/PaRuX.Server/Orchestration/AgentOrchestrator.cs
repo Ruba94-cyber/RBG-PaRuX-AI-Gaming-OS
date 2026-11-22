@@ -207,6 +207,10 @@ public sealed class AgentOrchestrator
     {
         if (!string.Equals(task.Status, AgentTaskStatus.Waiting, StringComparison.OrdinalIgnoreCase)) return true;
         if (string.Equals(task.Stage, TaskStore.ProjectRepositoryProvisioningStage, StringComparison.Ordinal)) return false;
+        // A task paused for a durable user question is idle: no model, GPU or CPU work happens until the owner answers. Charging it
+        // a slot let abandoned approval requests fill every parallel slot, and new coding tasks then stayed queued forever (real-model
+        // run: a queued task never started for 15 minutes behind three forgotten approvals). The answer path resumes it directly.
+        if (string.Equals(task.Stage, AgentRunWaitPolicy.UserInputStage, StringComparison.Ordinal)) return false;
         if (task.Stage?.StartsWith(DelegationWaitingStagePrefix, StringComparison.Ordinal) != true) return true;
 
         bool hasLiveDelegatedChild = allTasks.Any(child =>

@@ -23,7 +23,7 @@ public interface IVirtualControllerBackend
 
 /// <summary>
 /// Client for the optional ViGEmBus virtual gamepad bus driver (installed by the user, never by PaRuX).
-/// STATUS: SOURCE IMPLEMENTED, NOT RUN. It could not be exercised here: it needs the driver and a Windows session
+/// STATUS: RUN FOR REAL via tools/PaRuX.VirtualPadSim (plug, report submit, XInput visibility, unplug verified). It needs the driver and a Windows session
 /// that allows plugging in devices. Every failure is reported and returns null; it never throws for an absent driver.
 ///
 /// Portions adapted from ViGEmClient (https://github.com/nefarius/ViGEmClient, MIT License, Copyright (c) Benjamin

@@ -114,6 +114,7 @@ public sealed class StructuredDocumentExtractorTests : IDisposable
     public void Text_is_decoded_by_sniffing_not_only_by_extension()
     {
         File.WriteAllText(P("notes.weird"), "plain è utf8", new UTF8Encoding(false));
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         File.WriteAllBytes(P("latin.txt"), Encoding.GetEncoding(1252).GetBytes("caffè €"));
         File.WriteAllText(P("u16.txt"), "utf16 è", Encoding.Unicode);
 

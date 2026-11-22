@@ -26,4 +26,9 @@ internal static class WebhookRuntime
         new SteamAchievementsService(ServerState.StateDirectory, InternetEnabled));
 
     public static SteamAchievementsService SteamAchievements => Steam.Value;
+
+    private static readonly Lazy<RetroAchievementsService> Retro = new(() =>
+        new RetroAchievementsService(ServerState.StateDirectory, InternetEnabled));
+
+    public static RetroAchievementsService RetroAchievements => Retro.Value;
 }

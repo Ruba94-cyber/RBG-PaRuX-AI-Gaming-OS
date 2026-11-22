@@ -42,7 +42,8 @@ public sealed class VirtualPadForwardingSession : IAsyncDisposable
         get { lock (_gate) return new(_worker is { IsCompleted: false }, _message); }
     }
 
-    public VirtualPadForwardingStatus Start(PadMapping mapping, TimeSpan interval, CancellationToken ct = default)
+    public VirtualPadForwardingStatus Start(PadMapping mapping, TimeSpan interval, CancellationToken ct = default,
+        PaRuX.Contracts.GamingControllerProfile? feel = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         if (mapping.Validate() is { } error) return new(false, error);
@@ -84,12 +85,13 @@ public sealed class VirtualPadForwardingSession : IAsyncDisposable
             var chosen = mapping.Clone();
             _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
             _message = "Owner-enabled forwarding.";
-            _worker = Task.Run(() => ForwardAsync(pad, chosen, first, interval, _cancel.Token));
+            _worker = Task.Run(() => ForwardAsync(pad, chosen, first, interval, feel, _cancel.Token));
             return new(true, _message);
         }
     }
 
-    private async Task ForwardAsync(IVirtualXboxPad pad, PadMapping mapping, RawGamepadState first, TimeSpan interval, CancellationToken ct)
+    private async Task ForwardAsync(IVirtualXboxPad pad, PadMapping mapping, RawGamepadState first, TimeSpan interval,
+        PaRuX.Contracts.GamingControllerProfile? feel, CancellationToken ct)
     {
         string outcome = "Forwarding stopped.";
         try
@@ -99,7 +101,7 @@ public sealed class VirtualPadForwardingSession : IAsyncDisposable
             while (!ct.IsCancellationRequested)
             {
                 if (!_isolationReady()) { outcome = "Physical input isolation lost."; break; }
-                if (!pad.Submit(GenericPadMapper.Map(state, mapping))) { outcome = "Virtual pad refused a report."; break; }
+                if (!pad.Submit(PadFeel.Apply(GenericPadMapper.Map(state, mapping), feel))) { outcome = "Virtual pad refused a report."; break; }
                 await Task.Delay(interval, ct).ConfigureAwait(false);
                 if (!_source.TryRead(out RawGamepadState? next) || next is null)
                 { outcome = "Physical controller disconnected."; break; }

@@ -88,7 +88,7 @@ public sealed class LlamaPerformanceProbe : ILlamaPerformanceProbe
         if (!hasCuda)
         {
             start.ArgumentList.Add("-dev");
-            start.ArgumentList.Add("Vulkan0");
+            start.ArgumentList.Add(VulkanDeviceSelector.ArgumentFor(VulkanDeviceSelector.ResolveBlockingChoice()));
         }
 
         using var process = new Process { StartInfo = start };

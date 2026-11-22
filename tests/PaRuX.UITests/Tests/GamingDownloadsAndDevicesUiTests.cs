@@ -231,6 +231,31 @@ public sealed class GamingDownloadsAndDevicesUiTests
         catch (Exception ex) { app.CaptureFailure(name, ex); throw; }
     }
 
+    [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI")]
+    public void Guided_find_controllers_never_claims_no_controller_while_a_raw_pad_is_listed_and_offers_forwarding_setup()
+    {
+        const string name = nameof(Guided_find_controllers_never_claims_no_controller_while_a_raw_pad_is_listed_and_offers_forwarding_setup);
+        WaitForPort();
+        using var app = new UiTestApplication(name);
+        try
+        {
+            OpenGames(app);
+            var setup = UiWait.ById(app.MainWindow, "GameDevices_Guided_Setup_Button", ControlType.Button);
+            UiWait.AssertEnabled(setup);
+            var detect = UiWait.ById(app.MainWindow, "GameDevices_Guided_Detect_Button", ControlType.Button);
+            var step1 = UiWait.ById(app.MainWindow, "GameDevices_Guided_Step1_Text", ControlType.Text);
+            var combo = UiWait.ById(app.MainWindow, "GameDevices_RawController_ComboBox", ControlType.ComboBox);
+            detect.Patterns.Invoke.Pattern.Invoke();
+            UiWait.For(() => !string.IsNullOrWhiteSpace(step1.Name), "step 1 reports a result");
+            bool listed = combo.AsComboBox().Items.Length > 0;
+            if (listed)
+                Assert.DoesNotContain("No compatible controller", step1.Name, StringComparison.Ordinal);
+            else
+                Assert.Contains("no controller", step1.Name, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) { app.CaptureFailure(name, ex); throw; }
+    }
+
     private static void WaitForPort() =>
         UiTestApplication.WaitForCorePortReleased();
 

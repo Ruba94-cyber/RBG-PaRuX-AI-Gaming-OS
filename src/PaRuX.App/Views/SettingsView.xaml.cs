@@ -455,6 +455,7 @@ namespace PaRuX.Views
                 case "Gaming & AI Sharing":
                     _ = RefreshGamingStatusAsync();
                     _ = RefreshConsoleDisplaysAsync();
+                    RefreshPadButtons();
                     break;
                 case "PaRuX Platform":
                     break;
@@ -2315,6 +2316,7 @@ namespace PaRuX.Views
                 AppSettings s = SettingsStore.Current.Data;
 
                 SelectByTag(ThemeCombo, s.Theme);
+                LoadAccentUi(s);
                 SelectByTag(LanguageCombo, PaRuX.Services.UiLanguage.Normalize(s.UiLanguage));
                 LoadSetupProfile();
                 SelectByTag(BubbleCombo, s.BubbleMode);
@@ -2351,6 +2353,7 @@ namespace PaRuX.Views
                 StorageQuotaBox.Value = Math.Clamp(s.StorageQuotaGigabytes, 10, StorageQuotaService.MaximumQuotaGigabytes);
                 ComputerUseAutomationSwitch.IsOn = s.ComputerUseFullAutomationEnabled;
                 VoiceAutoSendSwitch.IsOn = s.SendVoiceMessagesAutomatically;
+                DictationFillerSwitch.IsOn = s.DictationRemoveFillers;
                 RefreshComputerApps();
                 RefreshGamingStatus();
                 PopulateLanAddresses();
@@ -2420,6 +2423,13 @@ namespace PaRuX.Views
             SettingsStore.Current.Data.Theme = tag;
             SettingsStore.Current.Save();
             App.ApplyTheme();
+        }
+
+        private void DictationFillerSwitch_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            SettingsStore.Current.Data.DictationRemoveFillers = DictationFillerSwitch.IsOn;
+            SettingsStore.Current.Save();
         }
 
         private void VoiceAutoSendSwitch_Toggled(object sender, RoutedEventArgs e)

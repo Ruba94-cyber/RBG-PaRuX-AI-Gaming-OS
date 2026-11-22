@@ -54,6 +54,41 @@ public sealed class AgentUserQuestionServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_late_running_stage_update_cannot_pull_a_task_out_of_a_pending_user_question()
+    {
+        var tasks = new TaskStore(_root);
+        AgentTaskDto task = RunningTask(tasks);
+        var service = new AgentUserQuestionService(tasks);
+        AgentUserQuestionDto question = service.Ask(task.Id, new AskAgentUserQuestionRequest { Question = "Approve this change?", Options = new List<string> { "Yes", "No" }, AllowOther = false });
+        Assert.Equal(AgentTaskStatus.Waiting, tasks.Get(task.Id)!.Status);
+
+        // The worker's queued per-step progress update arrives after the pause.
+        bool changed = tasks.UpdateStatus(task.Id, new UpdateAgentTaskStatusRequest { Status = AgentTaskStatus.Running, Stage = "Step 2: replace_range paused", ProgressPercent = 40 });
+
+        Assert.False(changed);
+        AgentTaskDto still = tasks.Get(task.Id)!;
+        Assert.Equal(AgentTaskStatus.Waiting, still.Status);
+        Assert.Equal(AgentUserQuestionService.WaitingStage, still.Stage);
+
+        // Cancelling is still possible, and the real answer still resumes the task.
+        service.Answer(task.Id, new AnswerAgentUserQuestionRequest { QuestionId = question.Id, Answer = "Yes" });
+        Assert.Equal(AgentTaskStatus.Running, tasks.Get(task.Id)!.Status);
+        Assert.Equal(AgentUserQuestionService.ResumedStage, tasks.Get(task.Id)!.Stage);
+    }
+
+    [Fact]
+    public void A_task_waiting_for_a_user_answer_can_still_be_cancelled()
+    {
+        var tasks = new TaskStore(_root);
+        AgentTaskDto task = RunningTask(tasks);
+        new AgentUserQuestionService(tasks).Ask(task.Id, new AskAgentUserQuestionRequest { Question = "Approve?", Options = new List<string> { "Yes", "No" }, AllowOther = false });
+
+        Assert.True(tasks.UpdateStatus(task.Id, new UpdateAgentTaskStatusRequest { Status = AgentTaskStatus.Cancelled, Stage = "Stopped by the user" }));
+
+        Assert.Equal(AgentTaskStatus.Cancelled, tasks.Get(task.Id)!.Status);
+    }
+
+    [Fact]
     public void Ask_is_idempotent_while_a_question_is_pending()
     {
         var tasks = new TaskStore(_root);

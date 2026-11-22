@@ -60,10 +60,20 @@ public sealed class RealCodingTaskTests
             Mark("submitted /code through Chat_Send_Button");
 
             // 2. The Core-owned task appears on the card (bounded wait; model/runtime may cold start).
-            AutomationElement idText = UiWait.ById(product.MainWindow, "Chat_CodingTask_Id_Text", ControlType.Text);
-            UiWait.For(() => (product.TryFindById("Chat_CodingTask_Id_Text")?.Properties.Name.ValueOrDefault ?? string.Empty).StartsWith("Task ", StringComparison.Ordinal),
-                "Core task id on the card", TimeSpan.FromMinutes(3));
-            idText = product.TryFindById("Chat_CodingTask_Id_Text")!;
+            // The first /code of a conversation asks for the run permission mode (a real owner choice): confirm the default
+            // ("Ask": approve commands and file changes), exactly as a user pressing "Start coding".
+            UiWait.For(() =>
+            {
+                AutomationElement? dialog = product.TryFindById("parux-coding-permission-mode-dialog");
+                if (dialog != null)
+                {
+                    AutomationElement? start = dialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.Button).And(cf.ByName("Start coding")));
+                    try { start?.Patterns.Invoke.Pattern.Invoke(); Mark("confirmed the coding run permission dialog (Ask)"); }
+                    catch (FlaUI.Core.Exceptions.FlaUIException) { /* dialog closing; checked again on the next poll */ }
+                }
+                return (product.TryFindById("Chat_CodingTask_Id_Text")?.Properties.Name.ValueOrDefault ?? string.Empty).StartsWith("Task ", StringComparison.Ordinal);
+            }, "Core task id on the card", TimeSpan.FromMinutes(4));
+            AutomationElement idText = product.TryFindById("Chat_CodingTask_Id_Text")!;
             string taskPrefix = idText.Name.Replace("Task ", string.Empty, StringComparison.Ordinal).Trim();
             Assert.True(taskPrefix.Length >= 8, "task id text: " + idText.Name);
             Mark("task card visible: " + idText.Name);
@@ -72,6 +82,7 @@ public sealed class RealCodingTaskTests
             // 3. Observe plan / agent activity / edits / tests until the task is terminal.
             var seen = new HashSet<string>(StringComparer.Ordinal);
             bool planShot = false, editShot = false;
+            int answers = 0;
             string status = string.Empty;
             DateTime deadline = DateTime.UtcNow + TaskTimeout;
             while (DateTime.UtcNow < deadline)
@@ -90,6 +101,20 @@ public sealed class RealCodingTaskTests
                         if (!editShot && text.Contains("replace_range", StringComparison.Ordinal))
                         { product.Capture("03-edit-visible"); editShot = true; }
                     }
+                }
+                // An exact file-change approval is a durable question on the card: answer it the way the owner does (the first
+                // offered option is the approval; the card preselects it) and record it. Bounded: at most 12 answers per run.
+                if (answers < 12 && product.TryFindById("parux-coding-answer-user") is { } sendAnswer && sendAnswer.IsEnabled)
+                {
+                    try
+                    {
+                        // The card sits in the scrolling chat: bring it into view like a user would, then press it.
+                        try { sendAnswer.Patterns.ScrollItem.PatternOrDefault?.ScrollIntoView(); } catch { }
+                        sendAnswer.Patterns.Invoke.Pattern.Invoke();
+                        answers++;
+                        Mark("answered pending question #" + answers + " through the card (Send answer)");
+                    }
+                    catch (FlaUI.Core.Exceptions.FlaUIException) { /* card rebuilt while clicking; retried on the next poll */ }
                 }
                 if (status.StartsWith("Completed", StringComparison.Ordinal)
                     || status is "Verification failed" or "Failed" or "Cancelled") break;

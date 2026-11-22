@@ -119,6 +119,7 @@ internal sealed class GameSaveBackupPanel : StackPanel
 
     private readonly TextBlock _syncStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _syncNow = new();
+    private readonly StackPanel _conflicts = new() { Spacing = 10 };
 
     /// <summary>Copies the backups to a folder the owner picks (a cloud-synced folder, a NAS share or a USB drive) and brings back the ones this PC lacks.</summary>
     private void BuildSyncSection()
@@ -152,6 +153,7 @@ internal sealed class GameSaveBackupPanel : StackPanel
         AutomationProperties.SetAutomationId(_syncStatus, Id("GameSaves_Sync_Status"));
         AutomationProperties.SetLiveSetting(_syncStatus, AutomationLiveSetting.Polite);
         Children.Add(_syncStatus);
+        Children.Add(_conflicts);
         Loaded += async (_, _) => await LoadSyncStatusAsync();
     }
 
@@ -159,6 +161,74 @@ internal sealed class GameSaveBackupPanel : StackPanel
     {
         var result = await GamingOrchestratorClient.Current.GetGameSaveSyncAsync();
         ShowSyncStatus(result.Value);
+        if (result.Value is { Configured: true }) await LoadConflictsAsync();
+    }
+
+    /// <summary>Shows each game whose history forked, both sides' details side by side, and three choices. Nothing is deleted by any of them.</summary>
+    private async Task LoadConflictsAsync()
+    {
+        _conflicts.Children.Clear();
+        var result = await GamingOrchestratorClient.Current.GetGameSaveConflictsAsync();
+        if (!result.Succeeded || result.Value is null) return;
+        foreach (GameSaveSyncConflictDto conflict in result.Value.Conflicts)
+        {
+            var card = new StackPanel { Spacing = 6, Padding = new Thickness(12), BorderThickness = new Thickness(1) };
+            card.Children.Add(new TextBlock
+            {
+                Text = T($"{conflict.Label}: saves differ between this PC and the sync folder", $"{conflict.Label}: i salvataggi sono diversi tra questo PC e la cartella di sincronizzazione"),
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            card.Children.Add(new TextBlock
+            {
+                Text = T("Both have newer backups the other lacks. Compare them, then choose. Every backup on both sides is kept whatever you choose.",
+                         "Entrambi hanno backup più recenti che l'altro non ha. Confrontali, poi scegli. Tutti i backup di entrambe le parti vengono conservati qualunque cosa tu scelga."),
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.85
+            });
+            var grid = new Grid { ColumnSpacing = 16 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.Children.Add(SideColumn(0, T("This PC", "Questo PC"), conflict.Local, conflict.LocalOnlyCount));
+            grid.Children.Add(SideColumn(1, T("Sync folder", "Cartella di sincronizzazione"), conflict.Mirror, conflict.MirrorOnlyCount));
+            card.Children.Add(grid);
+
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            buttons.Children.Add(ChoiceButton(conflict.Label, GameSaveConflictChoices.KeepLocal, T("Keep this PC's version", "Tieni la versione di questo PC")));
+            buttons.Children.Add(ChoiceButton(conflict.Label, GameSaveConflictChoices.KeepMirror, T("Keep the sync folder's version", "Tieni la versione della cartella")));
+            buttons.Children.Add(ChoiceButton(conflict.Label, GameSaveConflictChoices.KeepBoth, T("Keep both", "Tieni entrambe")));
+            card.Children.Add(buttons);
+            AutomationProperties.SetAutomationId(card, Id("GameSaves_Conflict_" + conflict.Label));
+            _conflicts.Children.Add(card);
+        }
+    }
+
+    private static StackPanel SideColumn(int column, string title, GameSaveSideDto side, int extra)
+    {
+        var panel = new StackPanel { Spacing = 2 };
+        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = T("Newest backup: ", "Backup più recente: ") + side.CreatedUtc.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) });
+        panel.Children.Add(new TextBlock { Text = string.Format(CultureInfo.CurrentCulture, T("{0} file(s), {1:N0} KB", "{0} file, {1:N0} KB"), side.Files, side.Bytes / 1024.0) });
+        panel.Children.Add(new TextBlock { Text = string.Format(CultureInfo.CurrentCulture, T("{0} backup(s) only here", "{0} backup solo qui"), extra) });
+        Grid.SetColumn(panel, column);
+        return panel;
+    }
+
+    private Button ChoiceButton(string label, string choice, string text)
+    {
+        var button = new Button { Content = text, MinHeight = 44 };
+        AutomationProperties.SetAutomationId(button, Id("GameSaves_Conflict_" + choice + "_" + label));
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+            var result = await GamingOrchestratorClient.Current.ResolveGameSaveConflictAsync(label, choice);
+            _syncStatus.Text = result.Succeeded
+                ? T("Saved your choice. Press Sync now to bring both sides together.", "Scelta salvata. Premi Sincronizza ora per riunire le due parti.")
+                : T("The choice was not saved (sync is paused while a game is running, or the conflict changed).",
+                    "La scelta non è stata salvata (la sincronizzazione è sospesa mentre un gioco è in esecuzione, oppure il conflitto è cambiato).");
+            await LoadConflictsAsync();
+        };
+        return button;
     }
 
     private void ShowSyncStatus(GameSaveSyncStatusDto? status)
@@ -220,8 +290,11 @@ internal sealed class GameSaveBackupPanel : StackPanel
                 T("Done: {0} copied out, {1} brought in, {2} already in both places.", "Fatto: {0} copiati fuori, {1} riportati qui, {2} già presenti ovunque."),
                 r.Pushed, r.Pulled, r.AlreadyThere);
             if (r.Problems.Count > 0) text += " " + T("Skipped: ", "Saltati: ") + string.Join(" ", r.Problems);
+            if (r.Conflicts.Count > 0)
+                text += " " + T("Held back until you choose: ", "In attesa della tua scelta: ") + string.Join(", ", r.Conflicts) + ".";
             _syncStatus.Text = text;
             _busy = false;
+            await LoadConflictsAsync();
             await RefreshAsync();
         }
         finally

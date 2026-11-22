@@ -30,6 +30,22 @@ public sealed class ConsoleNavigationPolicyTests
     }
 
     [Theory]
+    [InlineData(208)] // View/Back
+    public void View_switches_between_gaming_and_ai_and_is_suspended_while_busy(int keyCode)
+    {
+        Assert.Equal(ConsoleNavigationAction.SwitchWorkspace, ConsoleNavigationPolicy.Resolve(keyCode, false));
+        Assert.Equal(ConsoleNavigationAction.None, ConsoleNavigationPolicy.Resolve(keyCode, true));
+    }
+
+    [Theory]
+    [InlineData(201)] // Left trigger
+    [InlineData(202)] // Right trigger
+    public void The_analog_triggers_never_switch_workspace(int keyCode)
+    {
+        Assert.Equal(ConsoleNavigationAction.None, ConsoleNavigationPolicy.Resolve(keyCode, false));
+    }
+
+    [Theory]
     [InlineData(195)] // Gamepad A: native WinUI control owns activation
     [InlineData(13)]  // Enter
     [InlineData(197)] // Gamepad X

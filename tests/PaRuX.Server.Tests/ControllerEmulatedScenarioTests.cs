@@ -87,8 +87,8 @@ public sealed class ControllerEmulatedScenarioTests
     // Up203 Down204 Left205 Right206 Menu207 View208 LSB209 RSB210 LStick U211 D212 R213 L214 RStick U215 D216.
     [Theory]
     [InlineData(195)] [InlineData(197)] [InlineData(198)] [InlineData(201)] [InlineData(202)]
-    [InlineData(208)] [InlineData(209)] [InlineData(210)] [InlineData(217)] [InlineData(218)]
-    public void Face_trigger_view_and_thumb_buttons_never_navigate_exit_or_page(int key)
+    [InlineData(209)] [InlineData(210)] [InlineData(217)] [InlineData(218)]
+    public void Face_trigger_and_thumb_buttons_never_navigate_exit_or_page(int key)
     {
         Assert.Equal(ConsoleNavigationAction.None, ConsoleNavigationPolicy.Resolve(key, false));
         Assert.Equal(ConsoleNavigationAction.None, ConsoleNavigationPolicy.Resolve(key, true));

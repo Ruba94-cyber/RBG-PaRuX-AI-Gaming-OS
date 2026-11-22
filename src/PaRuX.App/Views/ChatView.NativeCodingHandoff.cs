@@ -300,7 +300,7 @@ namespace PaRuX.Views
                 if (Application.Current.Resources.TryGetValue(brush, out object? b) && b is Brush bb)
                     badge.Background = bb;
             }
-            else if (string.Equals(statusStr, "awaiting-user-input", StringComparison.OrdinalIgnoreCase))
+            else if (AgentRunWaitPolicy.IsPausedForUserAnswer(statusStr, task?.Stage))
             {
                 badgeText.Text = T("Waiting for answer", "In attesa di risposta");
                 if (Application.Current.Resources.TryGetValue("SystemFillColorCautionBackgroundBrush", out object? b) && b is Brush bb)
@@ -683,9 +683,17 @@ namespace PaRuX.Views
                 }, "Chat_CodingTask_Apply_Button");
                 if (Application.Current.Resources.TryGetValue("AccentButtonStyle", out object? ab) && ab is Style as_)
                     applyButton.Style = as_;
-                applyButton.Click += async (_, _) => await ApplyReviewedChangesAsync(message, applyButton);
+                var undoButton = AutoId(new Button
+                {
+                    Content = T("Undo applied changes", "Annulla modifiche applicate"),
+                    Padding = new Thickness(16, 6, 16, 6),
+                    Visibility = Visibility.Collapsed
+                }, "Chat_CodingTask_Undo_Button");
+                applyButton.Click += async (_, _) => await ApplyReviewedChangesAsync(message, applyButton, undoButton);
+                undoButton.Click += async (_, _) => await UndoAppliedChangesAsync(applyButton, undoButton);
                 AutomationProperties.SetAutomationId(applyButton, "parux-coding-apply");
                 buttonRow.Children.Add(applyButton);
+                buttonRow.Children.Add(undoButton);
                 applyButtonRef = applyButton;
 
                 var hunkButton = AutoId(new Button
@@ -1042,7 +1050,7 @@ namespace PaRuX.Views
                         AgentTaskLogListResponse logs = await AgentOrchestratorClient.Current.GetLogsAsync(taskId, cts.Token).ConfigureAwait(false);
                         AgentUserQuestionStateDto? question = null;
 
-                        if (string.Equals(task.Status, "awaiting-user-input", StringComparison.OrdinalIgnoreCase))
+                        if (AgentRunWaitPolicy.IsPausedForUserAnswer(task.Status, task.Stage))
                         {
                             question = await AgentOrchestratorClient.Current.GetUserQuestionStateAsync(taskId, cts.Token).ConfigureAwait(false);
                         }
@@ -1160,7 +1168,7 @@ namespace PaRuX.Views
                 CodingTaskApplyAdmissionPolicy.TryGetVerifiedWorkspaceFingerprint(current, taskId));
         }
 
-        private async Task ApplyReviewedChangesAsync(ChatMessage message, Button applyButton)
+        private async Task ApplyReviewedChangesAsync(ChatMessage message, Button applyButton, Button? undoButton = null)
         {
             if (string.IsNullOrWhiteSpace(message.CodeTaskId)) return;
             applyButton.IsEnabled = false;
@@ -1375,6 +1383,13 @@ namespace PaRuX.Views
                             ? T("Changes were already present in the project: nothing was changed.", "Le modifiche erano già presenti nel progetto: non è stato modificato nulla.")
                             : T("Changes applied successfully to the project as uncommitted local changes.", "Modifiche applicate con successo al progetto come modifiche locali non salvate su commit."));
                     applied = result.Success;
+                    if (result.Success && result.UndoId != null && undoButton != null)
+                    {
+                        // The exact applied patch was kept: offer to reverse it (only works while those files are unchanged).
+                        undoButton.Tag = result.UndoId;
+                        undoButton.IsEnabled = true;
+                        undoButton.Visibility = Visibility.Visible;
+                    }
                     if (!result.Success && !string.IsNullOrWhiteSpace(result.UnresolvedRecoveryDirectory))
                     {
                         string? originalRoot = ShadowWorkspaceService.TryGetOriginalPath(repositoryRoot);
@@ -1397,6 +1412,45 @@ namespace PaRuX.Views
                 // After a successful apply the card shows the final state instead of inviting a re-apply.
                 applyButton.IsEnabled = !applied;
                 if (applied) applyButton.Content = T("Changes applied to project", "Modifiche applicate al progetto");
+            }
+        }
+
+        /// <summary>Reverses the patch kept by the last successful apply. Refuses, changing nothing, when those files were edited since.</summary>
+        private async Task UndoAppliedChangesAsync(Button applyButton, Button undoButton)
+        {
+            if (undoButton.Tag is not string undoId) return;
+            undoButton.IsEnabled = false;
+            applyButton.IsEnabled = false;   // no apply while the reverse runs
+            bool undone = false;
+            try
+            {
+                CodeApplyResult result = await CodeWorktreeApplyService.UndoAsync(undoId, CancellationToken.None);
+                Log.Write("Undo of applied coding-task changes: success=" + result.Success + "; " + result.Message);
+                ChatSession.Current.AppendAssistantNotice("**PaRuX undo** — " + result.Message);
+                if (result.Success)
+                {
+                    ShowTransientStatus(T("Applied changes were undone. Your other edits were not touched.", "Le modifiche applicate sono state annullate. Le tue altre modifiche non sono state toccate."));
+                    undoButton.Visibility = Visibility.Collapsed;
+                    undoButton.Tag = null;
+                    applyButton.Content = T("Apply changes to project", "Applica modifiche al progetto");
+                    undone = true;
+                }
+                else
+                {
+                    ShowTransientStatus(T("Could not undo safely. Nothing was changed; the reason is in the chat note.", "Impossibile annullare in sicurezza. Non è stato cambiato nulla; il motivo è nella nota in chat."));
+                    undoButton.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Undo applied changes failed: " + ex);
+                ShowTransientStatus(UserFailureRecoveryMapper.MapCodingTaskApply(ex).FormatStatusLine());
+                undoButton.IsEnabled = true;
+            }
+            finally
+            {
+                // After a real undo the changes can be applied again; otherwise the card stays in its "applied" state.
+                applyButton.IsEnabled = undone;
             }
         }
 

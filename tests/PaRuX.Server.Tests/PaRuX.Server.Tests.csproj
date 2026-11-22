@@ -29,15 +29,28 @@
     <None Include="Fixtures\ltx-video-2b-v0.9.5-header.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\tools\PaRuX.VirtualPadSim\PadScript.cs" Link="Linked\PadScript.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ChatDocumentScopeState.cs" Link="Linked\ChatDocumentScopeState.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\HistoryBackupSafety.cs" Link="Linked\HistoryBackupSafety.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiLanguage.cs" Link="Linked\UiLanguage.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PromptLibrary.cs" Link="Linked\PromptLibrary.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ChatSamplingPreferences.cs" Link="Linked\ChatSamplingPreferences.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ControllerLiveModel.cs" Link="Linked\ControllerLiveModel.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\RawMappingWizardModel.cs" Link="Linked\RawMappingWizardModel.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\RawPadEdgeTranslator.cs" Link="Linked\RawPadEdgeTranslator.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Models\ComputerAppShortcut.cs" Link="Linked\ComputerAppShortcut.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Models\AppSettings.cs" Link="Linked\AppSettings.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionModel.cs" Link="Linked\PadActionModel.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadLogicalButtons.cs" Link="Linked\PadLogicalButtons.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\LauncherConfigImporter.cs" Link="Linked\LauncherConfigImporter.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionEngine.cs" Link="Linked\PadActionEngine.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionPolicy.cs" Link="Linked\PadActionPolicy.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PadActionPoller.cs" Link="Linked\PadActionPoller.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationMarkdown.cs" Link="Linked\ConversationMarkdown.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CommandPaletteFilter.cs" Link="Linked\CommandPaletteFilter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiText.cs" Link="Linked\UiText.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\SteamGridDbGallery.cs" Link="Linked\SteamGridDbGallery.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\SteamAchievementsText.cs" Link="Linked\SteamAchievementsText.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaRuX.Server\PaRuX.Server.csproj" />
@@ -62,6 +75,11 @@
     <Compile Include="..\..\src\PaRuX.App\Models\ChatAttachment.cs" Link="Models\ChatAttachment.cs" />
     <Compile Include="..\..\src\PaRuX.App\Models\ConversationBranch.cs" Link="Models\ConversationBranch.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationBranching.cs" Link="Branching\ConversationBranching.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ConversationRewind.cs" Link="Branching\ConversationRewind.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\AccentPalette.cs" Link="Linked\AccentPalette.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\AchievementSessionWatcher.cs" Link="Linked\AchievementSessionWatcher.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\LibraryThemeState.cs" Link="Linked\LibraryThemeState.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\DictationText.cs" Link="Linked\DictationText.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaPromptEnhancer.cs" Link="Branching\MediaPromptEnhancer.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingWorkspacePath.cs" Link="CodingAgent\CodingWorkspacePath.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ManagedRuntimeEndpoint.cs" Link="Runtime\ManagedRuntimeEndpoint.cs" />

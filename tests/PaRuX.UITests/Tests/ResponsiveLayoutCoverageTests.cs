@@ -157,6 +157,9 @@ public sealed class ResponsiveLayoutCoverageTests
                 var startupToggle = UiWait.ById(app.MainWindow, "Settings_Startup_Toggle", ControlType.Button);
 
                 AssertInsideWindow(app.MainWindow, themeCombo, $"Settings theme combo at {label}");
+                // The General page scrolls (the accent picker sits above this row), so a short window legitimately has the row
+                // below the fold: scroll it into view the way a user (or a screen reader) would before checking its bounds.
+                ScrollIntoViewByUia(startupToggle);
                 AssertInsideWindow(app.MainWindow, startupToggle, $"Settings startup switch at {label}");
 
                 AssertNoOverlapWithNav(app, themeCombo, $"Settings theme combo at {label}");
@@ -498,6 +501,28 @@ public sealed class ResponsiveLayoutCoverageTests
             }
             return false;
         }, $"Layout settled after resize to {targetWidth}x{targetHeight}", TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// Brings an element in a scrolling page into view with UI Automation patterns only: ScrollItem when the control exposes it,
+    /// otherwise the vertical Scroll pattern of the nearest scrollable ancestor, stepped until the element has real bounds.
+    /// </summary>
+    private static void ScrollIntoViewByUia(AutomationElement element)
+    {
+        static bool Visible(AutomationElement e) { var b = e.Properties.BoundingRectangle.ValueOrDefault; return b.Width > 0 && b.Height > 0; }
+        if (Visible(element)) return;
+        try { element.Patterns.ScrollItem.PatternOrDefault?.ScrollIntoView(); } catch { }
+        if (Visible(element)) return;
+        for (var parent = element.Parent; parent != null; parent = parent.Parent)
+        {
+            var scroll = parent.Patterns.Scroll.PatternOrDefault;
+            if (scroll == null || !scroll.VerticallyScrollable.ValueOrDefault) continue;
+            for (double percent = 0; percent <= 100; percent += 10)
+            {
+                try { scroll.SetScrollPercent(FlaUI.Core.Patterns.ScrollPatternConstants.NoScroll, percent); } catch { }
+                if (Visible(element)) return;
+            }
+        }
     }
 
     private static void AssertInsideWindow(Window window, AutomationElement element, string description)

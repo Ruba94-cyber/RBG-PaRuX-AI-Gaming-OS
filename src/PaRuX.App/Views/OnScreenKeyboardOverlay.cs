@@ -255,6 +255,20 @@ internal sealed class OnScreenKeyboardOverlay : Grid
         if (_letterButtons.Count > 0) _letterButtons[0].Button.Focus(FocusState.Keyboard);
     }
 
+    /// <summary>Applies a gamepad virtual key (from the raw-pad reader, which WinUI never sees) exactly like a delivered key event.</summary>
+    public void HandlePadKey(int vk)
+    {
+        if (!IsOpen || _model is null) return;
+        var action = OnScreenKeyboardModel.ResolvePad(vk);
+        switch (action)
+        {
+            case OnScreenKeyboardPadAction.Cancel: Close(commit: false); return;
+            case OnScreenKeyboardPadAction.Done: Close(commit: true); return;
+            case OnScreenKeyboardPadAction.None: return;
+            default: _model.Apply(action); Sync(); return;
+        }
+    }
+
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (!IsOpen || _model is null) return;
@@ -291,3 +305,4 @@ internal sealed class OnScreenKeyboardOverlay : Grid
         if (OnScreenKeyboardModel.IsGamepadKey(vk) && vk != 195) e.Handled = true;
     }
 }
+

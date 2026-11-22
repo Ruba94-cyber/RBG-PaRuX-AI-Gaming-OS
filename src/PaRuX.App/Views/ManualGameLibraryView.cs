@@ -450,5 +450,7 @@ public sealed partial class ManualGameLibraryView : UserControl
         bar.SelectedItem = bar.Items[0];
 
         Content = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
+        Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
     }
 }

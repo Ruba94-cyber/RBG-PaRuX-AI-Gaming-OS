@@ -63,6 +63,30 @@ public sealed class AgentOrchestratorDelegationSlotTests : IDisposable
     }
 
     [Fact]
+    public void A_task_paused_for_a_user_answer_does_not_hold_a_parallel_slot()
+    {
+        var store = new TaskStore(_root);
+        var questions = new AgentUserQuestionService(store);
+        var forgotten = new List<string>();
+        ModelExecutionProfile profile = global::PaRuX.Server.ExecutionProfileStore.BuildDefault("scheduler-test", ExecutionQualityProfile.Fast);
+        int slots = Math.Clamp(profile.Budget.MaxParallelTasks, 1, 8);
+        for (int i = 0; i < slots; i++)
+        {
+            AgentTaskDto task = store.Create(new CreateAgentTaskRequest { Goal = "Edit file " + i, Role = "coding" });
+            store.UpdateStatus(task.Id, new UpdateAgentTaskStatusRequest { Status = AgentTaskStatus.Running, Stage = "Working" });
+            questions.Ask(task.Id, new AskAgentUserQuestionRequest { Question = "Approve?", Options = new List<string> { "Yes", "No" }, AllowOther = false });
+            forgotten.Add(task.Id);
+        }
+        AgentTaskDto fresh = store.Create(new CreateAgentTaskRequest { Goal = "Fix the discount bug", Role = "coding" });
+
+        var orchestrator = new AgentOrchestrator(store, () => profile);
+        List<string> dispatched = orchestrator.RunSchedulingPass();
+
+        Assert.Contains(fresh.Id, dispatched);
+        Assert.All(forgotten, id => Assert.Equal(AgentTaskStatus.Waiting, store.Get(id)!.Status));   // still waiting for their owner
+    }
+
+    [Fact]
     public void Ordinary_waiting_task_still_consumes_parallel_slot()
     {
         var store = new TaskStore(_root);

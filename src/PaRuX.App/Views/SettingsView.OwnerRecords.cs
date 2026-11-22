@@ -72,6 +72,8 @@ namespace PaRuX.Views
             if (!corporate) SettingsContentPanel.Children.Add(webhooks);
 
             if (!corporate) SettingsContentPanel.Children.Add(BuildSteamSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildRetroAchievementsSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildGameExtensionsSection());
 
             _ = RefreshInstalledPluginsAsync();
             _ = RefreshAuditAsync();
@@ -121,7 +123,7 @@ namespace PaRuX.Views
                     {
                         if (choice.SelectedItem is not ComboBoxItem { Tag: string role }) return;
                         try { await OwnerRecordsClient.Current.SetRoleAsync(principal, role, CancellationToken.None); _rolesStatus!.Text = T("Saved.", "Salvato."); }
-                        catch (Exception ex) { _rolesStatus!.Text = ex.Message; }
+                        catch (Exception ex) { _rolesStatus!.Text = T("Could not save: ", "Impossibile salvare: ") + ex.Message; }
                     };
                     Grid.SetColumn(choice, 1);
                     row.Children.Add(choice);
@@ -157,12 +159,12 @@ namespace PaRuX.Views
                     key.Password = string.Empty;
                     _steamStatus!.Text = T("Saved for SteamID ", "Salvato per lo SteamID ") + status.SteamId + ".";
                 }
-                catch (Exception ex) { _steamStatus!.Text = ex.Message; }
+                catch (Exception ex) { _steamStatus!.Text = T("Could not save: ", "Impossibile salvare: ") + ex.Message; }
             };
             remove.Click += async (_, _) =>
             {
                 try { await OwnerRecordsClient.Current.DeleteSteamAsync(CancellationToken.None); _steamStatus!.Text = T("Removed.", "Rimossa."); }
-                catch (Exception ex) { _steamStatus!.Text = ex.Message; }
+                catch (Exception ex) { _steamStatus!.Text = T("Could not remove: ", "Impossibile rimuovere: ") + ex.Message; }
             };
             card.Children.Add(key);
             card.Children.Add(id);

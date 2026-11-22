@@ -289,21 +289,9 @@
                         </InfoBar>
                     </StackPanel>
 
-                    <Grid Grid.Row="1">
-                        <views:CreateWorkspaceView x:Name="CreatePage" Visibility="Collapsed" />
-                        <views:ProjectsWorkspaceView x:Name="ProjectsPage" Visibility="Collapsed" />
-                        <views:ModelHubView x:Name="ModelHubPage" Visibility="Collapsed" />
-                        <views:DocumentSearchView x:Name="DocumentSearchPage" Visibility="Collapsed" />
-                        <views:ModelRoutingPanel x:Name="ModelRoutingPage" Visibility="Collapsed" />
-                        <views:LifecycleLabView x:Name="LifecycleLabPage" Visibility="Collapsed" />
-                        <views:WorkflowWorkspaceView x:Name="WorkflowPage" Visibility="Collapsed" />
-                        <views:ToolsAutomationView x:Name="ToolsAutomationPage" Visibility="Collapsed" />
-                        <views:ObservabilityView x:Name="ObservabilityPage" Visibility="Collapsed" />
-                        <views:UpdateManagerView x:Name="UpdateManagerPage" Visibility="Collapsed" />
-                        <views:RuntimeManagerView x:Name="RuntimeManagerPage" Visibility="Collapsed" />
-                        <views:ManualGameLibraryView x:Name="GameLibraryPage" Visibility="Collapsed" />
+                    <!-- The ten advanced workspace pages, Model Hub, Games and Settings are created in code on first open (MainWindow.LazyPages.cs) and added here. -->
+                    <Grid Grid.Row="1" x:Name="WorkspacePagesHost">
                         <views:ChatView x:Name="ChatPage" />
-                        <views:SettingsView x:Name="SettingsPage" Visibility="Collapsed" />
                         <views:OnboardingView x:Name="OnboardingPage" Visibility="Collapsed" />
                     </Grid>
                 </Grid>

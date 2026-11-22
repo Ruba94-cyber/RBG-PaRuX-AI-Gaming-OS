@@ -104,9 +104,16 @@ internal sealed class UniversalLibraryPanel : StackPanel
     internal Task RefreshVisibleTitlesAsync() => _home.RefreshWhenShownAsync();
     internal void ApplySetupProfilePresentation() => _home.ApplySetupProfilePresentation();
     internal void CancelPendingQueries() => _home.CancelPendingQueries();
+    internal Task<string?> PlayByKeyAsync(string titleKey) => _home.PlayByKeyAsync(titleKey);
 
     /// <summary>Console Menu button: jump to the Gaming home search field.</summary>
     internal bool FocusSearch() => _home.FocusSearch();
+
+    /// <summary>Console/TV: puts the focus on the first game so the pad starts where the owner wants to play.</summary>
+    internal bool FocusFirstGame() => _home.FocusFirstGame();
+
+    /// <summary>Console/TV: the paused game's Resume button takes the first focus when there is one.</summary>
+    internal bool FocusPausedResume() => _home.FocusPausedResume();
 
     private Task ReloadTitlesAsync() => _home.ReloadAsync();
     internal Task ReloadTitlesNowAsync() => _home.ReloadAsync(refresh: true);

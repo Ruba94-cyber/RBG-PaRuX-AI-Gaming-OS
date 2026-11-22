@@ -155,6 +155,49 @@ public sealed class XInputShimTests
     }
 
     [Fact]
+    public void A_per_game_controller_profile_changes_what_the_game_reads_through_the_real_shim()
+    {
+        string? dll = ShimPath();
+        if (dll is null || !Environment.Is64BitProcess || SectionOwnedElsewhere()) return;
+        IntPtr module = LoadLibraryW(dll);
+        Assert.NotEqual(IntPtr.Zero, module);
+        var getState = Marshal.GetDelegateForFunctionPointer<GetStateFn>(GetProcAddress(module, "XInputGetState"));
+
+        // The raw pad: stick barely off-centre (inside the dead zone) on the left, a clear forward push on the right,
+        // face button A held, left trigger lightly pressed, right trigger firmly pressed.
+        var raw = new Xbox360Report(Xbox360Report.A, 50, 200, 3000, 0, 0, 20000);
+        var profile = new PaRuX.Contracts.GamingControllerProfile
+        {
+            LeftDeadzone = 8000, TriggerThreshold = 100, InvertRightY = true,
+            ButtonRemap = new() { [Xbox360Report.A] = Xbox360Report.B },
+        };
+
+        var backend = new SharedMemoryXInputBackend();
+        IVirtualXboxPad pad = backend.TryCreatePad(out _)!;
+        try
+        {
+            // Without a profile the game sees the pad untouched.
+            Assert.True(pad.Submit(PadFeel.Apply(raw, null)));
+            var plain = new XState();
+            Assert.Equal(Success, getState(0, ref plain));
+            Assert.Equal(Xbox360Report.A, plain.Buttons);
+            Assert.Equal((short)3000, plain.Lx);
+            Assert.True(plain.Ry > 0);
+
+            // The same physical input with the game's own profile: this is exactly what VirtualPadForwardingSession submits.
+            Assert.True(pad.Submit(PadFeel.Apply(raw, profile)));
+            var felt = new XState();
+            Assert.Equal(Success, getState(0, ref felt));
+            Assert.Equal(Xbox360Report.B, felt.Buttons);   // A is remapped to B
+            Assert.Equal((short)0, felt.Lx);               // inside the dead zone
+            Assert.True(felt.Ry < 0);                      // right stick Y inverted
+            Assert.Equal(0, felt.Lt);                      // below the trigger threshold
+            Assert.InRange((int)felt.Rt, 1, 199);          // above it: rescaled from the threshold, not passed through
+        }
+        finally { pad.Dispose(); }
+    }
+
+    [Fact]
     public void A_game_that_passes_a_null_pointer_gets_an_error_not_a_crash()
     {
         string? dll = ShimPath();

@@ -1,3 +1,4 @@
+using PaRuX.Contracts;
 using PaRuX.Server.Orchestration.Gaming.Providers.VirtualPad;
 using Xunit;
 
@@ -96,7 +97,8 @@ public sealed class VirtualPadActivationTests : IDisposable
         public ValueTask DisposeAsync() => Service.DisposeAsync();
     }
 
-    private Rig MakeRig(bool saveDeviceMapping = true)
+    private Rig MakeRig(bool saveDeviceMapping = true,
+        Func<string?, CancellationToken, Task<GamingControllerProfile?>>? feel = null)
     {
         var rig = new Rig();
         if (saveDeviceMapping) Assert.True(_deviceStore.Save(Pad, MapTo(Xbox360Report.A), out _));
@@ -107,7 +109,7 @@ public sealed class VirtualPadActivationTests : IDisposable
                 Interval = TimeSpan.FromMilliseconds(10), RetryDelay = TimeSpan.FromMilliseconds(5),
                 IsolationRefresh = TimeSpan.FromMilliseconds(20), IsolationMaxAge = TimeSpan.FromMilliseconds(250),
                 MaxStartAttempts = 3
-            });
+            }, feel);
         return rig;
     }
 
@@ -614,6 +616,77 @@ public sealed class VirtualPadActivationTests : IDisposable
         var status = await rig.Service.StartAsync(Identity(), true, "game-1");
         Assert.Equal(PadMappingSource.GameProfile, status.MappingSource);
         await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B);
+        await rig.Service.StopAsync();
+    }
+
+    // ------------------------------------------------------------ service: the game's controller feel reaches the virtual pad
+
+    private static readonly GamingControllerProfile SwapAToB = new()
+    {
+        ButtonRemap = new() { [Xbox360Report.A] = Xbox360Report.B },
+    };
+
+    [Fact]
+    public async Task A_games_own_controller_settings_change_what_the_virtual_pad_receives_and_other_games_are_untouched()
+    {
+        await using var rig = MakeRig(feel: (game, _) => Task.FromResult<GamingControllerProfile?>(game == "game-1" ? SwapAToB : null));
+        await rig.Service.StartAsync(Identity(), true, null);
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.A, "plain device mapping");
+
+        await rig.Service.OnGameStartedAsync("game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "feel applied for game-1");
+
+        await rig.Service.OnGameStartedAsync("game-2");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.A, "game-2 has no own settings");
+        Assert.Equal(1, rig.Isolation.IsolateCalls);
+        await rig.Service.StopAsync();
+    }
+
+    [Fact]
+    public async Task Start_for_a_game_applies_its_controller_settings_from_the_first_report()
+    {
+        await using var rig = MakeRig(feel: (_, _) => Task.FromResult<GamingControllerProfile?>(SwapAToB));
+        await rig.Service.StartAsync(Identity(), true, "game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "feel on start");
+        Assert.DoesNotContain(rig.Backend.Pad.Reports.ToArray(), r => r.Buttons == Xbox360Report.A);
+        await rig.Service.StopAsync();
+    }
+
+    [Fact]
+    public async Task A_failing_settings_lookup_keeps_forwarding_with_the_plain_mapping()
+    {
+        await using var rig = MakeRig(feel: (_, _) => throw new InvalidOperationException("core offline"));
+        var status = await rig.Service.StartAsync(Identity(), true, "game-1");
+        Assert.Equal(VirtualPadPhase.Running, status.Phase);
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.A, "plain mapping");
+        await rig.Service.StopAsync();
+    }
+
+    [Fact]
+    public async Task Changing_the_games_settings_restarts_forwarding_on_the_next_game_start()
+    {
+        GamingControllerProfile? current = null;
+        await using var rig = MakeRig(feel: (_, _) => Task.FromResult(current));
+        await rig.Service.StartAsync(Identity(), true, "game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.A, "plain");
+        current = SwapAToB;
+        await rig.Service.OnGameStartedAsync("game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "new settings picked up");
+        await rig.Service.StopAsync();
+    }
+
+    [Fact]
+    public async Task A_failed_lookup_on_game_switch_keeps_the_running_settings_without_restarting()
+    {
+        bool fail = false;
+        await using var rig = MakeRig(feel: (_, _) => fail ? throw new InvalidOperationException("core slow") : Task.FromResult<GamingControllerProfile?>(SwapAToB));
+        await rig.Service.StartAsync(Identity(), true, "game-1");
+        await WaitUntil(() => rig.Backend.Pad.Last?.Buttons == Xbox360Report.B, "feel on start");
+        int created = rig.Backend.Attempts;
+        fail = true;
+        await rig.Service.OnGameStartedAsync("game-1");
+        Assert.Equal(created, rig.Backend.Attempts);
+        Assert.Equal(Xbox360Report.B, rig.Backend.Pad.Last?.Buttons);
         await rig.Service.StopAsync();
     }
 }

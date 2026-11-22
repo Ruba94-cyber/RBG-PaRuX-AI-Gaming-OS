@@ -111,6 +111,7 @@ internal sealed class GamingHomeView : StackPanel
     private readonly Button _gameAssetStudio = new() { MinHeight = 44 };
     private readonly Button _installedMods = new() { MinHeight = 44 };
     private readonly QuickResumePanel _quickResume = new();
+    private readonly PausedGameBanner _pausedBanner = new();
     private List<GameTitleDto> _allTitles = new();
     private bool _recentOnly;
     private string _genre = string.Empty;
@@ -1376,6 +1377,9 @@ internal sealed class GamingHomeView : StackPanel
         _main.Children.Add(_mainColumn);
         _main.SizeChanged += (_, _) => ApplyMainLayout();
         ApplyMainLayout();
+        // Quick Resume comes FIRST: a paused game is offered above everything else, and nothing is shown when nothing is paused.
+        _pausedBanner.Resumed += () => _quickResume.RefreshAsync();
+        Children.Add(_pausedBanner);
         Children.Add(_main);
         Children.Add(_quickResume);
         XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
@@ -1549,13 +1553,17 @@ internal sealed class GamingHomeView : StackPanel
     // ------------------------------------------------------------------ data
 
     /// <summary>One-shot catalog refresh after a foreground return from Gaming. Never scan stores periodically or while a game owns the PC.</summary>
-    internal Task RefreshAfterGameAsync() => ReloadAsync(refresh: true);
+    internal Task RefreshAfterGameAsync() { _ = _pausedBanner.RefreshAsync(); return ReloadAsync(refresh: true); }
+
+    /// <summary>Console/TV start focus: the paused-game Resume button when one is offered.</summary>
+    internal bool FocusPausedResume() => _pausedBanner.FocusFirstResume();
 
     /// <summary>Refresh once when the Gaming workspace returns, without forcing
     /// an expensive store rediscovery or duplicating a pending load.</summary>
     internal Task RefreshWhenShownAsync()
     {
         ApplySetupProfilePresentation();
+        _ = _pausedBanner.RefreshAsync();
         return _cancellation == null || _cancellation.IsCancellationRequested
             ? ReloadAsync(refresh: false) : Task.CompletedTask;
     }
@@ -1583,6 +1591,13 @@ internal sealed class GamingHomeView : StackPanel
     }
 
     internal bool FocusSearch() => _search.Focus(FocusState.Programmatic);
+
+    /// <summary>Focuses the first realized game tile (null-safe when the library is empty or not yet loaded).</summary>
+    internal bool FocusFirstGame()
+    {
+        try { return _grid.FocusFirst(); }
+        catch (Exception) { return false; }
+    }
 
     private GameTitleListQuery CurrentQuery(bool refresh) => new()
     {
@@ -2170,6 +2185,32 @@ internal sealed class GamingHomeView : StackPanel
         _detail.Hide();
         _grid.RefreshState(_selected, null);
         if (key is not null && !_grid.FocusTile(key)) _grid.FocusFirst();
+    }
+
+    /// <summary>
+    /// A desktop or Steam shortcut asked for this game ("PaRuX.exe --play key"). It goes through the same Play path as
+    /// the Play button, so the normal confirmation comes first and cancelling it starts nothing. Returns a message when
+    /// the game cannot be started, otherwise null.
+    /// </summary>
+    internal async Task<string?> PlayByKeyAsync(string titleKey)
+    {
+        var query = new GameTitleListQuery { Hidden = "include" };
+        var result = await GamingLibraryClient.Current.QueryTitlesAsync(query);
+        GameTitleDto? title = result.Succeeded && result.Value is not null
+            ? result.Value.FirstOrDefault(t => string.Equals(t.TitleKey, titleKey, StringComparison.Ordinal))
+            : null;
+        if (!result.Succeeded)
+            return T("The game library could not be read, so the shortcut could not start the game.",
+                "Impossibile leggere la libreria, quindi il collegamento non ha potuto avviare il gioco.");
+        if (title is null)
+            return T("That game is no longer in your PaRuX library, so the shortcut did nothing.",
+                "Quel gioco non è più nella tua libreria PaRuX, quindi il collegamento non ha fatto nulla.");
+        GameInstallationDto? chosen = GameUi.ChooseInstallation(title);
+        if (chosen is null || !GameUi.CanStart(chosen))
+            return T($"{title.Name} cannot start right now (it may be updating or not installed).",
+                $"{title.Name} non può partire adesso (potrebbe essere in aggiornamento o non installato).");
+        await PlayAsync(title);
+        return null;
     }
 
     private async Task PlayAsync(GameTitleDto title)

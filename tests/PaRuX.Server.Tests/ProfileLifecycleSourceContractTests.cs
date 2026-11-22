@@ -26,7 +26,7 @@ public sealed class ProfileLifecycleSourceContractTests
         Assert.Contains("_home.CancelPendingQueries()", wrapper, StringComparison.Ordinal);
         Assert.Contains("_universal?.CancelPendingQueries()", page, StringComparison.Ordinal);
         Assert.Contains("await _universal.RefreshVisibleTitlesAsync()", page, StringComparison.Ordinal);
-        Assert.Contains("GameLibraryPage.CancelExpensiveWork()", shell, StringComparison.Ordinal);
+        Assert.Contains("GameLibraryPageIfCreated?.CancelExpensiveWork()", shell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class ProfileLifecycleSourceContractTests
         Assert.Contains("_candidateEvaluationPoll?.Stop()", hub, StringComparison.Ordinal);
         Assert.Contains("_startPoll?.Stop()", hub, StringComparison.Ordinal);
         Assert.Contains("!_refreshBusy && !_startHubLoaded", hub, StringComparison.Ordinal);
-        Assert.Contains("ModelHubPage.OnHidden()", shell, StringComparison.Ordinal);
+        Assert.Contains("visibleHub.OnHidden()", shell, StringComparison.Ordinal);
         Assert.Contains("if (CorporateMode.IsActive) advanced = false", hub, StringComparison.Ordinal);
     }
 

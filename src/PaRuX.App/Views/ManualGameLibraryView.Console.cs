@@ -16,6 +16,16 @@ using Windows.Storage.Pickers;
 namespace PaRuX.Views;
 public sealed partial class ManualGameLibraryView
 {
+    /// <summary>Tints the library with the active extension theme's background (only when its appearance matches the app theme).</summary>
+    private void ApplyLibraryThemeBackground()
+    {
+        string? hex = LibraryThemeState.BackgroundHex(ActualTheme == ElementTheme.Dark);
+        if (hex is not null && GameExtensionManifestValidator.TryParseHex(hex, out (byte R, byte G, byte B) c))
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, c.R, c.G, c.B));
+        else
+            ClearValue(BackgroundProperty);
+    }
+
     private void BuildGamingStrip()
     {
         _gamingStripText.Text = T("Gaming mode is active. AI is off.", "Modalità Gaming attiva. L'AI è spenta.");
@@ -109,7 +119,20 @@ public sealed partial class ManualGameLibraryView
 
     /// <summary>Controller-first focus target; reuses the exact same UI actions
     /// as desktop and never installs an input remapper.</summary>
-    public void FocusConsoleHome() => _gamingStatusRefresh.Focus(FocusState.Programmatic);
+    public void FocusConsoleHome()
+    {
+        // TV mode starts on the first game; with an empty library (or before the list is realized) the status button is the fallback.
+        if (_universal?.FocusPausedResume() == true) return;   // a paused game comes first
+        if (_universal?.FocusFirstGame() == true) return;
+        _gamingStatusRefresh.Focus(FocusState.Programmatic);
+        // The tiles realize a moment after the page shows: try once more shortly after.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            // Only if nothing moved the focus meanwhile: never pull it away from a user who already started navigating.
+            if (XamlRoot is not null && ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), _gamingStatusRefresh))
+                _ = _universal?.FocusFirstGame();
+        });
+    }
 
     /// <summary>While a consent dialog or command is active, Console-wide B/Escape
     /// must not tear down the fullscreen presenter beneath that interaction.</summary>
@@ -169,7 +192,12 @@ public sealed partial class ManualGameLibraryView
     }
 
     /// <summary>Console Menu button: jump to the filter field, where A/Y opens the on-screen keyboard.</summary>
-    public void FocusSearch() => _filter.Focus(FocusState.Programmatic);
+    public void FocusSearch()
+    {
+        // The visible search field is the Gaming home one; the legacy filter box is the fallback.
+        if (_universal?.FocusSearch() == true) return;
+        _filter.Focus(FocusState.Programmatic);
+    }
 
     /// <summary>Leaving the Games workspace cancels any expensive local hash
     /// before the next workspace resumes interactive AI activity.</summary>

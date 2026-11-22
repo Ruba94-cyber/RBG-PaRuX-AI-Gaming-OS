@@ -184,7 +184,10 @@ namespace PaRuX.Views
             {
                 // OnShown already starts the first fetch. Do not issue the same
                 // 15-request refresh twice on initial navigation.
-                if (Visibility == Visibility.Visible && !_refreshBusy && !_startHubLoaded)
+                // The page is now created when the owner first opens it, so Loaded fires AFTER OnShown/OnShownSearching has already
+                // started (or deliberately skipped) the first fetch. A second refresh here overwrote the status and search the
+                // caller had just set (real-app FlaUI: the specialist-search handoff lost its status text).
+                if (Visibility == Visibility.Visible && !_refreshBusy && !_startHubLoaded && !_shownByCaller)
                     await RefreshAllAsync();
             };
 #if DEBUG
@@ -224,8 +227,11 @@ namespace PaRuX.Views
             _startPoll?.Stop();
         }
 
+        private bool _shownByCaller;
+
         public async void OnShown()
         {
+            _shownByCaller = true;
             _firstModelHandoffRepoId = null;
             _firstModelHandoffQuantHint = null;
             await RefreshAllAsync();
@@ -252,6 +258,7 @@ namespace PaRuX.Views
         public async void OnShownSearching(string repoId, string? quantizationHint = null)
         {
             if (string.IsNullOrWhiteSpace(repoId)) return;
+            _shownByCaller = true;
             // The results of a specific search live on "Chat models"; landing on the Start board would hide them.
             ShowHubTab(ModelHubTab.Text);
 

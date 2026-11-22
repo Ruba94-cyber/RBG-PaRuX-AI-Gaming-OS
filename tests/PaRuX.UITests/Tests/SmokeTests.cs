@@ -195,6 +195,58 @@ public sealed class SmokeTests
         }
     }
 
+    [Fact, Trait("Category", "Regression"), Trait("Category", "CodingAgent"), Trait("Category", "FlaUI")]
+    public void Applied_coding_task_changes_can_be_undone_from_the_card_and_an_edited_file_blocks_the_undo()
+    {
+        const string testName = nameof(Applied_coding_task_changes_can_be_undone_from_the_card_and_an_edited_file_blocks_the_undo);
+        using var app = new UiTestApplication(testName, enableCompletedCodingTaskApplyFixture: true);
+        try
+        {
+            string target = app.CompletedCodingApplyRepositoryRoot!;
+            AutomationElement? applyButton = null;
+            UiWait.For(() =>
+            {
+                applyButton = app.FindRawDescendant(app.MainWindow, element =>
+                    element.Properties.ControlType.ValueOrDefault == ControlType.Button
+                    && element.Properties.Name.ValueOrDefault == "Apply changes to project");
+                return applyButton != null;
+            }, "completed coding-task apply button");
+            applyButton!.Patterns.Invoke.Pattern.Invoke();
+            UiWait.For(() => app.FindRawDescendant(app.MainWindow, element =>
+                    (element.Properties.Name.ValueOrDefault ?? string.Empty).Contains("created-by-agent.txt", StringComparison.Ordinal)) != null,
+                "apply confirmation lists the new file");
+            ClickButtonNamed(app, "Apply changes");
+            UiWait.For(() => File.Exists(Path.Combine(target, "created-by-agent.txt")), "patch applied");
+
+            // The card now offers the undo; the owner edits an applied file first, so the undo must refuse and change nothing.
+            UiWait.For(() => app.FindRawDescendant(app.MainWindow, element =>
+                    element.Properties.ControlType.ValueOrDefault == ControlType.Button
+                    && element.Properties.Name.ValueOrDefault == "Undo applied changes") != null, "undo button after apply");
+            string edited = File.ReadAllText(Path.Combine(target, "created-by-agent.txt")) + "owner edit\n";
+            File.WriteAllText(Path.Combine(target, "created-by-agent.txt"), edited);
+            ClickButtonNamed(app, "Undo applied changes");
+            UiWait.For(() => app.FindRawDescendant(app.MainWindow, element =>
+                    (element.Properties.Name.ValueOrDefault ?? string.Empty).Contains("Nothing was changed", StringComparison.Ordinal)) != null,
+                "refusal notice in the chat");
+            Assert.Equal(edited, File.ReadAllText(Path.Combine(target, "created-by-agent.txt")));
+
+            // Restore the owner edit away: the undo now works and removes exactly what was applied.
+            File.WriteAllText(Path.Combine(target, "created-by-agent.txt"), edited.Replace("owner edit\n", string.Empty, StringComparison.Ordinal));
+            ClickButtonNamed(app, "Undo applied changes");
+            UiWait.For(() => !File.Exists(Path.Combine(target, "created-by-agent.txt"))
+                    && !File.Exists(Path.Combine(target, "created-binary-by-agent.bin")), "applied files removed by the undo");
+            Assert.Equal("baseline from FlaUI\n", File.ReadAllText(Path.Combine(target, "apply-target.txt")).Replace("\r\n", "\n", StringComparison.Ordinal));
+            Assert.Equal(app.CompletedCodingApplyBaselineCommit, RunGit(target, "rev-parse", "HEAD").Trim());
+            Assert.Equal(string.Empty, RunGit(target, "status", "--porcelain=v1").Trim());
+            app.CaptureSnapshot("applied-changes-undone");
+        }
+        catch (Exception ex)
+        {
+            app.CaptureFailure(testName, ex);
+            throw;
+        }
+    }
+
     [Fact, Trait("Category", "Regression"), Trait("Category", "Chat"), Trait("Category", "Projects")]
     public void Simple_chat_can_clear_a_selected_code_folder_and_persist_the_reset()
     {

@@ -105,6 +105,25 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Accent color" loc:Loc.ItText="Colore di accento" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                                <TextBlock x:Name="AccentStatusText" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                <ComboBox x:Name="AccentCombo" AutomationProperties.AutomationId="Settings_Accent_ComboBox" AutomationProperties.Name="Accent color" loc:Loc.ItName="Colore di accento" MinWidth="200"
+                                          CornerRadius="{StaticResource PaRuXRadiusSmall}" SelectionChanged="AccentCombo_SelectionChanged" />
+                                <TextBox x:Name="AccentCustomBox" AutomationProperties.AutomationId="Settings_Accent_CustomHex" AutomationProperties.Name="Custom accent color" loc:Loc.ItName="Colore di accento personalizzato"
+                                         PlaceholderText="#2563EB" MaxLength="7" Visibility="Collapsed" TextChanged="AccentCustomBox_TextChanged" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Style="{StaticResource PaRuXDividerStyle}" Margin="0,12,0,12" />
+
+                        <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock Text="Language" loc:Loc.ItText="Lingua" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                                 <TextBlock x:Name="LanguageHint"
                                     Text="English is the default. Italian is available as an alternative." loc:Loc.ItText="L&#x27;inglese è la lingua predefinita. L&#x27;italiano è disponibile in alternativa."
@@ -233,6 +252,25 @@
                                           AutomationProperties.AccessibilityView="Control"
                                           Grid.Column="1" VerticalAlignment="Center" MinWidth="0" OnContent="" OffContent=""
                                           Toggled="VoiceAutoSendSwitch_Toggled" />
+                        </Grid>
+
+                        <Border Style="{StaticResource PaRuXDividerStyle}" Margin="0,12,0,12" />
+
+                        <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Remove hesitation sounds from dictation" loc:Loc.ItText="Rimuovi i suoni di esitazione dalla dettatura" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                                <TextBlock Text="Off by default. When on, spoken um, uh, er and hmm are dropped from the transcript; no other word is changed. Dictation runs on this PC; hold the microphone button (or Ctrl+Space) to talk." loc:Loc.ItText="Disattivato di default. Se attivo, gli um, uh, er e hmm pronunciati vengono tolti dalla trascrizione; nessun'altra parola viene modificata. La dettatura gira su questo PC; tieni premuto il pulsante del microfono (o Ctrl+Spazio) per parlare." Style="{StaticResource PaRuXCaptionTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="DictationFillerSwitch"
+                                          AutomationProperties.AutomationId="Settings_DictationFillers_Toggle"
+                                          AutomationProperties.Name="Remove hesitation sounds from dictation" loc:Loc.ItName="Rimuovi i suoni di esitazione dalla dettatura"
+                                          AutomationProperties.AccessibilityView="Control"
+                                          Grid.Column="1" VerticalAlignment="Center" MinWidth="0" OnContent="" OffContent=""
+                                          Toggled="DictationFillerSwitch_Toggled" />
                         </Grid>
 
                         <Border Style="{StaticResource PaRuXDividerStyle}" Margin="0,12,0,12" />
@@ -414,6 +452,14 @@
                             <Button Grid.Column="2" Content="Use" loc:Loc.ItContent="Usa" Click="SetManualBackend_Click" />
                         </Grid>
                     </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ==================== Local OpenAI-compatible server (chat) ==================== -->
+            <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Models">
+                <TextBlock Text="LOCAL OPENAI-COMPATIBLE SERVER" loc:Loc.ItText="SERVER LOCALE COMPATIBILE CON OPENAI" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
+                <Border Style="{StaticResource PaRuXCardStyle}">
+                    <loc:OpenAiCompatibleProviderPanel />
                 </Border>
             </StackPanel>
 
@@ -1237,7 +1283,47 @@
                         <TextBlock x:Name="ConsoleAutoReturnExplanation" TextWrapping="Wrap"
                             Style="{StaticResource PaRuXCaptionTextStyle}"
                             Text="When enabled, PaRuX can bring its existing fullscreen Console window forward only after the directly launched game process closes and the Core verifies AI recovery. External launchers and uncertain child processes do not trigger this. Windows may deny foreground activation." loc:Loc.ItText="Se attivo, PaRuX può portare in primo piano la finestra Console a schermo intero già esistente solo dopo la chiusura del processo del gioco avviato direttamente e dopo che il Core ha verificato il ripristino dell&#x27;IA. Launcher esterni e processi figli incerti non attivano questa funzione. Windows può negare l&#x27;attivazione in primo piano." />
+                        <ToggleSwitch x:Name="ConsoleStartOnTvSwitch"
+                            Header="Start PaRuX directly in TV mode when the chosen TV is on" loc:Loc.ItHeader="Avvia PaRuX direttamente in modalità TV quando la TV scelta è accesa"
+                            AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartOnTv_Toggle"
+                            IsOn="False" Toggled="ConsoleStartOnTvSwitch_Toggled" />
+                        <TextBlock x:Name="ConsoleStartOnTvExplanation" TextWrapping="Wrap"
+                            Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back."
+                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro." />
+                        <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
+                            Header="When the TV is not connected, start" loc:Loc.ItHeader="Se la TV non è collegata, avvia"
+                            AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"
+                            SelectionChanged="ConsoleStartWithoutTvCombo_SelectionChanged">
+                            <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />
+                            <ComboBoxItem Content="Minimized" loc:Loc.ItContent="Ridotto a icona" Tag="minimized" />
+                        </ComboBox>
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="PadButtonsCard" Style="{StaticResource PaRuXCardStyle}">
+                    <StackPanel Spacing="{StaticResource PaRuXSpaceM}">
+                        <TextBlock x:Name="PadButtonsHeading" Text="Controller buttons" loc:Loc.ItText="Pulsanti del controller" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                        <TextBlock x:Name="PadButtonsIntro" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <ToggleSwitch x:Name="PadButtonsEnabledSwitch" Header="Use controller buttons for PaRuX actions" loc:Loc.ItHeader="Usa i pulsanti del controller per le azioni di PaRuX" IsOn="True"
+                            AutomationProperties.AutomationId="Settings_PadButtons_Enabled_Toggle" Toggled="PadButtonsEnabledSwitch_Toggled" />
+                        <ComboBox x:Name="PadButtonsPadCombo" MinWidth="360" Header="Pad" loc:Loc.ItHeader="Controller"
+                            AutomationProperties.AutomationId="Settings_PadButtons_Pad_Combo" SelectionChanged="PadButtonsPadCombo_SelectionChanged" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="PadButtonsRefreshButton" Content="Detect pads" loc:Loc.ItContent="Rileva i controller" AutomationProperties.AutomationId="Settings_PadButtons_Refresh_Button" Click="PadButtonsRefreshButton_Click" />
+                            <Button x:Name="PadButtonsDetectButton" Content="Detect button" loc:Loc.ItContent="Rileva pulsante" AutomationProperties.AutomationId="Settings_PadButtons_Detect_Button" Click="PadButtonsDetectButton_Click" />
+                            <Button x:Name="PadButtonsRestoreButton" Content="Restore defaults (this pad)" loc:Loc.ItContent="Ripristina predefiniti (questo controller)" AutomationProperties.AutomationId="Settings_PadButtons_Restore_Button" Click="PadButtonsRestoreButton_Click" />
+                            <Button x:Name="PadButtonsImportButton" Content="Import from legacy launcher config" loc:Loc.ItContent="Importa dalla configurazione del vecchio launcher" AutomationProperties.AutomationId="Settings_PadButtons_Import_Button" Click="PadButtonsImportButton_Click" />
+                        </StackPanel>
+                        <TextBlock x:Name="PadButtonsLive" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Live_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsStatus" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings_PadButtons_Status_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsConflicts" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.AutomationId="Settings_PadButtons_Conflicts_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <TextBlock x:Name="PadButtonsHeaderRow" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <StackPanel x:Name="PadButtonsTable" Spacing="4" />
+                        <TextBlock x:Name="PadButtonsTvHeading" Text="TV mode (Console navigation)" loc:Loc.ItText="Modalità TV (navigazione Console)" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                        <TextBlock x:Name="PadButtonsTvWarning" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.AutomationId="Settings_PadButtons_Tv_Warning_Text" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                        <StackPanel x:Name="PadButtonsTvTable" Spacing="4" />
+                        <Button x:Name="PadButtonsTvRestore" Content="Restore defaults (TV mode)" loc:Loc.ItContent="Ripristina predefiniti (modalità TV)" AutomationProperties.AutomationId="Settings_PadButtons_Tv_Restore_Button" Click="PadButtonsTvRestore_Click" />
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -1494,6 +1580,14 @@
                         <TextBlock x:Name="RagIndexStatus" Style="{StaticResource PaRuXCaptionTextStyle}" />
                         <StackPanel x:Name="KnowledgeSettingsPanel" Spacing="{StaticResource PaRuXSpaceS}" />
                     </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ==================== Websites, watched folders and search method ==================== -->
+            <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Chat Behavior">
+                <TextBlock Text="KNOWLEDGE: WEBSITES, WATCHED FOLDERS, SEARCH" loc:Loc.ItText="CONOSCENZA: SITI WEB, CARTELLE MONITORATE, RICERCA" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
+                <Border Style="{StaticResource PaRuXCardStyle}">
+                    <loc:KnowledgeWebPanel />
                 </Border>
             </StackPanel>
 

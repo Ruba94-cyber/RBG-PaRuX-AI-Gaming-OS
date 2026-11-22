@@ -388,6 +388,130 @@ public sealed class CodeWorktreeApplyServiceTests : IDisposable
     private static byte[] WithoutCarriageReturns(string path) =>
         File.ReadAllBytes(path).Where(value => value != (byte)0x0D).ToArray();
 
+    [Fact]
+    public async Task Undo_reverses_exactly_the_applied_patch_and_keeps_other_local_edits()
+    {
+        string state = Path.Combine(_root, "state");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        File.WriteAllText(Path.Combine(_worktree, "new.txt"), "new-file\n");
+        File.WriteAllText(Path.Combine(_repo, "unstaged.txt"), "my-own-edit\n");
+
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        Assert.NotNull(applied.UndoId);
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.True(undone.Success, undone.Message);
+        Assert.Equal("before\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+        Assert.Equal("before\n", File.ReadAllText(Path.Combine(_repo, "tracked.txt")));   // byte-exact: no line-ending drift
+        Assert.DoesNotContain("tracked.txt", Git(_repo, "status", "--porcelain"));         // Git sees it as untouched again
+        Assert.False(File.Exists(Path.Combine(_repo, "new.txt")));
+        Assert.Equal("my-own-edit\n", ReadNormalized(Path.Combine(_repo, "unstaged.txt")));   // the owner's own edit survives
+        Assert.Null(CodeWorktreeApplyService.LatestUndoId(_repo, state));                         // the kept patch is consumed
+        CodeApplyResult again = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+        Assert.False(again.Success);
+    }
+
+    [Fact]
+    public async Task Undo_refuses_and_changes_nothing_when_an_applied_file_was_edited_afterwards()
+    {
+        string state = Path.Combine(_root, "state-refuse");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        File.WriteAllText(Path.Combine(_repo, "tracked.txt"), "after, then edited by the owner\n");
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.False(undone.Success);
+        Assert.Contains("Nothing was changed", undone.Message);
+        Assert.Equal("after, then edited by the owner\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));   // still available once the file is restored
+    }
+
+    [Fact]
+    public async Task Undo_refuses_when_the_owner_committed_the_applied_changes()
+    {
+        string state = Path.Combine(_root, "state-head");
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+        Assert.True(applied.Success, applied.Message);
+        Git(_repo, "add", "tracked.txt");
+        Git(_repo, "commit", "-m", "owner committed the applied change");
+
+        CodeApplyResult undone = await CodeWorktreeApplyService.UndoAsync(applied.UndoId!, CancellationToken.None, state);
+
+        Assert.False(undone.Success);
+        Assert.Contains("different commit", undone.Message);
+        Assert.Equal("after\n", ReadNormalized(Path.Combine(_repo, "tracked.txt")));
+    }
+
+    [Fact]
+    public async Task Kept_patches_are_bounded_per_repository_and_orphans_are_cleaned()
+    {
+        string state = Path.Combine(_root, "state-bounds");
+        string dir = Path.Combine(state, "apply-undo");
+        Directory.CreateDirectory(dir);
+        string orphan = Path.Combine(dir, new string('a', 32) + ".patch");
+        File.WriteAllText(orphan, "stale");
+        File.SetLastWriteTimeUtc(orphan, DateTime.UtcNow.AddDays(-3));
+
+        var ids = new List<string>();
+        for (int i = 0; i < 7; i++)
+        {
+            File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "round-" + i + "\n");
+            CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+                _repo, _worktree, CancellationToken.None, undoStateDirectory: state);
+            Assert.True(applied.Success, applied.Message);
+            ids.Add(applied.UndoId!);
+            Git(_repo, "checkout", "--", "tracked.txt");   // back to the baseline so the next round applies cleanly
+        }
+
+        string[] kept = Directory.EnumerateFiles(dir, "*.json").Select(f => Path.GetFileNameWithoutExtension(f)).ToArray();
+        Assert.Equal(5, kept.Length);                                  // the per-repository cap
+        Assert.DoesNotContain(ids[0], kept);                           // the oldest went first
+        Assert.Contains(ids[6], kept);
+        Assert.False(File.Exists(orphan));                             // the stale orphan was removed
+    }
+
+    [Fact]
+    public async Task Corrupt_records_and_foreign_files_never_break_or_get_deleted_by_the_undo_store()
+    {
+        string state = Path.Combine(_root, "state-corrupt");
+        string dir = Path.Combine(state, "apply-undo");
+        Directory.CreateDirectory(dir);
+        string id = new string('b', 32);
+        File.WriteAllText(Path.Combine(dir, id + ".patch"), "x");
+        File.WriteAllText(Path.Combine(dir, id + ".json"), "{\"Id\":null,\"Repository\":null}");
+        string foreign = Path.Combine(dir, "notes.txt");
+        File.WriteAllText(foreign, "owner file");
+        File.SetLastWriteTimeUtc(foreign, DateTime.UtcNow.AddDays(-30));
+
+        File.WriteAllText(Path.Combine(_worktree, "tracked.txt"), "after\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            _repo, _worktree, CancellationToken.None, undoStateDirectory: state);   // prunes while a corrupt record exists
+
+        Assert.True(applied.Success, applied.Message);
+        Assert.NotNull(applied.UndoId);
+        Assert.True(File.Exists(foreign));
+        Assert.Equal(applied.UndoId, CodeWorktreeApplyService.LatestUndoId(_repo, state));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../../evil")]
+    [InlineData("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")]
+    public async Task Undo_rejects_unknown_or_malformed_ids(string id)
+    {
+        CodeApplyResult result = await CodeWorktreeApplyService.UndoAsync(id, CancellationToken.None, Path.Combine(_root, "state-none"));
+        Assert.False(result.Success);
+    }
+
     private static string ReadNormalized(string path) =>
         File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
 

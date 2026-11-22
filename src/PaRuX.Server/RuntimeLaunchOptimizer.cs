@@ -11,7 +11,9 @@ public sealed record RuntimeLaunchOptimization(
     string RuntimeTag,
     string HardwareKey,
     LaunchPlan? Plan = null,
-    LlamaPerformanceProfileDto? BaselineProfile = null);
+    LlamaPerformanceProfileDto? BaselineProfile = null,
+    string? DeviceReason = null,
+    bool DeviceCpuFallback = false);
 
 /// <summary>What the launch planner needs besides the profile. Production builds it from the live machine; tests supply it.</summary>
 public sealed record LaunchPlanContext(
@@ -109,8 +111,11 @@ public static class RuntimeLaunchOptimizer
 
         if (!hasCuda)
         {
-            // Vulkan0 is often the integrated GPU; choose the adapter with the most dedicated memory.
-            profile.Device = await VulkanDeviceSelector.ResolveAsync(inventory, ct).ConfigureAwait(false);
+            // Vulkan0 is often the integrated GPU: pick the best device that fits the model and KV cache (an explicit
+            // PARUX_LLAMA_DEVICE wins) and keep the reason so the launch can say why.
+            long requiredMib = (EstimateLoadedBytes(modelSize) + EstimateKvBytes(profile)) / MiB;
+            VulkanDeviceSelector.DeviceChoice deviceChoice = await VulkanDeviceSelector.ChooseAsync(inventory, requiredMib, null, ct).ConfigureAwait(false);
+            profile.Device = deviceChoice.Device ?? VulkanDeviceSelector.DefaultDevice;
             // Auto rather than a pinned single slot: measured on the iGPU reference machine,
             // "--parallel 1" cost ~4.1 s to first token against ~1.0 s when llama.cpp sized the
             // slots itself (which chose 4 slots while keeping the full per-slot context), with
@@ -119,7 +124,8 @@ public static class RuntimeLaunchOptimizer
             LaunchPlanContext? vulkanPlan = planLaunch
                 ? planContext ?? await BuildPlanContextAsync(modelPath, hasCuda, inventory, await ResolveLiveFreeDedicatedBytesAsync(inventory, ct).ConfigureAwait(false), runtimeTag, ct).ConfigureAwait(false)
                 : null;
-            return Finalize(modelPath, profile, "adaptive-default", workload, backend, runtimeTag, hardwareKey, vulkanPlan);
+            return Finalize(modelPath, profile, "adaptive-default", workload, backend, runtimeTag, hardwareKey, vulkanPlan,
+                deviceChoice.Reason, deviceChoice.CpuFallback);
         }
 
         List<GpuPerformanceTelemetryDto> cuda = await new GpuPerformanceTelemetryService()
@@ -240,7 +246,21 @@ public static class RuntimeLaunchOptimizer
         string backend,
         string runtimeTag,
         string hardwareKey,
-        LaunchPlanContext? planContext = null)
+        LaunchPlanContext? planContext = null,
+        string? deviceReason = null,
+        bool cpuFallback = false) =>
+        FinalizeCore(modelPath, profile, source, workload, backend, runtimeTag, hardwareKey, planContext)
+            with { DeviceReason = deviceReason, DeviceCpuFallback = cpuFallback };
+
+    private static RuntimeLaunchOptimization FinalizeCore(
+        string modelPath,
+        LlamaPerformanceProfileDto profile,
+        string source,
+        string workload,
+        string backend,
+        string runtimeTag,
+        string hardwareKey,
+        LaunchPlanContext? planContext)
     {
         ContextPreferenceLaunch.ApplyTo(profile, modelPath);
         if (planContext == null)
@@ -475,8 +495,13 @@ public static class RuntimeLaunchOptimizer
         if (split == "tensor")
             throw new InvalidDataException("Experimental tensor-split launch requires the dedicated validated topology path.");
 
+        bool noHealthyDevice = false;
         if (!hasCuda && string.IsNullOrWhiteSpace(profile.Device))
-            args.AddRange(["--device", "Vulkan0"]);
+        {
+            VulkanDeviceSelector.DeviceChoice choice = VulkanDeviceSelector.ResolveBlockingChoice();
+            noHealthyDevice = choice.CpuFallback;
+            if (!noHealthyDevice) args.AddRange(["--device", choice.Device ?? VulkanDeviceSelector.DefaultDevice]);
+        }
 
         // Routed-expert placement is set only by the launch planner, after the runtime build's flag was verified.
         if (profile.CpuMoeLayers > 0) args.AddRange(["--n-cpu-moe", profile.CpuMoeLayers.ToString()]);
@@ -484,7 +509,8 @@ public static class RuntimeLaunchOptimizer
 
         AppendSpeculativeArguments(args, profile);
         if (profile.BackendSampling) args.Add("--backend-sampling");
-        return args;
+        // Every GPU device failed its health probe: the same arguments rewritten for the CPU, like the main launch path does.
+        return noHealthyDevice ? ToCpuFallbackArguments(args) : args;
     }
 
     /// <summary>
@@ -596,6 +622,14 @@ public static class RuntimeLaunchOptimizer
             args.AddRange(["--spec-draft-model", profile.SpeculativeDraftModelPath!]);
         if (!string.IsNullOrWhiteSpace(profile.SpeculativeDraftDevice))
             args.AddRange(["--spec-draft-device", profile.SpeculativeDraftDevice!]);
+    }
+
+    /// <summary>Coarse KV-cache size for the device-fit check (about 112 KiB per token at f16, about half that at q8_0). The launch
+    /// planner does the precise fit once a device is chosen.</summary>
+    internal static long EstimateKvBytes(LlamaPerformanceProfileDto profile)
+    {
+        double perToken = 112d * 1024 * (string.Equals(profile.CacheTypeK, "q8_0", StringComparison.OrdinalIgnoreCase) ? 0.53 : 1.0);
+        return (long)(Math.Max(0, profile.ContextSize) * perToken);
     }
 
     internal static long EstimateLoadedBytes(long modelSizeBytes)

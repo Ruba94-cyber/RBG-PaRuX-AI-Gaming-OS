@@ -72,10 +72,19 @@ namespace PaRuX
                 mutexName += ".UITest." + testScope;
             }
 #endif
+            // "PaRuX.exe --play key" comes from a desktop or Steam shortcut for one library game.
+            bool hasPlayRequest = PaRuX.Contracts.GameLaunchRequestChannel.TryParseCommandLine(Environment.GetCommandLineArgs(), out string playTitleKey);
+
             _singleInstanceMutex = new Mutex(true, mutexName, out createdNew);
             if (!createdNew)
             {
                 Log.Write("PaRuX already running - activating existing instance and exiting.");
+                if (hasPlayRequest)
+                {
+                    // Hand the request to the running instance; it shows the normal Play confirmation.
+                    bool queued = PaRuX.Contracts.GameLaunchRequestChannel.TrySubmit(AppPaths.PaRuXRoot, playTitleKey, out _);
+                    Log.Write("Game shortcut request " + (queued ? "handed to the running instance." : "could not be queued."));
+                }
                 ActivateExistingInstance();
                 Environment.Exit(0);
                 return;
@@ -88,6 +97,8 @@ namespace PaRuX
             try
             {
                 AppPaths.EnsureCreated();
+                // Read the sidebar history on a worker while the window is built (consumed by the first RefreshHistory).
+                HistoryStore.BeginPreload();
                 SettingsStore.Current.Load();
                 // English is the base language; Italian only when chosen in Settings (not from the Windows language).
                 PaRuX.Services.UiLanguage.Apply(SettingsStore.Current.Data.UiLanguage);
@@ -97,13 +108,6 @@ namespace PaRuX
                 SetupProfilePlan setup = SetupProfilePolicy.Plan(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId));
                 if (setup.StartLocalAi) LocalAiController.Current.StartWatching();
                 if (setup.StartGaming) GamingManager.Current.Start();
-                if (setup.StartAgentWorkers)
-                {
-                    AgentCodingWorkerService.Current.Start();
-                    AgentBinaryAnalysisWorkerService.Current.Start();
-                    UiVerificationWorkerService.Current.Start();
-                    ComputerUseWorkerService.Current.Start();
-                }
                 SetupProfileRuntime.MarkStartedBy(setup);
                 Log.Write("PaRuX starting (setup profile: " + SetupProfilePolicy.ToStorage(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId)) + ").");
 
@@ -116,15 +120,26 @@ namespace PaRuX
                     if (!uiQueue.TryEnqueue(ExitApplication)) Environment.Exit(0);
                 });
 
-                BubbleWin = new BubbleWindow();
-                BubbleWin.ApplyVisibilityMode();
+                // Shortcut requests: later ones arrive through the event; one given on this launch (or left in the
+                // queue by an earlier launch that could not reach us) is handled now. Stale requests are dropped.
+                _playSignal = PaRuX.Contracts.GameLaunchRequestChannel.Listen(AppPaths.PaRuXRoot, () =>
+                    uiQueue.TryEnqueue(ProcessGameShortcutRequests));
+                if (hasPlayRequest) PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
+                uiQueue.TryEnqueue(ProcessGameShortcutRequests);
 
                 ApplyTheme();
 
-                // Start loading the selected text model as soon as the shell is usable. This is
-                // deliberately fire-and-forget: OFF and Gaming modes are respected by Core, while
-                // startup remains responsive and the first chat no longer pays avoidable idle time.
-                if (setup.StartLocalAi) _ = WarmLocalAiAsync();
+                // Console/TV start preference (opt-in): TV connected -> fullscreen Gaming library on it; otherwise the chosen
+                // fallback (normal window or minimized). Skipped when this launch is a game shortcut. Runs after the first paint.
+                if (!hasPlayRequest)
+                    uiQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _ = MainWin.ApplyConsoleStartupPreferenceAsync());
+
+                // Not needed for the first paint: the Quick Chat bubble window, the agent worker poll loops and the model
+                // warmup start once the dispatcher has drained the shell's own first layout work (Low priority). Gaming and
+                // Local AI watching (the hard-off safety path) still start above, before any window exists. Every user of
+                // BubbleWin is null-safe and the workers only start polling.
+                if (!uiQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, FinishDeferredStartup))
+                    FinishDeferredStartup();
             }
             catch (Exception ex)
             {
@@ -132,6 +147,60 @@ namespace PaRuX
                 try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
                 try { _singleInstanceMutex?.Dispose(); } catch { }
                 Environment.Exit(1);
+            }
+        }
+
+        private static IDisposable? _playSignal;
+
+        /// <summary>Non-first-paint startup work, run after the main window is shown (see OnLaunched).</summary>
+        private static void FinishDeferredStartup()
+        {
+            try
+            {
+                BubbleWin = new BubbleWindow();
+                BubbleWin.ApplyVisibilityMode();
+                ApplyTheme();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Deferred Quick Chat window creation failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            try { MainWin.StartPadActions(); }
+            catch (Exception ex) { Log.Write("PadActions start failed: " + ex.GetType().Name + ": " + ex.Message); }
+
+            // Honour a setup-profile switch or an exit that happened before this ran: start only what is still wanted.
+            if (IsShuttingDown) return;
+            // Start the model load (fire-and-forget; OFF and Gaming modes are respected by Core).
+            if (SetupProfileRuntime.Running.LocalAi) _ = WarmLocalAiAsync();
+            if (!SetupProfileRuntime.Running.AgentWorkers) return;
+            try
+            {
+                AgentCodingWorkerService.Current.Start();
+                AgentBinaryAnalysisWorkerService.Current.Start();
+                UiVerificationWorkerService.Current.Start();
+                ComputerUseWorkerService.Current.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Deferred agent worker start failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
+        /// <summary>Takes the queued "--play" requests and opens the first one. One game at a time: starting several
+        /// games from a burst of clicks would stack confirmation dialogs.</summary>
+        private static void ProcessGameShortcutRequests()
+        {
+            try
+            {
+                System.Collections.Generic.IReadOnlyList<string> keys = PaRuX.Contracts.GameLaunchRequestChannel.Drain(AppPaths.PaRuXRoot);
+                if (keys.Count == 0 || MainWin == null) return;
+                if (keys.Count > 1) Log.Write("Several game shortcut requests arrived together; only the first is opened.");
+                MainWin.OpenGameFromShortcut(keys[0]);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("ProcessGameShortcutRequests failed: " + ex.Message);
             }
         }
 
@@ -181,6 +250,8 @@ namespace PaRuX
         public static void ApplyTheme()
         {
             ElementTheme theme = CurrentElementTheme;
+            (string? accentId, string? accentHex) = PaRuX.Services.LibraryThemeState.EffectiveAccent(SettingsStore.Current.Data.AccentId, SettingsStore.Current.Data.AccentCustomHex);
+            PaRuX.Services.AccentApplier.Apply(accentId, accentHex);
 
             if (MainWin != null)
             {
@@ -217,6 +288,7 @@ namespace PaRuX
                 ChatSession.Current.Cancel();
                 ChatSession.Current.Persist();
                 Hotkey.Dispose();
+                PadActionListener.Current.Stop();
                 if (BubbleWin != null) BubbleWin.PersistPosition();
                 if (MainWin != null) MainWin.DisposeTray();
             }

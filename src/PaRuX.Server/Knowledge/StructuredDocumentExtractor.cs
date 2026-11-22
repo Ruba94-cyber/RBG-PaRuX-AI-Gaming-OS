@@ -561,6 +561,6 @@ internal sealed class TextFileExtractor : IDocumentExtractor
             new UTF8Encoding(false, true).GetString(sampleIsPartial ? sample[..Math.Max(0, sample.Length - 3)] : sample);
             return new UTF8Encoding(false);
         }
-        catch (DecoderFallbackException) { return Encoding.GetEncoding(1252); }
+        catch (DecoderFallbackException) { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); return Encoding.GetEncoding(1252); }
     }
 }

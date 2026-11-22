@@ -77,6 +77,9 @@
     <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\GamePadProfileStore.cs" Link="Gaming\GamePadProfileStore.cs" />
     <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\VirtualPadForwardingService.cs" Link="Gaming\VirtualPadForwardingService.cs" />
     <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\PadBinding.cs" Link="Gaming\PadBinding.cs" />
+    <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\PadFeel.cs" Link="Gaming\PadFeel.cs" />
+    <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\PadMappingPresets.cs" Link="Gaming\PadMappingPresets.cs" />
+    <Compile Include="..\PaRuX.Server\Orchestration\Gaming\Providers\VirtualPad\GenericRawPadMapping.cs" Link="Gaming\GenericRawPadMapping.cs" />
   </ItemGroup>
 
   <ItemGroup>

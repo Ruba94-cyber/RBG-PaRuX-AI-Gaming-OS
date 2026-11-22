@@ -37,6 +37,21 @@ public sealed partial class SettingsView
             ConsoleAutoReturnHomeSwitch.IsOn;
         SettingsStore.Current.Save();
     }
+    private void ConsoleStartOnTvSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        SettingsStore.Current.Data.ConsoleStartOnTvWhenPresent = ConsoleStartOnTvSwitch.IsOn;
+        SettingsStore.Current.Save();
+    }
+
+    private void ConsoleStartWithoutTvCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        string chosen = (ConsoleStartWithoutTvCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "normal";
+        SettingsStore.Current.Data.StartupWithoutTv = chosen == "minimized" ? "minimized" : "normal";
+        SettingsStore.Current.Save();
+    }
+
     private GamingDisplaySnapshotDto? _lastConsoleDisplaySnapshot;
 
     private void ConsoleDisplaysUseCurrent_Click(object sender, RoutedEventArgs e)
@@ -70,6 +85,13 @@ public sealed partial class SettingsView
         ConsoleAutoReturnHomeSwitch.Header = TvT(
             "Automatically show Console Home after a verified game exit (off by default)",
             "Mostra automaticamente la Home Console dopo la chiusura verificata del gioco (disattivo di base)");
+        ConsoleStartOnTvSwitch.Header = TvT(
+            "Start PaRuX directly in TV mode when the chosen TV is on",
+            "Avvia PaRuX direttamente in modalità TV quando la TV scelta è accesa");
+        ConsoleStartOnTvExplanation.Text = TvT(
+            "When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back.",
+            "All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro.");
+        ConsoleStartWithoutTvCombo.Header = TvT("When the TV is not connected, start", "Se la TV non è collegata, avvia");
         ConsoleAutoReturnExplanation.Text = TvT(
             "Only a verified directly launched process exit and completed AI recovery can trigger this. Manual Return, store handoffs and unknown child processes are ignored. Windows may deny foreground activation.",
             "Si attiva soltanto dopo la chiusura verificata di un processo avviato direttamente e il ripristino dell'AI. Il ritorno manuale, gli store e i processi secondari sconosciuti sono esclusi. Windows può impedire l'attivazione in primo piano.");
@@ -80,6 +102,9 @@ public sealed partial class SettingsView
                 SettingsStore.Current.Data.RouteVerifiedWindowedGamesToTv;
             ConsoleAutoReturnHomeSwitch.IsOn =
                 SettingsStore.Current.Data.AutoShowConsoleAfterVerifiedGameExit;
+            ConsoleStartOnTvSwitch.IsOn = SettingsStore.Current.Data.ConsoleStartOnTvWhenPresent;
+            ConsoleStartWithoutTvCombo.SelectedIndex =
+                string.Equals(SettingsStore.Current.Data.StartupWithoutTv, "minimized", StringComparison.Ordinal) ? 1 : 0;
         }
         finally { _syncingOwnedGameRouteSwitch = false; }
         _consoleTvSettingsInitialized = true;

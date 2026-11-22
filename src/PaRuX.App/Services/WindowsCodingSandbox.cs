@@ -56,6 +56,7 @@ namespace PaRuX.Services
         // safely run again; without this a single slow optional grant disabled every future
         // sandboxed command until the App restarted.
         private static Task? _aclBlockingOperation;
+        internal static readonly TimeSpan ToolingRootGrantTimeout = TimeSpan.FromSeconds(75);
         private static Task? _lastManagedAclTimeout;
         public enum NetworkMode
         {
@@ -200,6 +201,7 @@ namespace PaRuX.Services
             IntPtr appContainerSid = IntPtr.Zero;
             IntPtr internetCapabilitySid = IntPtr.Zero;
             IntPtr capabilityArray = IntPtr.Zero;
+            IntPtr processCapabilityArray = IntPtr.Zero;
             IntPtr attributeList = IntPtr.Zero;
             IntPtr securityCapabilitiesPtr = IntPtr.Zero;
             IntPtr environmentPtr = IntPtr.Zero;
@@ -233,6 +235,26 @@ namespace PaRuX.Services
 
                 appContainerSid = EnsureProfile(profileName, capabilityArray, capabilityCount);
                 string sid = new SecurityIdentifier(appContainerSid).Value;
+
+                // Read-only toolchain roots (a per-user Python, Node, JDK...) are granted ONCE to a PaRuX-owned capability SID that every
+                // coding sandbox token carries, instead of once per workspace profile. The per-profile grant rewrote every file below
+                // the interpreter for each new repository (about 90 s on a host with live antivirus), left one more ACE on the owner's
+                // software per workspace (214 on one Python install) and made the first command of every task slow.
+                bool needsTooling = CommandMayNeedReadOnlyToolingRoots(command);
+                (IntPtr Sid, string Text)? toolingCapability = needsTooling ? TryGetToolingCapability(networkMode == NetworkMode.InternetClient) : null;
+                int processCapabilityCount = capabilityCount + (toolingCapability.HasValue ? 1 : 0);
+                if (processCapabilityCount > 0)
+                {
+                    int entrySize = Marshal.SizeOf<SID_AND_ATTRIBUTES>();
+                    processCapabilityArray = Marshal.AllocHGlobal(entrySize * processCapabilityCount);
+                    int slot = 0;
+                    if (internetCapabilitySid != IntPtr.Zero)
+                        Marshal.StructureToPtr(new SID_AND_ATTRIBUTES { Sid = internetCapabilitySid, Attributes = SeGroupEnabled },
+                            processCapabilityArray + entrySize * slot++, false);
+                    if (toolingCapability.HasValue)
+                        Marshal.StructureToPtr(new SID_AND_ATTRIBUTES { Sid = toolingCapability.Value.Sid, Attributes = SeGroupEnabled },
+                            processCapabilityArray + entrySize * slot++, false);
+                }
                 EnsureWindowStationAndDesktopAppContainerAccess();
 
                 var setupClock = Stopwatch.StartNew();
@@ -245,8 +267,8 @@ namespace PaRuX.Services
                 long sandboxDirsMs = setupClock.ElapsedMilliseconds - workspaceMs;
                 await GrantPathsAccessAsync(EnumerateAncestors(sandboxDir), sid, "(RX)", required: false, cancellationToken).ConfigureAwait(false);
                 long ancestorsMs = setupClock.ElapsedMilliseconds - workspaceMs - sandboxDirsMs;
-                if (CommandMayNeedReadOnlyToolingRoots(command))
-                    await GrantReadOnlyToolingRootsAsync(sid, command, cancellationToken, root, networkMode == NetworkMode.InternetClient).ConfigureAwait(false);
+                if (needsTooling)
+                    await GrantReadOnlyToolingRootsAsync(toolingCapability?.Text ?? sid, sid, command, cancellationToken, root, networkMode == NetworkMode.InternetClient).ConfigureAwait(false);
                 string setupTimings = "workspace=" + workspaceMs + "ms sandboxDirs=" + sandboxDirsMs + "ms sandboxAncestors="
                     + ancestorsMs + "ms tooling=" + (setupClock.ElapsedMilliseconds - workspaceMs - sandboxDirsMs - ancestorsMs) + "ms";
 
@@ -300,8 +322,8 @@ namespace PaRuX.Services
                 SECURITY_CAPABILITIES capabilities = new()
                 {
                     AppContainerSid = appContainerSid,
-                    Capabilities = capabilityArray,
-                    CapabilityCount = capabilityCount,
+                    Capabilities = processCapabilityArray,
+                    CapabilityCount = processCapabilityCount,
                     Reserved = 0
                 };
                 securityCapabilitiesPtr = Marshal.AllocHGlobal(Marshal.SizeOf<SECURITY_CAPABILITIES>());
@@ -414,6 +436,7 @@ namespace PaRuX.Services
                 }
                 if (securityCapabilitiesPtr != IntPtr.Zero) Marshal.FreeHGlobal(securityCapabilitiesPtr);
                 if (capabilityArray != IntPtr.Zero) Marshal.FreeHGlobal(capabilityArray);
+                if (processCapabilityArray != IntPtr.Zero) Marshal.FreeHGlobal(processCapabilityArray);
                 if (internetCapabilitySid != IntPtr.Zero) LocalFree(internetCapabilitySid);
                 if (environmentPtr != IntPtr.Zero) Marshal.FreeHGlobal(environmentPtr);
                 if (appContainerSid != IntPtr.Zero) FreeSid(appContainerSid);
@@ -524,6 +547,68 @@ namespace PaRuX.Services
             catch { return false; }
             finally { _aclMutationGate.Release(); }
         }
+
+        /// <summary>Name of the PaRuX-owned capability that grants coding sandboxes read access to host toolchain roots.</summary>
+        internal const string ToolingReadCapabilityName = "parux.coding.tooling.read";
+
+        /// <summary>
+        /// Separate capability for runs with network access. The offline capability may be granted user-profile roots (npm caches
+        /// with registry tokens, ~/go); a network run must never carry it, so those grants cannot be read by code that can
+        /// also reach the Internet (security review of 7e1aa80b).
+        /// </summary>
+        internal const string ToolingReadNetworkCapabilityName = "parux.coding.tooling.read.net";
+
+        private static readonly object ToolingCapabilityLock = new();
+        private static (IntPtr Sid, string Text)? _toolingCapability;
+        private static (IntPtr Sid, string Text)? _toolingNetworkCapability;
+        private static bool _toolingCapabilityFailed, _toolingNetworkCapabilityFailed;
+
+        /// <summary>The shared tooling capability SID (derived from a fixed name, stable across runs and machines), cached for the process.</summary>
+        internal static (IntPtr Sid, string Text)? TryGetToolingCapability(bool network = false)
+        {
+            if (!OperatingSystem.IsWindows()) return null;
+            lock (ToolingCapabilityLock)
+            {
+                ref (IntPtr Sid, string Text)? cache = ref (network ? ref _toolingNetworkCapability : ref _toolingCapability);
+                ref bool failed = ref (network ? ref _toolingNetworkCapabilityFailed : ref _toolingCapabilityFailed);
+                if (cache.HasValue) return cache;
+                if (failed) return null;   // a failed derivation is not retried on every command
+                try
+                {
+                    if (!DeriveCapabilitySidsFromName(network ? ToolingReadNetworkCapabilityName : ToolingReadCapabilityName,
+                            out IntPtr groupSids, out uint groupCount, out IntPtr capabilitySids, out uint capabilityCount)
+                        || capabilityCount == 0)
+                    {
+                        failed = true;
+                        return null;
+                    }
+                    IntPtr sid = Marshal.ReadIntPtr(capabilitySids);   // kept for the life of the process (the arrays are a one-time allocation)
+                    string text = new SecurityIdentifier(sid).Value;
+                    LocalFreeSidArray(groupSids, groupCount, keepFirstOfArray: false);
+                    cache = (sid, text);
+                    return cache;
+                }
+                catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or ArgumentException
+                                               or Win32Exception or System.Runtime.InteropServices.SEHException or System.Runtime.InteropServices.MarshalDirectiveException)
+                {
+                    failed = true;
+                    return null;   // older Windows: fall back to the per-workspace grants
+                }
+            }
+        }
+
+        private static void LocalFreeSidArray(IntPtr array, uint count, bool keepFirstOfArray)
+        {
+            if (array == IntPtr.Zero) return;
+            for (uint i = keepFirstOfArray ? 1u : 0u; i < count; i++)
+                LocalFree(Marshal.ReadIntPtr(array, (int)i * IntPtr.Size));
+            LocalFree(array);
+        }
+
+        [DllImport("kernelbase.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeriveCapabilitySidsFromName(string capName, out IntPtr capabilityGroupSids, out uint capabilityGroupSidCount,
+            out IntPtr capabilitySids, out uint capabilitySidCount);
 
         private static IntPtr EnsureProfile(string profileName, IntPtr capabilities, int capabilityCount)
         {
@@ -928,7 +1013,10 @@ namespace PaRuX.Services
                     }
 
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+                    // An inheritable read grant on an interpreter/toolchain root rewrites every file below it; on a host with live
+                    // antivirus that exceeded 15 s, the grant was silently abandoned (and then backed off), and the agent's verifier
+                    // failed with "python is not recognized" for the whole task (real-model run). Those roots get a longer budget.
+                    timeoutCts.CancelAfter(rights == "(OI)(CI)(RX)" ? ToolingRootGrantTimeout : TimeSpan.FromSeconds(15));
 
                     var info = new ProcessStartInfo
                     {
@@ -1307,25 +1395,37 @@ namespace PaRuX.Services
             return candidates;
         }
 
-        private static async Task GrantReadOnlyToolingRootsAsync(string sid, string command, CancellationToken ct, string? workspaceRoot = null, bool networkEnabled = false)
+        private static async Task GrantReadOnlyToolingRootsAsync(string sharedSid, string workspaceSid, string command, CancellationToken ct, string? workspaceRoot = null, bool networkEnabled = false)
         {
             HashSet<string> candidates = ReadOnlyToolingRootCandidates(command, workspaceRoot, networkEnabled);
-            var ancestorPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string path in candidates)
-            {
-                DirectoryInfo? toolingParent = Directory.GetParent(path);
-                while (toolingParent != null && toolingParent.Parent != null)
-                {
-                    string safeParent = toolingParent.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    ancestorPaths.Add(safeParent);
-                    toolingParent = toolingParent.Parent;
-                }
-            }
+            // A directory taken from the command text is that workspace's own choice: it stays on the per-workspace SID and never
+            // becomes a grant every later sandbox inherits through the shared capability.
+            var commandDerived = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string exe in new[] { "node.exe", "python.exe", "python3.exe" })
+                if (ResolveExplicitExecutableDirectory(command, exe) is { Length: > 0 } explicitDirectory)
+                    commandDerived.Add(explicitDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var shared = new HashSet<string>(candidates.Where(c => !commandDerived.Contains(c.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))), StringComparer.OrdinalIgnoreCase);
+            var own = new HashSet<string>(candidates.Where(c => commandDerived.Contains(c.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))), StringComparer.OrdinalIgnoreCase);
 
-            // Read-only tooling roots and their ancestors contain user caches. Grant only this
-            // workspace's AppContainer rather than exposing them to ALL_APPLICATION_PACKAGES.
-            await GrantPathsAccessAsync(candidates, sid, "(OI)(CI)(RX)", required: false, ct).ConfigureAwait(false);
-            await GrantPathsAccessAsync(ancestorPaths, sid, "(RX)", required: false, ct).ConfigureAwait(false);
+            // Read-only tooling roots and their ancestors contain user caches. Grant only sandboxes of this app
+            // (the shared PaRuX capability, or this workspace's AppContainer) rather than ALL_APPLICATION_PACKAGES.
+            foreach ((HashSet<string> roots, string sid) in new[] { (shared, sharedSid), (own, workspaceSid) })
+            {
+                if (roots.Count == 0) continue;
+                var ancestorPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string path in roots)
+                {
+                    DirectoryInfo? toolingParent = Directory.GetParent(path);
+                    while (toolingParent != null && toolingParent.Parent != null)
+                    {
+                        string safeParent = toolingParent.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        ancestorPaths.Add(safeParent);
+                        toolingParent = toolingParent.Parent;
+                    }
+                }
+                await GrantPathsAccessAsync(roots, sid, "(OI)(CI)(RX)", required: false, ct).ConfigureAwait(false);
+                await GrantPathsAccessAsync(ancestorPaths, sid, "(RX)", required: false, ct).ConfigureAwait(false);
+            }
         }
 
         private static readonly HashSet<string> MSBuildDotNetVerbs = new(StringComparer.OrdinalIgnoreCase)

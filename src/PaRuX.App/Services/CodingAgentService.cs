@@ -1135,7 +1135,10 @@ namespace PaRuX.Services
                     if (hasExactFileApproval)
                     {
                         CodingAgentFileApproval.ConsumeApproval(checkpoint);
-                        SaveCheckpoint(step);
+                        // Persist the consumed approval with the steps COMPLETED so far. Saving "step" here made the dispatch journal
+                        // below reject this very action ("untracked or overlapping": proposedStep <= StepsTaken), so every approved
+                        // file change in Ask mode failed right after the owner approved it (found in a real-model run).
+                        SaveCheckpoint(step - 1);
                     }
 
                     bool waitingForFileApproval = askForFileApproval && !hasExactFileApproval;
@@ -1275,7 +1278,11 @@ namespace PaRuX.Services
                         else
                             RecordExecutedCheck(checkpoint, action.Command ?? string.Empty, outcome.Description);
                     }
-                    if (outcome.VerificationAttempted && verificationRequired)
+                    // A scoped verifier (an unmodified, tracked "verify" script or project covering the change) that PASSED is real
+                    // evidence even when discovery found no root-level check and cleared the requirement above: without this the task
+                    // ran the owner's own verifier successfully and was still recorded "unverified: checks exited 0 but no accepted
+                    // command" (real-model run, python src/verify.py exit 0).
+                    if (outcome.VerificationAttempted && (verificationRequired || outcome.VerificationSucceeded))
                     {
                         bool acceptedForCurrentWorkspace = outcome.VerificationSucceeded;
                         if (acceptedForCurrentWorkspace)

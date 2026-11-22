@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PaRuX.Contracts;
 using PaRuX.Services;
+using PaRuX.Views;
 
 namespace PaRuX
 {
@@ -64,7 +65,8 @@ namespace PaRuX
                 {
                     _dispatcher.TryEnqueue(() =>
                     {
-                        MediaEditSourceBridge.TryApplyToCreateView(CreatePage);
+                        if (EnsurePage(StudioWorkspace.Create) is CreateWorkspaceView createView)
+                            MediaEditSourceBridge.TryApplyToCreateView(createView);
                         ShowStudioWorkspace(StudioWorkspace.Create);
                     });
                 };
@@ -117,7 +119,7 @@ namespace PaRuX
             UpdatesNavItem.Visibility = advanced;
             RuntimeNavItem.Visibility = advanced;
             ChatPage.ApplyInterfaceMode(studio);
-            ModelHubPage.ApplyInterfaceMode(studio);
+            ModelHubPageIfCreated?.ApplyInterfaceMode(studio);
             ApplyModeTabVisibility();
 
             if (!studio && navigateHomeIfHidden && !IsGamingModeTab)
@@ -128,33 +130,22 @@ namespace PaRuX
         }
 
         private bool IsAdvancedWorkspaceVisible() =>
-            ModelRoutingPage.Visibility == Visibility.Visible
-            || LifecycleLabPage.Visibility == Visibility.Visible
-            || WorkflowPage.Visibility == Visibility.Visible
-            || ToolsAutomationPage.Visibility == Visibility.Visible
-            || ObservabilityPage.Visibility == Visibility.Visible
-            || UpdateManagerPage.Visibility == Visibility.Visible
-            || RuntimeManagerPage.Visibility == Visibility.Visible;
+            IsLazyPageVisible(StudioWorkspace.ModelRouting)
+            || IsLazyPageVisible(StudioWorkspace.Lifecycle)
+            || IsLazyPageVisible(StudioWorkspace.Workflows)
+            || IsLazyPageVisible(StudioWorkspace.Tools)
+            || IsLazyPageVisible(StudioWorkspace.Observability)
+            || IsLazyPageVisible(StudioWorkspace.Updates)
+            || IsLazyPageVisible(StudioWorkspace.Runtime);
 
         private void HideAllWorkspacePages()
         {
-            CreatePage.Visibility = Visibility.Collapsed;
-            ProjectsPage.Visibility = Visibility.Collapsed;
-            if (ModelHubPage.Visibility == Visibility.Visible)
-                ModelHubPage.OnHidden();
-            ModelHubPage.Visibility = Visibility.Collapsed;
-            if (DocumentSearchPage.Visibility == Visibility.Visible)
-                DocumentSearchPage.OnHidden();
-            DocumentSearchPage.Visibility = Visibility.Collapsed;
-            ModelRoutingPage.Visibility = Visibility.Collapsed;
-            LifecycleLabPage.Visibility = Visibility.Collapsed;
-            WorkflowPage.Visibility = Visibility.Collapsed;
-            ToolsAutomationPage.Visibility = Visibility.Collapsed;
-            ObservabilityPage.Visibility = Visibility.Collapsed;
-            UpdateManagerPage.Visibility = Visibility.Collapsed;
-            RuntimeManagerPage.Visibility = Visibility.Collapsed;
-            GameLibraryPage.CancelExpensiveWork();
-            GameLibraryPage.Visibility = Visibility.Collapsed;
+            if (ModelHubPageIfCreated is { Visibility: Visibility.Visible } visibleHub)
+                visibleHub.OnHidden();
+            if (ModelHubPageIfCreated is { } hub) hub.Visibility = Visibility.Collapsed;
+            HideLazyPages();
+            GameLibraryPageIfCreated?.CancelExpensiveWork();
+            if (GameLibraryPageIfCreated is { } games) games.Visibility = Visibility.Collapsed;
         }
 
         private bool _onboardingHandoffActive;
@@ -200,6 +191,53 @@ namespace PaRuX
         /// <summary>Opens the Runtime Manager workspace (engine installs), whichever interface mode is active.</summary>
         public void ShowRuntimeManager() => TryNavigateWorkspace("__runtime__");
 
+        /// <summary>
+        /// "PaRuX.exe --play key" (a desktop or Steam shortcut): bring PaRuX forward, open Games and run the normal Play
+        /// path for that title. The usual confirmation still comes first; nothing starts silently.
+        /// </summary>
+        internal void OpenGameFromShortcut(string titleKey)
+        {
+            bool setupOpen = OnboardingPage.Visibility == Visibility.Visible;
+            if (setupOpen || !IsWorkspaceAllowedForSetup("__games__"))
+            {
+                // Never dropped silently: the person clicked a shortcut and is told why nothing started.
+                Log.Write("Game shortcut not started: first-run setup is open or the Games workspace is off for this setup profile.");
+                App.ShowMainWindow();
+                _ = ShowShortcutNoticeAsync(setupOpen
+                    ? PaRuX.Services.UiText.Pick(
+                        "PaRuX is still being set up, so the game was not started. Finish the setup, then click the shortcut again.",
+                        "PaRuX è ancora in fase di configurazione, quindi il gioco non è stato avviato. Termina la configurazione, poi fai di nuovo clic sul collegamento.")
+                    : PaRuX.Services.UiText.Pick(
+                        "The Games area is turned off in your setup profile, so the game was not started. Change the profile in Settings to use game shortcuts.",
+                        "L'area Giochi è disattivata nel tuo profilo di configurazione, quindi il gioco non è stato avviato. Cambia profilo nelle Impostazioni per usare i collegamenti ai giochi."));
+                return;
+            }
+            App.ShowMainWindow();
+            ShowStudioWorkspace(StudioWorkspace.Games);
+            GameLibraryPage.OnShown();
+            _ = GameLibraryPage.PlayRequestedByShortcutAsync(titleKey);
+        }
+
+        private bool _shortcutNoticeOpen;
+
+        private async System.Threading.Tasks.Task ShowShortcutNoticeAsync(string message)
+        {
+            if (_shortcutNoticeOpen || Content?.XamlRoot is null) return;
+            _shortcutNoticeOpen = true;
+            try
+            {
+                await new Microsoft.UI.Xaml.Controls.ContentDialog
+                {
+                    XamlRoot = Content.XamlRoot,
+                    Title = PaRuX.Services.UiText.Pick("Game shortcut", "Collegamento al gioco"),
+                    Content = new Microsoft.UI.Xaml.Controls.TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                    CloseButtonText = "OK"
+                }.ShowAsync();
+            }
+            catch (Exception ex) { Log.Write("Shortcut notice failed: " + ex.Message); }
+            finally { _shortcutNoticeOpen = false; }
+        }
+
         private bool TryNavigateWorkspace(string tag)
         {
             // A link, keyboard action or UIA invoke must obey the SAME profile as the
@@ -220,15 +258,15 @@ namespace PaRuX
                     return true;
                 case "__create__":
                     ShowStudioWorkspace(StudioWorkspace.Create);
-                    CreatePage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Create);
                     return true;
                 case "__documents__":
                     ShowStudioWorkspace(StudioWorkspace.DocumentSearch);
-                    DocumentSearchPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.DocumentSearch);
                     return true;
                 case "__projects__":
                     ShowStudioWorkspace(StudioWorkspace.Projects);
-                    ProjectsPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Projects);
                     return true;
                 case "__modelhub__":
                     ShowStudioWorkspace(StudioWorkspace.ModelHub);
@@ -236,31 +274,31 @@ namespace PaRuX
                     return true;
                 case "__modelrouting__":
                     ShowStudioWorkspace(StudioWorkspace.ModelRouting);
-                    ModelRoutingPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.ModelRouting);
                     return true;
                 case "__lifecycle__":
                     ShowStudioWorkspace(StudioWorkspace.Lifecycle);
-                    LifecycleLabPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Lifecycle);
                     return true;
                 case "__workflows__":
                     ShowStudioWorkspace(StudioWorkspace.Workflows);
-                    WorkflowPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Workflows);
                     return true;
                 case "__tools__":
                     ShowStudioWorkspace(StudioWorkspace.Tools);
-                    ToolsAutomationPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Tools);
                     return true;
                 case "__observability__":
                     ShowStudioWorkspace(StudioWorkspace.Observability);
-                    ObservabilityPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Observability);
                     return true;
                 case "__updates__":
                     ShowStudioWorkspace(StudioWorkspace.Updates);
-                    UpdateManagerPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Updates);
                     return true;
                 case "__runtime__":
                     ShowStudioWorkspace(StudioWorkspace.Runtime);
-                    RuntimeManagerPage.OnShown();
+                    NotifyLazyPageShown(StudioWorkspace.Runtime);
                     return true;
                 case "__help__":
                     _ = ShowInAppHelpDialogAsync();
@@ -286,25 +324,25 @@ namespace PaRuX
             SyncModeTabToWorkspace(gaming: workspace == StudioWorkspace.Games);
             SetNavPaneVisible(true);
             ChatPage.Visibility = Visibility.Collapsed;
-            SettingsPage.Visibility = Visibility.Collapsed;
+            if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             OnboardingPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();
             SelectWorkspaceNavigationItem(NavigationItemFor(workspace));
 
             switch (workspace)
             {
-                case StudioWorkspace.Create: CreatePage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Projects: ProjectsPage.Visibility = Visibility.Visible; break;
+                case StudioWorkspace.Create: ShowLazyPage(StudioWorkspace.Create); break;
+                case StudioWorkspace.Projects: ShowLazyPage(StudioWorkspace.Projects); break;
                 case StudioWorkspace.ModelHub: ModelHubPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.ModelRouting: ModelRoutingPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Lifecycle: LifecycleLabPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Workflows: WorkflowPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Tools: ToolsAutomationPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Observability: ObservabilityPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Updates: UpdateManagerPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.Runtime: RuntimeManagerPage.Visibility = Visibility.Visible; break;
+                case StudioWorkspace.ModelRouting: ShowLazyPage(StudioWorkspace.ModelRouting); break;
+                case StudioWorkspace.Lifecycle: ShowLazyPage(StudioWorkspace.Lifecycle); break;
+                case StudioWorkspace.Workflows: ShowLazyPage(StudioWorkspace.Workflows); break;
+                case StudioWorkspace.Tools: ShowLazyPage(StudioWorkspace.Tools); break;
+                case StudioWorkspace.Observability: ShowLazyPage(StudioWorkspace.Observability); break;
+                case StudioWorkspace.Updates: ShowLazyPage(StudioWorkspace.Updates); break;
+                case StudioWorkspace.Runtime: ShowLazyPage(StudioWorkspace.Runtime); break;
                 case StudioWorkspace.Games: GameLibraryPage.Visibility = Visibility.Visible; break;
-                case StudioWorkspace.DocumentSearch: DocumentSearchPage.Visibility = Visibility.Visible; break;
+                case StudioWorkspace.DocumentSearch: ShowLazyPage(StudioWorkspace.DocumentSearch); break;
             }
         }
 
@@ -335,20 +373,20 @@ namespace PaRuX
 
         private string? ActiveWorkspaceTag()
         {
-            if (GameLibraryPage.Visibility == Visibility.Visible) return "__games__";
-            if (CreatePage.Visibility == Visibility.Visible) return "__create__";
-            if (ProjectsPage.Visibility == Visibility.Visible) return "__projects__";
-            if (ModelHubPage.Visibility == Visibility.Visible) return "__modelhub__";
-            if (DocumentSearchPage.Visibility == Visibility.Visible) return "__documents__";
-            if (ModelRoutingPage.Visibility == Visibility.Visible) return "__modelrouting__";
-            if (LifecycleLabPage.Visibility == Visibility.Visible) return "__lifecycle__";
-            if (WorkflowPage.Visibility == Visibility.Visible) return "__workflows__";
-            if (ToolsAutomationPage.Visibility == Visibility.Visible) return "__tools__";
-            if (ObservabilityPage.Visibility == Visibility.Visible) return "__observability__";
-            if (UpdateManagerPage.Visibility == Visibility.Visible) return "__updates__";
-            if (RuntimeManagerPage.Visibility == Visibility.Visible) return "__runtime__";
+            if (GameLibraryPageIfCreated is { Visibility: Visibility.Visible }) return "__games__";
+            if (IsLazyPageVisible(StudioWorkspace.Create)) return "__create__";
+            if (IsLazyPageVisible(StudioWorkspace.Projects)) return "__projects__";
+            if (ModelHubPageIfCreated is { Visibility: Visibility.Visible }) return "__modelhub__";
+            if (IsLazyPageVisible(StudioWorkspace.DocumentSearch)) return "__documents__";
+            if (IsLazyPageVisible(StudioWorkspace.ModelRouting)) return "__modelrouting__";
+            if (IsLazyPageVisible(StudioWorkspace.Lifecycle)) return "__lifecycle__";
+            if (IsLazyPageVisible(StudioWorkspace.Workflows)) return "__workflows__";
+            if (IsLazyPageVisible(StudioWorkspace.Tools)) return "__tools__";
+            if (IsLazyPageVisible(StudioWorkspace.Observability)) return "__observability__";
+            if (IsLazyPageVisible(StudioWorkspace.Updates)) return "__updates__";
+            if (IsLazyPageVisible(StudioWorkspace.Runtime)) return "__runtime__";
             if (ChatPage.Visibility == Visibility.Visible) return "__chat__";
-            if (SettingsPage.Visibility == Visibility.Visible) return "__settings__";
+            if (SettingsPageIfCreated is { Visibility: Visibility.Visible }) return "__settings__";
             return null;
         }
 

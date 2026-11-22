@@ -141,6 +141,8 @@ public sealed class LocalRuntimeService
             using var limit = new CancellationTokenSource(EnsureReadyTimeout);
             try
             {
+                // Re-read at run time: the owner may have turned Local AI off between scheduling and this point.
+                if (_process.GetMode() == "OFF" || _process.GamingActive) return;
                 RuntimeResult restored = await RunActionAsync("Ensure", limit.Token).ConfigureAwait(false);
                 if (!restored.Success) System.Diagnostics.Trace.TraceWarning("Reloading the model after Gaming: " + restored.Message);
             }

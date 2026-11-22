@@ -16,6 +16,25 @@ using Windows.Storage.Pickers;
 namespace PaRuX.Views;
 public sealed partial class ManualGameLibraryView
 {
+    /// <summary>
+    /// Starts the game a desktop or Steam shortcut named, through the normal Play path and its confirmation.
+    /// The workspace must already be shown. A reason is put in the status line when nothing started.
+    /// </summary>
+    public async Task PlayRequestedByShortcutAsync(string titleKey)
+    {
+        if (_universal is null) return;
+        try
+        {
+            string? problem = await _universal.PlayByKeyAsync(titleKey);
+            if (problem is not null) _status.Text = problem;
+        }
+        catch (Exception ex)
+        {
+            Log.Write("PlayRequestedByShortcutAsync failed: " + ex.Message);
+            _status.Text = T("The shortcut could not start the game: ", "Il collegamento non ha potuto avviare il gioco: ") + ex.Message;
+        }
+    }
+
     public async void OnShown()
     {
         ApplySetupProfilePresentation();

@@ -7,6 +7,12 @@ namespace PaRuX.Models
     {
         // New installations default to the approved dark graphite finish. Existing saved choices remain unchanged.
         public string Theme { get; set; } = "Dark";
+        /// <summary>Accent colour: "orbit" (the approved PRX Orbit identity, default), a preset id, or "custom" with <see cref="AccentCustomHex"/>.</summary>
+        public string AccentId { get; set; } = "orbit";
+        /// <summary>#RRGGBB for the "custom" accent; ignored otherwise. An invalid value falls back to Orbit.</summary>
+        public string? AccentCustomHex { get; set; }
+        /// <summary>Id of the enabled game extension whose library theme is applied on top of the accent (empty = none). The theme is dropped at start if the extension is no longer enabled and valid.</summary>
+        public string ActiveLibraryThemeExtensionId { get; set; } = string.Empty;
         /// <summary>Interface language: "en" (default, independent of the Windows display language) or "it".</summary>
         public string UiLanguage { get; set; } = "en";
         public bool StartWithWindows { get; set; }
@@ -58,12 +64,24 @@ namespace PaRuX.Models
         public string Hotkey { get; set; } = "Ctrl+Alt+Space";
         public string DefaultProfile { get; set; } = "AUTO";
 
+        /// <summary>Controller buttons: PaRuX actions per control and the Console/TV navigation overrides. Version tolerant; a missing or
+        /// corrupt value loads as the safe defaults (only a Stadia pad has default bindings).</summary>
+        public PaRuX.Services.PadActionSettings PadActions { get; set; } = new();
+
         /// <summary>Display roles are assigned by the user, never guessed from
         /// HDMI, resolution, EDID vendor or whether a panel is a television.
         /// Only one explicitly TV-marked display can host Console fullscreen.
         /// Windows display IDs may change after reconnecting cables.</summary>
         public List<ConsoleDisplayAssignment> ConsoleDisplays { get; set; } = new();
         public string ConsoleTargetDisplayId { get; set; } = string.Empty;
+
+        /// <summary>Opt-in: at launch, when the chosen Console TV (<see cref="ConsoleTargetDisplayId"/>) is connected, open directly in
+        /// Console/TV mode on that screen (the Gaming library), so the owner can play from the couch. Off by default.</summary>
+        public bool ConsoleStartOnTvWhenPresent { get; set; } = false;
+
+        /// <summary>What a launch does when <see cref="ConsoleStartOnTvWhenPresent"/> is on but the TV is NOT connected:
+        /// "normal" (the usual AI window in desktop mode, the default) or "minimized".</summary>
+        public string StartupWithoutTv { get; set; } = "normal";
 
         /// <summary>Opt-in through choosing a TV, with an independent off switch:
         /// attempt to move only verified, directly launched WINDOWED game processes.
@@ -115,6 +133,9 @@ namespace PaRuX.Models
         /// <summary>When on, a voice message recorded with the Chat microphone is sent right after transcription. Default off: the text is only placed in the prompt box.</summary>
         public bool SendVoiceMessagesAutomatically { get; set; }
 
+        /// <summary>Dictation clean-up: drop spoken hesitation sounds ("um", "uh", "ehm") from the transcript (off by default; no other word is changed).</summary>
+        public bool DictationRemoveFillers { get; set; }
+
         /// <summary>Coding agent may batch 2-6 independent read-only actions into one model step (default on).</summary>
         public bool CodingBatchReadEnabled { get; set; } = true;
 
@@ -148,6 +169,9 @@ namespace PaRuX.Models
         public bool NotifyOnGeneration { get; set; } = true;
         public bool NotifyOnDownloads { get; set; } = true;
         public bool NotifyOnInstalls { get; set; } = true;
+
+        /// <summary>Announce newly unlocked Steam / RetroAchievements achievements while a PaRuX-launched game runs (needs saved credentials and the Internet switch; on by default, owner can turn it off).</summary>
+        public bool AchievementToastsEnabled { get; set; } = true;
     }
 
     public sealed class EmulatorSetupSettings
