@@ -1468,6 +1468,7 @@ public sealed class LocalAiProcessManager
             args.AddRange(sampling);
             KeepLastValueFor(args, "--reasoning-effort");
             KeepLastValueFor(args, "--reasoning-budget");
+            LlamaLoadLogParser.EnsureLoadLogVerbosity(args);
 
             // The launch plan's known-good fallback: the same launch built from the pre-plan profile. It exists only when
             // a plan changed something, and the ladder tries it right after the planned primary fails its health check.
@@ -1490,6 +1491,7 @@ public sealed class LocalAiProcessManager
                     baselineArgs.AddRange(sampling);
                     KeepLastValueFor(baselineArgs, "--reasoning-effort");
                     KeepLastValueFor(baselineArgs, "--reasoning-budget");
+                    LlamaLoadLogParser.EnsureLoadLogVerbosity(baselineArgs);
                 }
                 catch (InvalidDataException) { baselineArgs = null; }
             }
@@ -1546,6 +1548,14 @@ public sealed class LocalAiProcessManager
             if (!string.IsNullOrWhiteSpace(optimization.DeviceReason))
                 _lastLaunchPlanExplanation = (_lastLaunchPlanExplanation + " GPU device: " + optimization.DeviceReason).Trim();
             var trace = new List<string>();
+            string primaryRuntimeDirectory = cudaRuntime ? LocalAiPaths.RuntimeCudaPath : LocalAiPaths.RuntimeVulkanPath;
+            int plannedRungCount = rungs.Count;
+            TextLaunchEngineMemory.Remembered? rememberedRung = TextLaunchEngineMemory.Shared.Recall(primaryRuntimeDirectory, model);
+            IReadOnlyList<TextLaunchLadder.Rung> rungsToRun = TextLaunchEngineMemory.StartFrom(rungs, rememberedRung);
+            if (rungsToRun.Count < plannedRungCount)
+                trace.Add("remembered working engine: starting at " + rungsToRun[0].Label + " (the primary engine failed for this model within the last "
+                    + (int)TextLaunchEngineMemory.Lifetime.TotalMinutes + " minutes)");
+            rungs = rungsToRun;
             RuntimeResult? firstFailure = null;
             RuntimeResult? lastFailure = null;
             for (int index = 0; index < rungs.Count; index++)
@@ -1566,6 +1576,7 @@ public sealed class LocalAiProcessManager
                 trace.Add(rung.Label + (attempt.Success ? ": ready" : ": failed (" + FirstLine(attempt.Message) + ")"));
                 if (attempt.Success)
                 {
+                    TextLaunchEngineMemory.Shared.Record(primaryRuntimeDirectory, model, rung, wasFirstPlannedRung: rungs.Count == plannedRungCount && index == 0);
                     VulkanDeviceSelector.ClearFailed(); // a healthy launch proves the devices work again
                     _lastTextLaunchTrace = trace.ToArray();
                     try { File.WriteAllText(LocalAiPaths.ActiveRoleFile, choice == "UNCENSORED" ? "uncensored" : "standard"); } catch { }
@@ -1573,6 +1584,7 @@ public sealed class LocalAiProcessManager
                     GamingTextMemory.Clear(); // a model is serving again, so nothing is waiting to be reloaded
                     return attempt;
                 }
+                if (rememberedRung is not null && index == 0) TextLaunchEngineMemory.Shared.Forget(primaryRuntimeDirectory, model);
                 firstFailure ??= attempt;
                 lastFailure = attempt;
                 // A Vulkan device whose launch never became healthy is skipped by the next device choice (bounded, ten minutes),
@@ -2178,6 +2190,7 @@ public sealed class LocalAiProcessManager
         args.AddRange(BuildLoraArguments(adapterPaths));
         KeepLastValueFor(args, "--reasoning-effort");
         KeepLastValueFor(args, "--reasoning-budget");
+        LlamaLoadLogParser.EnsureLoadLogVerbosity(args);
         return args;
     }
 

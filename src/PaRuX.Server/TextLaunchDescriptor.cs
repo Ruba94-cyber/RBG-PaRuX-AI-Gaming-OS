@@ -54,7 +54,8 @@ internal sealed record TextLaunchDescriptor(
     /// <summary>Ephemeral per-launch values; excluded from the identity (model bytes are bound separately).</summary>
     private static readonly HashSet<string> EphemeralValueFlags = new(StringComparer.Ordinal)
     {
-        "--model", "--alias", "--port", "--host", "--ui-config-file"
+        // -lv only raises llama-server's log verbosity (so the load log shows offloaded layers); it changes nothing the model computes.
+        "--model", "--alias", "--port", "--host", "--ui-config-file", "-lv"
     };
 
     private static readonly HashSet<string> EphemeralSwitches = new(StringComparer.Ordinal) { "--ui" };

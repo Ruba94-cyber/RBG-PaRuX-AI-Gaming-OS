@@ -6763,9 +6763,11 @@ namespace PaRuX.Views
                     }
                     if (GamingWorkloadsLabel != null)
                     {
-                        GamingWorkloadsLabel.Text = status.IsGamingActive
+                        string releaseNote = T(GamingReleaseVerificationText.English(status), GamingReleaseVerificationText.Italian(status));
+                        GamingWorkloadsLabel.Text = (status.IsGamingActive
                             ? T("AI Workloads: Releasing GPU resources for gaming", "Carichi di lavoro IA: rilascio delle risorse GPU per il gaming")
-                            : T("AI Workloads: Server active & ready", "Carichi di lavoro IA: server attivo e pronto");
+                            : T("AI Workloads: Server active & ready", "Carichi di lavoro IA: server attivo e pronto"))
+                            + (releaseNote.Length > 0 ? " - " + releaseNote : string.Empty);
                     }
                 }
 
