@@ -63,6 +63,21 @@ public sealed class PlayniteSessionDto
     public long PaRuXLaunchedClosedCounter { get; set; }
 }
 
+/// <summary>
+/// Pure return-to-AI policy. The caller captures the close counter before opening
+/// Playnite, so even a process that closes before the first UI poll is observed.
+/// Never bring PaRuX forward while another PaRuX-started Playnite is still alive.
+/// </summary>
+public static class PlayniteReturnWatchPolicy
+{
+    public static bool ShouldBringForward(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+}
+
 public sealed class PlayniteStatusDto
 {
     public PlayniteComponentDto Component { get; set; } = new();
