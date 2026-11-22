@@ -24,6 +24,23 @@ public sealed class KnowledgeSettings
     public bool StrictOffline { get; set; }
     /// <summary>"auto" (hybrid when the search model is installed) or "keyword" (never use the embedder).</summary>
     public string SearchMethod { get; set; } = KnowledgeSearchMethods.Auto;
+    /// <summary>Per-workspace retrieval mode ("keyword", "embedding", "hybrid"). A workspace with no entry uses the legacy <see cref="SearchMethod"/>.</summary>
+    public Dictionary<string, string> WorkspaceRetrievalModes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Chosen embedder id (<see cref="KnowledgeEmbedderCatalog"/>); null = the first installed one. Vectors are stored once per index, so this is index-wide.</summary>
+    public string? EmbedderId { get; set; }
+
+    /// <summary>The mode a workspace actually uses: its own choice, else the legacy search method (Auto = hybrid).</summary>
+    public string EffectiveMode(string? workspace)
+    {
+        if (WorkspaceRetrievalModes != null && WorkspaceRetrievalModes.TryGetValue(KnowledgeRetrievalModes.WorkspaceKey(workspace), out string? m) && KnowledgeRetrievalModes.IsValid(m))
+            return KnowledgeRetrievalModes.Normalize(m);
+        return KnowledgeSearchMethods.Normalize(SearchMethod) == KnowledgeSearchMethods.Keyword ? KnowledgeRetrievalModes.Keyword : KnowledgeRetrievalModes.Hybrid;
+    }
+
+    /// <summary>False only when every workspace (including the default) is keyword-only: then no vectors are computed or used.</summary>
+    public bool EmbeddingNeeded() =>
+        EffectiveMode(null) != KnowledgeRetrievalModes.Keyword
+        || (WorkspaceRetrievalModes ?? new()).Values.Any(v => KnowledgeRetrievalModes.IsValid(v) && !string.Equals(v, KnowledgeRetrievalModes.Keyword, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class KnowledgeSettingsStore
@@ -45,7 +62,13 @@ public sealed class KnowledgeSettingsStore
             if (_cache != null) return Clone(_cache);
             KnowledgeSettings s = new();
             try { if (File.Exists(_path)) s = JsonSerializer.Deserialize<KnowledgeSettings>(File.ReadAllText(_path), Json) ?? new(); }
-            catch (Exception) { s = new KnowledgeSettings(); }   // a corrupt file falls back to the safe defaults
+            catch (Exception)
+            {
+                // A corrupt file falls back to the safe defaults; the damaged copy is kept aside, never deleted.
+                s = new KnowledgeSettings();
+                try { File.Copy(_path, _path + ".corrupt", true); } catch (Exception) { }
+            }
+            s.WorkspaceRetrievalModes = new Dictionary<string, string>(s.WorkspaceRetrievalModes ?? new(), StringComparer.OrdinalIgnoreCase);
             _cache = s;
             return Clone(s);
         }
@@ -64,7 +87,8 @@ public sealed class KnowledgeSettingsStore
     }
 
     private static KnowledgeSettings Clone(KnowledgeSettings s) =>
-        new() { OcrEnabled = s.OcrEnabled, OcrLanguage = s.OcrLanguage, Profile = s.Profile, StrictOffline = s.StrictOffline, SearchMethod = s.SearchMethod };
+        new() { OcrEnabled = s.OcrEnabled, OcrLanguage = s.OcrLanguage, Profile = s.Profile, StrictOffline = s.StrictOffline, SearchMethod = s.SearchMethod,
+            WorkspaceRetrievalModes = new Dictionary<string, string>(s.WorkspaceRetrievalModes ?? new(), StringComparer.OrdinalIgnoreCase), EmbedderId = s.EmbedderId };
 }
 
 /// <summary>The single answer to "may this feature touch the network?". Corporate Lite is always offline.</summary>

@@ -21,6 +21,15 @@ namespace PaRuX.Services
     public sealed record KnowledgeSettingsView(bool OcrEnabled, bool StrictOffline, bool CorporateOffline, string Profile, bool ProfileIsAutomatic,
         string RecommendedProfile, int MemoryBudgetMb, int EmbeddingThreads, int TotalRamMb, bool? OcrAvailable, string? OcrReason, string OcrLanguages);
 
+    public sealed record KnowledgeEmbedderView(string Id, string Label, int Dimensions, bool Installed, bool Selected);
+
+    public sealed record KnowledgeRetrievalPlanView(string Workspace, string RequestedMode, string EffectiveMode, string? DegradedReason,
+        IReadOnlyList<KnowledgeEmbedderView> Embedders, bool RerankerInstalled, int TotalChunks, int CurrentVectors, int StaleVectors, int MissingVectors,
+        bool NeedsReembed, string ReembedState, int ReembedProcessed, int ReembedTotal, int ReembedRemaining);
+
+    public sealed record KnowledgeBenchmarkRow(string Mode, string? EmbedderModel, double Precision, double Recall, double Mrr, double MedianLatencyMs,
+        double P95LatencyMs, double DocumentsPerSecond, string? Note);
+
     /// <summary>The Core refused to add a folder: <see cref="Code"/> is "sensitive_blocked" or "consent_required".</summary>
     public sealed class SensitiveFolderException : Exception
     {
@@ -110,6 +119,45 @@ namespace PaRuX.Services
 
         public Task SaveSettingsAsync(bool? ocrEnabled, string? profile, bool? strictOffline, CancellationToken ct) =>
             SendAsync(HttpMethod.Put, "/api/v1/knowledge/settings", ct, new { ocrEnabled, profile, strictOffline });
+
+        public async Task<KnowledgeRetrievalPlanView> GetRetrievalPlanAsync(string? workspace, CancellationToken ct) =>
+            ParsePlan(await SendAsync(HttpMethod.Get, "/api/v1/knowledge/retrieval/plan" + (string.IsNullOrEmpty(workspace) ? string.Empty : "?workspace=" + Uri.EscapeDataString(workspace)), ct).ConfigureAwait(false));
+
+        public async Task<KnowledgeRetrievalPlanView> SetRetrievalAsync(string? workspace, string? mode, string? embedderId, CancellationToken ct) =>
+            ParsePlan(await SendAsync(HttpMethod.Put, "/api/v1/knowledge/retrieval", ct, new { workspace, mode, embedderId }).ConfigureAwait(false));
+
+        public Task StartReembedAsync(CancellationToken ct) => SendAsync(HttpMethod.Post, "/api/v1/knowledge/reembed", ct);
+        public Task CancelReembedAsync(CancellationToken ct) => SendAsync(HttpMethod.Post, "/api/v1/knowledge/reembed/cancel", ct);
+
+        /// <summary>"Check retrieval quality": runs keyword, embedding and hybrid on a synthetic labelled corpus in the Core.</summary>
+        public async Task<IReadOnlyList<KnowledgeBenchmarkRow>> RunBenchmarkAsync(CancellationToken ct)
+        {
+            JsonElement e = await SendAsync(HttpMethod.Post, "/api/v1/knowledge/benchmark", ct, new { documents = 60 }).ConfigureAwait(false);
+            var rows = new List<KnowledgeBenchmarkRow>();
+            if (e.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement r in e.EnumerateArray())
+                    rows.Add(new KnowledgeBenchmarkRow(Str(r, "mode"), NullableStr(r, "embedderModel"), Dbl(r, "precisionAtK"), Dbl(r, "recallAtK"), Dbl(r, "meanReciprocalRank"),
+                        Dbl(r, "medianLatencyMs"), Dbl(r, "p95LatencyMs"), Dbl(r, "documentsPerSecond"), NullableStr(r, "note")));
+            return rows;
+        }
+
+        private static KnowledgeRetrievalPlanView ParsePlan(JsonElement e)
+        {
+            var embedders = new List<KnowledgeEmbedderView>();
+            if (e.TryGetProperty("embedders", out JsonElement arr) && arr.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement x in arr.EnumerateArray())
+                    embedders.Add(new KnowledgeEmbedderView(Str(x, "id"), Str(x, "label"), Int(x, "dimensions"), Bool(x, "installed"), Bool(x, "selected")));
+            JsonElement emb = e.TryGetProperty("embedding", out JsonElement em) ? em : default;
+            JsonElement re = e.TryGetProperty("reembed", out JsonElement r2) ? r2 : default;
+            return new KnowledgeRetrievalPlanView(Str(e, "workspace"), Str(e, "requestedMode"), Str(e, "effectiveMode"), NullableStr(e, "degradedReason"), embedders,
+                Bool(e, "rerankerInstalled"), emb.ValueKind == JsonValueKind.Object ? Int(emb, "totalChunks") : 0, emb.ValueKind == JsonValueKind.Object ? Int(emb, "current") : 0,
+                emb.ValueKind == JsonValueKind.Object ? Int(emb, "stale") : 0, emb.ValueKind == JsonValueKind.Object ? Int(emb, "missing") : 0,
+                emb.ValueKind == JsonValueKind.Object && Bool(emb, "needsReembed"), re.ValueKind == JsonValueKind.Object ? Str(re, "state") : "idle",
+                re.ValueKind == JsonValueKind.Object ? Int(re, "processed") : 0, re.ValueKind == JsonValueKind.Object ? Int(re, "total") : 0,
+                re.ValueKind == JsonValueKind.Object ? Int(re, "remaining") : 0);
+        }
+
+        private static double Dbl(JsonElement e, string name) => e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
 
         /// <summary>Secure "delete everything": folders, index rows, FTS/trigram/vector entries and database files. Documents are never touched.</summary>
         public async Task<(int Files, int Chunks, bool DatabaseFilesRemoved)> DeleteEverythingAsync(CancellationToken ct)

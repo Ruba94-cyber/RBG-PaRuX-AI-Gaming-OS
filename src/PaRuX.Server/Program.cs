@@ -118,6 +118,7 @@ builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<RagStore>(sp =>
     new RagStore(sp.GetRequiredService<EmbeddingService>(), sp.GetRequiredService<RerankerService>()));
 builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => new LegacyMiniLmEmbeddingProvider(sp.GetRequiredService<EmbeddingService>()));
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog>(sp => new PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog(sp.GetServices<IRetrievalEmbeddingProvider>()));
 builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>()));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeJobService>();
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.WatchedFolderStore>();
