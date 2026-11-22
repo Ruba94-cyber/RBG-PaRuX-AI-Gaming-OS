@@ -181,6 +181,12 @@ public sealed class TrainingMetricSample
     public double? GradientNorm { get; set; }
     public double? LearningRate { get; set; }
     public double? Epoch { get; set; }
+    /// <summary>Throughput when the trainer logs it; null when unknown (never zero-filled).</summary>
+    public double? TokensPerSecond { get; set; }
+    /// <summary>Sampled GPU utilisation 0-100; null when no sampler could read it.</summary>
+    public double? GpuUtilPercent { get; set; }
+    /// <summary>Sampled VRAM in use, MiB; null when no sampler could read it.</summary>
+    public double? VramMib { get; set; }
 }
 
 public sealed class TrainingPlanRequest

@@ -57,6 +57,20 @@ namespace PaRuX.Services
         public Task<List<TrainingJobStatus>> ListJobsAsync(CancellationToken ct) =>
             SendAsync<List<TrainingJobStatus>>(HttpMethod.Get, "/api/v1/training/jobs", null, ct);
 
+        /// <summary>Raw run-history export from Core; <paramref name="format"/> is "csv" or "json".</summary>
+        public async Task<string> ExportHistoryAsync(string id, string format, CancellationToken ct)
+        {
+            ServerBootstrap server = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
+            string path = "/api/v1/training/jobs/" + Uri.EscapeDataString(id) + "/history?format=" + (format == "csv" ? "csv" : "json");
+            using var request = new HttpRequestMessage(HttpMethod.Get, server.Endpoint.TrimEnd('/') + path);
+            request.Headers.Add("X-PaRuX-Token", server.Token);
+            using HttpResponseMessage response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+            string body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw new LocalAiException("Training history export failed (" + (int)response.StatusCode + "): " + body);
+            return body;
+        }
+
         public Task<TrainingJobStatus> GetJobAsync(string id, CancellationToken ct) =>
             SendAsync<TrainingJobStatus>(HttpMethod.Get, "/api/v1/training/jobs/" + Uri.EscapeDataString(id), null, ct);
 

@@ -871,8 +871,54 @@ namespace PaRuX.Views
                     Grid.SetColumn(cancel, 1); row.Children.Add(cancel);
                 }
                 _trainingJobs.Children.Add(row);
+                if (job.History.Count > 0)
+                {
+                    var expander = new Expander
+                    {
+                        Header = T("Charts and history", "Grafici e cronologia"),
+                        HorizontalContentAlignment = HorizontalAlignment.Left
+                    };
+                    Id(expander, "LifecycleLab_TrainingCharts_Expander");
+                    var body = new StackPanel { Spacing = 6 };
+                    var charts = new TrainingChartPanel();
+                    charts.Render(job.History);
+                    body.Children.Add(charts);
+                    var exports = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    foreach (string fmt in new[] { "csv", "json" })
+                    {
+                        var exportButton = new Button { Content = T("Export ", "Esporta ") + fmt.ToUpperInvariant() };
+                        Id(exportButton, "LifecycleLab_ExportTrainingHistory_" + fmt);
+                        string jobId = job.Id, format = fmt;
+                        exportButton.Click += async (_, _) => await ExportTrainingHistoryAsync(jobId, format);
+                        exports.Children.Add(exportButton);
+                    }
+                    body.Children.Add(exports);
+                    expander.Content = body;
+                    _trainingJobs.Children.Add(expander);
+                }
             }
             if (jobs.Count == 0) _trainingJobs.Children.Add(new TextBlock { Text = T("No training jobs yet.", "Nessun job di training per ora.") });
+        }
+
+        private async Task ExportTrainingHistoryAsync(string jobId, string format)
+        {
+            if (App.MainWin == null) return;
+            try
+            {
+                string text = await TrainingLabClient.Current.ExportHistoryAsync(jobId, format, CancellationToken.None);
+                var picker = new Windows.Storage.Pickers.FileSavePicker
+                {
+                    SuggestedFileName = "training-" + jobId[..8],
+                    SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary
+                };
+                picker.FileTypeChoices.Add(format.ToUpperInvariant(), new List<string> { "." + format });
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
+                Windows.Storage.StorageFile? file = await picker.PickSaveFileAsync();
+                if (file == null) return;
+                await System.IO.File.WriteAllTextAsync(file.Path, text, new System.Text.UTF8Encoding(false));
+                _status.Text = T("Training history exported to ", "Cronologia del training esportata in ") + file.Path;
+            }
+            catch (Exception ex) { _status.Text = T("Training history export failed: ", "Esportazione della cronologia non riuscita: ") + ex.Message; }
         }
 
         private async Task InstallTrainingEngineAsync()
