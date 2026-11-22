@@ -154,6 +154,7 @@ Unranked, tracked: multi-user roles (design only, `docs/ROLES_AND_POLICY_DESIGN_
 - Touch: `src/PaRuX.Server/ChatProxyService.cs` (`ApplyContextPack` about line 1438, skill-instruction injection about 1341-1411, caller line 306), new test in `tests/PaRuX.Server.Tests/`.
 - Accept: a plain no-tool chat adds at most a bounded token count (target under 150) of system text; skills/tools text is injected only when the intent gate selects it (reuse `ToolSchemaIntentGate.cs`); behaviour for tool/RAG turns unchanged; the pack is byte-stable between requests so the prompt cache hits.
 - Tests: `ChatProxyService` unit test counting injected tokens for plain, RAG and tool turns; prefix-stability test (two requests share an identical system prefix).
+- Status 2026-11-22: the ~920 tokens were the built-in tool schemas, not the pack text; already omitted for short plain `general` turns by `ToolSchemaIntentGate` (commit 2cc5c56b, same day as the measurement). Offline check (`ChatContextPackTokenBudgetTests`): plain turn adds 0 system and 0 tool tokens (ceiling 150); a tool turn still carries 3 schemas, about 1343 estimated tokens, unchanged. TTFT re-measure on the 5080: NOT RUN.
 - GPU: no for the code; re-measure TTFT on the 5080 afterwards with `tools/perf-launch-bench.py` (slice 2).
 
 **2. Competitor performance runner (CG-bench)**
