@@ -743,3 +743,9 @@ DENY PUT /api/v1/gaming/sign-in-apps
 DENY GET /api/v1/training/jobs/{id}/history
 DENY GET /api/v1/internet/search-providers
 DENY POST /api/v1/internet/search-providers
+DENY GET /api/v1/knowledge/reembed
+DENY GET /api/v1/knowledge/retrieval/plan
+DENY POST /api/v1/knowledge/benchmark
+DENY POST /api/v1/knowledge/reembed
+DENY POST /api/v1/knowledge/reembed/cancel
+DENY PUT /api/v1/knowledge/retrieval
