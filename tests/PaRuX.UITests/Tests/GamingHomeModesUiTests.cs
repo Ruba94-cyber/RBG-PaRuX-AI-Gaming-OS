@@ -88,8 +88,12 @@ public sealed class GamingHomeModesUiTests
             UiWait.For(() => { double now = ScrollPercent(app); bool same = Math.Abs(now - before) < 0.01; before = now; Thread.Sleep(400); return same; }, "scroll offset settled");
             // A tile fully inside the viewport: refocusing a half-visible one would legitimately scroll it into view.
             var win = app.MainWindow.BoundingRectangle;
-            AutomationElement tile = Buttons(app, "GameTile_").First(t => !t.Properties.AutomationId.Value.Contains("Play_")
-                && !t.Properties.IsOffscreen.ValueOrDefault && t.BoundingRectangle.Top > win.Top + win.Height * 0.3 && t.BoundingRectangle.Bottom < win.Bottom - 40);
+            AutomationElement? picked = null;
+            UiWait.For(() => (picked = Buttons(app, "GameTile_").FirstOrDefault(t => !t.Properties.AutomationId.Value.Contains("Play_")
+                && !t.Properties.IsOffscreen.ValueOrDefault && t.BoundingRectangle.Width > 0
+                && t.BoundingRectangle.Top > win.Top + win.Height * 0.2 && t.BoundingRectangle.Bottom < win.Bottom - 40)) != null,
+                "a tile fully inside the viewport", TimeSpan.FromSeconds(15));
+            AutomationElement tile = picked!;
             string tileId = tile.Properties.AutomationId.Value;
             string key = tileId["GameTile_".Length..];
             tile.Patterns.Invoke.Pattern.Invoke();
