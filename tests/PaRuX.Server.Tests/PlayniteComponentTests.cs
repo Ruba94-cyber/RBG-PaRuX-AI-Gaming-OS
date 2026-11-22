@@ -310,6 +310,19 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void An_owned_process_exit_event_is_counted_only_once_even_if_it_is_reported_twice()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        long initial = l.ClosedCounter;
+
+        h.Last!.ExitNow();
+        h.Last.ExitNow();
+
+        Assert.Equal(initial + 1, l.ClosedCounter);
+    }
+
+    [Fact]
     public void Switch_closes_only_a_playnite_paRuX_started_and_starts_the_other_mode()
     {
         var (l, h, _, c, _) = Make();
