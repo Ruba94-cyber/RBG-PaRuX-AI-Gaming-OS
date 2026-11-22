@@ -112,6 +112,7 @@ public static class RuntimeHardwareEndpointExtensions
                 ActiveHasVisionSupport = shaped.ActiveHasVisionSupport,
                 LaunchPlanExplanation = shaped.LaunchPlanExplanation,
                 TextLaunchTrace = shaped.TextLaunchTrace,
+                TextLoad = shaped.TextLoad,
                 GpuAdapters = gpu.Adapters,
                 GpuDedicatedVideoMemoryTotalBytes = gpu.TotalDedicatedVideoMemoryBytes,
                 GpuDedicatedSystemMemoryTotalBytes = gpu.TotalDedicatedSystemMemoryBytes,
@@ -161,7 +162,8 @@ public static class RuntimeHardwareEndpointExtensions
         ActiveVisionProjectorPath = status.ActiveVisionProjectorPath,
         ActiveHasVisionSupport = status.ActiveHasVisionSupport,
         LaunchPlanExplanation = status.LaunchPlanExplanation,
-        TextLaunchTrace = status.TextLaunchTrace
+        TextLaunchTrace = status.TextLaunchTrace,
+        TextLoad = status.TextLoad
     };
 
     private static void MapPerformanceEndpoints(

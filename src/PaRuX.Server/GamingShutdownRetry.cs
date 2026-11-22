@@ -22,12 +22,27 @@ internal sealed class GamingShutdownRetry
 
     public int Failures => _failures;
 
+    /// <summary>Outcome of the latest post-release GPU check on the Guard retry path: verified / unverified / not_released, or null before any check.</summary>
+    public string? LastVerification { get; private set; }
+
+    /// <summary>MiB freed according to the latest check; null when unknown.</summary>
+    public long? LastVramReleasedMib { get; private set; }
+
+    /// <summary>Records what the verifier proved about the latest release attempt.</summary>
+    public void RecordVerification(string outcome, long? releasedMib)
+    {
+        LastVerification = outcome;
+        LastVramReleasedMib = releasedMib;
+    }
+
     /// <summary>Gaming Mode started: the first attempt is due now.</summary>
     public void Begin(DateTime nowUtc)
     {
         Pending = true;
         _failures = 0;
         LastFailure = null;
+        LastVerification = null;
+        LastVramReleasedMib = null;
         _nextAttemptUtc = nowUtc;
     }
 
@@ -55,5 +70,7 @@ internal sealed class GamingShutdownRetry
         Pending = false;
         _failures = 0;
         LastFailure = null;
+        LastVerification = null;
+        LastVramReleasedMib = null;
     }
 }

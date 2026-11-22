@@ -96,6 +96,8 @@ public sealed class RuntimeManagerHardwareStatus
     public bool ActiveHasVisionSupport { get; set; }
     public string LaunchPlanExplanation { get; set; } = string.Empty;
     public List<string> TextLaunchTrace { get; set; } = new();
+    /// <summary>Observed offload/VRAM report from the running text runtime's load log; the requested layer count is labelled as such.</summary>
+    public RuntimeTextLoadReport? TextLoad { get; set; }
 
     public List<GpuAdapterStatus> GpuAdapters { get; set; } = new();
     public long GpuDedicatedVideoMemoryTotalBytes { get; set; }

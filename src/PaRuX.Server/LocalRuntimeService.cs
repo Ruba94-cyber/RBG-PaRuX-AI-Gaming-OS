@@ -69,6 +69,15 @@ public sealed class LocalRuntimeService
     /// <summary>Registry of on-demand AI child groups the Gaming guard stops and reopens (see <see cref="GamingHardOffRegistry"/>).</summary>
     internal GamingHardOffRegistry HardOff => _process.HardOff;
 
+    /// <summary>PIDs of PaRuX-owned text/media inference processes alive right now (PID-file resolved, never a name scan).</summary>
+    internal IReadOnlyList<int> OwnedInferenceProcessIds()
+    {
+        var alive = new List<int>();
+        if (_process.GetTextProcessId() is int text) alive.Add(text);
+        if (_process.GetMediaProcessId() is int media) alive.Add(media);
+        return alive;
+    }
+
     /// <summary>
     /// Shared inference lease for an operation that uses the currently stable text resident without
     /// replacing it. Multiple callers may coexist; an already-queued exclusive GPU transition blocks

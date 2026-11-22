@@ -152,6 +152,32 @@ public sealed class LocalAiProcessManager
     /// was applied. Empty before any start. Every speed statement in it is labelled unmeasured.
     /// </summary>
     public string LastLaunchPlanExplanation => _lastLaunchPlanExplanation;
+
+    private static string? _lastTextRequestedGpuLayers;
+
+    /// <summary>What the offload actually looked like at the latest text load, parsed from llama-server's own log
+    /// (stdout+stderr of the current launch). The requested <c>--gpu-layers</c> rides along but is only a request.
+    /// <paramref name="vramUsedMib"/> is the whole-card used VRAM the caller sampled, when known.</summary>
+    internal RuntimeTextLoadReport ReadTextLoadReport(int? vramUsedMib)
+    {
+        string text = string.Empty;
+        foreach (string name in new[] { "llama-server.stderr.log", "llama-server.stdout.log" })
+        {
+            try
+            {
+                string path = Path.Combine(LocalAiPaths.LogsPath, name);
+                if (!File.Exists(path)) continue;
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream);
+                text += reader.ReadToEnd() + "\n";
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        RuntimeTextLoadReport report = LlamaLoadLogParser.Parse(text, Volatile.Read(ref _lastTextRequestedGpuLayers));
+        report.VramUsedMib = vramUsedMib;
+        return report;
+    }
     private string _lastLaunchPlanExplanation = string.Empty;
 
     /// <summary>How the current text runtime was launched, kept so a switch that fails can restore it. Cleared on every stop.</summary>
@@ -2504,7 +2530,11 @@ public sealed class LocalAiProcessManager
         // Bound to the verified PID record above, so the launch fence never describes a process PaRuX did not track.
         if (pidFile == LocalAiPaths.TextPidFile) RecordTextLaunchIdentity(process.Id, launchDescriptor);
         if (profileToRecord != null) File.WriteAllText(LocalAiPaths.ActiveProfileFile, profileToRecord);
-        if (pidFile == LocalAiPaths.TextPidFile) RecordActiveTextRuntime(args);
+        if (pidFile == LocalAiPaths.TextPidFile)
+        {
+            RecordActiveTextRuntime(args);
+            Volatile.Write(ref _lastTextRequestedGpuLayers, LlamaLoadLogParser.RequestedGpuLayers(args));
+        }
 
         DateTime deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)

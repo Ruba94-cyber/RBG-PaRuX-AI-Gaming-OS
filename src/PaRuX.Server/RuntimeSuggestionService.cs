@@ -155,7 +155,10 @@ internal static class RuntimeSuggestionComposition
                     if (c is null) continue;
                     installed.Add(new AdvisorRuntime(backend,
                         LocalAiPaths.GetActiveRuntimeBuildTag(backend) ?? LocalAiPaths.DefaultRuntimeBuildTag(backend),
-                        c.Ownership, active?.Backend == backend));
+                        c.Ownership, active?.Backend == backend,
+                        backend == "text-cuda"
+                            ? LocalAiPaths.ResolveCudaToolkit(LocalAiPaths.GetActiveRuntimeBuildTag(backend) ?? LocalAiPaths.DefaultRuntimeBuildTag(backend))
+                            : null));
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { installed.Clear(); }
