@@ -978,7 +978,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
                     if (sample.GradientNorm.HasValue) entry.Status.LastGradientNorm = sample.GradientNorm.Value;
                     if (sample.LearningRate.HasValue) entry.Status.LastLearningRate = sample.LearningRate.Value;
                     if (sample.Epoch.HasValue) entry.Status.LastEpoch = sample.Epoch.Value;
-                    AppendHistory(entry.Status, sample);
+                    AppendHistory(entry.Status, sample, ReadResources());
                     entry.Status.Stage = "Training";
                     entry.Status.UpdatedUtc = DateTime.UtcNow;
                 }
@@ -998,7 +998,43 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
 
     internal const int MaximumHistorySamples = 500;
 
-    private static void AppendHistory(TrainingJobStatus status, TrainingMetricsParser.Sample sample)
+    /// <summary>Optional GPU utilisation / VRAM sampler. Null (the default) records no resource
+    /// series at all - absent data is never reported as zero.</summary>
+    internal Func<(double? GpuUtilPercent, double? VramMib)?>? ResourceReader { get; set; }
+
+    private (double? GpuUtilPercent, double? VramMib)? ReadResources()
+    {
+        try { return ResourceReader?.Invoke(); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or System.ComponentModel.Win32Exception) { return null; }
+    }
+
+    /// <summary>History for a run: the retained per-run file when present, else the live job.</summary>
+    internal TrainingRunHistoryStore.LoadResult GetHistory(string id)
+    {
+        if (id?.Length != 32 || id.Any(ch => !char.IsAsciiHexDigit(ch))) return new(null, "invalid id");
+        if (_jobs.TryGetValue(id, out Entry? entry) && !IsTerminal(entry.Status.Status))
+        {
+            TrainingJobStatus live = Snapshot(entry);
+            return new(new TrainingRunHistoryStore.RunHistory
+            {
+                JobId = live.Id, Method = live.Method, Status = live.Status, CreatedUtc = live.CreatedUtc,
+                SavedUtc = DateTime.UtcNow, TotalSteps = live.TotalSteps, OriginalSampleCount = live.History.Count,
+                Samples = TrainingRunHistoryStore.Bound(live.History)
+            }, null);
+        }
+        TrainingRunHistoryStore.LoadResult stored = TrainingRunHistoryStore.Load(RuntimeRoot, id);
+        if (stored.Value != null || stored.Error != null) return stored;
+        TrainingJobStatus? job = Get(id);
+        return job == null ? new(null, null) : new(new TrainingRunHistoryStore.RunHistory
+        {
+            JobId = job.Id, Method = job.Method, Status = job.Status, CreatedUtc = job.CreatedUtc,
+            SavedUtc = DateTime.UtcNow, TotalSteps = job.TotalSteps, OriginalSampleCount = job.History.Count,
+            Samples = TrainingRunHistoryStore.Bound(job.History)
+        }, null);
+    }
+
+    private static void AppendHistory(TrainingJobStatus status, TrainingMetricsParser.Sample sample,
+        (double? GpuUtilPercent, double? VramMib)? resources = null)
     {
         status.History.Add(new TrainingMetricSample
         {
@@ -1006,7 +1042,10 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             Loss = sample.Loss,
             GradientNorm = sample.GradientNorm,
             LearningRate = sample.LearningRate,
-            Epoch = sample.Epoch
+            Epoch = sample.Epoch,
+            TokensPerSecond = sample.TokensPerSecond,
+            GpuUtilPercent = resources?.GpuUtilPercent,
+            VramMib = resources?.VramMib
         });
         if (status.History.Count <= MaximumHistorySamples) return;
         var thinned = new List<TrainingMetricSample>(status.History.Count / 2 + 1);
@@ -1059,7 +1098,11 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
 
     private static void TryPersistEntry(Entry entry)
     {
-        try { PersistEntry(entry); }
+        try
+        {
+            PersistEntry(entry);
+            if (IsTerminal(entry.Status.Status)) TrainingRunHistoryStore.Save(RuntimeRoot, Snapshot(entry));
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
         {
             lock (entry.Gate)

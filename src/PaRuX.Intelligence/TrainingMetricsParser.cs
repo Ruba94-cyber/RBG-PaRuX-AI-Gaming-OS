@@ -30,12 +30,14 @@ public static class TrainingMetricsParser
     private static readonly Regex GradientNorm = FieldPattern("grad_norm");
     private static readonly Regex LearningRate = FieldPattern("learning_rate");
     private static readonly Regex Epoch = FieldPattern("epoch");
+    private static readonly Regex TokensPerSecond = FieldPattern("tokens_per_second");
 
     /// <summary>One logging step. Any field the line did not carry stays null rather than becoming
     /// zero - a grad_norm of 0 and an absent grad_norm mean very different things on a chart.</summary>
-    public sealed record Sample(double? Loss, double? GradientNorm, double? LearningRate, double? Epoch)
+    public sealed record Sample(double? Loss, double? GradientNorm, double? LearningRate, double? Epoch, double? TokensPerSecond = null)
     {
-        public bool HasAnything => Loss.HasValue || GradientNorm.HasValue || LearningRate.HasValue || Epoch.HasValue;
+        public bool HasAnything => Loss.HasValue || GradientNorm.HasValue || LearningRate.HasValue || Epoch.HasValue
+            || TokensPerSecond.HasValue;
     }
 
     public static readonly Sample None = new(null, null, null, null);
@@ -47,7 +49,8 @@ public static class TrainingMetricsParser
             Read(Loss, logLine),
             Read(GradientNorm, logLine),
             Read(LearningRate, logLine),
-            Read(Epoch, logLine));
+            Read(Epoch, logLine),
+            Read(TokensPerSecond, logLine));
     }
 
     private static double? Read(Regex pattern, string line)

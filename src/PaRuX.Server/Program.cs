@@ -2530,6 +2530,18 @@ app.MapGet("/api/v1/training/jobs/{id}", (string id, TrainingLabService training
     return job != null ? Results.Ok(job) : Results.NotFound(new { error = "Training job not found" });
 });
 
+app.MapGet("/api/v1/training/jobs/{id}/history", (string id, string? format, TrainingLabService training) =>
+{
+    TrainingRunHistoryStore.LoadResult result = training.GetHistory(id);
+    if (result.Value == null)
+        return result.Error != null
+            ? Results.Json(new { error = "Training history unavailable: " + result.Error }, statusCode: 422)
+            : Results.NotFound(new { error = "Training job not found" });
+    return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
+        ? Results.Text(TrainingRunHistoryStore.ToCsv(result.Value.Samples), "text/csv; charset=utf-8")
+        : Results.Text(TrainingRunHistoryStore.ToJson(result.Value), "application/json; charset=utf-8");
+});
+
 app.MapPost("/api/v1/training/jobs", async (
     TrainingJobRequest request, TrainingLabService training,
     RuntimeManagerService runtimeManager, CancellationToken ct) =>
