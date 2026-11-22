@@ -11,14 +11,18 @@ Status: **SOURCE PATCH / NOT WINDOWS-VERIFIED / DO NOT MERGE YET**.
 - Confirm that the target executable exists and passes the existing safe-path check before any close.
 - Keep existing rules: only close Playnite started by PaRuX, never force-kill, never switch during a game, preserve user-managed Playnite files and settings.
 - Correct Playnite's Program Files source label from `local-app-data` to `program-files`.
-- Add five new unit tests: four switch no-close cases and one locator-source case.
+- Add thirteen new xUnit tests in all: four switch no-close cases, Program Files locator source, three owned-instance deduplication/restart cases, four return-watch policy cases and one duplicate exit event case.
+- Prefer the exact owned Playnite process over eventual OS discovery, so repeated launch requests cannot create duplicates while the process snapshot lags.
+- Capture the Playnite exit counter **before** launching or switching; a rapidly closed process still causes a return notification. Only watch successful owned launches/switches.
+- Do not steal focus from a game that outlives Playnite: hold the pending close counter while tracked game processes are active, continue observing through long sessions, then return after game exit.
+- Idempotently record an owned process exit even if event delivery races the initial HasExited check.
 
 ## Native Windows validation (required)
 Use an isolated clean checkout of the PR tip with `dotnet` SDK 10; do not run against the owner's active games or profiles.
 
 ```powershell
 dotnet build PaRuX.sln -c Release -p:Platform=x64
-dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release --filter "FullyQualifiedName~PlayniteLauncherTests|FullyQualifiedName~PlayniteLocatorTests"
+dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release --filter "FullyQualifiedName~PlayniteLauncherTests|FullyQualifiedName~PlayniteLocatorTests|FullyQualifiedName~PlayniteReturnWatchPolicyTests"
 dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release --blame-hang --blame-hang-timeout 4m
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/check-public-safety.ps1
 ```
@@ -30,8 +34,11 @@ Before integration, execute the existing exclusive WinUI/FlaUI suite according t
 2. Start Playnite Desktop through PaRuX. Disconnect the selected Console TV while `ConsoleOnlyWhenTargetConnected` is enabled. Switch must report a refusal; the same Desktop process remains alive and focused/usable.
 3. Repeat with Fullscreen executable unavailable and with component skipped/undetected in isolated tests. No close request is allowed; no extra process starts.
 4. Restore TV and Fullscreen executable: switch Desktop -> Fullscreen -> Desktop succeeds. Check no duplicate process. While a real game is active, switching is refused.
-5. Check controller-only launch/return (Xbox, Stadia, third-party pad as available), real-game session start/stop, PaRuX AI hard-off and VRAM release verification, and startup/return behavior. These are **not** established by unit tests or simulated pads.
-6. Re-run UI smoke/regression with IT/EN, TV/DPI and failure messages; measure gaming overhead only with a real reproducible run before claiming performance parity.
+5. Test repeated Console and Desktop launch calls before Windows discovery sees the new PID; verify one instance, correct focus/notice, and restart after exit.
+6. Close Playnite immediately after launch, before first UI poll, and verify Return to AI still works. Confirm a switching Playnite is not mistaken for a full exit.
+7. Close Playnite while a game remains running for over two minutes: PaRuX must not steal focus; return only after the game ends.
+8. Check controller-only launch/return (Xbox, Stadia, third-party pad as available), real-game session start/stop, PaRuX AI hard-off and VRAM release verification, and startup/return behavior. These are **not** established by unit tests or simulated pads.
+9. Re-run UI smoke/regression with IT/EN, TV/DPI and failure messages; measure gaming overhead only with a real reproducible run before claiming performance parity.
 
 ## Merge policy
 Do not merge this PR, or the six handoff worktree branches, solely on authored tests or static review. The 2026-11-22 handoff also records two older draft PRs #8/#9 as unverified; #9's native Gaming work may be superseded by the Playnite-first direction. Review diffs and verify one branch at a time, with no release/tag/signing until the project-wide acceptance gates pass.
