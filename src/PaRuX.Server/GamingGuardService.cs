@@ -1,3 +1,5 @@
+using PaRuX.Server.Orchestration.Gaming;
+
 namespace PaRuX.Server;
 
 /// <summary>
@@ -16,6 +18,25 @@ public sealed class GamingGuardService : BackgroundService
     private readonly Func<bool> _gamingMode;
     private readonly Func<CancellationToken, Task<bool>> _shutdownAttempt;
     private bool? _lastState;
+    private Func<CancellationToken, Task<int?>>? _gpuUsedMibSampler;
+    private Func<IReadOnlyList<int>>? _ownedInferenceProbe;
+
+    /// <summary>Upper bound of the post-release GPU check on the retry path; tests shorten it.</summary>
+    internal TimeSpan VramVerifyMaxWait { get; set; } = GamingVramReleaseVerifier.DefaultMaxWait;
+    internal TimeSpan VramVerifyInterval { get; set; } = GamingVramReleaseVerifier.DefaultInterval;
+
+    /// <summary>verified / unverified / not_released from the latest retry-path release check; null when none ran.</summary>
+    internal string? LastReleaseVerification => _shutdown.LastVerification;
+
+    /// <summary>MiB freed per the latest retry-path release check; null when unknown.</summary>
+    internal long? LastVramReleasedMib => _shutdown.LastVramReleasedMib;
+
+    /// <summary>Enables the same <see cref="GamingVramReleaseVerifier"/> check the orchestrator entry path runs (production wiring and tests).</summary>
+    internal void UseReleaseVerification(Func<CancellationToken, Task<int?>> gpuUsedMibSampler, Func<IReadOnlyList<int>> ownedInferenceProbe)
+    {
+        _gpuUsedMibSampler = gpuUsedMibSampler;
+        _ownedInferenceProbe = ownedInferenceProbe;
+    }
 
     /// <summary>True while Gaming Mode is on and at least one local AI runtime has not yet confirmed stopped.</summary>
     public bool ShutdownPending => _shutdown.Pending;
@@ -40,6 +61,8 @@ public sealed class GamingGuardService : BackgroundService
     public GamingGuardService(LocalRuntimeService runtime, MediaJobService jobs, SpeechService speech)
         : this(runtime, jobs, speech, () => runtime.GamingMode, runtime.ForceGamingShutdownAsync)
     {
+        // Production: the retry path measures the release exactly like the orchestrator entry path.
+        UseReleaseVerification(GpuMemoryReleaseWaiter.SampleUsedMibAsync, runtime.OwnedInferenceProcessIds);
     }
 
     /// <summary>The Gaming Mode state and the shutdown attempt are injected, so the retry loop can be driven without a live
@@ -121,6 +144,13 @@ public sealed class GamingGuardService : BackgroundService
                 _shutdown.Failed("A managed retrieval/avatar/vision child did not confirm exit; retrying Gaming hard-off.", nowUtc);
                 return;
             }
+            int? usedBeforeMib = null;
+            if (_gpuUsedMibSampler is { } baseline)
+            {
+                try { usedBeforeMib = await baseline(ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch { /* telemetry is optional */ }
+            }
             bool released;
             if (ReleaseOverrideForTests is { } release)
             {
@@ -134,6 +164,22 @@ public sealed class GamingGuardService : BackgroundService
 
             if (released)
             {
+                if (_gpuUsedMibSampler is { } sampler && _ownedInferenceProbe is { } probe)
+                {
+                    GamingVramReleaseReport report = await GamingVramReleaseVerifier.VerifyAsync(
+                        usedBeforeMib, sampler, probe, ct, VramVerifyMaxWait, VramVerifyInterval).ConfigureAwait(false);
+                    _shutdown.RecordVerification(report.Outcome switch
+                    {
+                        GamingVramReleaseOutcome.Verified => "verified",
+                        GamingVramReleaseOutcome.Unverified => "unverified",
+                        _ => "not_released"
+                    }, report.ReleasedMib);
+                    if (report.Outcome == GamingVramReleaseOutcome.NotReleased)
+                    {
+                        _shutdown.Failed(report.Message + " Retrying.", nowUtc);
+                        return;
+                    }
+                }
                 _shutdown.Succeeded();
                 return;
             }

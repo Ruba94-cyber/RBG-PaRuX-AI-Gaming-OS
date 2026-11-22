@@ -843,6 +843,29 @@ public sealed class RuntimeManagerStatus
     public string LaunchPlanExplanation { get; set; } = string.Empty;
     /// <summary>One entry per attempt of the most recent text launch ladder; empty before any launch.</summary>
     public List<string> TextLaunchTrace { get; set; } = new();
+    /// <summary>Observed offloaded layers / device memory from the running text runtime's own load log, with the requested
+    /// <c>--gpu-layers</c> kept separate and labelled as a request. Null while no text runtime is resident.</summary>
+    public RuntimeTextLoadReport? TextLoad { get; set; }
+}
+
+/// <summary>What llama-server logged when it loaded the current text model. Observed values are separate from the
+/// requested <c>--gpu-layers</c>: a request of 99 on a 37-layer model says nothing about the real split.</summary>
+public sealed class RuntimeTextLoadReport
+{
+    /// <summary>"llama-server load log" when the numbers were parsed from the real log, "unavailable" otherwise.</summary>
+    public string Source { get; set; } = "unavailable";
+    /// <summary>Layers llama-server reports it offloaded to the GPU (the N of "offloaded N/M layers"); null when not observed.</summary>
+    public int? OffloadedGpuLayers { get; set; }
+    /// <summary>Total layers the model has per the same log line (the M); null when not observed.</summary>
+    public int? TotalModelLayers { get; set; }
+    /// <summary>Sum of device (non-CPU, non-pinned-host) model, KV and compute buffers from the log, in MiB; null when none were logged.</summary>
+    public long? LoadedGpuBufferMib { get; set; }
+    /// <summary>The <c>--gpu-layers</c>/<c>-ngl</c> value PaRuX asked for ("all", "99", ...). This is a request, not the observed split.</summary>
+    public string? RequestedGpuLayers { get; set; }
+    /// <summary>Whole-card used VRAM when this status was read (total minus free), in MiB; null when unknown.</summary>
+    public int? VramUsedMib { get; set; }
+    /// <summary>Why the numbers are unavailable, when they are.</summary>
+    public string? Note { get; set; }
 }
 
 /// <summary>GET /api/v1/runtime/context-window: the physical context window of the managed text runtime as Core

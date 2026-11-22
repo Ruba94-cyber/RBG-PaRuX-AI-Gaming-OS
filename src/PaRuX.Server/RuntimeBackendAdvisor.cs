@@ -9,7 +9,7 @@ internal sealed record AdvisorGpu(string Name, uint VendorId, long DedicatedVram
 /// <summary>Detected CPU instruction support; null means "could not be detected" (never assumed).</summary>
 internal sealed record AdvisorCpu(bool? Avx2 = null, bool? Avx512 = null);
 
-internal sealed record AdvisorRuntime(string Backend, string? BuildTag, ComponentOwnership Ownership, bool Active = false);
+internal sealed record AdvisorRuntime(string Backend, string? BuildTag, ComponentOwnership Ownership, bool Active = false, string? CudaToolkit = null);
 
 /// <summary>Local decode throughput measured on this PC for a backend (from Optimize / the build race).</summary>
 internal sealed record AdvisorBenchmark(string Backend, double TokensPerSecond);
@@ -33,6 +33,42 @@ internal static class RuntimeBackendAdvisor
     private const long IntegratedVramCeilingBytes = 1L << 30;
     // CUDA 12 llama.cpp builds need a driver that supports CUDA 12 (Windows 527.41+).
     private const double MinimumNvidiaDriver = 527.41;
+    // CUDA 13.x: NVIDIA's CUDA Toolkit release notes list driver branch R580 for 13.0 and give one minor-version-compatibility
+    // minimum of ">= 580" for the whole 13.x family (13.4 ships with R615, but 580+ runs it). CUDA 13 dropped offline compilation
+    // for pre-Turing GPUs (Maxwell/Pascal/Volta), so compute capability 7.5 is the floor.
+    internal const double MinimumCuda13Driver = 580.0;
+    internal const double MinimumCuda13ComputeCapability = 7.5;
+    // Blackwell (compute capability 10.x/12.x) needs CUDA 12.8+ and its release driver: CUDA 12.8 GA lists Windows >= 570.65.
+    internal const double BlackwellComputeCapability = 10.0;
+    internal const double MinimumBlackwellDriver = 570.65;
+
+    /// <summary>CUDA toolkit major of a toolkit string such as "13.4" / "12.4"; null when it is not parseable.</summary>
+    internal static int? CudaMajorOf(string? toolkit)
+    {
+        if (string.IsNullOrWhiteSpace(toolkit)) return null;
+        string head = toolkit.Trim().Split('.')[0];
+        return int.TryParse(head, NumberStyles.None, CultureInfo.InvariantCulture, out int major) ? major : null;
+    }
+
+    /// <summary>Lowest NVIDIA driver (Windows numbering) that runs a build of this CUDA major on this GPU.</summary>
+    internal static double MinimumDriverFor(int cudaMajor, double? computeCapability)
+    {
+        double floor = cudaMajor >= 13 ? MinimumCuda13Driver : MinimumNvidiaDriver;
+        if (computeCapability is >= BlackwellComputeCapability) floor = Math.Max(floor, MinimumBlackwellDriver);
+        return floor;
+    }
+
+    /// <summary>Lowest compute capability a build of this CUDA major supports.</summary>
+    internal static double MinimumComputeCapabilityFor(int cudaMajor) =>
+        cudaMajor >= 13 ? MinimumCuda13ComputeCapability : MinimumCudaComputeCapability;
+
+    /// <summary>The CUDA major PaRuX would install: the same rule as <see cref="RuntimeBuildCatalog.PreferredCudaMajor"/>
+    /// (Blackwell with driver 580+ takes the CUDA 13 build, everything else the broadly compatible 12.x build).</summary>
+    private static int TargetCudaMajor(AdvisorGpu gpu)
+    {
+        double? driver = ParseNvidiaDriver(gpu.DriverVersion);
+        return gpu.ComputeCapability is >= 12.0 && driver is >= MinimumCuda13Driver ? 13 : 12;
+    }
 
     internal static List<RuntimeBackendSuggestion> Advise(AdvisorInput input)
     {
@@ -57,23 +93,35 @@ internal static class RuntimeBackendAdvisor
 
     private static void AdviseNvidia(List<RuntimeBackendSuggestion> result, AdvisorGpu gpu, AdvisorRuntime? cuda, AdvisorRuntime? vulkan)
     {
-        if (cuda is not null) return; // CUDA already present (any owner): nothing to switch to.
         List<string> evidence = GpuEvidence(gpu);
         double? driver = ParseNvidiaDriver(gpu.DriverVersion);
-        if (gpu.ComputeCapability is double cc && cc < MinimumCudaComputeCapability)
+        // The build that matters is the installed one (its own toolkit) when there is one, otherwise the one PaRuX would install.
+        int major = cuda is not null
+            ? CudaMajorOf(cuda.CudaToolkit) ?? CudaMajorOf(LocalAiPaths.ParseCudaToolkit(cuda.BuildTag)) ?? 12
+            : TargetCudaMajor(gpu);
+        double minCc = MinimumComputeCapabilityFor(major);
+        double minDriver = MinimumDriverFor(major, gpu.ComputeCapability);
+        string label = "CUDA " + major.ToString(CultureInfo.InvariantCulture);
+        if (cuda is not null)
+            evidence.Add($"installed CUDA build: {cuda.BuildTag ?? "unknown build"}" + (cuda.CudaToolkit is { Length: > 0 } tk ? $" (toolkit {tk})" : string.Empty));
+        if (gpu.ComputeCapability is double cc && cc < minCc)
         {
-            result.Add(Note("none:cuda-unsupported-gpu", "text-vulkan", "CUDA is not suggested for this GPU",
-                $"Current CUDA builds target compute capability {MinimumCudaComputeCapability.ToString("0.0", CultureInfo.InvariantCulture)} or newer; this GPU reports {cc.ToString("0.0", CultureInfo.InvariantCulture)}.",
+            result.Add(Note("none:cuda-unsupported-gpu", "text-vulkan",
+                cuda is null ? "CUDA is not suggested for this GPU" : "The installed CUDA runtime does not support this GPU",
+                $"{label} builds target compute capability {minCc.ToString("0.0", CultureInfo.InvariantCulture)} or newer; this GPU reports {cc.ToString("0.0", CultureInfo.InvariantCulture)}.",
                 evidence));
             return;
         }
-        if (driver is double d && d < MinimumNvidiaDriver)
+        if (driver is double d && d < minDriver)
         {
-            result.Add(Note("none:cuda-driver-old", "text-cuda", "Update the NVIDIA driver to enable CUDA",
-                $"CUDA 12 builds need NVIDIA driver {MinimumNvidiaDriver.ToString("0.00", CultureInfo.InvariantCulture)} or newer; found {d.ToString("0.00", CultureInfo.InvariantCulture)}. PaRuX does not change graphics drivers.",
-                evidence));
+            string why = $"{label} builds need NVIDIA driver {minDriver.ToString("0.00", CultureInfo.InvariantCulture)} or newer"
+                + (gpu.ComputeCapability is >= BlackwellComputeCapability ? " on a Blackwell GPU" : string.Empty)
+                + $"; found {d.ToString("0.00", CultureInfo.InvariantCulture)}. PaRuX does not change graphics drivers.";
+            result.Add(Note("none:cuda-driver-old", "text-cuda",
+                cuda is null ? "Update the NVIDIA driver to enable CUDA" : "Update the NVIDIA driver for the installed CUDA runtime", why, evidence));
             return;
         }
+        if (cuda is not null) return; // CUDA already present and compatible (any owner): nothing to switch to.
         evidence.Add(vulkan is not null
             ? $"installed: text-vulkan {vulkan.BuildTag ?? "unknown build"} ({vulkan.Ownership})"
             : "installed: no llama.cpp GPU runtime");

@@ -122,7 +122,12 @@ public sealed class RuntimePerformanceCandidateResult
     public double? Score { get; set; }
     public string? Backend { get; set; }
     public string? HardwareKey { get; set; }
+    /// <summary>The <c>n_gpu_layers</c> llama-bench was ASKED to use (99 means "everything it can"), not the layers actually
+    /// offloaded. The name is kept for stored results; read <see cref="RequestedGpuLayers"/>. The observed split comes from
+    /// the llama-server load log (<see cref="RuntimeTextLoadReport"/>).</summary>
     public int? ActualGpuLayers { get; set; }
+    /// <summary>Same value as <see cref="ActualGpuLayers"/> under its honest name: a request, not an observation.</summary>
+    public int? RequestedGpuLayers => ActualGpuLayers;
     public string? Error { get; set; }
 }
 

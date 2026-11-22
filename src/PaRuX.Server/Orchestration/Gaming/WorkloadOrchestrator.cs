@@ -738,6 +738,8 @@ public sealed class WorkloadOrchestrator : BackgroundService
         _runtime.SetGamingState(true);
         _jobs.CancelAllForGaming();
         bool speechStopped = _speech.StopWorkersForGaming();
+        // Avatar / retrieval / vision children are stopped here, synchronously, not left to the Guard tick (<=250 ms later).
+        bool hardOffChildrenStopped = _runtime.HardOff.StopAll();
         _cancelEvaluations?.Invoke();
         // A GGUF export is CPU/disk-heavy despite not owning GPU VRAM. A running
         // quantizer cannot spill into the Gaming session: cancellation must be
@@ -767,6 +769,9 @@ public sealed class WorkloadOrchestrator : BackgroundService
         if (!speechStopped)
             throw new InvalidOperationException(
                 "Gaming Mode could not confirm that all PaRuX-owned speech processes exited; Gaming Guard will retry.");
+        if (!hardOffChildrenStopped)
+            throw new InvalidOperationException(
+                "Gaming Mode could not confirm that all PaRuX-owned avatar/retrieval/vision processes exited; Gaming Guard will retry.");
 
         // A stop that was merely sent is not a release: confirm PaRuX-owned inference is gone and measure the card.
         GamingVramReleaseReport report = await GamingVramReleaseVerifier.VerifyAsync(

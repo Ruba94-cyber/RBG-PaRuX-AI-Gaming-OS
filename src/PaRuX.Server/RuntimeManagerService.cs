@@ -169,6 +169,12 @@ public sealed class RuntimeManagerService
         try { result.VramFreeMib = await ResolveVramFreeMibAsync(result, result.RamTotalBytes, ct).ConfigureAwait(false); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { result.VramFreeMib = null; } // a failed sample is unknown, never a guess
+        if (textResident)
+        {
+            int? used = result.VramFreeMib is { } free && result.VramTotalMib > 0 ? Math.Max(0, result.VramTotalMib - free) : null;
+            try { result.TextLoad = _process.ReadTextLoadReport(used); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { result.TextLoad = null; }
+        }
         return result;
     }
 
