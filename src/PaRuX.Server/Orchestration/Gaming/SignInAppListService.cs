@@ -68,11 +68,38 @@ public static partial class SignInAppListPolicy
         return null;
     }
 
+    /// <summary>True when only the file on disk is the problem (everything structural about the entry is valid).</summary>
+    public static bool IsAvailabilityProblem(SignInAppEntry e) =>
+        e.Kind == SignInAppKind.Exe && StructureValid(e);
+
+    private static bool StructureValid(SignInAppEntry e) =>
+        !string.IsNullOrWhiteSpace(e.Name) && e.Name.Length <= MaxNameLength && !e.Name.Any(char.IsControl) &&
+        (e.Args is null || (e.Args.Length <= MaxArgsLength && !e.Args.Any(char.IsControl) && e.Args.IndexOfAny(ShellMetaChars) < 0)) &&
+        (e.Process is not { Length: > 0 } || IsValidProcessName(e.Process)) &&
+        e.Path is { Length: > 0 and <= 1024 } && !ContainsDotDotSegment(e.Path) && Path.IsPathFullyQualified(e.Path) &&
+        !e.Path.StartsWith(@"\\", StringComparison.Ordinal) && !(e.Aumid is { Length: > 0 });
+
     private static bool ContainsDotDotSegment(string path) =>
         path.Split('\\', '/').Any(s => s == "..");
 
     /// <summary>Parses the settings/apps schema (case-insensitive keys). The result is never enabled.</summary>
-    public static SignInAppListParseResult Parse(string? json)
+    public static SignInAppListParseResult Parse(string? json) => Parse(json, keepUnavailableEntries: false);
+
+    /// <summary>Parses the PaRuX-owned stored file: an entry whose file vanished is kept (with a warning) so the owner can fix or remove it.</summary>
+    public static SignInAppListParseResult ParseStored(string? json) => Parse(json, keepUnavailableEntries: true);
+
+    /// <summary>Range check shared by Save and the parser. Returns an error text or null.</summary>
+    public static string? ValidateSettings(SignInAppListSettings s)
+    {
+        if (s.LaunchSpacingSeconds is < 0 or > 300) return "LaunchSpacingSeconds must be a whole number from 0 to 300.";
+        if (s.DesktopDelaySeconds is < 0 or > 600) return "DesktopDelaySeconds must be a whole number from 0 to 600.";
+        if (s.ReadyTimeoutSeconds is < 1 or > 600) return "ReadyTimeoutSeconds must be a whole number from 1 to 600.";
+        if (s.ConsoleReadyDelaySeconds is < 0 or > 300) return "ConsoleReadyDelaySeconds must be a whole number from 0 to 300.";
+        if (s.ModeWaitSeconds is < 0 or > 120) return "ModeWaitSeconds must be a whole number from 0 to 120.";
+        return null;
+    }
+
+    private static SignInAppListParseResult Parse(string? json, bool keepUnavailableEntries)
     {
         var errors = new List<string>();
         var warnings = new List<string>();
@@ -106,9 +133,12 @@ public static partial class SignInAppListPolicy
                         SignInAppEntry? entry = ParseEntry(item, errors);
                         if (entry is null) continue;
                         string? problem = ValidateEntry(entry);
-                        if (problem is not null) errors.Add(problem); else apps.Add(entry);
+                        if (problem is null) apps.Add(entry);
+                        else if (keepUnavailableEntries && IsAvailabilityProblem(entry)) { warnings.Add(problem); apps.Add(entry); }
+                        else errors.Add(problem);
                     }
                 }
+                else if (keepUnavailableEntries && (Is(top.Name, "Version") || Is(top.Name, "Enabled") || Is(top.Name, "LastRunSessionKey"))) { }
                 else warnings.Add($"Ignored unknown field '{Clip(top.Name)}'.");
             }
             if (errors.Count > 0) return new(null, errors, warnings);

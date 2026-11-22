@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace PaRuX.Contracts;
 
 /// <summary>Kind of a PaRuX-owned after-sign-in list entry.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SignInAppKind { Exe, Appx }
 
 /// <summary>Timing settings of the after-sign-in list. All values are clamped to the documented bounds.</summary>
@@ -30,6 +33,7 @@ public sealed record SignInAppList(
     public static SignInAppList Empty { get; } = new(false, new SignInAppListSettings(), []);
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SignInAppOutcome
 {
     Launched, SkippedAlreadyRunning, SkippedConsoleMode, SkippedGamingActive,
@@ -38,6 +42,7 @@ public enum SignInAppOutcome
 
 public sealed record SignInAppResult(string Name, SignInAppOutcome Outcome, int Attempts, string Reason);
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SignInRunState { Idle, Waiting, Running, Completed, Cancelled, SkippedDisabled, SkippedGamingActive }
 
 /// <summary>Observable snapshot of a run: state, the index being processed, and per-app results so far.</summary>
