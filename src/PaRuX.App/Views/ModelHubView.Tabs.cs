@@ -40,7 +40,7 @@ namespace PaRuX.Views
             AutomationProperties.SetAutomationId(_tabBar, "ModelHub_Tabs");
             foreach (ModelHubTab tab in ModelHubTabs.All)
             {
-                if (CorporateMode.IsActive && tab == ModelHubTab.Media) continue;
+                if (CorporateMode.IsActive && (tab == ModelHubTab.Media || tab == ModelHubTab.Discover)) continue;
                 var item = new SelectorBarItem { Text = ModelHubTabs.Label(tab, StartItalian) };
                 AutomationProperties.SetAutomationId(item, ModelHubTabs.AutomationId(tab));
                 _tabBar.Items.Add(item);
@@ -55,7 +55,9 @@ namespace PaRuX.Views
             downloadsPanel.Children.Add(_downloadsSection!);
 
             UIElement startPanel = BuildStartPanel();
+            UIElement discoverPanel = BuildDiscoverPanel();
             _tabPanels[ModelHubTab.Start] = startPanel;
+            _tabPanels[ModelHubTab.Discover] = discoverPanel;
             _tabPanels[ModelHubTab.Text] = textPanel;
             _tabPanels[ModelHubTab.Media] = mediaPanel;
             _tabPanels[ModelHubTab.Downloads] = downloadsPanel;
@@ -64,6 +66,7 @@ namespace PaRuX.Views
             outer.Children.Add(_busy);
             outer.Children.Add(_status);
             outer.Children.Add(startPanel);
+            outer.Children.Add(discoverPanel);
             outer.Children.Add(textPanel);
             outer.Children.Add(mediaPanel);
             outer.Children.Add(downloadsPanel);
@@ -86,12 +89,14 @@ namespace PaRuX.Views
 
         private void SelectHubTab(ModelHubTab tab)
         {
-            if (CorporateMode.IsActive && tab == ModelHubTab.Media) tab = ModelHubTab.Text;
+            if (CorporateMode.IsActive && (tab == ModelHubTab.Media || tab == ModelHubTab.Discover)) tab = ModelHubTab.Text;
             _activeTab = tab;
             foreach (KeyValuePair<ModelHubTab, UIElement> pair in _tabPanels)
                 pair.Value.Visibility = pair.Key == tab ? Visibility.Visible : Visibility.Collapsed;
             if (tab == ModelHubTab.Media) StartEnginePolling();
             else _enginePoll?.Stop();
+            if (tab == ModelHubTab.Discover) { RenderDiscover(); StartDiscoverPolling(); }
+            else _discoverPoll?.Stop();
             if (tab == ModelHubTab.Start) _ = RefreshStartAsync();
             else _startPoll?.Stop();
             ApplyStatusVisibility();

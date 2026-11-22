@@ -80,6 +80,13 @@ namespace PaRuX
             ModelHubPage.OnShown();
         }
 
+        /// <summary>Opens the Model Hub straight on the Discover tab (used by the Chat model picker).</summary>
+        public void ShowModelHubDiscover()
+        {
+            ShowModelHub();
+            ModelHubPage.ShowDiscoverTab();
+        }
+
         private void StudioModeToggle_Toggled(object sender, RoutedEventArgs e)
         {
             if (_applyingNavigationMode || _synchronizingStudioModeToggles) return;

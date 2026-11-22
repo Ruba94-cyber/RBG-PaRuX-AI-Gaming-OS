@@ -1009,9 +1009,11 @@ namespace PaRuX.Views
                 RenderRecommended(recommendedTask.Result);
                 _startRecommended = recommendedTask.Result;
                 _startMediaStatuses = mediaTask.Result;
+                _discoverMediaOffers = mediaRecommendedTask.Result;
                 _startHubLoaded = true;
                 RenderDownloads(downloadsTask.Result);
                 RenderInstalled(installedTask.Result);
+                if (!CorporateMode.IsActive) RenderDiscover();
                 RenderIncompleteSplitSets(incompleteSetsTask.Result);
                 RenderCandidates();
                 RenderCandidateUtilityPolicyStatus();

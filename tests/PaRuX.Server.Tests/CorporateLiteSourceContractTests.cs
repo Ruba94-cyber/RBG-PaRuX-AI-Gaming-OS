@@ -56,7 +56,7 @@ public sealed class CorporateLiteSourceContractTests
         Assert.Contains("ExternalModelImportPicker.ShowAsync", corporateView, StringComparison.Ordinal);
         Assert.Contains("CorporateMode.ModelDownloadsAllowed", corporateView, StringComparison.Ordinal);
         Assert.Contains("panel.Children.Add(BuildCorporateModelCard());", start, StringComparison.Ordinal);
-        Assert.Contains("if (CorporateMode.IsActive && tab == ModelHubTab.Media) continue;", tabs, StringComparison.Ordinal);
+        Assert.Contains("if (CorporateMode.IsActive && (tab == ModelHubTab.Media || tab == ModelHubTab.Discover)) continue;", tabs, StringComparison.Ordinal);
     }
 
     [Fact]
