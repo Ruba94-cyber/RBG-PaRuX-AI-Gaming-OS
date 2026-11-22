@@ -154,3 +154,19 @@ PaRuX never installs drivers. These are programs the user may install; PaRuX onl
 | Playnite emulator definitions (`Emulation/Emulators/*/emulator.yaml`, `Platforms.yaml`; github.com/JosefNemec/Playnite) | MIT (Copyright (c) Josef Nemec) | `tools/generate-playnite-emulator-registry.py` converts the launch arguments, executable names, file extensions and platform names of about 90 emulators into `EmulatorRegistry.Playnite.cs`. Entries are marked `unverified`; hand-tuned PaRuX definitions take precedence. No Playnite code is copied. |
 | LiteDB 5.0.21 (NuGet id `LiteDB`, github.com/mbdavid/LiteDB) | MIT | Reads a private temporary COPY of a Playnite library as untyped BSON documents in the Playnite importer. Playnite's own files are never opened for writing. |
 | Playnite (the application) | MIT | Optional launcher front-end and migration source; PaRuX does not bundle or redistribute it. |
+
+## Aniki ReMake (Playnite Fullscreen theme): layout, proportions and timings of the Gaming Home
+
+| Component | License | How PaRuX uses it |
+|---|---|---|
+| Aniki ReMake theme (github.com/Mike-Aniki/Aniki-ReMake) | MIT (Copyright (c) 2025 Mike Aniki) | The Gaming Home (hero banner, shelves, cover focus states, quick actions) re-implements the theme's screen structure, size/colour constants and animation timings natively in WinUI 3. The theme is WPF/Playnite XAML and is not compiled or shipped; no XAML, image, audio, video, icon or font file is copied (those assets carry no separate license and are not reused). Derived views carry a header comment naming this notice. |
+
+MIT License for the Aniki ReMake theme:
+
+Copyright (c) 2025 Mike Aniki
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

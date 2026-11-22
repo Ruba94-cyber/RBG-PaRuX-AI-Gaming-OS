@@ -46,9 +46,17 @@ internal static class GameUi
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Brush> BrushCache = new(StringComparer.Ordinal);
     private static Windows.UI.ViewManagement.AccessibilitySettings? _accessibility;
 
+    /// <summary>
+    /// Test hook: PARUX_GAMES_FORCE_HIGH_CONTRAST=1 makes the Games views take their high-contrast code path without changing any
+    /// Windows setting. It exercises the app's own branches (no scrim, no glow, solid borders); it does NOT recolour WinUI's own
+    /// system controls the way a real Windows high-contrast theme does.
+    /// </summary>
+    internal static readonly bool ForcedHighContrast =
+        Environment.GetEnvironmentVariable("PARUX_GAMES_FORCE_HIGH_CONTRAST") == "1";
+
     private static string ActiveTheme(FrameworkElement? owner)
     {
-        bool highContrast = false;
+        bool highContrast = ForcedHighContrast;
         try
         {
             if (_accessibility is null)
@@ -56,7 +64,7 @@ internal static class GameUi
                 _accessibility = new Windows.UI.ViewManagement.AccessibilitySettings();
                 _accessibility.HighContrastChanged += (_, _) => BrushCache.Clear();
             }
-            highContrast = _accessibility.HighContrast;
+            highContrast |= _accessibility.HighContrast;
         }
         catch (Exception) { /* Fall back to the element's own light/dark theme. */ }
         return highContrast ? "HighContrast" : ThemeName(owner);

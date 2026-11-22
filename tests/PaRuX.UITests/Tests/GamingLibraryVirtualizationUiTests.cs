@@ -70,7 +70,7 @@ public sealed class GamingLibraryVirtualizationUiTests
     }
 
     /// <summary>The vertically scrollable ancestor of the library search box: the Gaming page's own ScrollViewer.</summary>
-    private static FlaUI.Core.Patterns.IScrollPattern? PageScroller(UiTestApplication app)
+    internal static FlaUI.Core.Patterns.IScrollPattern? PageScroller(UiTestApplication app)
     {
         for (AutomationElement? e = ById(app, "GameTitles_Search_TextBox").Parent; e != null; e = e.Parent)
         {

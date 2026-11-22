@@ -101,6 +101,12 @@ internal sealed class GamingHomeView : StackPanel
     private readonly Grid _body = new();
     private readonly StackPanel _libraryColumn = new() { Spacing = 10 };
     private readonly GameDetailPanel _detail;
+    // Console/TV: the same detail card, shown in a layer above the page (see QuickActionsLayer) so the library underneath keeps its
+    // scroll offset, layout and focus origin. Desktop keeps the inline card.
+    private readonly GameDetailPanel _quick;
+    private readonly Grid _quickLayer = new() { Visibility = Visibility.Collapsed };
+    private readonly ScrollViewer _quickScroll = new();
+    private readonly Border _quickCardSurface = new();
     private readonly GameHeroCard _hero = new();
     // The hero follows the tile the user focuses or hovers (debounced, see GameHeroSyncPolicy); it never changes by itself.
     private readonly GameHeroSyncPolicy _heroSync = new();
@@ -144,6 +150,8 @@ internal sealed class GamingHomeView : StackPanel
         _refreshLibrary = refreshLibrary;
         Spacing = 16;
         _detail = new GameDetailPanel(launch, refreshLibrary);
+        _quick = new GameDetailPanel(launch, refreshLibrary);
+        BuildQuickActionsLayer();
         AutomationProperties.SetAutomationId(this, "GameHome_Root");
         BuildToolbar();
         BuildBulkBar();
@@ -1348,15 +1356,8 @@ internal sealed class GamingHomeView : StackPanel
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _detail.CloseRequested += CloseDetail;
-        _detail.StatusMessage += message => _status.Text = message;
-        _detail.Changed += async changed => await OnTitleChangedAsync(changed);
-        _detail.Removed += async key =>
-        {
-            _selected.Remove(key);
-            CloseDetail();
-            await ReloadAsync();
-        };
+        WireDetail(_detail);
+        WireDetail(_quick);
         _libraryColumn.Children.Add(_grid.View);
         _body.Children.Add(_libraryColumn);
         _body.Children.Add(_detail);
@@ -1651,6 +1652,8 @@ internal sealed class GamingHomeView : StackPanel
         _gameAssetStudio.MinHeight = _installedMods.MinHeight = enabled ? 56 : 44;
         _gameAssetStudio.FontSize = _installedMods.FontSize = enabled ? 20 : 14;
         _grid.SetConsole(enabled);
+        // Switching presentation never carries an open card across: the inline card and the Console layer are different surfaces.
+        if (_openKey is not null) CloseDetail();
         _detail.SetConsole(enabled);
         ApplyBodyLayout();
     }
@@ -2060,7 +2063,7 @@ internal sealed class GamingHomeView : StackPanel
             }
             RebuildFilterChoices(null, null);
             _selected.IntersectWith(_titles.Select(t => t.TitleKey));
-            if (_openKey is not null && _detail.Current is null) _openKey = null;
+            if (_openKey is not null && _detail.Current is null && _quick.Current is null) _openKey = null;
             RenderLibrary();
             if (SettingsStore.Current.Data.GameMetadataEnabled && !_metadataRunning) _ = RunMetadataAsync();
             if (queryOnly && _continueLoaded && !refresh)
@@ -2281,6 +2284,11 @@ internal sealed class GamingHomeView : StackPanel
 
     private async Task OpenAsync(GameTitleDto title)
     {
+        if (_console)
+        {
+            await OpenQuickActionsAsync(title);
+            return;
+        }
         _openKey = title.TitleKey;
         _grid.RefreshState(_selected, _openKey);
         await _detail.ShowAsync(title);
@@ -2288,10 +2296,90 @@ internal sealed class GamingHomeView : StackPanel
         _detail.FocusPrimary();
     }
 
+    // ---- Console/TV quick actions ------------------------------------------------------------------------------------------
+    // The layer is added by the page (ManualGameLibraryView) on top of its scroller, never inside the scrolled content, so opening
+    // and closing it cannot move the library. B/Escape (handled by MainWindow through CloseQuickActions) returns to the origin tile.
+
+    /// <summary>The overlay element the page hosts above its scroller. Collapsed while no quick-actions card is open.</summary>
+    internal UIElement QuickActionsLayer => _quickLayer;
+
+    internal bool QuickActionsOpen => _quickLayer.Visibility == Visibility.Visible;
+
+    private void BuildQuickActionsLayer()
+    {
+        AutomationProperties.SetAutomationId(_quickLayer, "GameQuick_Layer");
+        AutomationProperties.SetName(_quickLayer, T("Game quick actions", "Azioni rapide del gioco"));
+        _quickLayer.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _quickLayer.VerticalAlignment = VerticalAlignment.Stretch;
+        _quickLayer.TabFocusNavigation = KeyboardNavigationMode.Cycle;
+        ApplyQuickScrim();
+        _quickLayer.ActualThemeChanged += (_, _) => ApplyQuickScrim();
+        _quickScroll.HorizontalAlignment = HorizontalAlignment.Center;
+        _quickScroll.VerticalAlignment = VerticalAlignment.Stretch;
+        _quickScroll.MaxWidth = 820;
+        _quickScroll.Margin = new Thickness(24, 24, 24, 24);
+        _quickScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        _quickScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _quickCardSurface.CornerRadius = new CornerRadius(14);
+        _quickCardSurface.Child = _quick;
+        _quickScroll.Content = _quickCardSurface;
+        AutomationProperties.SetAutomationId(_quickScroll, "GameQuick_Scroll");
+        _quickLayer.Children.Add(_quickScroll);
+        _quick.SetConsole(true);
+    }
+
+    private void ApplyQuickScrim() =>
+        _quickLayer.Background = GameUi.IsHighContrast(_quickLayer)
+            ? GameUi.ThemeBrush(_quickLayer, "PaRuXSurfaceCardBrush")
+            : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xE6, 0, 0, 0));
+
+    private void WireDetail(GameDetailPanel panel)
+    {
+        panel.CloseRequested += CloseDetail;
+        panel.StatusMessage += message => _status.Text = message;
+        panel.Changed += async changed => await OnTitleChangedAsync(changed);
+        panel.Removed += async key =>
+        {
+            _selected.Remove(key);
+            CloseDetail();
+            await ReloadAsync();
+        };
+    }
+
+    private async Task OpenQuickActionsAsync(GameTitleDto title)
+    {
+        _openKey = title.TitleKey;
+        _grid.RefreshState(_selected, _openKey);
+        ApplyQuickScrim();
+        _quickLayer.Visibility = Visibility.Visible;
+        _quickScroll.ChangeView(null, 0, null, disableAnimation: true);
+        // The card sits on a dimmed library: it must be opaque, or the covers behind show through the text.
+        _quickCardSurface.Background = GameUi.ThemeBrush(_quickLayer, "PaRuXSurfaceSolidBrush");
+        await _quick.ShowAsync(title);
+        _quickLayer.UpdateLayout();
+        // A layer that only just became visible can refuse the first focus request: retry once after layout.
+        if (!_quick.FocusPrimary())
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (QuickActionsOpen) _quick.FocusPrimary(); });
+    }
+
+    /// <summary>B/Escape: closes the quick-actions card and puts the focus back on the tile it was opened from. False when none is open.</summary>
+    internal bool CloseQuickActions()
+    {
+        if (!QuickActionsOpen) return false;
+        CloseDetail();
+        return true;
+    }
+
+    /// <summary>Right stick while the card is open: scrolls the card, never the library behind it.</summary>
+    internal void ScrollQuickActionsBy(double pixels) =>
+        _quickScroll.ChangeView(null, Math.Clamp(_quickScroll.VerticalOffset + pixels, 0, _quickScroll.ScrollableHeight), null, disableAnimation: true);
+
     private void CloseDetail()
     {
         string? key = _openKey;
         _openKey = null;
+        _quick.Hide();
+        _quickLayer.Visibility = Visibility.Collapsed;
         _detail.Hide();
         _grid.RefreshState(_selected, null);
         if (key is not null && !_grid.FocusTile(key)) _grid.FocusFirst();

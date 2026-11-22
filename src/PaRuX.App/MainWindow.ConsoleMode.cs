@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using System.Globalization;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
@@ -355,6 +358,20 @@ public sealed partial class MainWindow
         // A dialog, flyout, drop-down or the on-screen keyboard is what the pad operates: B closes it, directions stay inside it.
         if (ConsoleOverlayOpen) return HandleConsoleOverlayAction(action);
 
+        // A game's quick-actions card sits above the library: B closes it (back to the tile it came from) before B can leave
+        // Console mode, and nothing underneath (paging, search, workspace switch) reacts while it is open.
+        if (ConsoleOnGamingWorkspace() && GameLibraryPageIfCreated is { QuickActionsRoot: not null } quickPage)
+        {
+            switch (action)
+            {
+                case ConsoleNavigationAction.Exit: quickPage.CloseQuickActions(); return true;
+                case ConsoleNavigationAction.ScrollUp: quickPage.ScrollBy(-240); return true;
+                case ConsoleNavigationAction.ScrollDown: quickPage.ScrollBy(240); return true;
+                case ConsoleNavigationAction.SwitchWorkspace or ConsoleNavigationAction.PreviousPage
+                    or ConsoleNavigationAction.NextPage or ConsoleNavigationAction.FocusSearch: return true;
+            }
+        }
+
         if (action == ConsoleNavigationAction.SwitchWorkspace)
             return SwitchConsoleWorkspace();
 
@@ -413,8 +430,64 @@ public sealed partial class MainWindow
     private bool TryMoveConsoleFocus(FocusNavigationDirection direction)
     {
         if (ConsoleFocusSearchRoot() is not DependencyObject root) return false;
+        if (direction is FocusNavigationDirection.Up or FocusNavigationDirection.Down
+            && GameLibraryPageIfCreated?.QuickActionsRoot is { } quickRoot && TryMoveQuickActionsFocus(quickRoot, direction))
+            return true;
         var options = new FindNextElementOptions { SearchRoot = root };
         return FocusManager.TryMoveFocus(direction, options);
+    }
+
+    /// <summary>
+    /// Up/Down inside the Console quick-actions card go row by row in reading order. WinUI's geometric search prefers a wide control
+    /// further down (an Expander) over a narrow button directly below the focus and skips what is inside an open Expander, so Edit,
+    /// Save and the launch-profile fields were unreachable by the pad. Left/Right keep the geometric search.
+    /// </summary>
+    private bool TryMoveQuickActionsFocus(UIElement layer, FocusNavigationDirection direction)
+    {
+        if (RootGrid.XamlRoot is null || FocusManager.GetFocusedElement(RootGrid.XamlRoot) is not UIElement focused
+            || !IsInside(focused, layer)) return false;
+        var items = new List<(Control Control, Windows.Foundation.Rect Bounds)>();
+        CollectQuickFocusables(layer, layer, items);
+        // The focus can sit on a part of a control (an Expander's header toggle): use the innermost listed control that contains it.
+        int current = items.FindLastIndex(i => IsInside(focused, i.Control));
+        if (current < 0) return false;
+        Windows.Foundation.Rect here = items[current].Bounds;
+        // A full-width control (an Expander header) enters the next row at its left end, never at a destructive button in the middle.
+        double hereX = here.Width > ((FrameworkElement)layer).ActualWidth * 0.5 ? here.X : here.X + here.Width / 2;
+        const double rowTolerance = 4;
+        var candidates = (direction == FocusNavigationDirection.Down
+            ? items.Where(i => i.Bounds.Y > here.Y + rowTolerance)
+            : items.Where(i => i.Bounds.Y < here.Y - rowTolerance)).ToList();
+        if (candidates.Count == 0) return false;
+        double row = direction == FocusNavigationDirection.Down ? candidates.Min(i => i.Bounds.Y) : candidates.Max(i => i.Bounds.Y);
+        var target = candidates.Where(i => Math.Abs(i.Bounds.Y - row) <= rowTolerance)
+            .OrderBy(i => Math.Abs((here.Width > ((FrameworkElement)layer).ActualWidth * 0.5 ? i.Bounds.X : i.Bounds.X + i.Bounds.Width / 2) - hereX)).First();
+        return target.Control.Focus(FocusState.Keyboard);
+    }
+
+    private static void CollectQuickFocusables(DependencyObject node, UIElement layer, List<(Control Control, Windows.Foundation.Rect Bounds)> items)
+    {
+        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, i);
+            if (child is UIElement element && element.Visibility != Visibility.Visible) continue;
+            if (child is Control control && control.IsEnabled && control.IsTabStop
+                && (control is ButtonBase or TextBox or PasswordBox or ComboBox or Slider or ToggleSwitch or CheckBox or Expander or RadioButton))
+            {
+                var size = control.ActualSize;
+                if (size.X > 0 && size.Y > 0)
+                {
+                    var origin = control.TransformToVisual(layer).TransformPoint(new Windows.Foundation.Point(0, 0));
+                    items.Add((control, new Windows.Foundation.Rect(origin.X, origin.Y, size.X, size.Y)));
+                }
+                // An open Expander's content is part of the card; every other focusable control is a leaf here.
+                if (control is Expander expander && expander.IsExpanded && expander.Content is DependencyObject content)
+                    CollectQuickFocusables(content, layer, items);
+                continue;
+            }
+            CollectQuickFocusables(child, layer, items);
+        }
     }
 
     // ---- Driverless navigation for raw HID pads (for example Google Stadia) -------------------------------------------------
@@ -463,6 +536,13 @@ public sealed partial class MainWindow
                 is Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider invoke) { invoke.Invoke(); return; }
             if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Toggle)
                 is Microsoft.UI.Xaml.Automation.Provider.IToggleProvider toggle) { toggle.Toggle(); return; }
+            // Expanders (the per-game settings sections of the quick-actions card) expose only ExpandCollapse: A opens or closes them.
+            if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.ExpandCollapse)
+                is Microsoft.UI.Xaml.Automation.Provider.IExpandCollapseProvider expand)
+            {
+                if (expand.ExpandCollapseState == Microsoft.UI.Xaml.Automation.ExpandCollapseState.Collapsed) expand.Expand(); else expand.Collapse();
+                return;
+            }
             if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.SelectionItem)
                 is Microsoft.UI.Xaml.Automation.Provider.ISelectionItemProvider item) item.Select();
         }
