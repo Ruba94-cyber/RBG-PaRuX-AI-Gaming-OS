@@ -290,6 +290,7 @@
     <Compile Include="..\..\src\PaRuX.App\Services\DiscoveredListWindow.cs" Link="Media\DiscoveredListWindow.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ModelTuningPresenter.cs" Link="Media\ModelTuningPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaHubSelectionPresenter.cs" Link="ModelHub\MediaHubSelectionPresenter.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ModelDiscoverPolicy.cs" Link="ModelHub\ModelDiscoverPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ModelHubStartPresenter.cs" Link="ModelHub\ModelHubStartPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SetupProfilePolicy.cs" Link="Setup\SetupProfilePolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SetupProfileTransition.cs" Link="Setup\SetupProfileTransition.cs" />

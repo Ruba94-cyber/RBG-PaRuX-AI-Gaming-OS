@@ -92,4 +92,65 @@ public static class ChatModelPickerPolicy
         first.Insert(0, selected);
         return first;
     }
+    public const int MaxFavourites = 8;
+    public const int MaxRecents = 5;
+
+    /// <summary>Records a manual choice as most recent: de-duplicated (case-insensitive), newest first, capped.</summary>
+    public static List<string> RecordRecent(IEnumerable<string>? recents, string? chosenFile, int max = MaxRecents)
+    {
+        var result = new List<string>();
+        if (!string.IsNullOrWhiteSpace(chosenFile)) result.Add(chosenFile.Trim());
+        foreach (string file in recents ?? Enumerable.Empty<string>())
+            if (!string.IsNullOrWhiteSpace(file)
+                && !result.Contains(file.Trim(), StringComparer.OrdinalIgnoreCase))
+                result.Add(file.Trim());
+        return result.Take(Math.Max(1, max)).ToList();
+    }
+
+    /// <summary>Adds or removes a favourite. A full list refuses a new entry instead of silently evicting another.</summary>
+    public static (List<string> Favourites, bool Changed) ToggleFavourite(
+        IEnumerable<string>? favourites, string? file, int max = MaxFavourites)
+    {
+        var list = (favourites ?? Enumerable.Empty<string>())
+            .Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).ToList();
+        if (string.IsNullOrWhiteSpace(file)) return (list, false);
+        string key = file.Trim();
+        int at = list.FindIndex(f => string.Equals(f, key, StringComparison.OrdinalIgnoreCase));
+        if (at >= 0) { list.RemoveAt(at); return (list, true); }
+        if (list.Count >= max) return (list, false);
+        list.Add(key);
+        return (list, true);
+    }
+
+    /// <summary>The compact picker: favourites first, then recents, then the rest of the quick list, never more than
+    /// <see cref="QuickChoices"/>, only models that are still installed, the pinned one always visible.</summary>
+    public sealed record QuickLayoutResult(
+        IReadOnlyList<ManagedModelInfo> Favourites,
+        IReadOnlyList<ManagedModelInfo> Recent,
+        IReadOnlyList<ManagedModelInfo> Others);
+
+    public static QuickLayoutResult QuickLayout(
+        IEnumerable<ManagedModelInfo>? catalogue, string? currentManualFile,
+        IEnumerable<string>? favourites, IEnumerable<string>? recents)
+    {
+        List<ManagedModelInfo> installed = Browse(catalogue, null, 0, ChatModelBrowseSort.Name).Visible.ToList();
+        List<ManagedModelInfo> all = (catalogue ?? Enumerable.Empty<ManagedModelInfo>())
+            .Where(m => m != null && !string.IsNullOrWhiteSpace(m.FileName))
+            .GroupBy(m => m.FileName, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+        ManagedModelInfo? Find(string? file) => all.FirstOrDefault(m =>
+            string.Equals(m.FileName, file, StringComparison.OrdinalIgnoreCase));
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fav = new List<ManagedModelInfo>();
+        foreach (string f in favourites ?? Enumerable.Empty<string>())
+            if (Find(f) is { } m && used.Add(m.FileName) && fav.Count < MaxFavourites) fav.Add(m);
+        var rec = new List<ManagedModelInfo>();
+        foreach (string f in recents ?? Enumerable.Empty<string>())
+            if (Find(f) is { } m && used.Add(m.FileName) && rec.Count < MaxRecents) rec.Add(m);
+        if (Find(currentManualFile) is { } current && used.Add(current.FileName)) rec.Insert(0, current);
+
+        int room = Math.Max(0, QuickChoices - fav.Count - rec.Count);
+        var others = installed.Where(m => !used.Contains(m.FileName)).Take(room).ToList();
+        return new QuickLayoutResult(fav, rec, others);
+    }
 }
