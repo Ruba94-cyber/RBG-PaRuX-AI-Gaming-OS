@@ -115,6 +115,12 @@ internal sealed class UniversalLibraryPanel : StackPanel
     /// <summary>Console/TV: the paused game's Resume button takes the first focus when there is one.</summary>
     internal bool FocusPausedResume() => _home.FocusPausedResume();
 
+    /// <summary>Console/TV quick-actions layer (hosted by the page above its scroller) and its pad operations.</summary>
+    internal UIElement QuickActionsLayer => _home.QuickActionsLayer;
+    internal bool QuickActionsOpen => _home.QuickActionsOpen;
+    internal bool CloseQuickActions() => _home.CloseQuickActions();
+    internal void ScrollQuickActionsBy(double pixels) => _home.ScrollQuickActionsBy(pixels);
+
     private Task ReloadTitlesAsync() => _home.ReloadAsync();
     internal Task ReloadTitlesNowAsync() => _home.ReloadAsync(refresh: true);
 

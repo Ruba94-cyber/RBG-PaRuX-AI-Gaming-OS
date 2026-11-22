@@ -50,6 +50,7 @@ public sealed partial class MainWindow
     {
         if (_keyboardOverlay?.IsOpen == true) return _keyboardOverlay;
         if (TopInteractivePopup()?.Child is { } popupChild) return popupChild;
+        if (ConsoleOnGamingWorkspace() && GameLibraryPageIfCreated?.QuickActionsRoot is { } quickActions) return quickActions;
         return RootGrid.XamlRoot?.Content;
     }
 

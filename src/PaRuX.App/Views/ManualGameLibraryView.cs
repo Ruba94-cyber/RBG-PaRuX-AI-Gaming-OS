@@ -17,6 +17,7 @@ namespace PaRuX.Views;
 
 public sealed partial class ManualGameLibraryView : UserControl
 {
+    private ScrollViewer? _pageScroll;
     private readonly TextBox _name = new();
     private readonly TextBlock _manualAddIntro = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _manualAddActions = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -432,7 +433,7 @@ public sealed partial class ManualGameLibraryView : UserControl
         {
             var addItem = bar.Items.OfType<SelectorBarItem>().First(item => (string?)item.Tag == "Add");
             bar.SelectedItem = addItem;
-            if (Content is ScrollViewer viewer) viewer.ChangeView(null, 0, null, disableAnimation: true);
+            _pageScroll?.ChangeView(null, 0, null, disableAnimation: true);
             addItem.Focus(FocusState.Programmatic);
         };
         // Five sections do not fit a narrow window: the strip scrolls sideways instead of cutting the last tab off.
@@ -449,7 +450,12 @@ public sealed partial class ManualGameLibraryView : UserControl
         foreach (var panel in panels.Values) root.Children.Add(panel);
         bar.SelectedItem = bar.Items[0];
 
-        Content = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        _pageScroll = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        // Console/TV quick actions live in a layer above the scroller (not inside it), so opening one never moves the library.
+        var pageHost = new Grid();
+        pageHost.Children.Add(_pageScroll);
+        pageHost.Children.Add(_universal.QuickActionsLayer);
+        Content = pageHost;
         Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
         Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
     }

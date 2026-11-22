@@ -856,7 +856,7 @@ internal sealed class GameDetailPanel : UserControl
             return expander;
         }
 
-        void Show()
+        void Show(bool takeFocus = false)
         {
             content.Children.Clear();
             content.Children.Add(Fact(T("Program", "Programma"), entry.ExecutablePath));
@@ -882,6 +882,8 @@ internal sealed class GameDetailPanel : UserControl
             actions.Children.Add(edit);
             actions.Children.Add(remove);
             content.Children.Add(actions);
+            // The editor's buttons are gone after Save/Cancel: without this the pad's focus would be lost with them.
+            if (takeFocus) edit.Focus(FocusState.Programmatic);
         }
 
         void ShowEditor()
@@ -899,7 +901,7 @@ internal sealed class GameDetailPanel : UserControl
             AutomationProperties.SetAutomationId(save, "GameDetail_Edit_Save_" + id);
             var cancel = new Button { Content = T("Cancel", "Annulla"), MinHeight = Target, FontSize = Body };
             AutomationProperties.SetAutomationId(cancel, "GameDetail_Edit_Cancel_" + id);
-            cancel.Click += (_, _) => Show();
+            cancel.Click += (_, _) => Show(takeFocus: true);
             save.Click += async (_, _) =>
             {
                 save.IsEnabled = false;
@@ -913,7 +915,7 @@ internal sealed class GameDetailPanel : UserControl
                         return;
                     }
                     entry = result.Value;
-                    Show();
+                    Show(takeFocus: true);
                     StatusMessage?.Invoke(T("Entry saved.", "Voce salvata."));
                     await _refreshLibrary();
                     Changed?.Invoke(_title ?? title);
@@ -926,6 +928,8 @@ internal sealed class GameDetailPanel : UserControl
             row.Children.Add(save);
             row.Children.Add(cancel);
             content.Children.Add(row);
+            // Edit entry replaced the button that had the focus: put it on the first field so keyboard and pad users continue from here.
+            name.Focus(FocusState.Programmatic);
         }
 
         Show();

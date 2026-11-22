@@ -1,0 +1,2 @@
+flat grid: 5000 games; first tile 2498 ms after opening Gaming; scroll step (UIA round trip) median 15 ms, p95 112 ms, max 217 ms; realized tiles 14; working set 212 MB at start, 265 MB after open, 302 MB after scrolling
+shelf feed: 5000 games; first tile 2854 ms after opening Gaming; scroll step (UIA round trip) median 3 ms, p95 89 ms, max 205 ms; realized tiles 11; working set 211 MB at start, 270 MB after open, 296 MB after scrolling

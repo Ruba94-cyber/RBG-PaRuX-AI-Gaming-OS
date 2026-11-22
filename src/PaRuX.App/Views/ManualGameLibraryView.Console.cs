@@ -187,9 +187,16 @@ public sealed partial class ManualGameLibraryView
     /// <summary>Console right stick: scroll the page without moving focus.</summary>
     public void ScrollBy(double pixels)
     {
-        if (Content is ScrollViewer viewer)
+        if (_universal?.QuickActionsOpen == true) { _universal.ScrollQuickActionsBy(pixels); return; }
+        if (_pageScroll is { } viewer)
             viewer.ChangeView(null, Math.Clamp(viewer.VerticalOffset + pixels, 0, viewer.ScrollableHeight), null, disableAnimation: true);
     }
+
+    /// <summary>The open Console quick-actions layer (the pad's focus is confined to it), or null.</summary>
+    public UIElement? QuickActionsRoot => _universal?.QuickActionsOpen == true ? _universal.QuickActionsLayer : null;
+
+    /// <summary>B/Escape in Console: closes the quick-actions card first and returns the focus to its tile.</summary>
+    public bool CloseQuickActions() => _universal?.CloseQuickActions() == true;
 
     /// <summary>Console Menu button: jump to the filter field, where A/Y opens the on-screen keyboard.</summary>
     public void FocusSearch()

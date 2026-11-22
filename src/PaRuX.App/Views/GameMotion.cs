@@ -10,12 +10,14 @@ namespace PaRuX.Views;
 internal static class GameMotion
 {
     private static Windows.UI.ViewManagement.UISettings? _settings;
+    private static readonly bool ForcedNoMotion = Environment.GetEnvironmentVariable("PARUX_GAMES_FORCE_NO_MOTION") == "1";
 
     internal static bool Allowed(FrameworkElement owner)
     {
         try
         {
-            if (GameUi.IsHighContrast(owner)) return false;
+            // Test hook: PARUX_GAMES_FORCE_NO_MOTION=1 behaves like Windows "Show animations" switched off, without touching the setting.
+            if (ForcedNoMotion || GameUi.IsHighContrast(owner)) return false;
             _settings ??= new Windows.UI.ViewManagement.UISettings();
             return _settings.AnimationsEnabled;
         }
