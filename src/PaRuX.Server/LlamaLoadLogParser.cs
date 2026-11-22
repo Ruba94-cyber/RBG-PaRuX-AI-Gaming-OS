@@ -70,6 +70,19 @@ internal static class LlamaLoadLogParser
         return report;
     }
 
+    /// <summary>
+    /// llama-server only logs "offloaded N/M layers" and the device buffer sizes at log verbosity 4 (the default, 3, has
+    /// neither). Appends <c>-lv 4</c> to a PaRuX-managed text launch unless the list already sets a verbosity. Measured on
+    /// an RTX 5080: 179.4 tok/s at the default level vs 178.9 tok/s at <c>-lv 4</c>, no startup difference beyond noise.
+    /// </summary>
+    internal static void EnsureLoadLogVerbosity(List<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        foreach (string option in new[] { "-lv", "--log-verbosity", "-v", "--verbose", "--verbosity" })
+            if (args.Contains(option, StringComparer.Ordinal)) return;
+        args.AddRange(["-lv", "4"]);
+    }
+
     /// <summary>The value of --gpu-layers / -ngl / --n-gpu-layers from a launch argument list, or null when not given.</summary>
     internal static string? RequestedGpuLayers(IReadOnlyList<string> args)
     {

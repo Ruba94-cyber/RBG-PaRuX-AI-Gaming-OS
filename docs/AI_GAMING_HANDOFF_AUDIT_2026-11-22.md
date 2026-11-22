@@ -72,3 +72,51 @@ Ollama is not installed on this PC (`ollama` not on PATH; the PATH entry `%LOCAL
 - `TextLoad` through a real PaRuX-managed launch and the live `/api/v1/runtime/status` endpoint (parser and contract wiring are unit-tested; the real run above used bare llama-server). In a PaRuX launch the report will say `unavailable` until the runtime is started with `-lv 4`.
 - New Guard-retry verification against real nvidia-smi inside a real Gaming entry; real game start/exit; ComfyUI resident.
 - CUDA 13 floors on an actual older driver or pre-Turing GPU (rule tests only); the cc 7.5 floor's source (see above).
+
+## AI proof batch (2026-11-22): managed offload report, release text, fallback proofs, CUDA vs Vulkan
+
+Setup (all runs): isolated PaRuX Core (`PaRuX.Server`, Debug self-contained publish of this branch) with its own data root (`.ai/artifacts/aiproof`, git-ignored), RTX 5080 16 GB (driver 621.24, cc 12.0), Radeon 780M iGPU present. Runtime CUDA `llama.cpp-b12109-cuda13.4` (build 12109, commit 13ec8f614); Vulkan `llama.cpp-b10549-vulkan` (build 10549; the only Vulkan build installed, so CUDA and Vulkan are NOT the same llama.cpp build). Models `Qwen3-4B-Q4_K_M.gguf` (2.5 GB, primary) and `Qwen3.5-4B-Q4_K_M.gguf` (switch target). Desktop baseline VRAM 850-920 MiB. Every inference process was stopped afterwards (0 llama-server / Core left, VRAM back to 843-892 MiB).
+
+### 1. TextLoad through a real PaRuX-managed launch: DONE
+- PaRuX text launches (`LocalAiProcessManager`, main ladder path and the exact/temporary-model path `BuildArbitraryTextArguments`) now append `-lv 4` through `LlamaLoadLogParser.EnsureLoadLogVerbosity` (unless the list already sets a verbosity). Media assistant and router-mode launches are unchanged.
+- Cost: bare llama-server 179.4 tok/s default log vs 178.9 tok/s at `-lv 4` (three launches earlier today); the stderr log did not grow per request (18.7 KB at load, unchanged after a chat turn). Ready-to-health 2.2-2.5 s either way.
+- Live `GET /api/v1/runtime/status` after a real PaRuX launch (CUDA, Qwen3-4B, ctx 16384, flash-attn on, q8_0 caches, `--gpu-layers all`): `textLoad = { source: "llama-server load log", offloadedGpuLayers: 37, totalModelLayers: 37, loadedGpuBufferMib: 3786, requestedGpuLayers: "all", vramUsedMib: 5264 }`. After a model switch to Qwen3.5-4B (temporary-model path): 33/33 layers, 3142 MiB device buffers, 4632 MiB card used. Before the second change that path reported `unavailable` (it had no `-lv 4`); the proof run found and fixed it.
+- The Vulkan fallback launch reports it too: 37/37, 8334 MiB buffers (see the finding below).
+
+### 2. GPU release verification in status + UI text: DONE (code, unit-tested; live Gaming entry NOT RUN)
+- `GamingStatusDto.AiReleaseVerification` ("verified" / "unverified" / "not_released") and `AiVramReleasedMib` already existed from the previous batch; `WorkloadOrchestrator` fills them.
+- New pure wording `PaRuX.Contracts.GamingReleaseVerificationText` (English + Italian), appended to the existing "AI Workloads" line of the Gaming status in Settings. The only UI edit is `src/PaRuX.App/Views/SettingsView.xaml.cs` (`RefreshGamingStatusAsync`, the `GamingWorkloadsLabel.Text` assignment). No XAML, Gaming view or packaging file touched. MiB is shown only when measured.
+- NOT RUN: a real game start/exit against live nvidia-smi, and a screenshot of the Settings text.
+
+### 3. Fallback behaviour with real runs
+| Scenario | Result |
+| --- | --- |
+| CUDA load failure -> Vulkan, remembered | A CUDA build folder whose `llama-server.exe` is not a valid executable was activated. First launch walked CUDA (launch plan), CUDA (default arguments), CUDA without flash attention, CUDA with reduced GPU offload (all failed: "not a valid application"), then `Vulkan: ready` in 8.7 s, profile "Qwen3-4B-Q4_K_M Standard GPU (Vulkan fallback)", trace visible in `textLaunchTrace`. NEW: `TextLaunchEngineMemory` remembers the working rung per (primary runtime folder, model) for 10 minutes, in memory. After killing the server, the next launch's trace was `remembered working engine: starting at Vulkan ... \|\| Vulkan: ready`: the four failing CUDA rungs were skipped (first reply after the second launch 9.4 s vs 18.4 s for the first launch, which included the failed rungs and Vulkan shader warm-up). A Core restart or expiry retries CUDA. |
+| CPU rung live | NOT RUN. The CPU rung uses the Vulkan folder's executable; with both GPU engines broken the ladder ended honestly with the full trace and an HTTP 409/503 (no fake success). Rung order is covered by `TextLaunchLadderTests`. |
+| Model switch | Forced route to Qwen3.5-4B while Qwen3-4B was resident: replied in 6.0 s including unload + load; status shows the new model/profile, 33/33 layers, a single llama-server. |
+| Context sizing | Launch plan kept `--ctx-size 16384` ("the requested window fits", 13.2 GiB free after reserve), q8_0 caches, `--gpu-layers all`, `--fit on --fit-target 1024`; llama-server logged `n_ctx = 16384` (train 40960); `/api/v1/runtime/context-window` = 16384 observed. A constrained-VRAM shrink was NOT RUN live. |
+| Abnormal exit | Killed the owned llama-server (PID 12412) with the model loaded (4982 MiB): 3 s later 0 llama processes and VRAM 916 MiB (no orphan VRAM); the next chat request relaunched a new server (PID 36208) and answered in 2.0 s, one llama-server only, TextLoad 37/37 again. |
+| Offline | NOT RUN as true OS-level offline (needs a firewall/adapter change, a system setting I did not modify). Evidence instead: chat and RAG answered with zero new non-loopback connections; Core had 2 keep-alive HTTPS connections open since startup (AWS eu-west-3 and CloudFront; purpose not identified), unchanged by the requests. RAG over a 2-file synthetic folder (2 docs / 2 chunks): the "emergency shutdown code word / station manager" question was answered correctly with a citation (`[kestrel-project.txt, offset 0]`), 3.98 s first turn, 0.25 s second; plain chat 0.67 s. |
+| Idle Core | PaRuX.Server with a model resident and no requests, 60 s sample: 0.036% of total CPU (0.34 CPU-s on 16 logical cores), working set 265 MB, private 173 MB, 35 threads. llama-server separately 0.8-1.4 GB working set. |
+
+### 4. llama.cpp CUDA vs Vulkan, same model/quant/prompt (bare llama-server, 3 timed repetitions after 1 warm-up)
+Qwen3-4B-Q4_K_M, `-ngl 99`, one slot, 124-token prompt, 128-token greedy completion (`/completion`, top_k 1, `cache_prompt` off), `-lv 4`, device CUDA0 / Vulkan1 (the RTX 5080; Vulkan0 is the iGPU). TTFT = request to first streamed token.
+
+| Case | Decode tok/s (3 reps) | TTFT ms (3 reps) | Prompt tok/s | VRAM loaded |
+| --- | --- | --- | --- | --- |
+| CUDA b12109, ctx 4096, default flags | 210.3 / 214.3 / 213.2 (mean 212.6) | 35 / 22 / 22 | ~6500 | 4149 MiB |
+| Vulkan b10549, ctx 4096, default flags | 209.7 / 213.0 / 210.9 (mean 211.2) | 51 / 30 / 31 | ~4500 | 3915 MiB |
+| CUDA, PaRuX args (ctx 16384, flash-attn on, q8_0/q8_0, b2048/ub1024) | 201.8 / 203.0 / 202.9 (mean 202.6) | 35 / 25 / 24 | ~5650 | 4917 MiB |
+| Vulkan, same args (flash-attn on) | 172.5 / 176.9 / 168.1 (mean 172.5) | 42 / 31 / 30 | ~4400 | 4655 MiB |
+| Vulkan, PaRuX Vulkan-fallback args (flash-attn OFF, K q8_0, V f16, ctx 16384) | 37.9 / 38.4 / 40.2 (mean 38.8) | 3304 / 135 / 137 | ~950 | 9214 MiB |
+
+- Finding (not changed, recommended): the CUDA->Vulkan rung (`TextLaunchLadder.Step.VulkanEngine`) turns flash attention off, which on Vulkan costs about 4.4x decode (38.8 vs 172.5 tok/s), ~4.6x prompt speed and doubles VRAM for the same model on the same GPU. The "27 tok/s Vulkan vs 178 tok/s CUDA" comment in `LocalAiProcessManager` is therefore mostly an argument choice, not the Vulkan backend (bare Vulkan matches CUDA at default flags). Suggested change: try Vulkan with the planned flash attention first (the existing `VulkanKeepFlash` step) and keep the flash-off Vulkan rung as the retry; that needs the 6-rung cap and four ladder test files adjusted, so it is left for a dedicated change.
+- Caveat: Vulkan is build 10549, CUDA is build 12109; differences of a few percent cannot be attributed to the backend alone. The first Vulkan run also pays shader warm-up (the 3304 ms TTFT).
+- Ollama and the LM Studio CLI: NOT RUN (`ollama`, `lms` not on PATH).
+
+### Tests added
+`GamingReleaseVerificationTextTests` (verified / unverified / not_released / none, EN+IT, no invented MiB; `-lv 4` added once and an existing verbosity kept) and `TextLaunchEngineMemoryTests` (record/recall, per-model and per-runtime keys, 10 minute expiry, primary success clears, forget, remembered rung absent from the plan).
+
+### NOT verified (this batch)
+Real Gaming entry/exit against live nvidia-smi and the Settings text on screen; CPU rung live; constrained-VRAM context shrink live; true OS-level offline; the purpose of Core's 2 background HTTPS connections; Ollama.
+
