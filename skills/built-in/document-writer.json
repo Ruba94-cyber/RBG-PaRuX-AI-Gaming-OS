@@ -1,0 +1,60 @@
+{
+  "id": "document-writer",
+  "name": "document-writer",
+  "displayName": "Document Writer",
+  "description": "Creates Word (.docx), Excel (.xlsx) and PowerPoint (.pptx) files from content the model already wrote, saved locally in the documents folder. Existing files are never overwritten.",
+  "icon": "document",
+  "category": "Documents",
+  "version": "1.0.0",
+  "author": "PaRuX",
+  "source": "builtin",
+  "license": "",
+  "attribution": "",
+  "enabled": true,
+  "platforms": [
+    "Windows"
+  ],
+  "preferredModelRole": "MAIN_LLM",
+  "allowedModelRoles": [
+    "MAIN_LLM"
+  ],
+  "requiredCapabilities": [],
+  "allowedTools": [
+    "parux_write_word_document",
+    "parux_write_excel_workbook",
+    "parux_write_presentation"
+  ],
+  "internetPolicy": "off",
+  "memoryPolicy": "off",
+  "ragPolicy": "off",
+  "slashCommand": "/document",
+  "triggerExamples": [
+    "write a word document",
+    "crea un documento word",
+    "make an excel workbook",
+    "salva come pptx"
+  ],
+  "workflow": [
+    "CONTENT",
+    "STRUCTURE",
+    "OPENXML WRITER",
+    "FILE"
+  ],
+  "dependencies": [
+    "DocumentWriteService",
+    "PresentationService"
+  ],
+  "permissions": {
+    "readFiles": false,
+    "writeFiles": false,
+    "shell": false,
+    "computerUse": false
+  },
+  "timeoutSeconds": 120,
+  "retryPolicy": "none",
+  "fallbackSkillId": "general",
+  "confirmationPolicy": "never",
+  "subSkillIds": [
+    "charts"
+  ]
+}

@@ -761,3 +761,7 @@ DENY POST /api/v1/gaming/playnite/launch
 DENY POST /api/v1/gaming/playnite/switch
 DENY POST /api/v1/gaming/playnite/install
 DENY POST /api/v1/gaming/playnite/install/cancel
+DENY DELETE /api/v1/agent-skills/data-sources/{name}
+DENY GET /api/v1/agent-skills/data-sources
+DENY POST /api/v1/agent-skills/data-sources
+DENY POST /api/v1/agent-skills/sql/query

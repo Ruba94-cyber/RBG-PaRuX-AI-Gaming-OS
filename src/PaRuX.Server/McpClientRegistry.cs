@@ -43,6 +43,9 @@ public sealed class McpClientRegistry : IAsyncDisposable
     private PaRuX.Server.Orchestration.AgentLibraryTools? _libraryTools;
     private PaRuX.Server.Orchestration.AgentLibraryTools? _library =>
         _libraryTools ??= _services?.GetService(typeof(PaRuX.Server.Orchestration.AgentLibraryTools)) as PaRuX.Server.Orchestration.AgentLibraryTools;
+    private PaRuX.Server.AgentSkills.AgentSkillTools? _skillTools;
+    private PaRuX.Server.AgentSkills.AgentSkillTools? _agentSkills =>
+        _skillTools ??= _services?.GetService(typeof(PaRuX.Server.AgentSkills.AgentSkillTools)) as PaRuX.Server.AgentSkills.AgentSkillTools;
     private List<McpServerConfig>? _configCache;
     private readonly Dictionary<string, McpClient> _liveClients = new();
 
@@ -364,6 +367,15 @@ public sealed class McpClientRegistry : IAsyncDisposable
             if (!TryAddSchema(schema)) return schemas;
         }
 
+        if (_agentSkills != null)
+        {
+            foreach (JsonNode? schema in _agentSkills.GetToolSchemas(allowedTools))
+            {
+                if (schema == null) continue;
+                if (!TryAddSchema(schema)) return schemas;
+            }
+        }
+
         if (_library != null)
         {
             foreach (JsonNode? schema in _library.GetToolSchemas(allowedTools))
@@ -594,6 +606,14 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 success = !documentResult.StartsWith("Document tool failed:", StringComparison.OrdinalIgnoreCase);
                 outcome = success ? "success" : "tool-error";
                 return documentResult;
+            }
+
+            if (_agentSkills != null && PaRuX.Server.AgentSkills.AgentSkillTools.IsBuiltInTool(toolName))
+            {
+                string skillResult = await _agentSkills.CallAsync(toolName, argumentsJson, ct).ConfigureAwait(false);
+                success = !skillResult.StartsWith(PaRuX.Server.AgentSkills.AgentSkillTools.FailurePrefix, StringComparison.OrdinalIgnoreCase);
+                outcome = success ? "success" : "tool-error";
+                return skillResult;
             }
 
             if (DesktopIntegrationTools.IsBuiltInTool(toolName))

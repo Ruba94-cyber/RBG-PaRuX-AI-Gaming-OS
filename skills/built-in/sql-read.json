@@ -1,0 +1,58 @@
+{
+  "id": "sql-read",
+  "name": "sql-read",
+  "displayName": "Data Query (read-only SQL)",
+  "description": "Answers questions about a SQLite or CSV/TSV file you attached by running one read-only SELECT with row, size and time caps. Writes are refused. The model only ever sees attached file names, never paths.",
+  "icon": "database",
+  "category": "Data",
+  "version": "1.0.0",
+  "author": "PaRuX",
+  "source": "builtin",
+  "license": "",
+  "attribution": "",
+  "enabled": true,
+  "platforms": [
+    "Windows"
+  ],
+  "preferredModelRole": "MAIN_LLM",
+  "allowedModelRoles": [
+    "MAIN_LLM"
+  ],
+  "requiredCapabilities": [],
+  "allowedTools": [
+    "parux_sql_query"
+  ],
+  "internetPolicy": "off",
+  "memoryPolicy": "off",
+  "ragPolicy": "off",
+  "slashCommand": "/sql",
+  "triggerExamples": [
+    "query my csv",
+    "analizza il file csv",
+    "run a select on my database",
+    "quante righe ci sono nel csv"
+  ],
+  "workflow": [
+    "QUESTION",
+    "SCHEMA",
+    "READ-ONLY SELECT",
+    "LOCAL MODEL",
+    "ANSWER"
+  ],
+  "dependencies": [
+    "ReadOnlySqlQueryService"
+  ],
+  "permissions": {
+    "readFiles": false,
+    "writeFiles": false,
+    "shell": false,
+    "computerUse": false
+  },
+  "timeoutSeconds": 60,
+  "retryPolicy": "none",
+  "fallbackSkillId": "general",
+  "confirmationPolicy": "never",
+  "subSkillIds": [
+    "charts"
+  ]
+}
