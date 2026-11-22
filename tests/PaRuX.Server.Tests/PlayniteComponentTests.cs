@@ -86,6 +86,29 @@ public sealed class PlayniteLocatorTests
     }
 
     [Fact]
+    public void Program_files_install_is_identified_with_the_correct_source()
+    {
+        string root = MakeFolder();
+        string installed = Path.Combine(root, "Playnite");
+        Directory.CreateDirectory(installed);
+        try
+        {
+            string desktop = Path.Combine(installed, "Playnite.DesktopApp.exe");
+            File.WriteAllBytes(desktop, new byte[] { 1 });
+            var env = new FakeEnv { ProgramFiles = root };
+            env.Files.Add(desktop);
+
+            PlayniteComponentDto component = new PlayniteLocator(env).Detect();
+
+            Assert.True(component.Detected);
+            Assert.Equal("program-files", component.Source);
+            Assert.Equal(installed, component.Folder);
+            Assert.Equal(ComponentOwnership.SYSTEM_DETECTED, component.Ownership);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void Portable_folder_with_portable_marker_is_classified_portable()
     {
         string dir = MakeFolder(portable: true);
