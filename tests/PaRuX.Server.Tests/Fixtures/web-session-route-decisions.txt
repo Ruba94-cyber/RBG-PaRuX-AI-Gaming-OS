@@ -740,3 +740,5 @@ DENY POST /api/v1/gaming/sign-in-apps/run
 DENY POST /api/v1/gaming/sign-in-apps/shell-state
 DENY POST /api/v1/gaming/sign-in-apps/trigger
 DENY PUT /api/v1/gaming/sign-in-apps
+DENY GET /api/v1/internet/search-providers
+DENY POST /api/v1/internet/search-providers

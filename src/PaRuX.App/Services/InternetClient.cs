@@ -24,6 +24,12 @@ namespace PaRuX.Services
         public Task<InternetStatus> SetEnabledAsync(bool enabled, CancellationToken ct) =>
             SendAsync<InternetStatus>(HttpMethod.Post, "/api/v1/internet", new InternetEnabledRequest { Enabled = enabled }, ct);
 
+        public Task<WebSearchProvidersStatus> GetSearchProvidersAsync(CancellationToken ct) =>
+            SendAsync<WebSearchProvidersStatus>(HttpMethod.Get, "/api/v1/internet/search-providers", null, ct);
+
+        public Task<WebSearchProvidersStatus> SetSearchProvidersAsync(WebSearchProvidersRequest request, CancellationToken ct) =>
+            SendAsync<WebSearchProvidersStatus>(HttpMethod.Post, "/api/v1/internet/search-providers", request, ct);
+
         /// <summary>Reads the switch only from a server that is already running. Unlike GetStatusAsync it never starts a
         /// server, so a background watch cannot start one. It throws when that server does not answer.</summary>
         public async Task<InternetStatus> GetStatusIfRunningAsync(CancellationToken ct)

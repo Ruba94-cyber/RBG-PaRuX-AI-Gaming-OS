@@ -139,6 +139,7 @@ builder.Services.AddSingleton<PaRuX.Server.Knowledge.WebKnowledgeSources>(sp =>
         offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings));
 });
 builder.Services.AddSingleton<BackupService>();
+builder.Services.AddSingleton<WebSearchSettingsService>();
 builder.Services.AddSingleton<WebSearchService>();
 builder.Services.AddSingleton<InternetSettingsService>();
 builder.Services.AddSingleton<ResearchEngineService>();
@@ -1315,6 +1316,24 @@ app.MapPost("/api/v1/internet", (InternetEnabledRequest request, InternetSetting
     AuditLogService.TryRecord("internet.policy", request.Enabled ? "enabled" : "disabled");
     return Results.Ok(new InternetStatus { Enabled = internet.GetEnabled() });
 }).RequireDesktopOwnerToEnableInternet();
+
+app.MapGet("/api/v1/internet/search-providers", (WebSearchService web) =>
+    Results.Ok(web.GetProvidersStatus()));
+
+app.MapPost("/api/v1/internet/search-providers", (WebSearchProvidersRequest request,
+    WebSearchSettingsService settings, WebSearchService web) =>
+{
+    try
+    {
+        settings.Set(request.SearxngUrl, request.DisabledProviders);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    AuditLogService.TryRecord("internet.search_providers", "updated");
+    return Results.Ok(web.GetProvidersStatus());
+}).RequireDesktopOwner();
 
 app.MapGet("/api/v1/personas", (PersonaService personas) => Results.Ok(personas.GetAll()));
 

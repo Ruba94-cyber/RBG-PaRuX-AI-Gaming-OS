@@ -740,6 +740,33 @@ public sealed class InternetEnabledRequest
     public bool Enabled { get; set; }
 }
 
+/// <summary>One web search provider as the Settings page shows it. State is one of: unused, ok, no_results,
+/// failed, not_configured, disabled.</summary>
+public sealed class WebSearchProviderInfo
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+    public string State { get; set; } = "unused";
+    public string Detail { get; set; } = string.Empty;
+    public DateTimeOffset? LastUsedUtc { get; set; }
+}
+
+public sealed class WebSearchProvidersStatus
+{
+    public bool InternetEnabled { get; set; }
+    public string SearxngUrl { get; set; } = string.Empty;
+    public string LastProvider { get; set; } = string.Empty;
+    public List<WebSearchProviderInfo> Providers { get; set; } = new();
+}
+
+public sealed class WebSearchProvidersRequest
+{
+    /// <summary>Self-hosted SearXNG root on loopback or a private LAN IPv4 address; empty clears it.</summary>
+    public string? SearxngUrl { get; set; }
+    public List<string>? DisabledProviders { get; set; }
+}
+
 // ---- Research Engine (Fast/Balanced/Deep Research, built on the Internet toggle above) ----
 
 public sealed class ResearchSource

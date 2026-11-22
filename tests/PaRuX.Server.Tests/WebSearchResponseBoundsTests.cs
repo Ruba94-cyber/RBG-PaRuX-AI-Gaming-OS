@@ -58,7 +58,7 @@ public sealed class WebSearchResponseBoundsTests : IDisposable
     }
 
     [Fact]
-    public async Task Search_result_pages_are_bounded_on_both_endpoints()
+    public async Task Search_result_pages_are_bounded_on_every_endpoint()
     {
         var bodies = new List<EndlessBody>();
         var handler = new ScriptedHandler(_ =>
@@ -72,7 +72,7 @@ public sealed class WebSearchResponseBoundsTests : IDisposable
         List<WebSearchResult> results = await web.SearchAsync("history of rome", 5, CancellationToken.None);
 
         Assert.Empty(results);
-        Assert.Equal(2, bodies.Count);
+        Assert.Equal(3, bodies.Count); // DuckDuckGo html + lite, then Wikipedia
         foreach (EndlessBody body in bodies)
             Assert.True(body.Produced <= WebSearchService.MaxResponseBytes);
     }
