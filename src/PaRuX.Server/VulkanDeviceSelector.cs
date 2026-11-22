@@ -33,7 +33,7 @@ internal static partial class VulkanDeviceSelector
 
     /// <summary>The outcome of a device choice. <see cref="Device"/> is null only when <see cref="CpuFallback"/> is true
     /// (every candidate failed its health probe), in which case the launch must use CPU arguments.</summary>
-    internal sealed record DeviceChoice(string? Device, string Reason, bool UsedFallback = false, bool CpuFallback = false);
+    internal sealed record DeviceChoice(string? Device, string Reason, bool UsedFallback = false, bool CpuFallback = false, bool Discrete = false);
 
     [GeneratedRegex(@"^\s*Vulkan(?<i>\d+):\s*(?<name>.+?)\s*\((?<total>\d+)\s*MiB(?:,\s*(?<free>\d+)\s*MiB free)?", RegexOptions.CultureInvariant)]
     private static partial Regex DeviceLine();
@@ -79,7 +79,8 @@ internal static partial class VulkanDeviceSelector
         if (devices.Count == 0)
             return new DeviceChoice(DefaultDevice, "llama.cpp device list unavailable; kept " + DefaultDevice + ".", UsedFallback: true);
         if (devices.Count == 1)
-            return new DeviceChoice(devices[0].Id, "Single GPU device (" + devices[0].Name + ").");
+            return new DeviceChoice(devices[0].Id, "Single GPU device (" + devices[0].Name + ").",
+                Discrete: inventory is { Available: true } && Rank(devices, inventory) is [{ Integrated: false, DedicatedMib: >= MinimumUsefulDiscreteMib }]);
         if (inventory is not { Available: true })
             return new DeviceChoice(DefaultDevice, "GPU inventory unavailable; kept " + DefaultDevice + ".", UsedFallback: true);
 
@@ -110,7 +111,7 @@ internal static partial class VulkanDeviceSelector
             + (noneFits ? "; no device reports enough free memory for the model, so the best device is used and layers are fitted" : "")
             + (healthy.Count < ranked.Count ? "; devices that failed the health probe were skipped" : "") + ".";
         // Not a fallback when the best device is not Vulkan0 or when more than one device competed: it is a decision, and it is surfaced.
-        return new DeviceChoice(best.Device.Id, reason);
+        return new DeviceChoice(best.Device.Id, reason, Discrete: !best.Integrated && best.DedicatedMib >= MinimumUsefulDiscreteMib);
     }
 
     private static long FreeOrTotal(VulkanDevice d) => d.FreeMib >= 0 ? d.FreeMib : d.TotalMib;

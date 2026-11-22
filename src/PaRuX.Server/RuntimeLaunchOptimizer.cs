@@ -116,6 +116,11 @@ public static class RuntimeLaunchOptimizer
             long requiredMib = (EstimateLoadedBytes(modelSize) + EstimateKvBytes(profile)) / MiB;
             VulkanDeviceSelector.DeviceChoice deviceChoice = await VulkanDeviceSelector.ChooseAsync(inventory, requiredMib, null, ct).ConfigureAwait(false);
             profile.Device = deviceChoice.Device ?? VulkanDeviceSelector.DefaultDevice;
+            // A discrete card on Vulkan prefills like a CUDA card, not like an iGPU: measured on an RTX 5080 through llama.cpp Vulkan
+            // (Qwen3-4B Q4_K_M, 4k prompt), batch/ubatch 2048/1024 gave 10.5k tok/s against 7.0k at 512/128 and cut first-token time
+            // from 814 to 569 ms. The small values stay for an integrated GPU and for an unknown device.
+            if (deviceChoice.Discrete)
+                (profile.BatchSize, profile.UBatchSize) = LocalAiProcessManager.DefaultBatchSizes(true, profile.BatchSize, profile.UBatchSize);
             // Auto rather than a pinned single slot: measured on the iGPU reference machine,
             // "--parallel 1" cost ~4.1 s to first token against ~1.0 s when llama.cpp sized the
             // slots itself (which chose 4 slots while keeping the full per-slot context), with
