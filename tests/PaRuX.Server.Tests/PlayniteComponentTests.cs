@@ -450,6 +450,60 @@ public sealed class PlayniteSettingsStoreTests : IDisposable
     }
 }
 
+public sealed class PlayniteReturnWatchPolicyTests
+{
+    [Fact]
+    public void A_playnite_that_exits_before_first_poll_still_triggers_return()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = true },
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = false,
+                PaRuXLaunchedClosedCounter = 8
+            }
+        };
+
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(7, status));
+    }
+
+    [Fact]
+    public void A_mode_switch_does_not_return_while_the_replacement_playnite_is_running()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = true,
+                PaRuXLaunchedClosedCounter = 12
+            }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(11, status));
+        status.Session.PaRuXLaunchedPlaynite = false;
+        status.Session.PaRuXLaunchedClosedCounter++;
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(12, status));
+    }
+
+    [Fact]
+    public void Return_is_refused_when_disabled_or_counter_unknown_or_unchanged()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = false },
+            Session = new PlayniteSessionDto { PaRuXLaunchedClosedCounter = 3 }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(2, status));
+        status.Settings.ReturnToPaRuXOnClose = true;
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(null, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(4, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(2, null));
+    }
+}
+
 public sealed class PlayniteInstallerTests : IDisposable
 {
     private const string Url = "https://github.com/JosefNemec/Playnite/releases/download/10.65/Playnite1065.exe";
