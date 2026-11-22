@@ -270,6 +270,69 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void Switch_does_not_close_desktop_when_required_tv_is_disconnected()
+    {
+        var (l, h, _, c, _) = Make(displayConnected: false);
+        var settings = new PlayniteSettingsDto { ConsoleOnlyWhenTargetConnected = true, TargetDisplayId = "TV1" };
+        Assert.True(l.Launch(c, settings, PlayniteModes.Desktop, null).Ok);
+
+        PlayniteLaunchResultDto result = l.Switch(c, settings, gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Equal("refused", result.Outcome);
+        Assert.Contains("display", result.Message!, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+        Assert.Equal(PlayniteModes.Desktop, l.LaunchedMode);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_when_fullscreen_executable_is_missing()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        c.FullscreenExe = null;
+
+        PlayniteLaunchResultDto result = l.Switch(c, new PlayniteSettingsDto(), gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_when_playnite_was_skipped()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+
+        PlayniteLaunchResultDto result = l.Switch(c,
+            new PlayniteSettingsDto { Skipped = true }, gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_if_playnite_component_disappears()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        c.Detected = false;
+
+        PlayniteLaunchResultDto result = l.Switch(c, new PlayniteSettingsDto(), gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+    }
+
+    [Fact]
     public void Switch_never_force_closes_a_playnite_that_ignores_the_close_request()
     {
         var (l, h, _, c, _) = Make();
