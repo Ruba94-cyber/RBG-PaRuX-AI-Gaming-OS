@@ -101,6 +101,8 @@ public sealed class WorkloadOrchestrator : BackgroundService
     private readonly Func<CancellationToken, Task<bool>> _runtimeHealthCheck;
     private readonly Func<CancellationToken, Task> _restoreRuntimeToReady;
 
+    private readonly Func<CancellationToken, Task<int?>> _gpuUsedMibSampler;
+    private readonly Func<IReadOnlyList<int>> _ownedInferenceProbe;
     private readonly Action? _cancelEvaluations;
     private readonly Func<CancellationToken, Task<bool>>? _stopQuantizationForGaming;
 
@@ -121,8 +123,12 @@ public sealed class WorkloadOrchestrator : BackgroundService
         Action? cancelEvaluations = null,
         IReadOnlyCollection<IGamingTriggerProvider>? triggerProviders = null,
         IReadOnlyCollection<IGameSuspendProvider>? suspendProviders = null,
-        Func<CancellationToken, Task<bool>>? stopQuantizationForGaming = null)
+        Func<CancellationToken, Task<bool>>? stopQuantizationForGaming = null,
+        Func<CancellationToken, Task<int?>>? gpuUsedMibSampler = null,
+        Func<IReadOnlyList<int>>? ownedInferenceProbe = null)
     {
+        _gpuUsedMibSampler = gpuUsedMibSampler ?? GpuMemoryReleaseWaiter.SampleUsedMibAsync;
+        _ownedInferenceProbe = ownedInferenceProbe ?? (() => DefaultOwnedInferenceProbe(processManager));
         _resumables = resumables?.ToList() ?? new List<IGamingResumable>();
         _runtime = runtime;
         _processManager = processManager;
@@ -197,7 +203,9 @@ public sealed class WorkloadOrchestrator : BackgroundService
                 LastStateChangeUtc = _lastStateChangeUtc,
                 ManualReturnRequiredReason = _manualReturnRequiredReason,
                 LastVerifiedOwnedGameExitUtc = _lastVerifiedOwnedExitUtc,
-                LastVerifiedOwnedGameExitRestoredAi = _lastVerifiedOwnedExitRestoredAi
+                LastVerifiedOwnedGameExitRestoredAi = _lastVerifiedOwnedExitRestoredAi,
+                AiReleaseVerification = _aiReleaseVerification,
+                AiVramReleasedMib = _aiVramReleasedMib
             };
         }
     }
@@ -721,6 +729,12 @@ public sealed class WorkloadOrchestrator : BackgroundService
 
     public async Task ReleaseResourcesForGamingAsync(CancellationToken ct)
     {
+        // Baseline BEFORE anything stops, so the verification below can report how much was really released.
+        int? usedBeforeMib = null;
+        try { usedBeforeMib = await _gpuUsedMibSampler(ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { throw; }
+        catch { /* telemetry is optional: an unreadable baseline only makes the report less precise */ }
+
         _runtime.SetGamingState(true);
         _jobs.CancelAllForGaming();
         bool speechStopped = _speech.StopWorkersForGaming();
@@ -753,7 +767,38 @@ public sealed class WorkloadOrchestrator : BackgroundService
         if (!speechStopped)
             throw new InvalidOperationException(
                 "Gaming Mode could not confirm that all PaRuX-owned speech processes exited; Gaming Guard will retry.");
+
+        // A stop that was merely sent is not a release: confirm PaRuX-owned inference is gone and measure the card.
+        GamingVramReleaseReport report = await GamingVramReleaseVerifier.VerifyAsync(
+            usedBeforeMib, _gpuUsedMibSampler, _ownedInferenceProbe, ct, VramVerifyMaxWait, VramVerifyInterval).ConfigureAwait(false);
+        lock (_stateGate)
+        {
+            _aiReleaseVerification = report.Outcome switch
+            {
+                GamingVramReleaseOutcome.Verified => "verified",
+                GamingVramReleaseOutcome.Unverified => "unverified",
+                _ => "not_released"
+            };
+            _aiVramReleasedMib = report.ReleasedMib;
+            _suspendedAiWorkloads.Add("GPU release: " + report.Message);
+        }
+        if (report.Outcome == GamingVramReleaseOutcome.NotReleased)
+            throw new InvalidOperationException(report.Message + " Gaming Guard keeps retrying the release.");
     }
+
+    private static IReadOnlyList<int> DefaultOwnedInferenceProbe(LocalAiProcessManager manager)
+    {
+        var alive = new List<int>();
+        if (manager.GetTextProcessId() is int text) alive.Add(text);
+        if (manager.GetMediaProcessId() is int media) alive.Add(media);
+        return alive;
+    }
+
+    /// <summary>Upper bound of the post-release VRAM check; tests shorten it.</summary>
+    internal TimeSpan VramVerifyMaxWait { get; set; } = GamingVramReleaseVerifier.DefaultMaxWait;
+    internal TimeSpan VramVerifyInterval { get; set; } = GamingVramReleaseVerifier.DefaultInterval;
+    private string? _aiReleaseVerification;
+    private long? _aiVramReleasedMib;
 
     /// <summary>
     /// The runtime persists Gaming Mode across restarts (PaRuX must not reload AI mid-game), but
@@ -808,6 +853,8 @@ public sealed class WorkloadOrchestrator : BackgroundService
         lock (_stateGate)
         {
             _suspendedAiWorkloads.Clear();
+            _aiReleaseVerification = null;
+            _aiVramReleasedMib = null;
         }
         // Downloads paused for Gaming resume automatically only under the explicit policy;
         // otherwise they stay paused for a manual resume. A resume failure never fails the exit.

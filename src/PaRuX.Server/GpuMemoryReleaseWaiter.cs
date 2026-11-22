@@ -52,7 +52,7 @@ internal static class GpuMemoryReleaseWaiter
     /// <summary>Free VRAM in MiB of the card with the most free memory; null when it cannot be read.</summary>
     internal static Task<int?> SampleFreeMibAsync(CancellationToken ct) => SampleAsync(NvidiaSmiProbe.FreeMemoryArguments, ct);
 
-    private static Task<int?> SampleUsedMibAsync(CancellationToken ct) => SampleAsync(NvidiaSmiProbe.UsedMemoryArguments, ct);
+    internal static Task<int?> SampleUsedMibAsync(CancellationToken ct) => SampleAsync(NvidiaSmiProbe.UsedMemoryArguments, ct);
 
     private static async Task<int?> SampleAsync(string arguments, CancellationToken ct)
     {
