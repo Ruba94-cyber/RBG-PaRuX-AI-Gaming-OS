@@ -73,3 +73,44 @@ Only PaRuX has a RAG ingest/query measurement; there is no competitor number to 
 - UI-level timings for PaRuX were not measured; Core idle excludes the WinUI process.
 - Contention: other agents' tests and a resident LU instance ran concurrently; spread is wide on a few rows (see min-max) and the TTFT numbers through the Core have roughly +-50 ms of noise.
 - Single model (4B Q4_K_M) and single GPU; larger models, MoE offload, speculative decoding and concurrent-slot throughput were not compared.
+
+## 7. Follow-up batch (same day): adaptive KV, shorter refusal hold, CUDA-wins, CUDA vs Vulkan, LU re-run
+Same machine, still NOT quiet (other agents' testhost/compilers ran; Core idle CPU read 4-5% instead of 1%), so every Core number below is a median over interleaved A/B/A/B pairs plus the earlier single run, and single-run outliers are called out. Raw JSON stayed in the session scratch folder.
+
+### 7.1 Adaptive KV precision (CUDA, default launches only)
+- Rule (`LaunchPlanner.AdaptiveFullPrecisionKvNote`): the default q8_0 cache is raised to f16 only when weights + f16 KV + reserve fit the LIVE free VRAM with at least 2 GiB to spare AND use at most 60% of the card. A tight card, another resident, a big model, an explicit user context/KV choice, a measured profile, Vulkan, an iGPU or an unknown total keep q8_0. The pre-plan baseline the launch ladder falls back to stays q8_0, so an OOM falls back to the old launch. `PARUX_KV_CACHE_ADAPTIVE=0` turns it off. 9 tests: `AdaptiveKvCacheTests`.
+- Real Core launch confirmed `--cache-type-k f16 --cache-type-v f16` (4B Q4_K_M, 16k, 16 GB card, about 15 GB free). VRAM delta 5131 vs 4057 MiB (+1.07 GB), process RAM 6.9 vs 4.2 GB (+2.7 GB).
+- Through the Core, old (q8_0, fixed hold) vs new, medians of 4-5 arms each: decode short 181 vs 200 tok/s (+10%), 1k 178 vs 180 (equal; two new arms were disturbed by contention), 4k 157 vs 165 (+5%). Prompt processing 1k/4k 11.0k/11.2k vs 11.3k/11.9k (+3-6%). 4k TTFT got WORSE: 860 vs 1050 ms in every pair (+100-200 ms), the same effect measured on 2026-11-22 earlier; cause not isolated (raw-engine pp is faster with f16, so it is not prefill). 1k TTFT equal within noise (390 vs 440).
+- Verdict: f16 closes the decode gap to AnythingLLM's engine (f16: 224/211/188 raw engine); the price is +1.1 GB VRAM, +2.7 GB RAM and slower 4k first token. Kept adaptive (owner priority) with the off switch; if 4k TTFT matters more than decode on a given machine, `PARUX_KV_CACHE_ADAPTIVE=0` restores q8_0.
+
+### 7.2 First token through the Core
+- Refusal hold (`RefusalHold`, used by `ChatProxyService.StreamWithFallbackAsync`): runs only when auto-uncensored fallback is on (unchanged). New: release as soon as 32 characters ending on a word boundary arrived with no refusal cue and no heuristic match. Semantics: 15 refusal openers (EN/IT) still escalate, 8 ordinary replies still release, no prefix of any refusal is ever released early (`RefusalHoldTests`, 7 tests). Documented boundary: a refusal that only starts after 32 cue-free characters is no longer caught (the old window caught it only if it arrived within 100 ms); pinned by a test. `PARUX_ADAPTIVE_REFUSAL_HOLD=0` restores the fixed window.
+- Routing: per-candidate hardware-fit estimates now run concurrently when there are 2+ candidates, and the context-window snapshot is reused instead of fetched twice. This benchmark had one candidate, so the routing change is NOT measured here.
+- Measured Core TTFT short prompt: 250 ms (old arms 236/236/270/332) vs 165 ms (new arms 146/157/171/176/228), about -85 ms; raw engine is 54-60 ms, so about 100 ms of Core overhead remains.
+
+### 7.3 CUDA wins over Vulkan on NVIDIA
+- Reproduced: a data root with CUDA b12233/b12600 installed and `runtime-build-config.json` = only `{"text-vulkan":"b10549"}` resolved `RuntimeCudaPath` to the missing default-tag folder and launched Vulkan. The install path itself is fine: a first install goes through `RuntimeUpdateRegressionGuard` which activates the tag (tested), the bundled baseline only skips when a CUDA tag or folder exists; stage-only/automatic installs never activate by design, which is how a CUDA folder can exist with no tag.
+- Fix: with no CUDA tag configured and the default-tag folder absent, `LocalAiPaths.RuntimeCudaPath` resolves to the newest installed CUDA folder; an explicit tag still wins. `EffectiveCudaBuildTag` feeds the profile-store key and hot-pool tag. 5 tests: `CudaRuntimeWinsOverVulkanTests`. Live check on the real Core with only text-vulkan configured: llama-server launched from `llama.cpp-b12600-cuda13.5`.
+
+### 7.4 CUDA vs Vulkan, same flags, nearest local builds
+No pair of the SAME llama.cpp version exists locally (CUDA b12233/b12600; Vulkan b10549 and b12602). Used b12600 CUDA vs b12602 Vulkan (two builds apart), Qwen3-4B Q4_K_M, ctx 16k, f16 KV, batch 2048/1024, flash-attn, 5 runs x 2 repetitions, medians (short / 1k / 4k):
+| | Decode tok/s | Prompt-proc 1k / 4k | TTFT ms | Load ms | VRAM delta MiB |
+|---|---|---|---|---|---|
+| CUDA b12600 | 201-211 / 192-193 / 172-176 | 12.3-12.4k / 12.4k | 54-57 / 193-203 / 671-720 | 2474, 3198 | 5126-5143 |
+| Vulkan b12602 (RTX 5080, Vulkan1) | 169-179 / 163-166 / 136-152 | 10.6k / 8.2-10.9k | 61-63 / 212 / 802 | 4933, 4096 | 6425-6441 |
+CUDA is 15-25% faster at decode, 15-17% at prefill, loads faster and uses about 1.3 GB less VRAM. Version skew is small but not zero, so treat the exact percentages as indicative.
+
+### 7.5 PaRuX vs Locally Uncensored (installed, 3.1.1), identical model/quant/ctx 16k/f16 KV, 5 runs x 2 repetitions
+LU's own Vulkan engine on the RTX 5080 (`--device Vulkan1`) vs the PaRuX CUDA b12233 engine. Medians (short / 1k / 4k):
+| | LU engine | PaRuX engine | PaRuX Core (default launch, f16 chosen adaptively) |
+|---|---|---|---|
+| Decode tok/s | 181-200 / 184-192 / 154-167 | 206-214 / 189-203 / 171-174 | 200-209 / 177-189 / 156-167 |
+| Prompt-proc 1k / 4k | 9.3-9.6k / 9.4-9.7k | 12.5-12.6k / 12.5k | 11.3-12.0k / 11.8-11.9k |
+| TTFT ms | 72 / 228-241 / 754-937 | 61-63 / 175-208 / 615-653 | 146-171 / 353-390 / 996-1092 |
+| Load ms (1 cold start) | 3467-6787 | 3279-6118 | Core start + ready 8.6-12.6 s |
+| VRAM delta MiB | 5205 | 5143 | 5131 |
+
+Verdicts: decode FASTER (engine +7-10%, Core roughly +5%, one LU decode repetition was disturbed); prompt processing FASTER (+30% engine, +20-25% Core); TTFT engine-level FASTER (-12% short, -20% to -30% 1k/4k), TTFT through the Core SLOWER than LU's raw engine at every length (it is not a like-for-like path: LU number is a bare llama-server, the PaRuX number includes routing, context pack and the refusal hold); model load EQUAL within the large noise of this run; VRAM EQUAL (5.13 vs 5.21 GB at the same f16/16k, PaRuX 4.06 GB with its q8_0 default vs LU's default f16 32k 7.5 GB); RAG/UI/idle not re-run (see sections 3 and 4).
+
+### 7.6 Not run / limits (this batch)
+Unsloth Studio and AnythingLLM Desktop: NOT run (not installed; no elevated installs). LU UI-level TTFT and RAG: not run. Contention from other agents makes 1k/4k Core TTFT and some decode arms noisy (some arms show 66-130 tok/s outliers); conclusions use medians over repeated pairs only. Hot routing change not measured (single candidate).

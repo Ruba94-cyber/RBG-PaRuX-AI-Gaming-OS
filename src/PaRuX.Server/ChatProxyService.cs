@@ -18,7 +18,6 @@ public sealed class ChatProxyService
     private static readonly HttpClient Http = new(ManagedRuntimePeers.CreateHandler()) { Timeout = Timeout.InfiniteTimeSpan };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int ReplyReserveTokens = 1024;
-    private const int FallbackDecisionThreshold = 240;
     private const int MaxExactPromptReplans = 4;
 
     // Keep the refusal probe bounded without turning ordinary streaming replies into a blank
@@ -26,6 +25,10 @@ public sealed class ChatProxyService
     // to observe them on a local provider while keeping the user-visible first frame inside the
     // transport overhead budget.
     internal static TimeSpan FallbackDecisionWindow { get; private set; } = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Releases a reply early once it shows 32 cue-free characters (see <see cref="RefusalHold"/>). Off restores the fixed window.</summary>
+    internal static bool AdaptiveFallbackHold { get; set; } =
+        !string.Equals(Environment.GetEnvironmentVariable("PARUX_ADAPTIVE_REFUSAL_HOLD"), "0", StringComparison.Ordinal);
 
     internal static IDisposable OverrideFallbackDecisionWindowForTests(TimeSpan window)
     {
@@ -288,6 +291,7 @@ public sealed class ChatProxyService
 
         List<string> sources;
         JsonArray mcpTools;
+        int? capturedWindow = null;
         if (useLowLatencyPath)
         {
             sources = new List<string>();
@@ -299,6 +303,7 @@ public sealed class ChatProxyService
             // 12,000-character pack overflowed the 4,096-token CPU profile on one document question.
             int windowForContext = await ChatContextWindowSnapshot.CaptureAsync(
                 Http, _runtime.ProviderEndpoint, modelRoute, cancellationToken).ConfigureAwait(false);
+            capturedWindow = windowForContext;
             ChatContextResult context = await _context.BuildForChatAsync(
                 lastUser?.Content ?? string.Empty, routed.Skill, request.ConversationId,
                 request.IncludeConversationHistory, cancellationToken, request.Documents,
@@ -322,8 +327,9 @@ public sealed class ChatProxyService
         // Snapshot the physical context while the baseline resident is still available. A direct
         // engine transition may legitimately stop llama.cpp before prompt fitting; querying /props
         // afterwards would turn a known context into zero and silently skip the safety gate.
-        int contextWindowSnapshot = await ChatContextWindowSnapshot.CaptureAsync(
-            Http, _runtime.ProviderEndpoint, modelRoute, cancellationToken).ConfigureAwait(false);
+        int contextWindowSnapshot = capturedWindow
+            ?? await ChatContextWindowSnapshot.CaptureAsync(
+                Http, _runtime.ProviderEndpoint, modelRoute, cancellationToken).ConfigureAwait(false);
 
         LocalInferenceChatPreparation enginePreparation;
         try
@@ -1106,9 +1112,10 @@ public sealed class ChatProxyService
             bool windowElapsed = firstDeltaTimestamp != 0
                 && Stopwatch.GetElapsedTime(firstDeltaTimestamp) >= FallbackDecisionWindow;
 
-            if (done || plainText.Length >= FallbackDecisionThreshold || windowElapsed)
+            RefusalHold.Verdict verdict = RefusalHold.Evaluate(plainText.ToString(), windowElapsed, done, AdaptiveFallbackHold);
+            if (verdict != RefusalHold.Verdict.Hold)
             {
-                if (RefusalHeuristic.IsLikelyRefusal(plainText.ToString())
+                if (verdict == RefusalHold.Verdict.Escalate
                     && await TryEscalateAndRestartAsync(request, downstream, cancellationToken)) return;
                 await FlushPendingAsync(pending, downstream, cancellationToken);
                 await PumpRawAsync(reader, downstream, cancellationToken);
