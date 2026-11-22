@@ -6,13 +6,14 @@ public static class GameCoverSizes
     public const string Small = "small";
     public const string Medium = "medium";
     public const string Large = "large";
+    public const string ExtraLarge = "xlarge";
 
-    public static readonly string[] All = { Small, Medium, Large };
+    public static readonly string[] All = { Small, Medium, Large, ExtraLarge };
 
     public static string Normalize(string? value)
     {
         string v = (value ?? string.Empty).Trim().ToLowerInvariant();
-        return v is Small or Large ? v : Medium;
+        return v is Small or Large or ExtraLarge ? v : Medium;
     }
 
     /// <summary>Factor applied to the cover width/height of a grid tile (the tile text keeps its size).</summary>
@@ -20,6 +21,7 @@ public static class GameCoverSizes
     {
         Small => 0.75,
         Large => 1.3,
+        ExtraLarge => 1.6,
         _ => 1.0,
     };
 }
@@ -31,13 +33,15 @@ public static class GameGroupModes
     public const string Platform = "platform";
     public const string Source = "source";
     public const string Status = "status";
+    /// <summary>Console-style feed of horizontal shelves (Continue, Favorites, Recently added, collections); see <see cref="GameShelfFeedModel"/>.</summary>
+    public const string Shelves = "shelves";
 
-    public static readonly string[] All = { None, Platform, Source, Status };
+    public static readonly string[] All = { None, Platform, Source, Status, Shelves };
 
     public static string Normalize(string? value)
     {
         string v = (value ?? string.Empty).Trim().ToLowerInvariant();
-        return v is Platform or Source or Status ? v : None;
+        return v is Platform or Source or Status or Shelves ? v : None;
     }
 }
 
@@ -98,7 +102,8 @@ public static class GameLibraryGrouping
     public static IReadOnlyList<GameTileGroup> Build(IReadOnlyList<GameTitleDto> titles, string mode)
     {
         mode = GameGroupModes.Normalize(mode);
-        if (mode == GameGroupModes.None)
+        // The shelf feed is not a partition of the library (a title can sit on several shelves), so it has no flat groups.
+        if (mode is GameGroupModes.None or GameGroupModes.Shelves)
             return titles.Count == 0 ? Array.Empty<GameTileGroup>() : new[] { new GameTileGroup(string.Empty, titles) };
 
         var buckets = new Dictionary<string, List<GameTitleDto>>(StringComparer.OrdinalIgnoreCase);

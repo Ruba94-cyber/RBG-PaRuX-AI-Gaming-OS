@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Numerics;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -188,8 +189,8 @@ internal static class GameUi
 }
 
 /// <summary>
-/// The tiles of the Gaming library: a virtualized cover grid, a virtualized compact list, or a horizontal shelf of large tiles
-/// (the Continue row, at most ten tiles). The grid and the list are an <see cref="ItemsRepeater"/> over the lightweight title
+/// The tiles of the Gaming library: a virtualized cover grid, a virtualized compact list, a horizontal shelf of large tiles
+/// (the Continue row, at most ten tiles) or a virtualized horizontal row of cover tiles (one shelf of the shelf feed). The grid and the list are an <see cref="ItemsRepeater"/> over the lightweight title
 /// list: only the tiles near the viewport exist, finished tiles are recycled (rebound to the next title, never rebuilt), and
 /// a 2,000-title library costs the same as a 50-title one. Tiles show a local cover image when the user chose one and a lettered
 /// fallback otherwise; covers are decoded at the displayed size when a tile is realized and released when it is recycled.
@@ -200,7 +201,8 @@ internal static class GameUi
 /// </summary>
 internal sealed class GameTileGrid : StackPanel, IGameTileSurface
 {
-    internal enum Presentation { Grid, List, Shelf }
+    /// <remarks><c>Row</c> is one virtualized, horizontally scrolling shelf of the shelf feed: tiles are realized only near the row's viewport.</remarks>
+    internal enum Presentation { Grid, List, Shelf, Row }
 
     private const double TileGap = 12;
 
@@ -234,13 +236,15 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         public required ImageBrush CoverBrush { get; init; }
         public CoverEntry? Cover { get; set; }
         public bool Hovering { get; set; }
+        public bool Focused { get; set; }
+        public bool Lifted { get; set; }
         public bool Live { get; set; }
     }
 
     /// <summary>Creates, binds and recycles the tiles of the <see cref="ItemsRepeater"/>.</summary>
     private sealed class TileFactory : IElementFactory
     {
-        private const int MaxPooled = 48;
+        private int MaxPooled => _owner._presentation == Presentation.Row ? 12 : 48;
         private readonly GameTileGrid _owner;
         private readonly Stack<TileParts> _pool = new();
 
@@ -269,12 +273,13 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     private static readonly BoundedLruCache<string, CoverEntry> CoverCache = new(160);
 
     private readonly Presentation _presentation;
-    private readonly string _openPrefix;
-    private readonly string _playPrefix;
-    private readonly string _configurePrefix;
+    private string _openPrefix;
+    private string _playPrefix;
+    private string _configurePrefix;
     private readonly HashSet<TileParts> _live = new();
     private readonly TileFactory _factory;
     private ItemsRepeater? _repeater;
+    private ScrollViewer? _rowViewer;
     private StackPanel? _strip;
     private IReadOnlyList<GameTitleDto> _titles = Array.Empty<GameTitleDto>();
     // The list the repeater actually reads. It is a private copy of the host's list (references only, so cheap) so that rebinding
@@ -290,6 +295,29 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     public event Action<GameTitleDto>? OpenRequested;
     public event Action<GameTitleDto>? PlayRequested;
     public event Action<GameTitleDto>? SelectionToggled;
+
+    /// <summary>A tile took keyboard/pad focus (<see cref="GameHeroSource.Focus"/>) or the mouse entered it (Hover). The flag says the user caused it.</summary>
+    public event Action<GameTitleDto, GameHeroSource, bool>? TileEntered;
+    public event Action<GameHeroSource>? TileLeft;
+
+    // Focus that follows a key press the user made is "user focus" even though the grid moves it with a programmatic Focus call.
+    private static long _userNavigationUntil;
+    internal static void NoteUserNavigation() => _userNavigationUntil = Environment.TickCount64 + 800;
+
+    private static bool IsUserFocus(RoutedEventArgs e) =>
+        Environment.TickCount64 <= _userNavigationUntil
+        || (e.OriginalSource is UIElement { FocusState: not FocusState.Programmatic and not FocusState.Unfocused });
+
+    /// <summary>Makes the automation ids of a shelf row unique (the same title can sit on several shelves). Call before the first render.</summary>
+    internal void SetIdScope(string shelfId)
+    {
+        _openPrefix = "GameShelfTile_" + shelfId + "_";
+        _playPrefix = "GameShelfPlay_" + shelfId + "_";
+        _configurePrefix = "GameShelfConfigure_" + shelfId + "_";
+    }
+
+    /// <summary>Tiles that exist right now (a measure of virtualization, for tests and diagnostics).</summary>
+    internal int RealizedCount => _live.Count;
 
     /// <summary>False when a parent (the grouped library) owns arrow / Home / End / Page movement across several grids.</summary>
     internal bool HandlesNavigationKeys { get; set; } = true;
@@ -338,7 +366,7 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         double scale = GameCoverSizes.Scale(size);
         if (Math.Abs(scale - _coverScale) < 0.001) return;
         _coverScale = scale;
-        if (_presentation == Presentation.Grid) Render(_titles, _selected, _openKey, forceReset: true);
+        if (_presentation is Presentation.Grid or Presentation.Row) Render(_titles, _selected, _openKey, forceReset: true);
     }
 
     public void SetSelectMode(bool enabled)
@@ -350,7 +378,7 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
 
     private double ScaleF => _console ? 1.3 : 1.0;
     private bool Large => _presentation == Presentation.Shelf;
-    private double CoverScaleF => _presentation == Presentation.Grid ? _coverScale : 1.0;
+    private double CoverScaleF => _presentation is Presentation.Grid or Presentation.Row ? _coverScale : 1.0;
     private double CoverWidth => (Large ? 280 : 176) * ScaleF * CoverScaleF;
     private double CoverHeight => (Large ? 158 : 220) * ScaleF * CoverScaleF;
     private double NameSize => _console ? 20 : 15;
@@ -390,14 +418,32 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
 
         if (_repeater is null)
         {
+            bool rowPresentation = _presentation == Presentation.Row;
             _repeater = new ItemsRepeater
             {
                 ItemTemplate = _factory,
-                VerticalCacheLength = 1.0,
+                // A row inside the page scroller realizes nothing while it is far below the viewport; the grid keeps its one-screen cache.
+                VerticalCacheLength = rowPresentation ? 0 : 1.0,
                 HorizontalCacheLength = 0.5,
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                HorizontalAlignment = rowPresentation ? HorizontalAlignment.Left : HorizontalAlignment.Stretch
             };
-            Children.Add(_repeater);
+            if (rowPresentation)
+            {
+                _repeater.MinHeight = CardHeight;
+                // The padding leaves room for the focus lift so a scaled tile is not clipped by the row's own scroll viewport.
+                _rowViewer = new ScrollViewer
+                {
+                    Content = _repeater,
+                    Padding = new Thickness(6, 14, 6, 18),
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollMode = ScrollMode.Enabled,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalScrollMode = ScrollMode.Disabled,
+                    TabNavigation = KeyboardNavigationMode.Local
+                };
+                Children.Add(_rowViewer);
+            }
+            else Children.Add(_repeater);
         }
 
         if (forceReset)
@@ -410,6 +456,7 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         // with the detail card open produces such a pass) it throws DivideByZeroException and takes the layout pass down.
         // A repeater that is never narrower than one tile cannot be measured that way.
         _repeater.MinWidth = _presentation == Presentation.Grid ? CardWidth : 0;
+        if (_presentation == Presentation.Row) _repeater.MinHeight = CardHeight;
         if (_repeater.Layout is null || forceReset) _repeater.Layout = NewLayout();
 
         switch (delta.Change)
@@ -444,7 +491,9 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
             ItemsStretch = UniformGridLayoutItemsStretch.None,
             ItemsJustification = UniformGridLayoutItemsJustification.Start
         }
-        : new StackLayout { Orientation = Orientation.Vertical, Spacing = 8 };
+        : _presentation == Presentation.Row
+            ? new StackLayout { Orientation = Orientation.Horizontal, Spacing = TileGap }
+            : new StackLayout { Orientation = Orientation.Vertical, Spacing = 8 };
 
     // The Continue shelf holds at most ten tiles in a single scrolling row; it does not need virtualization.
     private void RenderShelf()
@@ -508,6 +557,8 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
             return true;
         }
         if (_repeater is null) return false;
+        // A row far below the viewport realizes nothing: bring the row itself into the page first, then scroll to the tile inside it.
+        if (_presentation == Presentation.Row) StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
         FocusRealized(index, 8, ++_focusRequest);
         return true;
     }
@@ -525,7 +576,7 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
             var parts = (TileParts)card.Tag;
             card.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
             tookFocus = parts.Main.Focus(FocusState.Programmatic);
-            inView = tookFocus && IsInView(card);
+            inView = tookFocus && (_presentation == Presentation.Row ? IsInRowView(card) : IsInView(card));
         }
         switch (GameTileListModel.NextFocusStep(realized, tookFocus, inView, attemptsLeft))
         {
@@ -548,6 +599,13 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         return null;
     }
 
+    private bool IsInRowView(FrameworkElement element)
+    {
+        if (_rowViewer is not { Content: UIElement content } viewer) return true;
+        double left = element.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+        return left + element.ActualWidth > viewer.HorizontalOffset && left < viewer.HorizontalOffset + viewer.ViewportWidth;
+    }
+
     private bool IsInView(FrameworkElement element)
     {
         if (HostViewer() is not { Content: UIElement content } viewer) return true;
@@ -558,6 +616,14 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     /// <summary>Scrolls the hosting page to where the layout puts the tile at <paramref name="index"/> (rows are uniform).</summary>
     private void ScrollTowards(int index)
     {
+        if (_presentation == Presentation.Row)
+        {
+            if (_rowViewer is null) return;
+            double pitch = CardWidth + TileGap;
+            double offset = index * pitch - Math.Max(0, (_rowViewer.ViewportWidth - CardWidth) / 2);
+            _rowViewer.ChangeView(Math.Clamp(offset, 0, Math.Max(0, _rowViewer.ScrollableWidth)), null, null, disableAnimation: true);
+            return;
+        }
         if (_repeater is null || HostViewer() is not { Content: UIElement content } viewer) return;
         int columns = _presentation == Presentation.List
             ? 1 : GameTileListModel.Columns(_repeater.ActualWidth, CardWidth, TileGap);
@@ -585,7 +651,9 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         // A single-row shelf must not steal Up/Down focus movement from the page.
         if (_presentation == Presentation.Shelf && move is GameLibraryHome.Direction.Up or GameLibraryHome.Direction.Down) return;
         int next = GameLibraryHome.Move(current.Index, _titles.Count, ColumnCount, move);
-        if (next >= 0 && next != current.Index && FocusIndex(next)) e.Handled = true;
+        if (next < 0 || next == current.Index) return;
+        NoteUserNavigation();
+        if (FocusIndex(next)) e.Handled = true;
     }
 
     public bool FocusFirst() => FocusIndex(0);
@@ -595,6 +663,8 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     {
         Presentation.Shelf => Math.Max(1, _titles.Count),
         Presentation.List => 1,
+        // A row is one line: its "page" is the number of tiles that fit in its viewport.
+        Presentation.Row => GameTileListModel.Columns(_rowViewer?.ViewportWidth ?? ActualWidth, CardWidth, TileGap),
         _ => GameTileListModel.Columns(_repeater?.ActualWidth ?? ActualWidth, CardWidth, TileGap),
     };
 
@@ -620,14 +690,28 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
         string key = parts.Title.TitleKey;
         bool selected = _selected.Contains(key);
         bool opened = string.Equals(_openKey, key, StringComparison.Ordinal);
-        parts.Card.BorderThickness = new Thickness(selected || opened ? 2 : 1);
-        parts.Card.BorderBrush = GameUi.ThemeBrush(this, selected || opened ? "PaRuXBrandBrush"
+        bool strong = selected || opened;
+        bool active = parts.Focused || parts.Hovering;
+        // Focus is always a solid brand border (also in high contrast); the lift below is decoration only.
+        parts.Card.BorderThickness = new Thickness(strong || parts.Focused ? 2 : 1);
+        parts.Card.BorderBrush = GameUi.ThemeBrush(this, strong || parts.Focused ? "PaRuXBrandBrush"
             : parts.Hovering ? "PaRuXStrokeStrongBrush" : "PaRuXStrokeBrush");
-        parts.Card.Background = GameUi.ThemeBrush(this, selected || opened ? "PaRuXGrapheneSelectedBrush"
-            : parts.Hovering ? "PaRuXSurfaceSubtleBrush" : "PaRuXSurfaceCardBrush");
+        parts.Card.Background = GameUi.ThemeBrush(this, strong ? "PaRuXGrapheneSelectedBrush"
+            : active ? "PaRuXSurfaceSubtleBrush" : "PaRuXSurfaceCardBrush");
+        ApplyLift(parts, active);
         parts.SelectedBadge.Visibility = selected && _selectMode ? Visibility.Visible : Visibility.Collapsed;
         if (parts.Main is ToggleButton toggle && toggle.IsChecked != selected) toggle.IsChecked = selected;
         AutomationProperties.SetName(parts.Main, ComposeName(parts.Title, selected));
+    }
+
+    /// <summary>A focused or hovered cover rises a little above its neighbours (implicit scale animation, GPU composited, no layout).</summary>
+    private void ApplyLift(TileParts parts, bool active)
+    {
+        Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(parts.Card, active ? 1 : 0);
+        bool lift = active && _presentation != Presentation.List && GameMotion.Allowed(this);
+        if (lift == parts.Lifted) return;
+        parts.Lifted = lift;
+        parts.Card.Scale = lift ? new Vector3(1.05f, 1.05f, 1f) : Vector3.One;
     }
 
     private string ComposeName(GameTitleDto title, bool selected)
@@ -693,9 +777,19 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     private void Unbind(TileParts parts)
     {
         ReleaseCover(parts);
+        bool wasFocused = parts.Focused, wasHovering = parts.Hovering;
         parts.Hovering = false;
+        parts.Focused = false;
+        if (parts.Lifted)
+        {
+            parts.Lifted = false;
+            parts.Card.Scale = Vector3.One;
+        }
         parts.Live = false;
         _live.Remove(parts);
+        // A tile that disappears under the pointer or focus must not leave a preview request behind.
+        if (wasFocused) TileLeft?.Invoke(GameHeroSource.Focus);
+        if (wasHovering) TileLeft?.Invoke(GameHeroSource.Hover);
     }
 
     private void LoadCover(TileParts parts)
@@ -767,6 +861,13 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
     }
 
     // ------------------------------------------------------------------ building
+
+    private static bool IsInside(DependencyObject ancestor, DependencyObject node)
+    {
+        for (DependencyObject? current = node; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (ReferenceEquals(current, ancestor)) return true;
+        return false;
+    }
 
     private ButtonBase NewMain()
     {
@@ -1022,6 +1123,11 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
             Name = name, Sub = sub, CoverBrush = coverBrush
         };
         card.Tag = parts;
+        if (!row)
+        {
+            card.CenterPoint = new Vector3((float)CardWidth / 2f, (float)CardHeight / 2f, 0f);
+            card.ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(120) };
+        }
 
         main.Click += (_, _) =>
         {
@@ -1038,8 +1144,37 @@ internal sealed class GameTileGrid : StackPanel, IGameTileSurface
             if (parts.Title is not null) OpenRequested?.Invoke(parts.Title);
         };
         // Hover only updates the hovered card, with no animation, polling or library refresh.
-        card.PointerEntered += (_, _) => { parts.Hovering = true; ApplyState(parts); };
-        card.PointerExited += (_, _) => { parts.Hovering = false; ApplyState(parts); };
+        card.PointerEntered += (_, e) =>
+        {
+            parts.Hovering = true;
+            ApplyState(parts);
+            // Touch taps also "enter"; only a mouse or pen moving over a cover counts as the user pointing at it.
+            if (parts.Title is not null && e.Pointer.PointerDeviceType is Microsoft.UI.Input.PointerDeviceType.Mouse or Microsoft.UI.Input.PointerDeviceType.Pen)
+                TileEntered?.Invoke(parts.Title, GameHeroSource.Hover, true);
+        };
+        card.PointerExited += (_, _) =>
+        {
+            bool was = parts.Hovering;
+            parts.Hovering = false;
+            ApplyState(parts);
+            if (was) TileLeft?.Invoke(GameHeroSource.Hover);
+        };
+        // Focus-within of the whole tile (title, Play, Configure): the lift and the hero preview must not flicker while focus moves
+        // between the three stops, so losing focus to a child of the same card does nothing.
+        card.GotFocus += (_, e) =>
+        {
+            parts.Focused = true;
+            ApplyState(parts);
+            if (parts.Title is not null) TileEntered?.Invoke(parts.Title, GameHeroSource.Focus, IsUserFocus(e));
+        };
+        card.LosingFocus += (_, e) =>
+        {
+            if (e.NewFocusedElement is DependencyObject next && IsInside(card, next)) return;
+            if (!parts.Focused) return;
+            parts.Focused = false;
+            ApplyState(parts);
+            TileLeft?.Invoke(GameHeroSource.Focus);
+        };
         return parts;
     }
 }
