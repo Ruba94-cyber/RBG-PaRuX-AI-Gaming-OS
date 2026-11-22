@@ -25,6 +25,14 @@ internal sealed class KnowledgeWebPanel : StackPanel
     private readonly ComboBox _method = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _installModel = new() { Visibility = Visibility.Collapsed };
     private readonly TextBox _url = new();
+    private readonly ComboBox _kind = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly TextBox _ref = new();
+    private readonly TextBox _path = new();
+    private readonly TextBox _language = new();
+    private readonly TextBox _email = new();
+    private readonly PasswordBox _token = new();
+    private readonly CheckBox _children = new();
+    private readonly TextBlock _kindHelp = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.8 };
     private readonly ComboBox _mode = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _add = new();
     private readonly TextBlock _webStatus = new() { TextWrapping = TextWrapping.Wrap };
@@ -61,7 +69,28 @@ internal sealed class KnowledgeWebPanel : StackPanel
                 "Add a public website as a knowledge source. PaRuX saves the page text as files, follows the site's robots.txt, stays on that site and stops at fixed page, size and time limits. It fetches only when you press Add or Re-sync, never in the background, and never while strict offline mode or Gaming Mode is on.",
                 "Aggiungi un sito pubblico come fonte di conoscenza. PaRuX salva il testo delle pagine come file, rispetta il robots.txt del sito, resta su quel sito e si ferma a limiti fissi di pagine, dimensione e tempo. Scarica solo quando premi Aggiungi o Risincronizza, mai in background, e mai con la modalità offline rigorosa o la modalità Gaming attive."),
         };
-        _url.Header = T("Website address", "Indirizzo del sito");
+        _kind.Header = T("Source type", "Tipo di fonte");
+        _kind.Items.Add(new ComboBoxItem { Content = T("Website", "Sito web"), Tag = "web" });
+        _kind.Items.Add(new ComboBoxItem { Content = T("GitHub repository", "Repository GitHub"), Tag = "github" });
+        _kind.Items.Add(new ComboBoxItem { Content = T("YouTube video transcript", "Trascrizione di un video YouTube"), Tag = "youtube" });
+        _kind.Items.Add(new ComboBoxItem { Content = T("Confluence / wiki page", "Pagina Confluence / wiki"), Tag = "confluence" });
+        _kind.SelectedIndex = 0;
+        _kind.SelectionChanged += (_, _) => UpdateKindFields();
+        AutomationProperties.SetAutomationId(_kind, "Settings_KnowledgeSource_Kind");
+        _ref.Header = T("Branch or tag (optional)", "Branch o tag (facoltativo)");
+        AutomationProperties.SetAutomationId(_ref, "Settings_KnowledgeSource_Ref");
+        _path.Header = T("Folder inside the repository (optional)", "Cartella nel repository (facoltativo)");
+        AutomationProperties.SetAutomationId(_path, "Settings_KnowledgeSource_Path");
+        _language.Header = T("Caption language (optional, e.g. en, it)", "Lingua dei sottotitoli (facoltativo, es. en, it)");
+        AutomationProperties.SetAutomationId(_language, "Settings_KnowledgeSource_Language");
+        _email.Header = T("Account email (Confluence Cloud only)", "Email dell'account (solo Confluence Cloud)");
+        AutomationProperties.SetAutomationId(_email, "Settings_KnowledgeSource_Email");
+        _token.Header = T("Access token (optional; stored encrypted on this PC, never shown again)", "Token di accesso (facoltativo; salvato cifrato su questo PC, non viene più mostrato)");
+        AutomationProperties.SetAutomationId(_token, "Settings_KnowledgeSource_Token");
+        _children.Content = T("Also import child pages (up to 25)", "Importa anche le pagine figlie (fino a 25)");
+        AutomationProperties.SetAutomationId(_children, "Settings_KnowledgeSource_Children");
+        AutomationProperties.SetAutomationId(_kindHelp, "Settings_KnowledgeSource_Help");
+        _url.Header = T("Address", "Indirizzo");
         _url.PlaceholderText = "https://docs.example.com/guide/";
         AutomationProperties.SetAutomationId(_url, "Settings_KnowledgeWeb_Url");
         _mode.Header = T("What to add", "Cosa aggiungere");
@@ -69,7 +98,7 @@ internal sealed class KnowledgeWebPanel : StackPanel
         _mode.Items.Add(new ComboBoxItem { Content = T("This page and linked pages on the same site (up to 25 pages, 2 levels)", "Questa pagina e le pagine collegate dello stesso sito (fino a 25 pagine, 2 livelli)"), Tag = "crawl" });
         _mode.SelectedIndex = 0;
         AutomationProperties.SetAutomationId(_mode, "Settings_KnowledgeWeb_Mode");
-        _add.Content = T("Add website", "Aggiungi sito");
+        _add.Content = T("Add source", "Aggiungi fonte");
         _add.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
         _add.Click += async (_, _) => await AddAsync();
         AutomationProperties.SetAutomationId(_add, "Settings_KnowledgeWeb_Add");
@@ -91,10 +120,19 @@ internal sealed class KnowledgeWebPanel : StackPanel
         Children.Add(_searchStatus);
         Children.Add(_method);
         Children.Add(_installModel);
-        Children.Add(Heading(T("Websites", "Siti web")));
+        Children.Add(Heading(T("Add a source", "Aggiungi una fonte")));
         Children.Add(webIntro);
+        Children.Add(_kind);
+        Children.Add(_kindHelp);
         Children.Add(_url);
         Children.Add(_mode);
+        Children.Add(_ref);
+        Children.Add(_path);
+        Children.Add(_language);
+        Children.Add(_email);
+        Children.Add(_token);
+        Children.Add(_children);
+        UpdateKindFields();
         Children.Add(_add);
         Children.Add(_webStatus);
         Children.Add(_webList);
@@ -104,6 +142,37 @@ internal sealed class KnowledgeWebPanel : StackPanel
         Children.Add(_watchList);
 
         Loaded += async (_, _) => await RefreshAsync();
+    }
+
+    private string Kind => _kind.SelectedItem is ComboBoxItem { Tag: string k } ? k : "web";
+
+    private void UpdateKindFields()
+    {
+        string kind = Kind;
+        _mode.Visibility = kind == "web" ? Visibility.Visible : Visibility.Collapsed;
+        _ref.Visibility = _path.Visibility = kind == "github" ? Visibility.Visible : Visibility.Collapsed;
+        _language.Visibility = kind == "youtube" ? Visibility.Visible : Visibility.Collapsed;
+        _email.Visibility = kind == "confluence" ? Visibility.Visible : Visibility.Collapsed;
+        _children.Visibility = kind == "confluence" ? Visibility.Visible : Visibility.Collapsed;
+        _token.Visibility = kind is "github" or "confluence" ? Visibility.Visible : Visibility.Collapsed;
+        _url.PlaceholderText = kind switch
+        {
+            "github" => "https://github.com/owner/repository",
+            "youtube" => "https://www.youtube.com/watch?v=...",
+            "confluence" => "https://yourteam.atlassian.net/wiki/spaces/KEY/pages/12345/Title",
+            _ => "https://docs.example.com/guide/"
+        };
+        _kindHelp.Text = kind switch
+        {
+            "github" => T("Imports the readable text and code files of a repository (up to 150 files, small files only) through the GitHub API. A public repository needs no token; a token raises the rate limit and unlocks private ones. Needs the Internet switch on.",
+                "Importa i file di testo e di codice leggibili di un repository (fino a 150 file, solo file piccoli) tramite l'API di GitHub. Un repository pubblico non richiede token; un token aumenta il limite di richieste e sblocca quelli privati. Richiede l'interruttore Internet attivo."),
+            "youtube" => T("Imports the captions (subtitles) of one video as a transcript with timestamps. Videos without captions cannot be imported. Needs the Internet switch on.",
+                "Importa i sottotitoli di un video come trascrizione con marcatori temporali. I video senza sottotitoli non possono essere importati. Richiede l'interruttore Internet attivo."),
+            "confluence" => T("Imports one Confluence page (and optionally its child pages) through the Confluence REST API, https only. A private page needs your access token (and your email for Confluence Cloud). Needs the Internet switch on.",
+                "Importa una pagina Confluence (e facoltativamente le pagine figlie) tramite l'API REST di Confluence, solo https. Una pagina privata richiede il tuo token di accesso (e la tua email per Confluence Cloud). Richiede l'interruttore Internet attivo."),
+            _ => string.Empty
+        };
+        _kindHelp.Visibility = kind == "web" ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static TextBlock Heading(string text) =>
@@ -185,6 +254,8 @@ internal sealed class KnowledgeWebPanel : StackPanel
     {
         "offline_blocked" => T("Strict offline mode is on, so websites cannot be fetched. Nothing was downloaded.", "La modalità offline rigorosa è attiva, quindi i siti non possono essere scaricati. Non è stato scaricato nulla."),
         "gaming_active" => T("Gaming Mode is active, so PaRuX does not fetch websites. Try again when the game closes.", "La modalità Gaming è attiva, quindi PaRuX non scarica siti. Riprova quando il gioco si chiude."),
+        "internet_off" => T("The Internet switch is off, so nothing was requested. Turn Internet on in Settings first.", "L'interruttore Internet è disattivato, quindi non è stato richiesto nulla. Attiva prima Internet nelle Impostazioni."),
+        "invalid_target" => T("That address cannot be used for this source type. Check it and try again.", "Questo indirizzo non può essere usato per questo tipo di fonte. Controllalo e riprova."),
         "invalid_address" => T("That address cannot be added. Use a public http:// or https:// address.", "Questo indirizzo non può essere aggiunto. Usa un indirizzo pubblico http:// o https://."),
         _ => ex.Message
     };
@@ -198,8 +269,17 @@ internal sealed class KnowledgeWebPanel : StackPanel
         _add.IsEnabled = false;
         try
         {
-            bool crawl = _mode.SelectedItem is ComboBoxItem { Tag: "crawl" };
-            await KnowledgeWebClient.Current.AddWebSourceAsync(url, crawl, CancellationToken.None);
+            if (Kind == "web")
+            {
+                bool crawl = _mode.SelectedItem is ComboBoxItem { Tag: "crawl" };
+                await KnowledgeWebClient.Current.AddWebSourceAsync(url, crawl, CancellationToken.None);
+            }
+            else
+            {
+                await KnowledgeWebClient.Current.AddConnectorSourceAsync(Kind, url, Clean(_ref.Text), Clean(_path.Text), Clean(_language.Text),
+                    Clean(_email.Text), Clean(_token.Password), _children.IsChecked == true, CancellationToken.None);
+                _token.Password = string.Empty;
+            }
             _webStatus.Text = T("Added. PaRuX is fetching and indexing the pages now.", "Aggiunto. PaRuX sta scaricando e indicizzando le pagine.");
             _url.Text = string.Empty;
             await RefreshWebAsync();
@@ -213,6 +293,8 @@ internal sealed class KnowledgeWebPanel : StackPanel
         }
         finally { _busy = false; _add.IsEnabled = true; }
     }
+
+    private static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
     private async Task PollWebAsync()
     {
@@ -240,9 +322,23 @@ internal sealed class KnowledgeWebPanel : StackPanel
         "crawling" => T("fetching pages…", "scaricamento delle pagine…"),
         "indexing" => T("indexing…", "indicizzazione…"),
         "ready" => T($"ready · {s.Pages} page(s)", $"pronto · {s.Pages} pagina/e"),
-        "stopped" => s.Error == "gaming_active" ? T("stopped by Gaming Mode", "interrotto dalla modalità Gaming") : T("stopped", "interrotto"),
-        "failed" => T("failed", "non riuscito"),
+        "stopped" => s.Error == "gaming_active" ? T("stopped by Gaming Mode", "interrotto dalla modalità Gaming") : s.Error == "internet_off" ? T("stopped: Internet switched off", "interrotto: Internet disattivato") : T("stopped", "interrotto"),
+        "failed" => T("failed: ", "non riuscito: ") + FailureText(s),
         _ => T("not fetched yet", "non ancora scaricato")
+    };
+
+    private static string FailureText(WebSourceView s) => s.Error switch
+    {
+        "rate_limited" => T("the site is rate limiting requests; add an access token or try later", "il sito limita le richieste; aggiungi un token di accesso o riprova più tardi"),
+        "auth_required" => T("an access token is needed (or the token was refused)", "serve un token di accesso (o il token è stato rifiutato)"),
+        "not_found" => T("not found; check the address", "non trovato; controlla l'indirizzo"),
+        "no_captions" => T("this video has no captions to import", "questo video non ha sottotitoli da importare"),
+        "blocked_host" => T("the source pointed to a different site and was not followed", "la fonte puntava a un altro sito e non è stata seguita"),
+        "insecure_address" => T("only https addresses are used", "vengono usati solo indirizzi https"),
+        "timeout" => T("the site did not answer in time", "il sito non ha risposto in tempo"),
+        "unreachable" => T("the site could not be reached", "il sito non è raggiungibile"),
+        "nothing_to_import" => T("no readable text was found", "non è stato trovato testo leggibile"),
+        _ => string.IsNullOrEmpty(s.Notice) ? (s.Error ?? string.Empty) : s.Notice
     };
 
     private void Render(List<WebSourceView> sources)
@@ -255,7 +351,7 @@ internal sealed class KnowledgeWebPanel : StackPanel
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             string detail = s.KeptEdited > 0 ? T($" · {s.KeptEdited} edited copy kept", $" · {s.KeptEdited} copia modificata conservata") : string.Empty;
-            var label = new TextBlock { Text = s.Url + "  ·  " + StateText(s) + detail, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock { Text = (string.IsNullOrEmpty(s.Connector) ? string.Empty : s.Connector + ": ") + s.Url + "  ·  " + StateText(s) + detail, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(label, 0);
             var resync = new Button { Content = T("Re-sync", "Risincronizza"), IsEnabled = s.State is not ("crawling" or "indexing") };
             string id = s.Id;

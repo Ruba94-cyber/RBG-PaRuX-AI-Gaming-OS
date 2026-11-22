@@ -9,7 +9,14 @@ namespace PaRuX.Server.Knowledge;
 public sealed record WebSourceInfo(
     string Id, string Url, string Mode, int MaxPages, int MaxDepth, string Folder,
     string State, DateTime? LastSyncUtc, int Pages, string? Error, string? StoppedBecause,
-    int Written, int Unchanged, int Skipped, int Failed, int KeptEdited, int Removed);
+    int Written, int Unchanged, int Skipped, int Failed, int KeptEdited, int Removed,
+    string Connector = "", string? Notice = null);
+
+/// <summary>Thrown when a connector is started while the Internet switch is off. Nothing is requested.</summary>
+public sealed class InternetDisabledException : InvalidOperationException
+{
+    public InternetDisabledException(string message) : base(message) { }
+}
 
 /// <summary>
 /// "Add a website as knowledge": a page or a bounded same-site crawl is saved as plain-text files in a folder PaRuX owns,
@@ -28,6 +35,10 @@ public sealed class WebKnowledgeSources
     private readonly Func<bool> _offlineBlocked;
     private readonly Func<bool> _gamingActive;
     private readonly Func<WebCrawlOptions, WebKnowledgeCrawler> _crawlerFactory;
+    private readonly KnowledgeConnectors _connectors;
+    private readonly ConnectorSecretStore? _secrets;
+    private readonly Func<bool>? _internetEnabled;
+    private readonly Func<CancellationToken>? _internetOffToken;
     private readonly ConcurrentDictionary<string, Job> _jobs = new();
     private readonly object _gate = new();
 
@@ -38,14 +49,21 @@ public sealed class WebKnowledgeSources
         public string State = "crawling";
         public string? Error;
         public WebCrawlReport? Report;
+        public string? Notice;
     }
 
     public WebKnowledgeSources(
         string manifestDirectory, string contentRoot,
         Func<string, string> registerFolder, Action<string> unregister, Func<string, bool> startIndex,
         Func<bool>? offlineBlocked = null, Func<bool>? gamingActive = null,
-        Func<WebCrawlOptions, WebKnowledgeCrawler>? crawlerFactory = null)
+        Func<WebCrawlOptions, WebKnowledgeCrawler>? crawlerFactory = null,
+        KnowledgeConnectors? connectors = null, ConnectorSecretStore? secrets = null,
+        Func<bool>? internetEnabled = null, Func<CancellationToken>? internetOffToken = null)
     {
+        _connectors = connectors ?? new KnowledgeConnectors();
+        _secrets = secrets;
+        _internetEnabled = internetEnabled;
+        _internetOffToken = internetOffToken;
         _manifestDirectory = manifestDirectory;
         _contentRoot = contentRoot;
         _registerFolder = registerFolder;
@@ -99,11 +117,47 @@ public sealed class WebKnowledgeSources
         return Describe(manifest);
     }
 
+    /// <summary>Adds a GitHub / YouTube / Confluence source: validates the target, stores the token in the secret store (never in the
+    /// manifest), registers the folder and starts the import in the background.</summary>
+    public WebSourceInfo BeginConnector(string kind, string target, string? @ref, string? path, string? language,
+        string? email, string? token, bool includeChildren)
+    {
+        if (!ConnectorKind.IsKnown(kind)) throw new ArgumentException("Unknown connector.");
+        EnsureAllowed(connector: true);
+        if (!KnowledgeConnectors.TryValidate(kind, target, @ref, path, out string error)) throw new ArgumentException(error);
+        if (!string.IsNullOrEmpty(token) && (token.Length > 4096 || token.Any(char.IsControl) || token.Any(char.IsWhiteSpace)))
+            throw new ArgumentException("The access token looks invalid (it must be one line without spaces).");
+        if (!string.IsNullOrEmpty(email) && (email.Length > 320 || email.Any(char.IsControl) || email.Contains(':')))
+            throw new ArgumentException("The account email looks invalid.");
+        if (!string.IsNullOrEmpty(token) && _secrets == null)
+            throw new InvalidOperationException("Access tokens cannot be stored on this setup, so nothing was saved.");
+
+        string folder = Path.Combine(_contentRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        if (SensitivePathPolicy.EvaluateFolder(folder).Verdict == SensitiveVerdict.Blocked)
+        {
+            TryDeleteEmpty(folder);
+            throw new InvalidOperationException("The folder for saved web pages is not allowed as a knowledge source on this PC.");
+        }
+        string id = _registerFolder(folder);
+        var manifest = new WebSourceManifest
+        {
+            Id = id, Url = target.Trim(), Mode = kind, MaxPages = 1, MaxDepth = 0, Folder = folder, Connector = kind,
+            ConnectorRef = string.IsNullOrWhiteSpace(@ref) ? null : @ref.Trim(), ConnectorPath = string.IsNullOrWhiteSpace(path) ? null : path.Trim(),
+            ConnectorLanguage = string.IsNullOrWhiteSpace(language) ? null : language.Trim(), ConnectorEmail = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+            ConnectorChildren = includeChildren
+        };
+        if (!string.IsNullOrEmpty(token)) _secrets!.Set(id, token);
+        Save(manifest);
+        Launch(manifest);
+        return Describe(manifest);
+    }
+
     /// <summary>Fetches the source again. Unchanged pages cost one conditional request; edited copies are kept.</summary>
     public WebSourceInfo? Resync(string id)
     {
-        EnsureAllowed();
         WebSourceManifest? manifest = Load(id);
+        EnsureAllowed(connector: manifest != null && manifest.Connector.Length > 0);
         if (manifest == null) return null;
         lock (_gate)
         {
@@ -131,6 +185,7 @@ public sealed class WebKnowledgeSources
             try { job.Cts.Cancel(); job.Task.Wait(TimeSpan.FromSeconds(10)); } catch (Exception) { }
         }
         _unregister(id);
+        try { _secrets?.Forget(id); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         foreach (WebPageRecord record in manifest.Pages.Values)
         {
             string? path = WebKnowledgeCrawler.SafePath(manifest.Folder, record.FileName);
@@ -167,8 +222,10 @@ public sealed class WebKnowledgeSources
 
     // ------------------------------------------------------------------ internals
 
-    private void EnsureAllowed()
+    private void EnsureAllowed(bool connector = false)
     {
+        if (connector && _internetEnabled != null && !_internetEnabled())
+            throw new InternetDisabledException("The Internet switch is off, so nothing was requested. Turn Internet on in Settings to import from GitHub, YouTube or Confluence.");
         if (_offlineBlocked())
             throw new OfflineBlockedException("Strict offline mode is on, so websites cannot be fetched. Nothing was downloaded. Turn strict offline mode off in Document Settings to add a website.");
         if (_gamingActive())
@@ -183,6 +240,11 @@ public sealed class WebKnowledgeSources
         {
             try
             {
+                if (manifest.Connector.Length > 0)
+                {
+                    await RunConnectorAsync(manifest, job).ConfigureAwait(false);
+                    return;
+                }
                 WebKnowledgeCrawler crawler = _crawlerFactory(manifest.Mode == "page" ? WebCrawlOptions.SinglePage : WebCrawlOptions.Crawl(manifest.MaxPages, manifest.MaxDepth));
                 job.Report = await crawler.CrawlAsync(new Uri(manifest.Url), manifest.Folder, manifest, job.Cts.Token).ConfigureAwait(false);
                 // Whatever was written is recorded even if indexing never happens, so later removal knows every file.
@@ -206,13 +268,51 @@ public sealed class WebKnowledgeSources
         });
     }
 
+    private async Task RunConnectorAsync(WebSourceManifest manifest, Job job)
+    {
+        CancellationToken offToken = _internetOffToken?.Invoke() ?? CancellationToken.None;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(job.Cts.Token, offToken);
+        using var gaming = new GamingHardOffWatch(_gamingActive, linked.Token, TimeSpan.FromMilliseconds(200));
+        string? token = _secrets?.Get(manifest.Id);
+        var report = new WebCrawlReport();
+        job.Report = report;
+        try
+        {
+            if (_offlineBlocked()) { report.StoppedBecause = "offline"; job.State = "stopped"; job.Error = "offline_blocked"; return; }
+            var request = new ConnectorRequest(manifest.Connector, manifest.Url, manifest.ConnectorRef, manifest.ConnectorPath,
+                manifest.ConnectorLanguage, manifest.ConnectorEmail, token, manifest.ConnectorChildren, null);
+            ConnectorResult result = await _connectors.RunAsync(request, gaming.Token).ConfigureAwait(false);
+            ConnectorWriter.Apply(manifest, result, report);
+            report.StoppedBecause = result.StoppedBecause;
+            job.Notice = result.Notes.Count == 0 ? null : string.Join("; ", result.Notes);
+            manifest.LastSyncUtc = DateTime.UtcNow;
+            lock (_gate) Save(manifest);
+            job.State = "indexing";
+            _startIndex(manifest.Id);
+            job.State = "ready";
+        }
+        catch (ConnectorException ex)
+        {
+            job.State = "failed"; job.Error = ex.Code; job.Notice = ex.Message; report.StoppedBecause = ex.Code;
+        }
+        catch (OperationCanceledException)
+        {
+            bool gamingStop = _gamingActive();
+            bool internetOff = offToken.IsCancellationRequested;
+            job.State = "stopped";
+            job.Error = gamingStop ? "gaming_active" : internetOff ? "internet_off" : null;
+            report.StoppedBecause = gamingStop ? "gaming" : internetOff ? "internet_off" : "cancelled";
+        }
+    }
+
     private WebSourceInfo Describe(WebSourceManifest m)
     {
         _jobs.TryGetValue(m.Id, out Job? job);
         WebCrawlReport? r = job?.Report;
         string state = job?.State ?? (m.LastSyncUtc.HasValue ? "ready" : "not_synced");
         return new WebSourceInfo(m.Id, m.Url, m.Mode, m.MaxPages, m.MaxDepth, m.Folder, state, m.LastSyncUtc, m.Pages.Count,
-            job?.Error, r?.StoppedBecause, r?.Written ?? 0, r?.Unchanged ?? 0, r?.Skipped ?? 0, r?.Failed ?? 0, r?.KeptEdited ?? 0, r?.Removed ?? 0);
+            job?.Error, r?.StoppedBecause, r?.Written ?? 0, r?.Unchanged ?? 0, r?.Skipped ?? 0, r?.Failed ?? 0, r?.KeptEdited ?? 0, r?.Removed ?? 0,
+            m.Connector, job?.Notice);
     }
 
     private string ManifestPath(string id) => Path.Combine(_manifestDirectory, SafeId(id) + ".json");
