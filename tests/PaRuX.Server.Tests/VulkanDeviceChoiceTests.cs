@@ -229,4 +229,37 @@ public sealed class VulkanDeviceChoiceTests : IDisposable
         }
         finally { File.Delete(model); }
     }
+
+    [Fact]
+    public async Task A_discrete_vulkan_card_prefills_with_the_large_batches_while_an_integrated_gpu_keeps_the_small_ones()
+    {
+        // Measured 2026-11-22, RTX 5080 through llama.cpp Vulkan: 512/128 prefilled at 7.0k tok/s, 2048/1024 at 10.5k.
+        string model = Path.Combine(Path.GetTempPath(), "parux-batch-test-" + Guid.NewGuid().ToString("N") + ".gguf");
+        File.WriteAllBytes(model, new byte[1024]);
+        try
+        {
+            VulkanDeviceSelector.ListDevicesOverrideForTests = (_, _) => Task.FromResult(IgpuFirst);
+            RuntimeLaunchOptimization discrete = await RuntimeLaunchOptimizer.ResolveAsync(
+                model, "chat", hasCuda: false, 512, 128, "q8_0", CancellationToken.None, Laptop, planLaunch: false);
+            Assert.Equal("Vulkan1", discrete.Profile.Device);
+            Assert.Equal(2048, discrete.Profile.BatchSize);
+            Assert.Equal(1024, discrete.Profile.UBatchSize);
+
+            // An explicit user device is not evidence of a discrete card: the caller's small defaults stay.
+            string? previous = Environment.GetEnvironmentVariable(VulkanDeviceSelector.UserDeviceEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(VulkanDeviceSelector.UserDeviceEnvironmentVariable, "Vulkan0");
+                VulkanDeviceSelector.ResetForTests();
+                VulkanDeviceSelector.ListDevicesOverrideForTests = (_, _) => Task.FromResult(IgpuFirst);
+                RuntimeLaunchOptimization pinned = await RuntimeLaunchOptimizer.ResolveAsync(
+                    model, "chat", hasCuda: false, 512, 128, "q8_0", CancellationToken.None, Laptop, planLaunch: false);
+                Assert.Equal("Vulkan0", pinned.Profile.Device);
+                Assert.Equal(512, pinned.Profile.BatchSize);
+                Assert.Equal(128, pinned.Profile.UBatchSize);
+            }
+            finally { Environment.SetEnvironmentVariable(VulkanDeviceSelector.UserDeviceEnvironmentVariable, previous); }
+        }
+        finally { File.Delete(model); }
+    }
 }
