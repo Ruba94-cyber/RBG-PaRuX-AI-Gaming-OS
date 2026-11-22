@@ -487,6 +487,28 @@ public sealed class PlayniteReturnWatchPolicyTests
     }
 
     [Fact]
+    public void A_game_surviving_playnite_close_defers_return_until_the_game_exits()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = false,
+                PaRuXLaunchedClosedCounter = 4,
+                TrackedProcessCount = 1
+            }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.True(PlayniteReturnWatchPolicy.KeepPendingClose(3, status));
+
+        status.Session.TrackedProcessCount = 0;
+
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.KeepPendingClose(3, status));
+    }
+
+    [Fact]
     public void Return_is_refused_when_disabled_or_counter_unknown_or_unchanged()
     {
         var status = new PlayniteStatusDto
