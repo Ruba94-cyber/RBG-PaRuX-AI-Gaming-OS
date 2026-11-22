@@ -463,6 +463,7 @@ namespace PaRuX.Views
                     if (CorporateMode.IsActive) break; // Compact privacy information only; no network controllers.
                     _ = RefreshRemoteAccessAsync();
                     _ = RefreshInternetStatusAsync();
+                    _ = RefreshSearchProvidersAsync();
                     _ = RefreshWebAccessAsync();
                     break;
                 case "Data":
@@ -2251,6 +2252,64 @@ namespace PaRuX.Views
             _loading = false;
             InternetSwitch.IsEnabled = false;
             InternetSwitch.OffContent = T("Unavailable — PaRuX Core did not answer", "Non disponibile: PaRuX Core non ha risposto");
+        }
+
+        private async Task RefreshSearchProvidersAsync()
+        {
+            if (SearxngUrlBox == null) return;
+            try
+            {
+                ApplySearchProviders(await InternetClient.Current.GetSearchProvidersAsync(CancellationToken.None));
+            }
+            catch (Exception ex)
+            {
+                Log.Write("RefreshSearchProvidersAsync failed: " + ex.Message);
+            }
+        }
+
+        private void ApplySearchProviders(WebSearchProvidersStatus status)
+        {
+            _loading = true;
+            SearxngUrlBox.Text = status.SearxngUrl.TrimEnd('/');
+            SearchDuckDuckGoCheck.IsChecked = status.Providers.FirstOrDefault(p => p.Id == "duckduckgo")?.Enabled ?? true;
+            SearchWikipediaCheck.IsChecked = status.Providers.FirstOrDefault(p => p.Id == "wikipedia")?.Enabled ?? true;
+            _loading = false;
+
+            var lines = new List<string>();
+            foreach (WebSearchProviderInfo p in status.Providers)
+            {
+                string state = p.State switch
+                {
+                    "ok" => T("answered", "ha risposto"),
+                    "no_results" => T("no results", "nessun risultato"),
+                    "failed" => T("failed", "non riuscito") + (p.Detail.Length > 0 ? " (" + p.Detail + ")" : string.Empty),
+                    "disabled" => T("off", "disattivato"),
+                    "not_configured" => T("not configured", "non configurato"),
+                    _ => T("not used yet", "non ancora usato")
+                };
+                lines.Add(p.Name + ": " + state);
+            }
+            if (status.LastProvider.Length > 0)
+                lines.Add(T("Last answer from: ", "Ultima risposta da: ") + status.LastProvider);
+            ShowNotice(SearchProvidersStatusText, string.Join("\n", lines));
+        }
+
+        private async void SaveSearchProviders_Click(object sender, RoutedEventArgs e)
+        {
+            var disabled = new List<string>();
+            if (SearchDuckDuckGoCheck.IsChecked != true) disabled.Add("duckduckgo");
+            if (SearchWikipediaCheck.IsChecked != true) disabled.Add("wikipedia");
+            try
+            {
+                ApplySearchProviders(await InternetClient.Current.SetSearchProvidersAsync(
+                    new WebSearchProvidersRequest { SearxngUrl = SearxngUrlBox.Text.Trim(), DisabledProviders = disabled },
+                    CancellationToken.None));
+            }
+            catch (Exception ex)
+            {
+                Log.Write("SaveSearchProviders_Click failed: " + ex.Message);
+                ShowNotice(SearchProvidersStatusText, T("Could not save the search providers: ", "Impossibile salvare i provider di ricerca: ") + ex.Message);
+            }
         }
 
         private async void InternetSwitch_Toggled(object sender, RoutedEventArgs e)

@@ -1,3 +1,4 @@
+using PaRuX.Contracts;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -9,6 +10,8 @@ public sealed class WebSearchResult
     public string Title { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public string Snippet { get; set; } = string.Empty;
+    /// <summary>Id of the provider that answered (duckduckgo, wikipedia, searxng).</summary>
+    public string Provider { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -51,16 +54,28 @@ public class WebSearchService
 
     private readonly InternetSettingsService _internet;
     private readonly HttpClient _http;
+    private readonly WebSearchSettingsService? _settings;
+    private readonly HttpClient _searxngHttp;
+    private readonly object _statusGate = new();
+    private readonly Dictionary<string, (string State, string Detail, DateTimeOffset At)> _status = new();
+    private string _lastProvider = string.Empty;
 
     /// <summary>Production constructor. Every search and page read runs only while PaRuX's Internet switch is ON.</summary>
     public WebSearchService(InternetSettingsService internet)
         : this(internet, CreateValidatedHandler(ValidatedRemoteConnector.SystemResolver)) { }
 
+    /// <summary>Production constructor with the Settings-backed provider choices (DI picks this one).</summary>
+    public WebSearchService(InternetSettingsService internet, WebSearchSettingsService settings)
+        : this(internet, CreateValidatedHandler(ValidatedRemoteConnector.SystemResolver), settings) { }
+
     /// <summary>Test seam: supplies the transport so response handling can be exercised with no network.</summary>
-    internal WebSearchService(InternetSettingsService internet, HttpMessageHandler handler)
+    internal WebSearchService(InternetSettingsService internet, HttpMessageHandler handler,
+        WebSearchSettingsService? settings = null, HttpMessageHandler? searxngHandler = null)
     {
         _internet = internet ?? throw new ArgumentNullException(nameof(internet));
         _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+        _settings = settings;
+        _searxngHttp = SearxngSearchProvider.CreateClient(searxngHandler);
     }
 
     /// <summary>
@@ -108,38 +123,146 @@ public class WebSearchService
 
     private async Task<List<WebSearchResult>> SearchWithinScopeAsync(string query, int maxResults, CancellationToken ct)
     {
-        // Operator opt-in: prefer a local SearXNG JSON provider without modifying
-        // the existing no-key DuckDuckGo fallback for everyone else. A failure of
-        // this optional self-hosted provider must not disable web search.
-        if (!string.IsNullOrWhiteSpace(
-                Environment.GetEnvironmentVariable("PARUX_SEARXNG_LOCAL_URL")))
+        var providers = new List<IWebSearchProvider>();
+        IWebSearchProvider? searxng = BuildSearxng();
+        if (searxng != null) providers.Add(searxng);
+        IReadOnlySet<string> disabled = _settings?.Get().DisabledProviders ?? new HashSet<string>();
+        if (!disabled.Contains(WebSearchSettingsService.DuckDuckGoId)) providers.Add(new DuckDuckGoProvider(this));
+        if (!disabled.Contains(WebSearchSettingsService.WikipediaId)) providers.Add(new WikipediaSearchProvider(_http));
+
+        if (providers.Count == 0)
+            throw new InvalidOperationException("Every web search provider is turned off in Settings.");
+
+        var failures = new List<string>();
+        bool anyAnswered = false;
+        foreach (IWebSearchProvider provider in providers)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
-                List<WebSearchResult> local = await LocalSearxngSearchProvider
-                    .SearchIfConfiguredAsync(query, maxResults, ct).ConfigureAwait(false);
-                if (local.Count > 0) return local;
+                List<WebSearchResult> results = await provider.SearchAsync(query, maxResults, ct).ConfigureAwait(false);
+                if (results.Count > 0)
+                {
+                    foreach (WebSearchResult r in results) r.Provider = provider.Id;
+                    Record(provider.Id, "ok", results.Count + " result(s)", answered: true);
+                    return results;
+                }
+                anyAnswered = true;
+                Record(provider.Id, "no_results", "The provider answered with no results.", answered: false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                // An optional provider timed out; keep existing search available.
+                failures.Add(provider.DisplayName + ": timed out");
+                Record(provider.Id, "failed", "Timed out.", answered: false);
             }
-            catch (Exception ex) when (ex is HttpRequestException
-                or IOException or InvalidOperationException or System.Text.Json.JsonException)
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException
+                or InvalidOperationException or System.Text.Json.JsonException)
             {
-                // Invalid/unavailable local provider; retain the historical fallback.
+                string detail = ex.Message.Length > 200 ? ex.Message[..200] : ex.Message;
+                failures.Add(provider.DisplayName + ": " + detail);
+                Record(provider.Id, "failed", detail, answered: false);
             }
         }
 
-        // Two independent endpoints, primary first. Both are keyless, which is what the Settings
-        // copy promises the user; the second exists because a single scraped endpoint is one markup
-        // change away from silently returning nothing.
-        List<WebSearchResult> results = await QueryEndpointAsync(
-            "https://html.duckduckgo.com/html/", ResultPattern, query, maxResults, ct).ConfigureAwait(false);
-        if (results.Count > 0) return results;
+        if (!anyAnswered && failures.Count > 0)
+            throw new HttpRequestException("Web search failed on every provider (" + string.Join("; ", failures) + ").");
+        return new List<WebSearchResult>();
+    }
 
-        return await QueryEndpointAsync(
-            "https://lite.duckduckgo.com/lite/", LiteResultPattern, query, maxResults, ct).ConfigureAwait(false);
+    private IWebSearchProvider? BuildSearxng()
+    {
+        string configured = _settings?.Get().SearxngUrl ?? string.Empty;
+        if (configured.Length == 0)
+            configured = Environment.GetEnvironmentVariable("PARUX_SEARXNG_LOCAL_URL") ?? string.Empty;
+        return Uri.TryCreate(configured, UriKind.Absolute, out Uri? uri)
+            && LocalSearxngSearchProvider.IsAllowedConfiguredEndpoint(uri)
+            ? new SearxngSearchProvider(uri, _searxngHttp)
+            : null;
+    }
+
+    private void Record(string id, string state, string detail, bool answered)
+    {
+        lock (_statusGate)
+        {
+            _status[id] = (state, detail, DateTimeOffset.UtcNow);
+            if (answered) _lastProvider = id;
+        }
+    }
+
+    /// <summary>Snapshot for the Settings page: which providers exist, are on, and how they last behaved.</summary>
+    public WebSearchProvidersStatus GetProvidersStatus()
+    {
+        WebSearchSettingsService.Snapshot snap = _settings?.Get()
+            ?? new WebSearchSettingsService.Snapshot(string.Empty, new HashSet<string>());
+        bool searxngConfigured = BuildSearxng() != null;
+        lock (_statusGate)
+        {
+            WebSearchProviderInfo Make(string id, string name, bool enabled, bool configured)
+            {
+                var item = new WebSearchProviderInfo { Id = id, Name = name, Enabled = enabled };
+                if (!configured) item.State = "not_configured";
+                else if (!enabled) item.State = "disabled";
+                else if (_status.TryGetValue(id, out var st))
+                {
+                    item.State = st.State; item.Detail = st.Detail; item.LastUsedUtc = st.At;
+                }
+                return item;
+            }
+            return new WebSearchProvidersStatus
+            {
+                InternetEnabled = _internet.GetEnabled(),
+                SearxngUrl = snap.SearxngUrl,
+                LastProvider = _lastProvider,
+                Providers = new List<WebSearchProviderInfo>
+                {
+                    Make(WebSearchSettingsService.SearxngId, "SearXNG (self-hosted)", searxngConfigured, searxngConfigured),
+                    Make(WebSearchSettingsService.DuckDuckGoId, "DuckDuckGo",
+                        !snap.DisabledProviders.Contains(WebSearchSettingsService.DuckDuckGoId), true),
+                    Make(WebSearchSettingsService.WikipediaId, "Wikipedia",
+                        !snap.DisabledProviders.Contains(WebSearchSettingsService.WikipediaId), true)
+                }
+            };
+        }
+    }
+
+    /// <summary>The two keyless DuckDuckGo endpoints as one provider: html first, then lite. An error from the
+    /// first is surfaced only when the second cannot answer either.</summary>
+    private sealed class DuckDuckGoProvider : IWebSearchProvider
+    {
+        private readonly WebSearchService _owner;
+        public DuckDuckGoProvider(WebSearchService owner) => _owner = owner;
+        public string Id => WebSearchSettingsService.DuckDuckGoId;
+        public string DisplayName => "DuckDuckGo";
+
+        public async Task<List<WebSearchResult>> SearchAsync(string query, int maxResults, CancellationToken ct)
+        {
+            Exception? first = null;
+            try
+            {
+                List<WebSearchResult> html = await _owner.QueryEndpointAsync(
+                    "https://html.duckduckgo.com/html/", ResultPattern, query, maxResults, ct).ConfigureAwait(false);
+                if (html.Count > 0) return html;
+            }
+            catch (Exception ex) when (IsTransient(ex, ct)) { first = ex; }
+
+            try
+            {
+                List<WebSearchResult> lite = await _owner.QueryEndpointAsync(
+                    "https://lite.duckduckgo.com/lite/", LiteResultPattern, query, maxResults, ct).ConfigureAwait(false);
+                if (lite.Count == 0 && first != null)
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(first).Throw();
+                return lite;
+            }
+            catch (Exception ex) when (first != null && IsTransient(ex, ct))
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(first).Throw();
+                throw;
+            }
+        }
+
+        private static bool IsTransient(Exception ex, CancellationToken ct) =>
+            ex is HttpRequestException or IOException or InvalidDataException
+            || (ex is OperationCanceledException && !ct.IsCancellationRequested);
     }
 
     private async Task<List<WebSearchResult>> QueryEndpointAsync(
@@ -294,7 +417,7 @@ public class WebSearchService
         return Encoding.UTF8;
     }
 
-    private static string CleanHtml(string fragment) =>
+    internal static string CleanHtml(string fragment) =>
         WebUtility.HtmlDecode(TagPattern.Replace(fragment, string.Empty)).Trim();
 
     /// <summary>

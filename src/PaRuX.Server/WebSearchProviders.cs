@@ -1,0 +1,149 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
+
+namespace PaRuX.Server;
+
+/// <summary>One keyless search backend. Implementations throw on transport/format failure (so the chain can
+/// record an honest failure and try the next one) and return an empty list only for a genuine "no results".</summary>
+internal interface IWebSearchProvider
+{
+    string Id { get; }
+    string DisplayName { get; }
+    Task<List<WebSearchResult>> SearchAsync(string query, int maxResults, CancellationToken ct);
+}
+
+/// <summary>
+/// Wikipedia's public MediaWiki search API (https only, no key, one fixed host). Only the query text leaves the
+/// PC. The response is bounded by the shared reader and every result URL is built by this class from the page
+/// title, never copied from the response.
+/// </summary>
+internal sealed class WikipediaSearchProvider : IWebSearchProvider
+{
+    private const string Endpoint = "https://en.wikipedia.org/w/api.php";
+    private const int MaxQueryCharacters = 300;
+    private readonly HttpClient _http;
+
+    public WikipediaSearchProvider(HttpClient http) => _http = http;
+
+    public string Id => WebSearchSettingsService.WikipediaId;
+    public string DisplayName => "Wikipedia";
+
+    public async Task<List<WebSearchResult>> SearchAsync(string query, int maxResults, CancellationToken ct)
+    {
+        string text = (query ?? string.Empty).Trim();
+        if (text.Length == 0 || maxResults <= 0) return new List<WebSearchResult>();
+        if (text.Length > MaxQueryCharacters) text = text[..MaxQueryCharacters];
+        int limit = Math.Clamp(maxResults, 1, 10);
+
+        string url = Endpoint + "?action=query&list=search&format=json&utf8=1&srlimit=" + limit
+            + "&srprop=snippet&srsearch=" + Uri.EscapeDataString(text);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd("PaRuXLocalAI/1.0");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using HttpResponseMessage response = await _http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        string json = await WebSearchService.ReadBoundedTextAsync(response.Content, ct).ConfigureAwait(false);
+        return ParseResults(json, limit);
+    }
+
+    internal static List<WebSearchResult> ParseResults(string json, int maxResults)
+    {
+        var results = new List<WebSearchResult>();
+        using JsonDocument document = JsonDocument.Parse(json);   // malformed JSON is a provider failure
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("query", out JsonElement query) || query.ValueKind != JsonValueKind.Object
+            || !query.TryGetProperty("search", out JsonElement entries) || entries.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Wikipedia returned an unexpected response shape.");
+
+        foreach (JsonElement entry in entries.EnumerateArray())
+        {
+            if (results.Count >= maxResults) break;
+            if (entry.ValueKind != JsonValueKind.Object
+                || !entry.TryGetProperty("title", out JsonElement titleElement)
+                || titleElement.ValueKind != JsonValueKind.String) continue;
+            string title = (titleElement.GetString() ?? string.Empty).Trim();
+            if (title.Length == 0 || title.Length > 180) continue;
+            string snippet = entry.TryGetProperty("snippet", out JsonElement s) && s.ValueKind == JsonValueKind.String
+                ? WebSearchService.CleanHtml(s.GetString() ?? string.Empty) : string.Empty;
+            if (snippet.Length > 500) snippet = snippet[..500];
+            results.Add(new WebSearchResult
+            {
+                Title = title,
+                Url = "https://en.wikipedia.org/wiki/" + Uri.EscapeDataString(title.Replace(' ', '_')).Replace("%3A", ":").Replace("%28", "(").Replace("%29", ")"),
+                Snippet = snippet
+            });
+        }
+        return results;
+    }
+}
+
+/// <summary>
+/// The user's own SearXNG, from Settings (or the legacy environment variable). The endpoint is accepted only on
+/// loopback or a private LAN IPv4 address. The client never follows redirects, never uses a proxy or cookies, and
+/// a non-200 answer or an oversized body is a reported failure rather than a silent empty result.
+/// </summary>
+internal sealed class SearxngSearchProvider : IWebSearchProvider
+{
+    private const int MaxJsonBytes = 131_072;
+    private const int MaxQueryCharacters = 512;
+    private readonly Uri _endpoint;
+    private readonly HttpClient _http;
+
+    public SearxngSearchProvider(Uri endpoint, HttpClient http)
+    {
+        if (!LocalSearxngSearchProvider.IsAllowedConfiguredEndpoint(endpoint))
+            throw new ArgumentException("SearXNG endpoint must be loopback or a private LAN address.", nameof(endpoint));
+        _endpoint = endpoint;
+        _http = http;
+    }
+
+    public string Id => WebSearchSettingsService.SearxngId;
+    public string DisplayName => "SearXNG (self-hosted)";
+
+    internal static HttpClient CreateClient(HttpMessageHandler? handler = null) =>
+        new(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false, UseCookies = false })
+        {
+            // A stopped self-hosted instance must not delay the fallback providers.
+            Timeout = TimeSpan.FromSeconds(4)
+        };
+
+    public async Task<List<WebSearchResult>> SearchAsync(string query, int maxResults, CancellationToken ct)
+    {
+        string text = (query ?? string.Empty).Trim();
+        if (text.Length == 0 || maxResults <= 0) return new List<WebSearchResult>();
+        if (text.Length > MaxQueryCharacters) text = text[..MaxQueryCharacters];
+
+        var builder = new UriBuilder(_endpoint)
+        {
+            Path = "/search",
+            Query = "q=" + Uri.EscapeDataString(text) + "&format=json"
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, builder.Uri);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        using HttpResponseMessage response = await _http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new HttpRequestException("SearXNG answered HTTP " + (int)response.StatusCode
+                + " (JSON output may be disabled in its settings).");
+        if (response.Content.Headers.ContentLength > MaxJsonBytes)
+            throw new InvalidDataException("SearXNG response is larger than the allowed limit.");
+
+        await using Stream input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        byte[] data = new byte[MaxJsonBytes + 1];
+        int used = 0;
+        while (used < data.Length)
+        {
+            int read = await input.ReadAsync(data.AsMemory(used, data.Length - used), ct).ConfigureAwait(false);
+            if (read == 0) break;
+            used += read;
+        }
+        if (used > MaxJsonBytes) throw new InvalidDataException("SearXNG response is larger than the allowed limit.");
+        try { using JsonDocument probe = JsonDocument.Parse(data.AsMemory(0, used)); }
+        catch (JsonException) { throw new InvalidDataException("SearXNG did not return JSON."); }
+        return LocalSearxngSearchProvider.ParseResults(data.AsSpan(0, used), Math.Clamp(maxResults, 1, 10));
+    }
+}

@@ -1552,6 +1552,19 @@
                                       Toggled="InternetSwitch_Toggled" />
                     </Grid>
                 </Border>
+                <Border Style="{StaticResource PaRuXCardStyle}">
+                    <StackPanel Spacing="{StaticResource PaRuXSpaceS}">
+                        <TextBlock Text="Search providers" loc:Loc.ItText="Provider di ricerca" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="Searches try the providers in order and fall back automatically if one fails. All are keyless and only run while Web search is on. Your own SearXNG is accepted only on this PC or a private network address." loc:Loc.ItText="Le ricerche provano i provider in ordine e passano al successivo se uno fallisce. Nessuno richiede una chiave e funzionano solo con la ricerca sul web attiva. Il tuo SearXNG è accettato solo su questo PC o su un indirizzo di rete privata." />
+                        <TextBox x:Name="SearxngUrlBox" Header="SearXNG address (optional)" loc:Loc.ItHeader="Indirizzo SearXNG (facoltativo)"
+                                 PlaceholderText="http://127.0.0.1:8888" />
+                        <CheckBox x:Name="SearchDuckDuckGoCheck" Content="Use DuckDuckGo" loc:Loc.ItContent="Usa DuckDuckGo" IsChecked="True" />
+                        <CheckBox x:Name="SearchWikipediaCheck" Content="Use Wikipedia" loc:Loc.ItContent="Usa Wikipedia" IsChecked="True" />
+                        <Button Content="Save search providers" loc:Loc.ItContent="Salva provider di ricerca" Click="SaveSearchProviders_Click" />
+                        <TextBlock x:Name="SearchProvidersStatusText" Visibility="Collapsed" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- ==================== RAG ==================== -->

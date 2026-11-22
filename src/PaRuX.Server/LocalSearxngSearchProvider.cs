@@ -40,6 +40,26 @@ public static class LocalSearxngSearchProvider
         && string.IsNullOrEmpty(endpoint.Query)
         && string.IsNullOrEmpty(endpoint.Fragment);
 
+    /// <summary>
+    /// Endpoint rule for the Settings-configured provider: http(s), a literal loopback or private-LAN IPv4 host
+    /// (10/8, 172.16/12, 192.168/16, 127/8), root path only, no credentials/query/fragment. Host names are refused
+    /// so a DNS answer can never redirect the request to a public address.
+    /// </summary>
+    public static bool IsAllowedConfiguredEndpoint(Uri? endpoint)
+    {
+        if (endpoint == null || !endpoint.IsAbsoluteUri) return false;
+        if (endpoint.Scheme is not ("http" or "https")) return false;
+        if (!string.IsNullOrEmpty(endpoint.UserInfo) || !string.IsNullOrEmpty(endpoint.Query)
+            || !string.IsNullOrEmpty(endpoint.Fragment) || endpoint.AbsolutePath != "/") return false;
+        if (endpoint.HostNameType != UriHostNameType.IPv4
+            || !IPAddress.TryParse(endpoint.Host, out IPAddress? address)
+            || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
+        // Reject short forms such as 127.1 that parse but are not four dotted decimals.
+        if (endpoint.Host.Split('.').Length != 4) return false;
+        byte[] b = address.GetAddressBytes();
+        return b[0] == 127 || b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168);
+    }
+
     public static async Task<List<WebSearchResult>> SearchIfConfiguredAsync(
         string query, int maxResults, CancellationToken cancellationToken)
     {
