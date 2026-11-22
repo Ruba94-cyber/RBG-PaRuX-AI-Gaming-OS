@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -72,6 +73,10 @@ public static class GamingEndpoints
 
     public static void MapGamingEndpoints(this WebApplication app)
     {
+        StreamingEndpoints.Map(app,
+            () => app.Services.GetRequiredService<LocalRuntimeService>().GamingMode,
+            () => app.Services.GetRequiredService<GamingDisplayModeService>().Status().Pending);
+
         // Read-only preview of user-supplied JSON. This cannot inspect local files,
         // launch games or add entries to ManualGameLibrary. Desktop-only, Gaming hard-off.
         app.MapPost("/api/v1/gaming/library/import-preview", (

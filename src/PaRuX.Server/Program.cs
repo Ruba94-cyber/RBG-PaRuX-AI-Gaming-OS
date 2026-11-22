@@ -344,6 +344,14 @@ builder.Services.AddSingleton<GameLaunchHookService>();
 builder.Services.AddSingleton<GamingDisplayTopologyService>();
 builder.Services.AddSingleton<OwnedGameWindowPlacementService>();
 builder.Services.AddSingleton<GamingDisplayModeService>();
+builder.Services.AddSingleton<IStreamingHost, WindowsStreamingHost>();
+builder.Services.AddSingleton<IStreamingDisplayController>(sp =>
+    new WindowsStreamingDisplayController(new WindowsDisplayModeApi(), sp.GetRequiredService<GamingDisplayTopologyService>()));
+builder.Services.AddSingleton(sp => new DisplayChangeJournal(
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "display-change-journal.json")));
+builder.Services.AddSingleton(sp => new StreamingModeService(
+    sp.GetRequiredService<IStreamingHost>(), sp.GetRequiredService<IStreamingDisplayController>(),
+    sp.GetRequiredService<DisplayChangeJournal>(), TimeSpan.FromSeconds(20)));
 builder.Services.AddSingleton<GgufQuantizeService>();
 builder.Services.AddSingleton<GameTitleStore>();
 builder.Services.AddSingleton<GameLaunchProfileStore>();
@@ -4228,6 +4236,21 @@ if (!app.Environment.IsEnvironment("Testing"))
     // An unconfirmed display change left by a crash is reverted before anything else uses the monitor.
     try { app.Services.GetRequiredService<GamingDisplayModeService>().RecoverPendingAfterRestart(); }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Display change recovery failed."); }
+
+    // Display changes a crashed streaming session journaled are restored off the startup path, bounded and logged.
+    // StreamingStartupRecovery never throws; a timeout or failure leaves the journal for the next start.
+    _ = StreamingStartupRecovery.RunAsync(app.Services.GetRequiredService<StreamingModeService>(), app.Logger, StreamingStartupRecovery.DefaultTimeout);
+    // On a normal shutdown, undo what an active streaming session changed (display values, a Sunshine PaRuX started).
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try
+        {
+            var streaming = app.Services.GetRequiredService<StreamingModeService>();
+            if (streaming.Status().State is StreamingState.Active or StreamingState.Failed or StreamingState.Starting)
+                streaming.StopAsync().Wait(TimeSpan.FromSeconds(30));
+        }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Streaming mode could not be stopped at shutdown; restore points stay recorded."); }
+    });
 
     // A previous PaRuX-owned HidHide transaction must be unwound after a crash.
     // Never rewrite the user's own HidHide configuration or delay startup indefinitely:
