@@ -203,6 +203,54 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void A_just_started_owned_playnite_is_not_started_twice_when_discovery_lags()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null).Ok);
+        Assert.Empty(e.Running); // The Windows discovery snapshot has not caught up yet.
+
+        PlayniteLaunchResultDto again = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null);
+
+        Assert.True(again.Ok);
+        Assert.Equal("already-running", again.Outcome);
+        Assert.Equal(PlayniteModes.Console, again.Mode);
+        Assert.Single(h.Starts);
+        Assert.Equal(new[] { h.Last!.Id }, h.Focused);
+    }
+
+    [Fact]
+    public void A_just_started_owned_playnite_refuses_the_other_mode_without_creating_an_instance()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        Assert.Empty(e.Running);
+
+        PlayniteLaunchResultDto result = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null);
+
+        Assert.False(result.Ok);
+        Assert.Equal("already-running", result.Outcome);
+        Assert.Equal(PlayniteModes.Desktop, result.Mode);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+    }
+
+    [Fact]
+    public void An_exited_owned_playnite_can_be_restarted_when_windows_discovery_is_empty()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null).Ok);
+        h.Last!.ExitNow();
+        Assert.Empty(e.Running);
+
+        PlayniteLaunchResultDto result = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null);
+
+        Assert.True(result.Ok);
+        Assert.Equal("started", result.Outcome);
+        Assert.Equal(2, h.Starts.Count);
+        Assert.Equal(PlayniteModes.Desktop, l.LaunchedMode);
+    }
+
+    [Fact]
     public void Running_in_the_other_mode_is_not_duplicated_nor_claimed_as_success()
     {
         var (l, h, e, c, dir) = Make();
