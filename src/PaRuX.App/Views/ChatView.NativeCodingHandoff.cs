@@ -537,6 +537,40 @@ namespace PaRuX.Views
                 panel.Children.Add(questionCard);
             }
 
+            // 4b. Steer a task that is running right now: the instruction is delivered at its next step boundary.
+            if ((string.Equals(statusStr, AgentTaskStatus.Running, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(statusStr, AgentTaskStatus.Verifying, StringComparison.OrdinalIgnoreCase))
+                && CodingAgentSteering.IsActive(message.CodeTaskId))
+            {
+                var steerBox = new TextBox
+                {
+                    Header = T("Add an instruction while it works", "Aggiungi un'istruzione mentre lavora"),
+                    PlaceholderText = T("It is delivered at the agent's next step…", "Viene consegnata al prossimo passo dell'agente…"),
+                    AcceptsReturn = true,
+                    MinHeight = 54,
+                    MaxLength = CodingAgentSteering.MaxCharacters
+                };
+                AutomationProperties.SetAutomationId(steerBox, "Chat_CodingTask_Steer_Input");
+                var steerButton = new Button { Content = T("Send instruction", "Invia istruzione"), Padding = new Thickness(12, 4, 12, 4) };
+                AutomationProperties.SetAutomationId(steerButton, "Chat_CodingTask_Steer_Button");
+                string steerTaskId = message.CodeTaskId!;
+                steerButton.Click += (_, _) =>
+                {
+                    CodingSteeringOutcome outcome = CodingAgentSteering.Submit(steerTaskId, steerBox.Text);
+                    ShowTransientStatus(outcome switch
+                    {
+                        CodingSteeringOutcome.Accepted => T("Instruction queued; the agent reads it at its next step.", "Istruzione in coda; l'agente la legge al prossimo passo."),
+                        CodingSteeringOutcome.Empty => T("Type an instruction first.", "Scrivi prima un'istruzione."),
+                        CodingSteeringOutcome.TooLong => T("That instruction is too long.", "Questa istruzione è troppo lunga."),
+                        CodingSteeringOutcome.QueueFull => T("Too many instructions are waiting; wait for the agent's next step.", "Ci sono troppe istruzioni in attesa; attendi il prossimo passo dell'agente."),
+                        _ => T("This task is no longer running, so the instruction was not sent.", "Questa attività non è più in esecuzione: istruzione non inviata.")
+                    });
+                    if (outcome == CodingSteeringOutcome.Accepted) steerBox.Text = string.Empty;
+                };
+                panel.Children.Add(steerBox);
+                panel.Children.Add(steerButton);
+            }
+
             // 5. Completed Review & Apply Section
             if (string.Equals(statusStr, AgentTaskStatus.Completed, StringComparison.OrdinalIgnoreCase)
                 && !CodingTaskApplyAdmissionPolicy.CanApply(task, message.CodeTaskId))

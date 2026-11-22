@@ -62,7 +62,8 @@ public static class SkillPermissionPolicy
     private static readonly string[] NoPermissionTools =
     {
         "git", "memory", "parux_desktop_search", "parux_desktop_read", "parux_kb_search", "parux_kb_exec",
-        "parux_write_word_document", "parux_write_excel_workbook", "parux_edit_excel_workbook"
+        "parux_write_word_document", "parux_write_excel_workbook", "parux_edit_excel_workbook",
+        "parux_sql_query", "parux_make_chart", "parux_write_presentation"
     };
 
     private static readonly string[] PrivilegedPrefixes =

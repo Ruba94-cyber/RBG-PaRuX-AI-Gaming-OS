@@ -294,6 +294,12 @@ builder.Services.AddSingleton<AutomationEngine>();
 builder.Services.AddSingleton<ContextGraphStore>();
 builder.Services.AddSingleton<RepoIndexService>();
 builder.Services.AddSingleton<ArtifactStore>();
+builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AttachedDataSources>();
+builder.Services.AddSingleton<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>();
+builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AgentSkillTools>(sp => new PaRuX.Server.AgentSkills.AgentSkillTools(
+    sp.GetRequiredService<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>(),
+    sp.GetRequiredService<PaRuX.Server.DesktopIntegration.DocumentWriteService>(),
+    sp.GetRequiredService<ArtifactStore>()));
 builder.Services.AddSingleton<MobileArtifactService>();
 builder.Services.AddSingleton<UnifiedRegistryService>();
 builder.Services.AddSingleton<ProjectManagerService>();
@@ -4110,6 +4116,8 @@ app.MapDelete("/api/v1/media/workflows/{id}", (string id, [FromServices] CustomW
 }).RequireDesktopOwner();
 
 ComfyWorkflowImportEndpoints.Map(app);
+PaRuX.Server.AgentSkills.AgentSkillEndpoints.Map(app);
+PaRuX.Server.Gateway.OpenApiEndpoints.Map(app);
 
 app.MapGet("/api/v1/compare/available-models", (ModelCompareService compare) => Results.Ok(compare.ListAvailableModels()));
 

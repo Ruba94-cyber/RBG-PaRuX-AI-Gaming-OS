@@ -205,6 +205,45 @@ namespace PaRuX.Services
             return true;
         }
 
+        /// <summary>
+        /// Rewinds the files of the given coding tasks, newest task first, so a file the later task changed on top of an
+        /// earlier one is peeled back in the right order. Each task restores only what the agent wrote and only while the
+        /// file still holds exactly what the agent left there; edits made by the user afterwards are never touched. A task
+        /// whose snapshot is gone (the desktop restarted) is reported, not guessed. The result can be passed to
+        /// <see cref="UndoFileRewind"/>.
+        /// </summary>
+        public CodingFileRewindResult RewindFiles(IReadOnlyList<string> taskIdsNewestFirst)
+        {
+            var result = new CodingFileRewindResult();
+            foreach (string taskId in taskIdsNewestFirst.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.Ordinal))
+            {
+                if (!_tasks.TryGetValue(taskId, out TaskState? state) || state.Reverter.TrackedCount == 0)
+                {
+                    result.AddTask(new CodingTaskRewindOutcome(taskId, false, Array.Empty<CodingRevertItem>()), null);
+                    continue;
+                }
+                IReadOnlyList<CodingRevertItem> items = state.Reverter.RevertWithUndo(out CodingRevertUndo undo);
+                result.AddTask(new CodingTaskRewindOutcome(taskId, true, items), undo);
+            }
+            return result;
+        }
+
+        /// <summary>Puts back the agent's file changes undone by <see cref="RewindFiles"/>, oldest task first.</summary>
+        public CodingFileRewindResult UndoFileRewind(CodingFileRewindResult rewind)
+        {
+            var result = new CodingFileRewindResult();
+            foreach ((string taskId, CodingRevertUndo undo) in rewind.UndoEntries.Reverse<(string, CodingRevertUndo)>())
+            {
+                if (!_tasks.TryGetValue(taskId, out TaskState? state))
+                {
+                    result.AddTask(new CodingTaskRewindOutcome(taskId, false, Array.Empty<CodingRevertItem>()), null);
+                    continue;
+                }
+                result.AddTask(new CodingTaskRewindOutcome(taskId, true, state.Reverter.ApplyUndo(undo)), null);
+            }
+            return result;
+        }
+
         public void Forget(string taskId) => _tasks.TryRemove(taskId, out _);
 
         private TaskState State(string taskId, string workspaceRoot) =>
@@ -246,5 +285,27 @@ namespace PaRuX.Services
 
         private static string Summarize(IReadOnlyList<CodingRevertItem> items) =>
             string.Join(", ", items.GroupBy(i => i.Outcome).Select(g => g.Count() + " " + g.Key));
+    }
+
+    public sealed record CodingTaskRewindOutcome(string TaskId, bool HadSnapshot, IReadOnlyList<CodingRevertItem> Items);
+
+    /// <summary>Outcome of rewinding the agent's files across several coding tasks.</summary>
+    public sealed class CodingFileRewindResult
+    {
+        private readonly List<CodingTaskRewindOutcome> _tasks = new();
+        private readonly List<(string TaskId, CodingRevertUndo Undo)> _undo = new();
+
+        public IReadOnlyList<CodingTaskRewindOutcome> Tasks => _tasks;
+        internal IReadOnlyList<(string TaskId, CodingRevertUndo Undo)> UndoEntries => _undo;
+        public int RestoredFiles => _tasks.Sum(t => t.Items.Count(i => i.Outcome is CodingRevertOutcome.Restored or CodingRevertOutcome.Deleted));
+        public int SkippedFiles => _tasks.Sum(t => t.Items.Count(i => i.Outcome is not (CodingRevertOutcome.Restored or CodingRevertOutcome.Deleted)));
+        public int TasksWithoutSnapshot => _tasks.Count(t => !t.HadSnapshot);
+        public bool CanUndo => _undo.Any(u => u.Undo.Count > 0);
+
+        internal void AddTask(CodingTaskRewindOutcome outcome, CodingRevertUndo? undo)
+        {
+            _tasks.Add(outcome);
+            if (undo != null && undo.Count > 0) _undo.Add((outcome.TaskId, undo));
+        }
     }
 }

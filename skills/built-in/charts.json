@@ -1,0 +1,55 @@
+{
+  "id": "charts",
+  "name": "charts",
+  "displayName": "Charts",
+  "description": "Draws a bar, line or pie chart from numbers as a deterministic SVG saved to the documents folder and the Artifact Workspace. No network and no scripts in the output.",
+  "icon": "chart",
+  "category": "Data",
+  "version": "1.0.0",
+  "author": "PaRuX",
+  "source": "builtin",
+  "license": "",
+  "attribution": "",
+  "enabled": true,
+  "platforms": [
+    "Windows"
+  ],
+  "preferredModelRole": "MAIN_LLM",
+  "allowedModelRoles": [
+    "MAIN_LLM"
+  ],
+  "requiredCapabilities": [],
+  "allowedTools": [
+    "parux_make_chart"
+  ],
+  "internetPolicy": "off",
+  "memoryPolicy": "off",
+  "ragPolicy": "off",
+  "slashCommand": "/chart",
+  "triggerExamples": [
+    "make a bar chart",
+    "disegna un grafico",
+    "plot these numbers",
+    "crea un grafico a torta"
+  ],
+  "workflow": [
+    "NUMBERS",
+    "CHART SPEC",
+    "SVG RENDER",
+    "ARTIFACT"
+  ],
+  "dependencies": [
+    "ChartRenderer"
+  ],
+  "permissions": {
+    "readFiles": false,
+    "writeFiles": false,
+    "shell": false,
+    "computerUse": false
+  },
+  "timeoutSeconds": 60,
+  "retryPolicy": "none",
+  "fallbackSkillId": "general",
+  "confirmationPolicy": "never",
+  "subSkillIds": []
+}

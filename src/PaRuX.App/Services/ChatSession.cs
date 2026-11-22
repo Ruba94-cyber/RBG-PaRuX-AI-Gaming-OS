@@ -126,7 +126,12 @@ namespace PaRuX.Services
         /// retained version (Versions) and can be restored with <see cref="UndoLastRewind"/>; nothing is removed while a
         /// reply is being written or when history cannot be written. See <see cref="ConversationRewind"/>.
         /// </summary>
-        public RewindResult RewindToMessage(ChatMessage message)
+        public RewindResult RewindToMessage(ChatMessage message) => RewindToMessage(message, rewindFiles: false);
+
+        /// <param name="rewindFiles">Also restore the files the coding tasks in the removed messages changed (only what the
+        /// agent wrote, never a file the user edited afterwards). The outcome is on <see cref="RewindResult.FileRewind"/>
+        /// and is undone together with the chat by <see cref="UndoLastRewind"/>.</param>
+        public RewindResult RewindToMessage(ChatMessage message, bool rewindFiles)
         {
             // IsBusy covers a chat turn; a coding task started from the chat keeps working (and appending notices and
             // cards) without marking any message as streaming, so its execution lease is checked as well.
@@ -141,6 +146,14 @@ namespace PaRuX.Services
             });
             if (result.Status == RewindStatus.Rewound)
             {
+                if (rewindFiles && result.RemovedCodeTaskIds.Count > 0)
+                {
+                    try { result.FileRewind = CodingTaskChangeTracker.Current.RewindFiles(result.RemovedCodeTaskIds); }
+                    catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+                    {
+                        Log.Write("File rewind failed: " + ex.Message);
+                    }
+                }
                 _lastRewind = result;
                 ConversationPersisted?.Invoke();
                 ConversationChanged?.Invoke();
@@ -152,6 +165,14 @@ namespace PaRuX.Services
         public bool UndoLastRewind()
         {
             if (IsBusy || !ConversationRewind.Undo(Conversation, _lastRewind, HistoryStore.RestoreBranch)) return false;
+            if (_lastRewind?.FileRewind is { CanUndo: true } fileRewind)
+            {
+                try { CodingTaskChangeTracker.Current.UndoFileRewind(fileRewind); }
+                catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+                {
+                    Log.Write("Undo of the file rewind failed: " + ex.Message);
+                }
+            }
             _lastRewind = null;
             if (!Conversation.IsIncognito) ConversationPersisted?.Invoke();
             ConversationChanged?.Invoke();

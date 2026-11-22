@@ -40,6 +40,12 @@ namespace PaRuX.Services
         public IReadOnlyList<ChatMessage> Removed { get; init; } = Array.Empty<ChatMessage>();
 
         public string? LastKeptMessageId { get; init; }
+
+        /// <summary>Coding task ids of the removed messages, newest first, so their file changes can be rewound in order.</summary>
+        public IReadOnlyList<string> RemovedCodeTaskIds { get; init; } = Array.Empty<string>();
+
+        /// <summary>Set by the caller when the agent's file changes were rewound together with the chat.</summary>
+        public CodingFileRewindResult? FileRewind { get; set; }
     }
 
     /// <summary>
@@ -52,7 +58,7 @@ namespace PaRuX.Services
     /// - a failed write leaves the live chat unchanged;
     /// - nothing is rewound while a reply is streaming;
     /// - an incognito chat (never saved) keeps the removed messages in memory so Undo still works until it is left.
-    /// Files changed by coding tasks are not touched; the result says how many such messages were removed.
+    /// Files changed by coding tasks are not touched here; the result lists the removed coding task ids so the caller can rewind their files (see CodingTaskChangeTracker.RewindFiles).
     /// </summary>
     public static class ConversationRewind
     {
@@ -115,6 +121,8 @@ namespace PaRuX.Services
                 KeptCount = keptCount,
                 RemovedCount = tail.Count,
                 CodingMessagesRemoved = tail.Count(m => !string.IsNullOrEmpty(m.CodeTaskId)),
+                RemovedCodeTaskIds = Enumerable.Reverse(tail).Where(m => !string.IsNullOrEmpty(m.CodeTaskId))
+                    .Select(m => m.CodeTaskId!).Distinct(StringComparer.Ordinal).ToList(),
                 Retained = retained,
                 RetainedBranchId = branchId,
                 Removed = retained ? Array.Empty<ChatMessage>() : tail.Select(ConversationBranching.CloneMessage).ToList(),
