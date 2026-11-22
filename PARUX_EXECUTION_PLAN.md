@@ -1,3 +1,5 @@
+**RESUME ON ANOTHER PC: read docs/HANDOFF_2026-11-22.md first.** Unmerged agent branches are pushed to origin (worktree-agent-*).
+
 ## 2026-11-22 OWNER DIRECTION CHANGE (supersedes native Gaming/TV direction below)
 
 Owner: Playnite becomes an OPTIONAL dependency; the native TV/Console and Gaming UI are to be REMOVED from PaRuX and Playnite integrated directly for users who want it. AI must be perfect: priority is beating Unsloth, AnythingLLM and Locally Uncensored (see docs/AI_COMPETITIVE_GAPS_2026-11-22.md). Keep the AI<->game resource handoff (WorkloadOrchestrator hard-off + VRAM-release verification), which needs a game start/stop signal from Playnite. Removal only on a verified branch, not by blind deletion; Aniki-style native redesign STOPPED. Agent work on AI slices (context pack, web search, RAG, training charts, Vulkan flash, benchmarks) was interrupted by the usage limit (resets 15:20) and is saved in worktrees, not merged.

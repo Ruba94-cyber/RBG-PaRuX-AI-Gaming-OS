@@ -1,3 +1,5 @@
+## 2026-11-22 - RESUME HERE: see docs/HANDOFF_2026-11-22.md (owner direction change, merged vs pending branches, next steps)
+
 ## 2026-11-13 - Audit, security integration branch and docs cycle (resume here)
 
 **Status: NOT RELEASE READY.** Nothing merged, pushed or tagged today.
