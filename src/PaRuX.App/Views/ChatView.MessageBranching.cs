@@ -40,6 +40,13 @@ namespace PaRuX.Views
             rewind.Click += async (_, _) => await RewindToMessageAsync(message);
             flyout.Items.Add(rewind);
 
+            // Same, and also restores the files the agent changed in the removed coding tasks (never the user's own edits).
+            var rewindFiles = new MenuFlyoutItem { Text = ChatItalian ? "Riavvolgi chat e file dell'agente fino a qui…" : "Rewind chat and agent file changes to here…" };
+            AutomationProperties.SetAutomationId(rewindFiles, MessageRewindFilesAutomationId);
+            AutomationProperties.SetName(rewindFiles, rewindFiles.Text);
+            rewindFiles.Click += async (_, _) => await RewindToMessageAsync(message, rewindFiles: true);
+            flyout.Items.Add(rewindFiles);
+
             var undoRewind = new MenuFlyoutItem { Text = ChatItalian ? "Annulla l'ultimo riavvolgimento" : "Undo last rewind", Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(undoRewind, UndoRewindAutomationId);
             AutomationProperties.SetName(undoRewind, undoRewind.Text);
@@ -52,8 +59,9 @@ namespace PaRuX.Views
 
         public const string MessageRewindAutomationId = "Chat_Message_Rewind_Item";
         public const string UndoRewindAutomationId = "Chat_Message_UndoRewind_Item";
+        public const string MessageRewindFilesAutomationId = "Chat_Message_RewindFiles_Item";
 
-        private async System.Threading.Tasks.Task RewindToMessageAsync(ChatMessage message)
+        private async System.Threading.Tasks.Task RewindToMessageAsync(ChatMessage message, bool rewindFiles = false)
         {
             if (message.IsStreaming || ChatSession.Current.IsBusy)
             {
@@ -78,7 +86,11 @@ namespace PaRuX.Views
             text.Append(incognito
                 ? (ChatItalian ? "Questa è una chat in incognito e non viene salvata: potrai annullare solo finché non la lasci." : "This is an incognito chat and is not saved: you can undo only until you leave it.")
                 : (ChatItalian ? "La chat completa resta salvata in Versioni, quindi puoi ripristinarla." : "The full chat stays saved in Versions, so you can restore it."));
-            if (hasCoding)
+            if (hasCoding && rewindFiles)
+                text.Append(ChatItalian
+                    ? " Verranno ripristinati anche i file modificati dall'agente in quei messaggi, ma solo quelli che non hai cambiato dopo di lui; potrai annullare anche questo."
+                    : " The files the agent changed in those messages are restored too, but only those you have not edited since; you can undo that as well.");
+            else if (hasCoding)
                 text.Append(ChatItalian
                     ? " Le modifiche ai file fatte dalle attività di programmazione in quei messaggi NON vengono annullate."
                     : " File changes made by coding tasks in those messages are NOT undone.");
@@ -104,7 +116,7 @@ namespace PaRuX.Views
             }
 
             RewindResult result;
-            try { result = ChatSession.Current.RewindToMessage(message); }
+            try { result = ChatSession.Current.RewindToMessage(message, rewindFiles); }
             catch (Exception ex)
             {
                 Log.Write("Rewind failed: " + ex.Message);
@@ -112,6 +124,15 @@ namespace PaRuX.Views
                 return;
             }
             RefreshConversationBranchNavigation();
+            string fileNote = string.Empty;
+            if (result.FileRewind is { } files)
+            {
+                fileNote = ChatItalian
+                    ? $" File ripristinati: {files.RestoredFiles}; lasciati com'erano: {files.SkippedFiles}" + (files.TasksWithoutSnapshot > 0 ? $"; {files.TasksWithoutSnapshot} attività senza istantanea (app riavviata)." : ".")
+                    : $" Files restored: {files.RestoredFiles}; left as they were: {files.SkippedFiles}" + (files.TasksWithoutSnapshot > 0 ? $"; {files.TasksWithoutSnapshot} task(s) without a snapshot (app restarted)." : ".");
+            }
+            else if (rewindFiles && result.Status == RewindStatus.Rewound && result.RemovedCodeTaskIds.Count == 0)
+                fileNote = ChatItalian ? " Nessuna attività di programmazione da riavvolgere." : " No coding task to rewind.";
             ShowTransientStatus(result.Status switch
             {
                 RewindStatus.Rewound => result.Retained
@@ -121,7 +142,7 @@ namespace PaRuX.Views
                 RewindStatus.NothingToRewind => ChatItalian ? "Questo è già l'ultimo messaggio: niente da riavvolgere." : "This is already the last message: nothing to rewind.",
                 RewindStatus.NotRetained => ChatItalian ? "Non è stato possibile conservare la chat completa, quindi non è stato cambiato nulla." : "The full chat could not be kept, so nothing was changed.",
                 _ => ChatItalian ? "Non è stato possibile salvare la cronologia, quindi la chat è rimasta com'era." : "History could not be saved, so the chat was left as it was."
-            });
+            } + fileNote);
         }
 
         private void UndoLastRewind()

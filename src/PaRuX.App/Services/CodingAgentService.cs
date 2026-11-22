@@ -135,6 +135,7 @@ namespace PaRuX.Services
             string root = Path.GetFullPath(workspaceRoot);
             string resolvedSessionId = CodingAgentCheckpointStore.ResolveSessionId(root, task, sessionId);
             using IDisposable executionLease = ActiveRunLease.Enter(resolvedSessionId);
+            using IDisposable steeringScope = CodingAgentSteering.Activate(resolvedSessionId);
             string? orchestratorTaskId = string.IsNullOrWhiteSpace(sessionId) ? null : resolvedSessionId;
             string requestedPermissionMode = CodingAgentPermissionMode.NormalizeRequested(permissionMode);
             // One ledger scope per coding task, so durable memory never bleeds between
@@ -324,6 +325,8 @@ namespace PaRuX.Services
                 for (int step = firstStep; step <= MaxSteps; step++)
                 {
                     ct.ThrowIfCancellationRequested();
+                    // A user instruction sent while the task runs is delivered here, before the next model call.
+                    CodingAgentSteering.DeliverAtStepBoundary(resolvedSessionId, step, log, onStep);
                     FlushStepTiming();
                     phaseTimer.BeginStep(step);
 

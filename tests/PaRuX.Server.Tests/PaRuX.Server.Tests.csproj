@@ -321,6 +321,7 @@
     <Compile Include="..\..\src\PaRuX.App\Services\CodingTaskReviewModel.cs" Link="CodingAgent\CodingTaskReviewModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingReviewFindingLedger.cs" Link="CodingAgent\CodingReviewFindingLedger.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingOwnChangeReverter.cs" Link="CodingAgent\CodingOwnChangeReverter.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\CodingAgentSteering.cs" Link="CodingAgent\CodingAgentSteering.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingTaskChangeTracker.cs" Link="CodingAgent\CodingTaskChangeTracker.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaGalleryItem.cs" Link="MediaGallery\MediaGalleryItem.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaGalleryItemMapper.cs" Link="MediaGallery\MediaGalleryItemMapper.cs" />
