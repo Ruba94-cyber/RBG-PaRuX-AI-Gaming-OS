@@ -251,6 +251,14 @@ if ($ArtifactIds.Count -eq 0) {
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $stagedLockPath -Encoding UTF8
 }
 
+# MIT requires the copyright and permission notice to accompany copies: ship llama.cpp's license text
+# next to every staged llama-server.exe (before the inventory below, so it is hashed like everything else).
+$llamaLicenseSource = Join-Path $PSScriptRoot "..\llama-cpp-conversion\LICENSE-llama.cpp"
+if (-not (Test-Path -LiteralPath $llamaLicenseSource -PathType Leaf)) { throw "llama.cpp license text is missing: $llamaLicenseSource" }
+foreach ($engineExe in @(Get-ChildItem -LiteralPath $baselineDir -Recurse -File -Filter "llama-server.exe")) {
+    Copy-Item -LiteralPath $llamaLicenseSource -Destination (Join-Path $engineExe.DirectoryName "LICENSE-llama.cpp.txt") -Force
+}
+
 $manifestPath = Join-Path $baselineDir "staging-manifest.json"
 $lockHash = Get-Sha256 $stagedLockPath
 $manifestFiles = @()

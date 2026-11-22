@@ -33,12 +33,12 @@ The GitHub MSI includes the self-contained WinUI desktop application, self-conta
 | SharpCompress | MIT | Server | Safe extraction support for managed runtime archives; retain any notices present in the upstream package/distribution |
 | MonoTorrent | MIT | Server | Version 3.0.2. In-process BitTorrent transfer backend for individually authorized magnet and local `.torrent` inputs; no separate qBittorrent process required. Retain the upstream MIT license/copyright notices in redistributions; package dependency closure and Windows release build remain to be verified. |
 | llama.cpp `convert_lora_to_gguf.py` + conversion package | MIT (llama.cpp) | Server | Vendored adapter conversion scripts under `llama-cpp-conversion/`; exact upstream text is in `llama-cpp-conversion/LICENSE-llama.cpp` |
-| llama.cpp / llama-server baseline archives | MIT | Server | The MSI includes a hash-locked b10549 Vulkan build and b11871 CUDA 13.4 build. The builds remain separate PaRuX-managed runtimes after first-run bootstrap. |
+| llama.cpp / llama-server baseline archives | MIT | Server | The MSI includes a hash-locked b10549 Vulkan build and b11871 CUDA 13.4 build. The builds remain separate PaRuX-managed runtimes after first-run bootstrap. Copyright (c) 2023-2026 The ggml authors; the MIT license text is shipped as `LICENSE-llama.cpp.txt` beside every bundled `llama-server.exe` and at the package root. |
 | Microsoft Visual C++ runtime (`vcruntime140*.dll`, `msvcp140*.dll`) | Microsoft Visual Studio redistributable terms ("Distributable Code") | Portable ZIPs only | Copied unmodified and Microsoft-signed from the build PC's Visual Studio `VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT` folder, app-local beside the Core and the bundled CPU llama.cpp engine, so that Standard Portable and Corporate Lite need no installed redistributable. Not part of the MSI. |
 | NVIDIA CUDA Runtime and cuBLAS DLLs | NVIDIA CUDA Toolkit EULA, Attachment A | Server | The CUDA baseline includes `cudart64_13.dll`, `cublas64_13.dll` and `cublasLt64_13.dll`; see [NVIDIA_CUDA_NOTICE.txt](NVIDIA_CUDA_NOTICE.txt) for the redistribution boundary and current EULA link. |
 | uv (Astral) | MIT OR Apache-2.0 | Server | Hash-locked `uv 0.12.1` is shipped in `runtime-tools/uv` for PaRuX-managed Python environments. |
 
-The MSI build copies this notice, the NVIDIA CUDA notice, the PaRuX FSL-1.1-MIT license and `OPEN_SOURCE_PROVENANCE.md` beside the installed binaries. It does **not** bundle model weights, ComfyUI, Unsloth, TRELLIS or other large AI engines listed below.
+The MSI build copies this notice, the NVIDIA CUDA notice, the llama.cpp MIT license text (`LICENSE-llama.cpp.txt`), the PaRuX FSL-1.1-MIT license and `OPEN_SOURCE_PROVENANCE.md` beside the installed binaries. The Microsoft Store (MSIX) package carries the same notices except the NVIDIA CUDA notice, because it contains no CUDA runtime. It does **not** bundle model weights, ComfyUI, Unsloth, TRELLIS or other large AI engines listed below.
 
 ## Bundled in Standard Portable / Corporate Lite ZIPs — not in the MSI
 
@@ -121,6 +121,59 @@ Every model/dataset can carry terms independent of PaRuX's license. Model Hub/Da
 | Windows SDK `signtool.exe` | Microsoft Windows SDK terms | Optional Authenticode signing of a release MSI; not bundled. |
 | `PaRuX.ReleaseTool` | PaRuX FSL-1.1-MIT source | Locally creates the PaRuX-owned detached signed MSI manifest; private release keys are never shipped. |
 
+## Transitive packages and native libraries redistributed in the Windows builds
+
+These ship inside the self-contained Desktop/Server publish as dependencies of the packages above. Versions are the resolved versions in the projects' `obj/project.assets.json` at the time of writing; license facts were read from each package's `.nuspec`, bundled license file or upstream repository (not guessed). `tools/check-direct-third-party-coverage.ps1` now fails when a package resolved in `project.assets.json` or a bundled native DLL is missing from this file.
+
+| Component | License | Used by | Purpose |
+|---|---|---|---|
+| Mono.Nat 3.0.0 | MIT (Copyright (C) 2006 Alan McGovern, (C) 2007 Ben Motmans, (C) 2013 Nicholas Terry) | Server (via MonoTorrent) | UPnP / NAT-PMP port mapping for the BitTorrent backend (github.com/mono/Mono.Nat) |
+| ReusableTasks 4.0.0 | MIT (Copyright (C) 2019 Alan McGovern) | Server (via MonoTorrent) | Allocation-free async primitives (github.com/alanmcgovern/ReusableTasks) |
+| K4os.Compression.LZ4 1.3.8 | MIT (Copyright (c) 2017 Milosz Krajewski) | Server (via Parquet.Net) | LZ4 codec. The NuGet package declares only a license URL; the MIT text was read from github.com/MiloszKrajewski/K4os.Compression.LZ4 (`LICENSE`). |
+| Snappier 1.3.1 | BSD-3-Clause (Copyright 2011-2020, Google, Inc. and Snappier Authors) | Server (via Parquet.Net) | Snappy codec (github.com/brantburnett/Snappier) |
+| ZstdSharp.Port 0.8.8 | MIT (Copyright Oleg Stepanischev) | Server (via Parquet.Net) | Zstandard codec (github.com/oleg-st/ZstdSharp) |
+| Google.Protobuf 3.30.2 | BSD-3-Clause (Copyright 2015, Google Inc.) | Server (via Microsoft.ML.Tokenizers) | Protocol Buffers runtime |
+| SQLitePCLRaw.core, SQLitePCLRaw.provider.e_sqlite3, SQLitePCLRaw.lib.e_sqlite3 and SQLitePCLRaw.bundle_e_sqlite3 (all 2.1.13) | Apache-2.0 (Copyright 2014-2024 SourceGear, LLC) | Desktop/Server (via Microsoft.Data.Sqlite) | Raw SQLite bindings and the native SQLite build (github.com/ericsink/SQLitePCL.raw). Apache-2.0 requires retaining its notice; the license text is at https://www.apache.org/licenses/LICENSE-2.0. |
+| `e_sqlite3.dll` (native SQLite 3.53.3) | Public domain (SQLite, sqlite.org/copyright.html) | Desktop/Server | Native database engine inside `SQLitePCLRaw.lib.e_sqlite3`. The version string was read from the shipped DLL. |
+| CommunityToolkit.HighPerformance 8.4.2 | MIT (Copyright (c) .NET Foundation and Contributors) | Server (via Parquet.Net) | High-performance memory helpers (github.com/CommunityToolkit/dotnet); the package ships its own `License.md` and `ThirdPartyNotices.txt`. |
+| Microsoft.IO.RecyclableMemoryStream 3.0.1 | MIT (Copyright (c) Microsoft Corporation) | Server (via Parquet.Net) | Pooled memory streams (github.com/microsoft/Microsoft.IO.RecyclableMemoryStream) |
+| Microsoft.Extensions.AI.Abstractions 10.8.3 (Server), 9.8.0 (Windows ML worker) | MIT (Copyright (c) Microsoft Corporation) | Server (via ModelContextProtocol.Core) / `PaRuX.WinMlWorker` (via Microsoft.ML.OnnxRuntimeGenAI) | Shared AI abstractions |
+| System.Numerics.Tensors 9.0.0 | MIT (Copyright (c) .NET Foundation and Contributors) | Desktop/Server/WinMlWorker (via ONNX Runtime and Windows ML packages) | Tensor primitives; the package ships `LICENSE.TXT` and `THIRD-PARTY-NOTICES.TXT`. |
+| System.IO.Packaging 10.0.2 | MIT (Copyright (c) .NET Foundation and Contributors) | Desktop/Server (via DocumentFormat.OpenXml) | Open Packaging Conventions support; the package ships `THIRD-PARTY-NOTICES.TXT`. |
+| System.CodeDom 10.0.15 | MIT (Copyright (c) .NET Foundation and Contributors) | Desktop (via System.Management) | CodeDOM support library |
+| DocumentFormat.OpenXml.Framework 3.5.1 | MIT (Copyright (c) Microsoft Corporation) | Desktop/Server (via DocumentFormat.OpenXml) | Shared framework assembly of the Open XML SDK |
+| Microsoft.Data.Sqlite.Core 10.0.15 | MIT (Copyright (c) Microsoft Corporation) | Desktop/Server (via Microsoft.Data.Sqlite) | ADO.NET provider core |
+| Microsoft.CodeAnalysis.Common 5.9.0 | MIT (Copyright (c) Microsoft Corporation) | Desktop/Server (via Microsoft.CodeAnalysis.CSharp) | Roslyn shared compiler assemblies |
+| Microsoft.Win32.SystemEvents 10.0.15 | MIT (Copyright (c) .NET Foundation and Contributors) | Desktop/Server (via System.Drawing.Common) | Windows system-event bindings |
+| H.GeneratedIcons.System.Drawing 2.1.0 | MIT (declared in the package nuspec; no copyright line) | Desktop (via H.NotifyIcon.WinUI) | Tray icon helper |
+| Microsoft.ML.OnnxRuntime.Managed 1.29.0 | MIT (Copyright (c) Microsoft Corporation; `LICENSE.txt` in the package) | Server (via Microsoft.ML.OnnxRuntime) | Managed ONNX Runtime API |
+| Microsoft.ML.OnnxRuntimeGenAI.Managed 0.15.2 | MIT (Copyright (c) Microsoft Corporation; `LICENSE` in the package) | `PaRuX.WinMlWorker` (via Microsoft.ML.OnnxRuntimeGenAI.WinML) | Managed ONNX Runtime GenAI API |
+| Microsoft.Web.WebView2 1.0.3179.45 | Microsoft WebView2 SDK license (BSD-style: Copyright (C) Microsoft Corporation; redistribution of binary form must reproduce the copyright notice; `LICENSE.txt` in the package) | Desktop (via Microsoft.WindowsAppSDK) | WebView2 loader and interop for in-app web content |
+| Microsoft.WindowsAppSDK.AI, Microsoft.WindowsAppSDK.Foundation, Microsoft.WindowsAppSDK.InteractiveExperiences, Microsoft.WindowsAppSDK.ML, Microsoft.WindowsAppSDK.Widgets, Microsoft.WindowsAppSDK.WinUI (and the asset-less Microsoft.WindowsAppSDK.Base, Microsoft.WindowsAppSDK.DWrite, Microsoft.WindowsAppSDK.Runtime) 1.8.x | Microsoft Software License Terms - Windows App SDK (same `license.txt` as the Microsoft.WindowsAppSDK row above) | Desktop (via Microsoft.WindowsAppSDK) | Component packages of the Windows App SDK; versions are pinned by `PaRuX.App.csproj` through the metapackage |
+| `DirectML.dll` (DirectML Redistributable Library 1.15.4) | Microsoft Software License Terms - Windows ML Runtime (proprietary; same `license.txt` as the Microsoft.Windows.AI.MachineLearning row above) | Desktop/Server app folder | Copied unmodified and Microsoft-signed from the `runtimes/win-x64/native` folder of Microsoft.Windows.AI.MachineLearning 2.3.42. Redistribution is limited to that license's "Distributable Code" section; this row records the terms and is not a legal clearance. |
+| LLVM OpenMP runtime (`libomp.dll`) | Apache-2.0 WITH LLVM-exception (The LLVM Project) | Server/Portable (shipped inside the llama.cpp release archives) | OpenMP runtime used by the llama.cpp CPU backend. The upstream license text `LICENSE-LLVM-OpenMP` ships beside the DLL in every llama.cpp runtime folder. |
+| `msquic.dll` (MsQuic 2.4.18) | MIT (Copyright (c) Microsoft Corporation) | Desktop/Server/CLI (shipped by the self-contained .NET 10 runtime) | QUIC transport used by System.Net.Quic. Notice reproduced from the .NET runtime pack `THIRD-PARTY-NOTICES.TXT` (github.com/microsoft/msquic). |
+
+### License texts for the components above
+
+**MIT License** (applies to every component marked MIT in this section and, with the copyright holder named in its row, to llama.cpp, whose verbatim upstream text is in `LICENSE-llama.cpp.txt`):
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+**BSD 3-Clause License** (Snappier, Google.Protobuf; copyright lines as in their rows):
+
+> Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+> 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 ## Offline/local-AI boundary
 
 PaRuX's **inference and execution design is local-first**, but first-time setup can require Internet access to obtain runtime binaries, model weights, datasets or optional tools the user explicitly selects. After required assets are present, normal local inference/workflows should not require a proprietary cloud AI provider. GitHub/Hugging Face are distribution/discovery sources, not inference backends.
@@ -154,3 +207,9 @@ PaRuX never installs drivers. These are programs the user may install; PaRuX onl
 | Playnite emulator definitions (`Emulation/Emulators/*/emulator.yaml`, `Platforms.yaml`; github.com/JosefNemec/Playnite) | MIT (Copyright (c) Josef Nemec) | `tools/generate-playnite-emulator-registry.py` converts the launch arguments, executable names, file extensions and platform names of about 90 emulators into `EmulatorRegistry.Playnite.cs`. Entries are marked `unverified`; hand-tuned PaRuX definitions take precedence. No Playnite code is copied. |
 | LiteDB 5.0.21 (NuGet id `LiteDB`, github.com/mbdavid/LiteDB) | MIT | Reads a private temporary COPY of a Playnite library as untyped BSON documents in the Playnite importer. Playnite's own files are never opened for writing. |
 | Playnite (the application) | MIT | Optional launcher front-end and migration source; PaRuX does not bundle or redistribute it. |
+
+## Aniki ReMake (design reference)
+
+| Component | License | How PaRuX uses it |
+|---|---|---|
+| Aniki ReMake (Playnite fullscreen theme by Mike Aniki) | MIT (Copyright (c) 2025 Mike Aniki; as stated by the project owner, not re-read from the upstream repository in this audit) | Design inspiration for the Gaming Home layout only (hero, shelves, focus states). No theme code, XAML, fonts, images or other assets are copied or redistributed; this entry records attribution should any future derivative be added. |

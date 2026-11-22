@@ -254,6 +254,8 @@ if (-not $NoModel) { Copy-Item $ModelPath (Join-Path $data "models") -Force }
 # Extra models must not silently change the starter fallback.
 if (-not $NoModel) { Set-Content (Join-Path (Join-Path $data "models") ".corporate-default-model") ([IO.Path]::GetFileName($ModelPath)) -Encoding UTF8 }
 if (-not (Test-Path (Join-Path $runtimeDest "llama-server.exe"))) { throw "Bundled CPU runtime was not staged." }
+# llama.cpp is MIT: ship its license text beside the engine.
+Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $runtimeDest "LICENSE-llama.cpp.txt") -Force
 # No prerequisites on the target PC: llama.cpp and ONNX Runtime import the Visual C++ runtime,
 # so it travels app-local next to every native engine and next to the Core.
 . (Join-Path $PSScriptRoot "portable-offline-assets.ps1")
