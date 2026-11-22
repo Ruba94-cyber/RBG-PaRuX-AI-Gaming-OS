@@ -329,6 +329,10 @@ builder.Services.AddSingleton<XInputShimInstaller>(_ =>
 builder.Services.AddSingleton<ManualGameLibrary>();
 builder.Services.AddSingleton<ExternalGameLibraryStore>();
 builder.Services.AddSingleton<LocalWishlistStore>();
+builder.Services.AddSingleton<SignInAppListStore>();
+builder.Services.AddSingleton(sp => new SignInAppListRunner(
+    sp.GetRequiredService<SignInAppListStore>(), new SignInAppProcessLauncher(),
+    () => sp.GetRequiredService<LocalRuntimeService>().GamingMode));
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.Gaming.QuickResumeService>();
 builder.Services.AddSingleton<TemporaryGameModService>();
 builder.Services.AddSingleton<GameSkinStudioService>();
@@ -4195,6 +4199,7 @@ app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
 app.MapLocalWishlistEndpoints();
+app.MapSignInAppListEndpoints();
 app.MapGgufQuantizeEndpoints();
 app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();
