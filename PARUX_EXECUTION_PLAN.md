@@ -1,3 +1,8 @@
+## 2026-11-22 - After-sign-in app list (Gaming/system) - PARTIAL
+
+- DONE (source + unit tests): `SignInAppListContracts.cs` (Contracts) and `SignInAppListService.cs` (Server/Gaming): schema parser/validator (bounds, local regular non-junction .exe, no `..`, shell-metacharacter and length caps on args, AUMID format), read-only opt-in importer for the legacy DelayedApps.json (result is always disabled), and a run service (ordered, staggered, cancellable, hard-off when Gaming is active, SkipInConsole while Console mode is active, skips already-running processes, max 3 launch attempts, observable snapshot, honest outcomes). PaRuX never edits third-party startup entries or Run keys.
+- MISSING: persistence of the list, DI registration, a trigger after Windows sign-in, a real Console-mode signal wired from the WinUI shell, and the Settings UI. `ModeWaitSeconds` is parsed and bounded but not yet used. Real launch (SignInAppProcessLauncher) is not verified on a real desktop.
+
 ## 2026-11-19 (morning) — Handoff: state of the overnight Gaming + AI push
 
 **Resume from `main`.** Everything below is committed and pushed; the working tree is clean. Branch work on `codex/gaming-library-20261119` is merged into `main`.
