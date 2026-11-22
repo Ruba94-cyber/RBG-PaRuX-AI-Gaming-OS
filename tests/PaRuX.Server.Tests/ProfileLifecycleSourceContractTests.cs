@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.IO;
 using Xunit;
@@ -14,7 +15,7 @@ public sealed class ProfileLifecycleSourceContractTests
     {
         string home = Read("src", "PaRuX.App", "Views", "GamingHomeView.cs");
         string wrapper = Read("src", "PaRuX.App", "Views", "UniversalLibraryPanel.cs");
-        string page = Read("src", "PaRuX.App", "Views", "ManualGameLibraryView.cs");
+        string page = ReadGameLibraryView();
         string shell = Read("src", "PaRuX.App", "MainWindow.Workspaces.cs");
 
         Assert.Contains("internal void CancelPendingQueries()", home, StringComparison.Ordinal);
@@ -32,7 +33,7 @@ public sealed class ProfileLifecycleSourceContractTests
     public void Gaming_only_hides_every_ai_dependent_command_inside_the_gaming_workspace()
     {
         string home = Read("src", "PaRuX.App", "Views", "GamingHomeView.cs");
-        string page = Read("src", "PaRuX.App", "Views", "ManualGameLibraryView.cs");
+        string page = ReadGameLibraryView();
         string wrapper = Read("src", "PaRuX.App", "Views", "UniversalLibraryPanel.cs");
         Assert.Contains("_localGuide.Visibility = aiEnabled", home, StringComparison.Ordinal);
         Assert.Contains("_gameAssetStudio.Visibility = aiEnabled", home, StringComparison.Ordinal);
@@ -69,6 +70,18 @@ public sealed class ProfileLifecycleSourceContractTests
         Assert.Contains("CorporateModelImportPolicy.IsAcceptableModel(", runtime, StringComparison.Ordinal);
         Assert.Contains("Saved Chat model was unavailable", runtime, StringComparison.Ordinal);
         Assert.Contains("CorporateModelImportPolicy.IsAcceptableModel(m.FileName, m.SizeBytes)", roles, StringComparison.Ordinal);
+    }
+
+    /// <summary>ManualGameLibraryView is a partial class split across several files; scan all of them.</summary>
+    private static string ReadGameLibraryView()
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "PaRuX.sln")))
+            root = root.Parent;
+        Assert.NotNull(root);
+        string[] files = Directory.GetFiles(Path.Combine(root!.FullName, "src", "PaRuX.App", "Views"), "ManualGameLibraryView*.cs");
+        Array.Sort(files, StringComparer.Ordinal);
+        return string.Concat(files.Select(File.ReadAllText));
     }
 
     private static string Read(params string[] path)

@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.IO;
 using Xunit;
@@ -13,7 +14,7 @@ public sealed class GameStoreFirstRunSourceContractTests
     [Fact]
     public void First_run_game_scan_is_opt_in_and_has_persistent_skip()
     {
-        string ui = Read("src", "PaRuX.App", "Views", "ManualGameLibraryView.cs");
+        string ui = ReadGameLibraryView();
         string settings = Read("src", "PaRuX.App", "Models", "AppSettings.cs");
 
         Assert.Contains("GameStoreDiscoveryPromptDismissed", settings, StringComparison.Ordinal);
@@ -35,7 +36,7 @@ public sealed class GameStoreFirstRunSourceContractTests
     [Fact]
     public void Store_provider_outage_does_not_erase_successful_store_scan()
     {
-        string ui = Read("src", "PaRuX.App", "Views", "ManualGameLibraryView.cs");
+        string ui = ReadGameLibraryView();
         Assert.Contains("TryDiscoverStoreAsync", ui, StringComparison.Ordinal);
         Assert.Contains("GamingCallResult<List<DiscoveredGameDto>>.Fail", ui, StringComparison.Ordinal);
         Assert.Contains("await Task.WhenAll(steam, epic, gog);", ui, StringComparison.Ordinal);
@@ -43,6 +44,18 @@ public sealed class GameStoreFirstRunSourceContractTests
         Assert.Contains("A full outage", ui, StringComparison.Ordinal);
         Assert.Contains("if (_busy || !CanDiscoverStores()) return;", ui, StringComparison.Ordinal);
         Assert.Contains("GamingManager.Current.IsActive", ui, StringComparison.Ordinal);
+    }
+
+    /// <summary>ManualGameLibraryView is a partial class split across several files; scan all of them.</summary>
+    private static string ReadGameLibraryView()
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "PaRuX.sln")))
+            root = root.Parent;
+        Assert.NotNull(root);
+        string[] files = Directory.GetFiles(Path.Combine(root!.FullName, "src", "PaRuX.App", "Views"), "ManualGameLibraryView*.cs");
+        Array.Sort(files, StringComparer.Ordinal);
+        return string.Concat(files.Select(File.ReadAllText));
     }
 
     private static string Read(params string[] parts)
