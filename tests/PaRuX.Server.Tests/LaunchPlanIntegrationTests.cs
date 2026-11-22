@@ -110,7 +110,7 @@ public sealed class LaunchPlanIntegrationTests
     // ---------------------------------------------------------------- ladder: known-good baseline rung
 
     [Fact]
-    public void An_unplanned_launch_has_exactly_the_rungs_it_had_before()
+    public void An_unplanned_launch_has_the_flash_on_vulkan_rung_before_its_flash_off_retry()
     {
         string[] primary = ["--flash-attn", "on", "--gpu-layers", "all"];
 
@@ -118,7 +118,7 @@ public sealed class LaunchPlanIntegrationTests
 
         Assert.Equal(
             [TextLaunchLadder.Step.Primary, TextLaunchLadder.Step.DropFlashAttention, TextLaunchLadder.Step.ReduceOffload,
-             TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Step.CpuOnly],
+             TextLaunchLadder.Step.VulkanKeepFlash, TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Step.CpuOnly],
             rungs.Select(r => r.Step));
     }
 

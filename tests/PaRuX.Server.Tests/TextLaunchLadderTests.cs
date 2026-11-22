@@ -38,10 +38,11 @@ public sealed class TextLaunchLadderTests : IDisposable
             new[]
             {
                 TextLaunchLadder.Step.Primary, TextLaunchLadder.Step.DropFlashAttention, TextLaunchLadder.Step.ReduceOffload,
-                TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Step.CpuOnly
+                TextLaunchLadder.Step.VulkanKeepFlash, TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Step.CpuOnly
             },
             rungs.Select(rung => rung.Step).ToArray());
         Assert.Equal(TextLaunchLadder.Engine.Vulkan, rungs[3].Engine);
+        Assert.Equal(TextLaunchLadder.Engine.Vulkan, rungs[4].Engine);
     }
 
     [Fact]
@@ -62,7 +63,7 @@ public sealed class TextLaunchLadderTests : IDisposable
         IReadOnlyList<TextLaunchLadder.Rung> rungs = TextLaunchLadder.Plan(TextLaunchLadder.Engine.Cuda, false, arguments, vulkanAvailable: true);
 
         Assert.Equal(
-            new[] { TextLaunchLadder.Step.Primary, TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Step.CpuOnly },
+            new[] { TextLaunchLadder.Step.Primary, TextLaunchLadder.Step.VulkanKeepFlash, TextLaunchLadder.Step.CpuOnly },
             rungs.Select(rung => rung.Step).ToArray());
     }
 
@@ -184,13 +185,37 @@ public sealed class TextLaunchLadderTests : IDisposable
     }
 
     [Fact]
-    public void The_vulkan_rung_pins_device_zero_and_turns_flash_attention_off()
+    public void The_vulkan_retry_rung_pins_device_zero_and_turns_flash_attention_off()
     {
         List<string> result = TextLaunchLadder.ArgumentsFor(Rung(TextLaunchLadder.Step.VulkanEngine, TextLaunchLadder.Engine.Vulkan), CudaArguments.ToList());
 
         Assert.Equal("Vulkan0", ValueOf(result, "--device"));
         Assert.Equal("off", ValueOf(result, "--flash-attn"));
         Assert.Single(result.Where(argument => argument == "--device"));
+    }
+
+    [Fact]
+    public void The_first_vulkan_rung_keeps_flash_attention_and_the_quantized_cache()
+    {
+        var primary = new List<string> { "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--gpu-layers", "all" };
+
+        List<string> result = TextLaunchLadder.ArgumentsFor(Rung(TextLaunchLadder.Step.VulkanKeepFlash, TextLaunchLadder.Engine.Vulkan), primary);
+
+        Assert.Equal("on", ValueOf(result, "--flash-attn"));
+        Assert.Equal("q8_0", ValueOf(result, "--cache-type-v"));
+        Assert.Equal("Vulkan0", ValueOf(result, "--device"));
+    }
+
+    [Fact]
+    public void A_cuda_ladder_with_planned_launch_keeps_cpu_last_within_the_cap()
+    {
+        IReadOnlyList<TextLaunchLadder.Rung> rungs = TextLaunchLadder.Plan(
+            TextLaunchLadder.Engine.Cuda, false, CudaArguments, vulkanAvailable: true, hasPlannedLaunch: true);
+
+        Assert.Equal(TextLaunchLadder.MaxRungs, rungs.Count);
+        Assert.Equal(TextLaunchLadder.Engine.Cpu, rungs[^1].Engine);
+        Assert.Contains(rungs, rung => rung.Step == TextLaunchLadder.Step.VulkanKeepFlash);
+        Assert.Contains(rungs, rung => rung.Step == TextLaunchLadder.Step.VulkanEngine);
     }
 
     [Fact]
@@ -236,16 +261,20 @@ public sealed class TextLaunchLadderTests : IDisposable
         LocalAiProcessManager.RuntimeResult result = await manager.StartTextAsync(CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.Equal(5, launches.Count);
-        Assert.Equal(5, manager.LastTextLaunchTrace.Count);
+        Assert.Equal(6, launches.Count);
+        Assert.Equal(6, manager.LastTextLaunchTrace.Count);
         Assert.StartsWith(LocalAiPaths.RuntimeCudaPath, launches[0].Exe, StringComparison.Ordinal);
         Assert.Equal("off", ValueOf(launches[1].Args, "--flash-attn"));
         Assert.Equal(TextLaunchLadder.ReducedGpuLayers(ValueOf(launches[0].Args, "--gpu-layers")), ValueOf(launches[2].Args, "--gpu-layers"));
         Assert.StartsWith(LocalAiPaths.RuntimeVulkanPath, launches[3].Exe, StringComparison.Ordinal);
         Assert.Equal("Vulkan0", ValueOf(launches[3].Args, "--device"));
-        Assert.Equal("0", ValueOf(launches[4].Args, "--gpu-layers"));
+        // The first Vulkan attempt keeps the planned flash attention; only its retry turns it off.
+        Assert.Equal(ValueOf(launches[0].Args, "--flash-attn"), ValueOf(launches[3].Args, "--flash-attn"));
+        Assert.StartsWith(LocalAiPaths.RuntimeVulkanPath, launches[4].Exe, StringComparison.Ordinal);
+        Assert.Equal("off", ValueOf(launches[4].Args, "--flash-attn"));
+        Assert.Equal("0", ValueOf(launches[5].Args, "--gpu-layers"));
         Assert.StartsWith("CUDA: failed", manager.LastTextLaunchTrace[0], StringComparison.Ordinal);
-        Assert.StartsWith("CPU: failed", manager.LastTextLaunchTrace[4], StringComparison.Ordinal);
+        Assert.StartsWith("CPU: failed", manager.LastTextLaunchTrace[5], StringComparison.Ordinal);
         Assert.Contains("launch ladder", result.Message);
     }
 

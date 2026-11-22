@@ -1516,7 +1516,7 @@ public sealed class LocalAiProcessManager
             }
 
             // The launch ladder. Each rung is one bounded attempt built from the same tuned arguments: the primary engine first,
-            // then flash attention off, reduced GPU offload, the Vulkan engine for a CUDA primary, and CPU last. A rung that
+            // then flash attention off, reduced GPU offload, the Vulkan engine (flash attention kept, then off as a retry) for a CUDA primary, and CPU last. A rung that
             // fails has already stopped its own process, so the next one starts clean and the trace records every outcome.
             IReadOnlyList<TextLaunchLadder.Rung> rungs = TextLaunchLadder.Plan(
                 cudaRuntime ? TextLaunchLadder.Engine.Cuda : TextLaunchLadder.Engine.Vulkan, cpuOnly, args,

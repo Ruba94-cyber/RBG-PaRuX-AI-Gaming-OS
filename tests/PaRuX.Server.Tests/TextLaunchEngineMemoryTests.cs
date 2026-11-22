@@ -39,6 +39,20 @@ public sealed class TextLaunchEngineMemoryTests
     }
 
     [Fact]
+    public void RememberedFlashOffVulkanRetry_SkipsTheFlashOnVulkanRungNextTime()
+    {
+        var memory = new TextLaunchEngineMemory();
+        var planned = Ladder();
+        var retry = planned.First(r => r.Step == TextLaunchLadder.Step.VulkanEngine);
+        memory.Record(Cuda, Model, retry, wasFirstPlannedRung: false);
+
+        var run = TextLaunchEngineMemory.StartFrom(planned, memory.Recall(Cuda, Model));
+
+        Assert.Equal(TextLaunchLadder.Step.VulkanEngine, run[0].Step);
+        Assert.DoesNotContain(run, r => r.Step == TextLaunchLadder.Step.VulkanKeepFlash);
+    }
+
+    [Fact]
     public void MemoryIsPerModelAndPerPrimaryRuntime()
     {
         var memory = new TextLaunchEngineMemory();
