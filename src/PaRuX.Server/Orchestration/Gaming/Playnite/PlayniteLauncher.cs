@@ -135,7 +135,26 @@ internal sealed class PlayniteLauncher
 
         lock (_gate)
         {
-            // One instance: any Playnite already running is brought forward, never duplicated.
+            // A just-started process may not yet be visible in a Windows process snapshot.
+            // The exact process PaRuX owns is stronger evidence than discovery, and must
+            // prevent another launch even if a user has since changed the located folder.
+            if (_owned is { HasExited: false } owned)
+            {
+                bool sameMode = string.Equals(_ownedMode, mode, StringComparison.Ordinal);
+                bool focused = _host.Focus(owned.Id);
+                return new PlayniteLaunchResultDto
+                {
+                    Ok = sameMode,
+                    Outcome = "already-running",
+                    Mode = _ownedMode,
+                    Message = sameMode
+                        ? (focused ? "Playnite is already running; it was brought to the front."
+                                   : "Playnite is already running; Windows kept the focus elsewhere.")
+                        : "Playnite is already running in the other mode. Use Switch mode or close it first."
+                };
+            }
+
+            // For Playnite not launched by PaRuX, use the read-only OS process snapshot.
             PlayniteRunningProcess? running = _env.RunningPlaynite()
                 .FirstOrDefault(r => PlayniteLocator.IsInFolder(r.ExePath, component.Folder));
             if (running is not null)
