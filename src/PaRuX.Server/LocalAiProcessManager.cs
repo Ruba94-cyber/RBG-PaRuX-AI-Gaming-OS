@@ -2345,8 +2345,7 @@ public sealed class LocalAiProcessManager
             return null;
         }
 
-        string runtimeTag = LocalAiPaths.GetActiveRuntimeBuildTag("text-cuda")
-            ?? LocalAiPaths.DefaultRuntimeBuildTag("text-cuda");
+        string runtimeTag = LocalAiPaths.EffectiveCudaBuildTag();
         HotModelPoolCatalog.MarkActive(plan, runtimeTag);
         // The router is launched with --models-preset and no --model, so LaunchAndWaitAsync could
         // not infer what it is serving. It is now proven (self-test above) to be routing to this

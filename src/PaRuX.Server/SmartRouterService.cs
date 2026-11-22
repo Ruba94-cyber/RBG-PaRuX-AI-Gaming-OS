@@ -133,9 +133,15 @@ public sealed class SmartRouterService : IRoleRouter
             .GroupBy(m => m.ModelPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().AverageTokensPerSecond!.Value, StringComparer.OrdinalIgnoreCase);
 
+        // The per-candidate fit estimates are independent (GGUF header read plus a cached VRAM/RAM sample), so with
+        // several candidates they run concurrently instead of one after the other on the first-token path.
+        Task<HardwareFitEstimate?>[] fitTasks = paths.Count > 1
+            ? paths.Select(p => Task.Run(() => _runtimeManager.EstimateHardwareFitAsync(p, ct), ct)).ToArray()
+            : Array.Empty<Task<HardwareFitEstimate?>>();
         var results = new List<CandidateEvidenceDto>();
-        foreach (string path in paths)
+        for (int pathIndex = 0; pathIndex < paths.Count; pathIndex++)
         {
+            string path = paths[pathIndex];
             CapabilityModelSummaryDto? summary = _profilerStore.GetModelSummary(path);
             string fileName = Path.GetFileName(path);
             ModelCapabilityScorer.Assessment capability = ModelCapabilityScorer.Assess(
@@ -146,7 +152,9 @@ public sealed class SmartRouterService : IRoleRouter
 
             long sizeBytes = 0;
             try { sizeBytes = new FileInfo(path).Length; } catch { }
-            HardwareFitEstimate? fit = await _runtimeManager.EstimateHardwareFitAsync(path, ct);
+            HardwareFitEstimate? fit = fitTasks.Length > 0
+                ? await fitTasks[pathIndex].ConfigureAwait(false)
+                : await _runtimeManager.EstimateHardwareFitAsync(path, ct);
 
             results.Add(new CandidateEvidenceDto
             {

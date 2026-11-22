@@ -53,8 +53,9 @@ public static class RuntimeLaunchOptimizer
     {
         workload = RuntimePerformanceTuner.NormalizeWorkload(workload);
         string backend = hasCuda ? "text-cuda" : "text-vulkan";
-        string runtimeTag = LocalAiPaths.GetActiveRuntimeBuildTag(backend)
-            ?? LocalAiPaths.DefaultRuntimeBuildTag(backend);
+        string runtimeTag = hasCuda
+            ? LocalAiPaths.EffectiveCudaBuildTag()
+            : LocalAiPaths.GetActiveRuntimeBuildTag(backend) ?? LocalAiPaths.DefaultRuntimeBuildTag(backend);
         GpuInventoryStatus inventory = gpuInventory ?? new GpuInventoryService().GetStatus();
         string hardwareKey = RuntimePerformanceTuner.BuildGpuFingerprint(inventory);
         var store = new RuntimePerformanceProfileStore();
@@ -275,7 +276,9 @@ public static class RuntimeLaunchOptimizer
         // The pre-plan profile is kept as the known-good baseline the launch ladder falls back to.
         LlamaPerformanceProfileDto baseline = RuntimePerformanceProfileCopy.Copy(profile);
         baseline.ContextIsPerRequest = profile.ContextIsPerRequest;
-        LaunchPlan plan = LaunchPlanner.Plan(new LaunchPlanInput(planContext.Model, planContext.Hardware, planContext.Capabilities, baseline));
+        LaunchPlan plan = LaunchPlanner.Plan(new LaunchPlanInput(planContext.Model, planContext.Hardware, planContext.Capabilities, baseline,
+            AllowAdaptiveFullPrecisionKv: source == "adaptive-default" && backend == "text-cuda"
+                && !string.Equals(Environment.GetEnvironmentVariable("PARUX_KV_CACHE_ADAPTIVE"), "0", StringComparison.Ordinal)));
         return plan.Applied
             ? new RuntimeLaunchOptimization(plan.Profile, source + "+launch-plan", workload, backend, runtimeTag, hardwareKey, plan, baseline)
             : new RuntimeLaunchOptimization(profile, source, workload, backend, runtimeTag, hardwareKey, plan);

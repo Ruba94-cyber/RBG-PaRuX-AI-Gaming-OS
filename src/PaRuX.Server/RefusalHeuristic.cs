@@ -64,3 +64,42 @@ public static class RefusalHeuristic
         return text.Length <= ShortReplyCeiling && ApologyWord.IsMatch(text) && !BenignLimitation.IsMatch(text);
     }
 }
+
+/// <summary>
+/// The decision rule of the refusal-detection hold in <see cref="ChatProxyService"/>. The hold buffers the first reply text so
+/// an auto-uncensored retry can replace a refusal before the user sees it. The original rule decides when the reply is done,
+/// 240 characters have arrived, or the decision window (100 ms after the first text) elapsed. The adaptive rule adds one
+/// early release: once <see cref="EarlyReleaseMinimumCharacters"/> characters have arrived, end on a word boundary, and none
+/// of them shows a refusal cue or matches the refusal heuristic, the reply is released at once. Every refusal phrase the
+/// heuristic knows needs a cue word, so a reply that opens with a refusal is still held and escalated exactly as before; only a
+/// refusal that starts after 32 cue-free characters (previously caught only inside the 100 ms window) is no longer held.
+/// </summary>
+internal static class RefusalHold
+{
+    internal const int DecisionCharacterThreshold = 240;
+    internal const int EarlyReleaseMinimumCharacters = 32;
+
+    internal enum Verdict { Hold, Release, Escalate }
+
+    private static readonly Regex CueWords = new(
+        @"(sorry|apolog|afraid|regret|unfortunate|unable|cannot|can'?t|can not|won'?t|will not|not able|not allowed|not comfortable|" +
+        @"decline|refus|as an ai|language model|guideline|polic(y|ies)|programming|inappropriate|illegal|unethical|against|violat|comply|fulfil|" +
+        @"dispiace|purtroppo|scus|non posso|non sono in grado|non mi sento|linee guida|intelligenza artificiale|esula|rifiut|non è possibile|" +
+        @"non sono autorizzat)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>True when the text is long enough, ends on a word boundary and shows no refusal cue.</summary>
+    internal static bool IsClearlyNotRefusing(string text)
+    {
+        if (text.Length < EarlyReleaseMinimumCharacters) return false;
+        if (!char.IsWhiteSpace(text[^1]) && !char.IsPunctuation(text[^1])) return false;
+        return !RefusalHeuristic.IsLikelyRefusal(text) && !CueWords.IsMatch(text);
+    }
+
+    internal static Verdict Evaluate(string text, bool windowElapsed, bool done, bool adaptive)
+    {
+        if (done || text.Length >= DecisionCharacterThreshold || windowElapsed)
+            return RefusalHeuristic.IsLikelyRefusal(text) ? Verdict.Escalate : Verdict.Release;
+        return adaptive && IsClearlyNotRefusing(text) ? Verdict.Release : Verdict.Hold;
+    }
+}

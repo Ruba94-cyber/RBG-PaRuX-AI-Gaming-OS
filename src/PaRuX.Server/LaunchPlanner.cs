@@ -25,7 +25,8 @@ public sealed record LaunchHardware(
     long SystemRamTotalBytes,
     long SystemRamAvailableBytes,
     int PhysicalCores,
-    int LogicalCores)
+    int LogicalCores,
+    long GpuDedicatedTotalBytes = 0)
 {
     /// <summary>
     /// Share of a discrete adapter's dedicated memory the planner assumes is free when no live free-memory
@@ -56,7 +57,8 @@ public sealed record LaunchHardware(
         return new LaunchHardware(
             profile.AcceleratorEligible, profile.Backend, profile.UsesSharedSystemMemoryAsPrimary,
             Math.Max(0, gpu), profile.SystemRamBytes, Math.Max(0, ramAvailableBytes),
-            Math.Max(0, physicalCores), Math.Max(0, logicalCores));
+            Math.Max(0, physicalCores), Math.Max(0, logicalCores),
+            profile.AcceleratorEligible && !profile.UsesSharedSystemMemoryAsPrimary ? Math.Max(0, profile.DedicatedVideoMemoryBytes) : 0);
     }
 }
 
@@ -64,7 +66,8 @@ public sealed record LaunchPlanInput(
     GgufModelInfo? Model,
     LaunchHardware Hardware,
     LlamaServerCapabilities Capabilities,
-    LlamaPerformanceProfileDto Baseline);
+    LlamaPerformanceProfileDto Baseline,
+    bool AllowAdaptiveFullPrecisionKv = false);
 
 /// <summary>The result of planning one launch. The planned knobs live on <see cref="Profile"/>; the arguments
 /// are produced by the one existing builder, so a plan cannot emit a flag the builder does not know.</summary>
@@ -165,6 +168,13 @@ public static class LaunchPlanner
             && string.Equals(hw.Backend, "text-cuda", StringComparison.OrdinalIgnoreCase)
             && QuantizedKvGeometrySupported(model);
 
+        // Adaptive KV precision: the default q8_0 cache is replaced by f16 only when the live free VRAM leaves ample headroom.
+        // A tight card, a user KV/context choice, a measured profile or a non-CUDA backend keeps q8_0 (the baseline stays q8_0).
+        string? adaptiveKvNote = null;
+        if (input.AllowAdaptiveFullPrecisionKv && quantAllowed && string.Equals(cache0, "q8_0", StringComparison.Ordinal)
+            && (adaptiveKvNote = AdaptiveFullPrecisionKvNote(model, hw, baseline, slots, pinned)) != null)
+            cache0 = "f16";
+
         List<(string Cache, int Context)> candidates = BuildCandidates(baseline, cache0, quantAllowed, pinned, slots);
 
         long reserve = (Math.Max(1024, baseline.FitTargetMib) * MiB) + ComputeBufferReserveBytes;
@@ -208,6 +218,10 @@ public static class LaunchPlanner
             if (string.Equals(profile.FlashAttention, "auto", StringComparison.OrdinalIgnoreCase)) profile.FlashAttention = "on";
             decisions.Add(new("--cache-type-k/--cache-type-v", chosenCache,
                 "KV cache quantized from " + cache0 + " because " + cache0 + " does not fit the free memory (estimate); quantized V cache needs flash attention, which stays on; slight quality cost"));
+        }
+        else if (adaptiveKvNote != null && string.Equals(chosenCache, "f16", StringComparison.Ordinal))
+        {
+            decisions.Add(new("--cache-type-k/--cache-type-v", "f16", adaptiveKvNote));
         }
         else
         {
@@ -319,6 +333,27 @@ public static class LaunchPlanner
             Decisions = decisions,
             Warnings = warnings
         };
+    }
+
+    /// <summary>Share of the card's dedicated memory a full-precision KV launch may claim (weights + f16 KV + compute reserve).
+    /// The rest stays for the desktop, a game handoff and other resident models.</summary>
+    internal const double AdaptiveKvMaxShareOfDedicated = 0.60;
+    /// <summary>Free VRAM that must remain after the launch for the adaptive f16 choice.</summary>
+    internal const long AdaptiveKvFreeHeadroomBytes = 2L * GiB;
+
+    /// <summary>The reason text when f16 KV is affordable with ample headroom, else null (keep the quantized default).
+    /// Measured (RTX 5080, Qwen3-4B Q4_K_M): f16 decodes 4-8% faster than q8_0, at +1.1 GB VRAM.</summary>
+    internal static string? AdaptiveFullPrecisionKvNote(GgufModelInfo model, LaunchHardware hw, LlamaPerformanceProfileDto baseline, int slots, bool pinned)
+    {
+        if (!hw.AcceleratorEligible || hw.SharedMemoryPrimary || hw.GpuMemoryBytes <= 0 || hw.GpuDedicatedTotalBytes <= 0) return null;
+        long? kv = KvCacheSizeEstimator.Estimate(model, RuntimeLaunchOptimizer.TotalContextFor(baseline.ContextSize, slots, pinned), "f16");
+        if (kv == null || model.SizeBytes <= 0) return null;
+        long needed = model.SizeBytes + kv.Value + (Math.Max(1024, baseline.FitTargetMib) * MiB) + ComputeBufferReserveBytes;
+        if (needed + AdaptiveKvFreeHeadroomBytes > hw.GpuMemoryBytes) return null;
+        if (needed > (long)(hw.GpuDedicatedTotalBytes * AdaptiveKvMaxShareOfDedicated)) return null;
+        return "raised to f16: weights + f16 KV + reserve need " + Gib(needed) + " of " + Gib(hw.GpuMemoryBytes) + " free (" + Gib(hw.GpuDedicatedTotalBytes)
+            + " total), so at least " + Gib(AdaptiveKvFreeHeadroomBytes) + " stays free and the launch uses at most "
+            + (AdaptiveKvMaxShareOfDedicated * 100).ToString("0", CultureInfo.InvariantCulture) + "% of the card; f16 decodes faster than q8_0 (measured); the baseline stays q8_0";
     }
 
     // ---------------------------------------------------------------- placement

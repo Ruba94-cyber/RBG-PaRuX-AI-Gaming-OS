@@ -247,9 +247,40 @@ public static class LocalAiPaths
     {
         get
         {
-            string tag = GetActiveRuntimeBuildTag("text-cuda") ?? DefaultCudaBuildTag;
-            return Path.Combine(RuntimeRoot, RuntimeFolderName("text-cuda", tag, ResolveCudaToolkit(tag)));
+            string? active = GetActiveRuntimeBuildTag("text-cuda");
+            string tag = active ?? DefaultCudaBuildTag;
+            string path = Path.Combine(RuntimeRoot, RuntimeFolderName("text-cuda", tag, ResolveCudaToolkit(tag)));
+            // No CUDA tag was ever written (for example a root that only recorded text-vulkan) and the built-in default
+            // build is not present: an installed CUDA runtime of another tag must still win over Vulkan on NVIDIA.
+            if (active == null && !File.Exists(Path.Combine(path, LlamaServerExecutable)))
+                return NewestInstalledCudaFolder() ?? path;
+            return path;
         }
+    }
+
+    /// <summary>The tag the CUDA backend actually resolves to: the configured one, else the folder RuntimeCudaPath picked.</summary>
+    public static string EffectiveCudaBuildTag()
+    {
+        string? active = GetActiveRuntimeBuildTag("text-cuda");
+        if (active != null) return active;
+        return TryParseRuntimeFolder("text-cuda", Path.GetFileName(RuntimeCudaPath), out string? tag, out _) && tag != null
+            ? tag : DefaultCudaBuildTag;
+    }
+
+    private static string? NewestInstalledCudaFolder()
+    {
+        if (!Directory.Exists(RuntimeRoot)) return null;
+        string? best = null;
+        long bestNumber = -1;
+        foreach (string dir in Directory.EnumerateDirectories(RuntimeRoot))
+        {
+            if (!TryParseRuntimeFolder("text-cuda", Path.GetFileName(dir), out string? tag, out _) || tag == null) continue;
+            if (!File.Exists(Path.Combine(dir, LlamaServerExecutable))) continue;
+            long number = long.TryParse(tag.TrimStart('b', 'B'), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out long n) ? n : 0;
+            if (number > bestNumber) { bestNumber = number; best = dir; }
+        }
+        return best;
     }
     public static string RuntimeVulkanPath => Path.Combine(RuntimeRoot, RuntimeFolderName("text-vulkan", GetActiveRuntimeBuildTag("text-vulkan") ?? DefaultVulkanBuildTag));
 

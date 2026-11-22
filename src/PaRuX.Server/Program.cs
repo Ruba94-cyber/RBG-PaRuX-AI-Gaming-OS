@@ -1434,10 +1434,11 @@ app.MapGet("/api/v1/advisor/training", async (
         {
             // The same key the probe used when it stored the measurement, so a CUDA machine does
             // not read a Vulkan machine's numbers back.
-            string backendKey = LocalAiPaths.GetActiveRuntimeBuildTag("text-cuda") != null
-                ? "text-cuda" : "text-vulkan";
-            string tag = LocalAiPaths.GetActiveRuntimeBuildTag(backendKey)
-                ?? LocalAiPaths.DefaultRuntimeBuildTag(backendKey);
+            bool cudaResolved = LocalAiPaths.GetActiveRuntimeBuildTag("text-cuda") != null
+                || File.Exists(Path.Combine(LocalAiPaths.RuntimeCudaPath, LocalAiPaths.LlamaServerExecutable));
+            string backendKey = cudaResolved ? "text-cuda" : "text-vulkan";
+            string tag = backendKey == "text-cuda" ? LocalAiPaths.EffectiveCudaBuildTag()
+                : LocalAiPaths.GetActiveRuntimeBuildTag(backendKey) ?? LocalAiPaths.DefaultRuntimeBuildTag(backendKey);
             string fingerprint = RuntimePerformanceTuner.BuildGpuFingerprint(new GpuInventoryService().GetStatus());
             // Constructed rather than injected, matching RuntimeLaunchOptimizer and
             // RuntimeHardwareEndpointExtensions: the store is a thin reader over one JSON file and
