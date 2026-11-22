@@ -73,8 +73,12 @@ public sealed partial class MainWindow
                             _dispatcher.TryEnqueue(PadBringForward);
                             return;
                         }
-                        baseline = counter;
-                        idle = s.Session.PaRuXLaunchedPlaynite ? 0 : idle + 1;
+                        // Playnite can close while a launched game remains running.
+                        // Keep the pending close visible, and keep watching the game,
+                        // instead of stealing focus or timing out after two minutes.
+                        if (!PlayniteReturnWatchPolicy.KeepPendingClose(baseline, s))
+                            baseline = counter;
+                        idle = s.Session.PaRuXLaunchedPlaynite || s.Session.TrackedProcessCount > 0 ? 0 : idle + 1;
                     }
                     else idle++;
                     await Task.Delay(TimeSpan.FromSeconds(3));
