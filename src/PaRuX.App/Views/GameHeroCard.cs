@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -22,6 +23,12 @@ internal sealed class GameHeroCard : UserControl
     private readonly Border _frame = new();
     private readonly Border _backdrop = new() { IsHitTestVisible = false, CornerRadius = new CornerRadius(14) };
     private readonly Border _scrim = new() { IsHitTestVisible = false, CornerRadius = new CornerRadius(14) };
+    private readonly Border _fanart = new() { IsHitTestVisible = false, CornerRadius = new CornerRadius(14), Visibility = Visibility.Collapsed };
+    private readonly Border _scrimBottom = new() { IsHitTestVisible = false, CornerRadius = new CornerRadius(14), Visibility = Visibility.Collapsed };
+    private readonly Image _logo = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, Visibility = Visibility.Collapsed };
+    private bool _hasFanart;
+    private bool _hasLogo;
+    private int _artGeneration;
     private readonly Border _cover = new() { Width = 200, Height = 250, CornerRadius = new CornerRadius(10) };
     private readonly Grid _layout = new() { ColumnSpacing = 24, RowSpacing = 16, Margin = new Thickness(24) };
     private readonly StackPanel _text = new() { Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
@@ -52,6 +59,7 @@ internal sealed class GameHeroCard : UserControl
         _kicker.Text = T("CONTINUE PLAYING", "CONTINUA A GIOCARE");
         AutomationProperties.SetAutomationId(_name, "GameHome_Hero_Title");
         AutomationProperties.SetHeadingLevel(_name, AutomationHeadingLevel.Level3);
+        AutomationProperties.SetAutomationId(_logo, "GameHome_Hero_Logo");
         AutomationProperties.SetAutomationId(_summary, "GameHome_Hero_Summary");
         AutomationProperties.SetAutomationId(_source, "GameHome_Hero_Source");
         AutomationProperties.SetAutomationId(_play, "GameHome_Hero_Play");
@@ -62,6 +70,7 @@ internal sealed class GameHeroCard : UserControl
         _details.Click += (_, _) => { if (_title is not null) DetailsRequested?.Invoke(_title); };
 
         _text.Children.Add(_kicker);
+        _text.Children.Add(_logo);
         _text.Children.Add(_name);
         _text.Children.Add(_summary);
         _text.Children.Add(_source);
@@ -71,7 +80,7 @@ internal sealed class GameHeroCard : UserControl
 
         _layout.Children.Add(_cover);
         _layout.Children.Add(_text);
-        _frame.Child = new Grid { Children = { _backdrop, _scrim, _layout } };
+        _frame.Child = new Grid { Children = { _backdrop, _fanart, _scrim, _scrimBottom, _layout } };
         UpdateLayoutMode(false, false);
         SizeChanged += (_, e) =>
         {
@@ -88,7 +97,13 @@ internal sealed class GameHeroCard : UserControl
         _compact = compact;
         _stacked = stacked;
         _layout.Margin = new Thickness(compact ? 14 : _console ? 20 : 16);
-        _layout.ColumnSpacing = compact ? 14 : 24;
+        _layout.ColumnSpacing = _hasFanart ? 0 : compact ? 14 : 24;
+        _cover.Visibility = _hasFanart ? Visibility.Collapsed : Visibility.Visible;
+        _frame.MinHeight = _hasFanart && !stacked ? (_console ? 300 : 220) : 0;
+        _text.MaxWidth = _hasFanart ? (_console ? 760 : 560) : double.PositiveInfinity;
+        _text.HorizontalAlignment = HorizontalAlignment.Left;
+        _logo.MaxHeight = _console ? 112 : compact ? 56 : 80;
+        _logo.MaxWidth = _console ? 560 : 360;
         _layout.ColumnDefinitions.Clear();
         _layout.RowDefinitions.Clear();
         if (stacked)
@@ -133,21 +148,42 @@ internal sealed class GameHeroCard : UserControl
 
     private void UpdateBackdropTheme()
     {
+        // High contrast: no decorative art or scrim at all, text sits on the plain system surface.
         bool highContrast = GameUi.IsHighContrast(this);
-        _backdrop.Visibility = _scrim.Visibility = highContrast ? Visibility.Collapsed : Visibility.Visible;
+        _scrim.Visibility = highContrast ? Visibility.Collapsed : Visibility.Visible;
+        _backdrop.Visibility = highContrast || _hasFanart ? Visibility.Collapsed : Visibility.Visible;
+        _fanart.Visibility = _scrimBottom.Visibility = highContrast || !_hasFanart ? Visibility.Collapsed : Visibility.Visible;
         _backdrop.Opacity = ActualTheme == ElementTheme.Light ? 0.14 : 0.30;
         if (_frame.Background is not SolidColorBrush surface) return;
+        Windows.UI.Color c = surface.Color;
+        Windows.UI.Color Alpha(byte a) => Windows.UI.Color.FromArgb(a, c.R, c.G, c.B);
 
         var fadingSurface = new LinearGradientBrush
         {
             StartPoint = new Windows.Foundation.Point(0, 0.5),
             EndPoint = new Windows.Foundation.Point(1, 0.5)
         };
-        fadingSurface.GradientStops.Add(new GradientStop { Color = surface.Color, Offset = 0.44 });
-        fadingSurface.GradientStops.Add(new GradientStop
+        if (_hasFanart)
         {
-            Color = Windows.UI.Color.FromArgb(0, surface.Color.R, surface.Color.G, surface.Color.B), Offset = 1
-        });
+            // Text lives on the left: near-opaque there, easing out so the art stays visible on the right.
+            fadingSurface.GradientStops.Add(new GradientStop { Color = Alpha(245), Offset = 0 });
+            fadingSurface.GradientStops.Add(new GradientStop { Color = Alpha(225), Offset = 0.32 });
+            fadingSurface.GradientStops.Add(new GradientStop { Color = Alpha(130), Offset = 0.62 });
+            fadingSurface.GradientStops.Add(new GradientStop { Color = Alpha(30), Offset = 1 });
+            var bottom = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.5, 0),
+                EndPoint = new Windows.Foundation.Point(0.5, 1)
+            };
+            bottom.GradientStops.Add(new GradientStop { Color = Alpha(0), Offset = 0.45 });
+            bottom.GradientStops.Add(new GradientStop { Color = Alpha(210), Offset = 1 });
+            _scrimBottom.Background = bottom;
+        }
+        else
+        {
+            fadingSurface.GradientStops.Add(new GradientStop { Color = c, Offset = 0.44 });
+            fadingSurface.GradientStops.Add(new GradientStop { Color = Alpha(0), Offset = 1 });
+        }
         _scrim.Background = fadingSurface;
     }
 
@@ -173,7 +209,11 @@ internal sealed class GameHeroCard : UserControl
         if (title is null)
         {
             Visibility = Visibility.Collapsed;
-            _cover.Background = _backdrop.Background = null;
+            _artGeneration++;
+            _cover.Background = _backdrop.Background = _fanart.Background = null;
+            _logo.Source = null;
+            _hasFanart = _hasLogo = false;
+            ApplyArtState();
             return;
         }
         Visibility = Visibility.Visible;
@@ -185,6 +225,13 @@ internal sealed class GameHeroCard : UserControl
         _play.IsEnabled = GameUi.CanStart(chosen);
         AutomationProperties.SetName(_play, GameUi.PlayLabel(chosen) + " " + title.Name);
         AutomationProperties.SetName(_details, T("Details of ", "Dettagli di ") + title.Name);
+
+        int generation = ++_artGeneration;
+        _fanart.Background = null;
+        _logo.Source = null;
+        _hasFanart = _hasLogo = false;
+        ApplyArtState();
+        _ = LoadWideArtAsync(title, generation);
 
         ShowFallback(title.Name);
         string? path = GameCoverStore.TryGetPath(title.TitleKey);
@@ -204,6 +251,73 @@ internal sealed class GameHeroCard : UserControl
             bitmap.UriSource = new Uri(path);
         }
         catch (Exception) { ShowFallback(title.Name); }
+    }
+
+    /// <summary>
+    /// Resolves hero (landscape) and logo art off the UI thread, then decodes them at a bounded pixel width. A stale result
+    /// (the hero moved to another title or collapsed meanwhile) is dropped. Missing or invalid art leaves the current look.
+    /// </summary>
+    private async Task LoadWideArtAsync(GameTitleDto title, int generation)
+    {
+        string key = title.TitleKey;
+        GameArtInfo?[] found;
+        try
+        {
+            string root = GameCoverStore.StorageFolder;
+            found = await Task.Run(() => new[]
+            {
+                GameArtStore.Resolve(key, GameArtKind.Hero, GameCoverStore.TryGetPath, root),
+                GameArtStore.Resolve(key, GameArtKind.Logo, GameCoverStore.TryGetPath, root)
+            });
+        }
+        catch (Exception) { return; }
+        if (generation != _artGeneration || _title is null) return;
+
+        try
+        {
+            if (found[0] is { } hero)
+            {
+                var bitmap = new BitmapImage { DecodePixelWidth = _console ? 1920 : 1280 };
+                bitmap.ImageFailed += (_, _) =>
+                {
+                    if (generation != _artGeneration) return;
+                    _fanart.Background = null;
+                    _hasFanart = false;
+                    ApplyArtState();
+                };
+                _fanart.Background = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill, AlignmentY = AlignmentY.Center };
+                bitmap.UriSource = new Uri(hero.Path);
+                _hasFanart = true;
+            }
+            if (found[1] is { } logo)
+            {
+                var bitmap = new BitmapImage { DecodePixelWidth = 640 };
+                bitmap.ImageFailed += (_, _) =>
+                {
+                    if (generation != _artGeneration) return;
+                    _logo.Source = null;
+                    _hasLogo = false;
+                    ApplyArtState();
+                };
+                _logo.Source = bitmap;
+                AutomationProperties.SetName(_logo, title.Name);
+                bitmap.UriSource = new Uri(logo.Path);
+                _hasLogo = true;
+            }
+        }
+        catch (Exception) { _hasFanart = _hasLogo = false; _fanart.Background = null; _logo.Source = null; }
+        ApplyArtState();
+    }
+
+    /// <summary>Applies the cinematic layout only for the art that is really there; the title text stays in the tree (UIA heading, existing automation id).</summary>
+    private void ApplyArtState()
+    {
+        bool logo = _hasLogo && !GameUi.IsHighContrast(this);
+        _logo.Visibility = logo ? Visibility.Visible : Visibility.Collapsed;
+        _name.Opacity = logo ? 0 : 1;
+        _name.MaxHeight = logo ? 1 : double.PositiveInfinity;
+        UpdateLayoutMode(_compact, _stacked);
+        UpdateBackdropTheme();
     }
 
     private void ShowFallback(string name)
