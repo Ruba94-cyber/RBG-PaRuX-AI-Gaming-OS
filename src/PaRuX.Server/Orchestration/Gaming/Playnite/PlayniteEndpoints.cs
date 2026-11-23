@@ -88,6 +88,17 @@ public static class PlayniteEndpoints
 
         app.MapPost(root + "/launch", (PlayniteLaunchRequest? request, PlayniteSessionService session, PlayniteLauncher launcher, PlayniteSettingsStore settings) =>
         {
+            // One frontend per game session: launching/focusing Playnite during
+            // a tracked game would steal focus and could disrupt controller input.
+            // Apply this at the owner-only Core boundary as well as in the UI,
+            // since shortcuts and controller hotkeys also reach this endpoint.
+            if (session.GameRunning)
+                return Results.Conflict(new PlayniteLaunchResultDto
+                {
+                    Ok = false,
+                    Outcome = "refused",
+                    Message = "A game is running. Finish playing before opening Playnite again."
+                });
             PlayniteLaunchResultDto result = launcher.Launch(session.Component(true), settings.Get(), request?.Mode, request?.DisplayId);
             return result.Outcome == "refused" ? Results.Conflict(result) : Results.Ok(result);
         }).RequireDesktopOwner();
