@@ -186,7 +186,17 @@ internal sealed class GamesToolsHome : StackPanel
             }
         }
         _message.Text = string.Empty;
-        App.MainWin?.ShowPlayniteLauncher(action, gamepad: true, fromRequest: true);
+        if (App.MainWin is not { } host)
+        {
+            _message.Text = T("The PaRuX window is unavailable.", "La finestra PaRuX non è disponibile.");
+            return;
+        }
+
+        // The launcher is a modal workflow. Await its actual close rather than
+        // marking the Games button idle immediately after scheduling a dialog.
+        // When the user returns, reflect any Locate / Install / Skip changes.
+        await host.ShowPlayniteLauncherAsync(action, gamepad: true, fromRequest: true);
+        await RefreshPlayniteAsync();
     }
 
     private Task OpenSectionAsync(string section)
