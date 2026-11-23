@@ -79,7 +79,7 @@ internal sealed class GamesToolsHome : StackPanel
             ActionButton("Install", T("Inspect / stage / import games", "Controlla / prepara / importa giochi"), () => OpenSectionAsync("Add")),
             ActionButton("Backups", T("Save backups and Gaming status", "Backup salvataggi e stato Gaming"), () => OpenSectionAsync("Devices")),
             ActionButton("Controller", T("Configure controller buttons", "Configura pulsanti controller"),
-                () => App.MainWin?.RunPadActionAsync(PadActionId.OpenSettings) ?? Task.CompletedTask)));
+                OpenControllerSettingsAsync)));
 
         // Reuses the existing no-input-injection Quick Resume / reversible mod
         // panel. It only refreshes when loaded, never scans games in the background.
@@ -192,6 +192,14 @@ internal sealed class GamesToolsHome : StackPanel
     private Task OpenSectionAsync(string section)
     {
         _openSection(section);
+        return Task.CompletedTask;
+    }
+
+    private Task OpenControllerSettingsAsync()
+    {
+        // This is a direct UI navigation action, not a synthetic controller
+        // event that could re-enter the listener's in-flight pad command.
+        App.MainWin?.ShowPadControllerSettings();
         return Task.CompletedTask;
     }
 
