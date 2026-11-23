@@ -34,7 +34,8 @@ internal sealed class UniversalScriptExtractor : IDocumentExtractor
     {
         R(@"^\s*(?:(?:public|private|friend|static|export|async|global|local|shared|overrides|overridable)\s+)*(?:function|func|fun|fn|sub|procedure|proc|def|method|macro|routine|subroutine|handler|on)\s+(?<n>[A-Za-z_][\w.:$]*)"),
         R(@"^\s*(?:class|module|struct|interface|enum|namespace|package|object|trait|type|program|unit|library|task|block|function_block|function_block_diagram)\s+(?<n>[A-Za-z_][\w.:]*)"),
-        R(@"^\s*#\s*(?:define|region|macro|declare|pragma\s+region)\s+(?<n>[A-Za-z_][\w. -]*)"),
+        R(@"^\s*#\s*(?:define|macro|declare)\s+(?<n>[A-Za-z_][\w.]*)"),
+        R(@"^\s*#\s*(?:pragma\s+)?region\s+(?<n>.+?)\s*$"),
         R(@"^\s*(?<n>(?!default\b|case\b|else\b|otherwise\b)[A-Za-z_]\w*)\s*:\s*(?://.*|'.*|;.*|--.*)?$"),
         R(@"^\s*(?:variables|on\s+(?:start|stop|key|message|timer|sysvar|envvar|preStart|preStop)\b)\s*(?<n>[\w.]*)")
     };
@@ -45,25 +46,26 @@ internal sealed class UniversalScriptExtractor : IDocumentExtractor
         R(@"^\s*#?\s*(?:include|include_once|import|require|require_once|using|use|load|loadlibrary|source|from|call|run|exec|execute|runscript|dofile|loadfile)\b\s*[(\s]\s*[""'<]?(?<t>[\w./\\:$-]+)")
     };
 
-    /// <summary>Quoted names of other files: scripts, libraries, data and resources.</summary>
-    private static readonly Regex QuotedFile = R(@"[""'](?<t>[\w./\\ -]+\.(?:esl|eslx|dll|exe|xml|sxml|json|csv|txt|ini|cfg|dat|bas|cls|vbs|ps1|bat|cmd|sh|py|js|lua|tcl|inc|h|hpp|c|cpp|lib|so|a2l|dbc|arxml|odx|cdd|hex|s19|bin|sql|html|htm))[""']");
+    /// <summary>A quoted token shaped like a file name (optional folders, a name, a short alphabetic extension), whatever the extension: other scripts, libraries, data, resources.</summary>
+    private static readonly Regex QuotedFile = R(@"[""'](?<t>(?:[\w.-]+[/\\])*[\w.-]+\.[A-Za-z][A-Za-z0-9]{0,5})[""']");
 
     private static readonly Regex ExternalCall = R(@"\b(?<o>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.(?<m>[A-Za-z_]\w*)\s*\(");
 
     private static readonly Regex CodeLine = R(
-        @"^\s*(?:(?:if|then|else|elseif|elif|endif|end|for|foreach|next|while|wend|do|loop|until|repeat|return|break|continue|goto|call|dim|let|set|var|const|function|sub|def|proc|procedure|begin|try|catch|finally|select|case|switch|import|include|using|print|echo|exit|wait|debug|declare|local|global)\b|#|//|/\*|\*/|'|;|--|rem\b|%|[A-Za-z_][\w.\[\]]*\s*(?:=|:=|\+=|-=|\()|\}|\{)");
+        @"^\s*(?:(?:if|then|else|elseif|elif|endif|end|for|foreach|next|while|wend|do|loop|until|repeat|return|break|continue|goto|call|dim|let|set|var|const|function|sub|def|proc|procedure|begin|try|catch|finally|select|case|switch|import|include|using|print|echo|exit|wait|debug|declare|local|global)\b|#|//|/\*|\*/|'|;|--|rem\b|%|[A-Za-z_][\w.\[\]]*\s*(?:=|:=|\+=|-=|\()|\}|\{|.*[;{}]\s*$)");
 
     public bool CanHandle(string path)
     {
         string ext = Path.GetExtension(path);
         if (ext.Length == 0 && Path.GetFileName(path).IndexOf('.') >= 0) return false;
         if (!new TextFileExtractor().CanHandle(path)) return false;          // known binaries are never read as text
-        if (!Sniff(path, out bool isText, out double codeShare)) return false;
+        bool knownExt = ScriptExtensions.Contains(ext);
+        if (!Sniff(path, knownExt ? 1 : 3, out bool isText, out double codeShare)) return false;
         if (!isText) return false;
-        return ScriptExtensions.Contains(ext) ? codeShare >= 0.25 : codeShare >= 0.6;
+        return knownExt ? codeShare >= 0.25 : codeShare >= 0.6;
     }
 
-    private static bool Sniff(string path, out bool isText, out double codeShare)
+    private static bool Sniff(string path, int minStrongLines, out bool isText, out double codeShare)
     {
         isText = false; codeShare = 0;
         try
@@ -87,7 +89,7 @@ internal sealed class UniversalScriptExtractor : IDocumentExtractor
                 if (CodeLine.IsMatch(l)) code++;
                 if (l.Contains('=') || l.Contains('(')) strong++;
             }
-            codeShare = total == 0 || strong < 3 ? 0 : (double)code / total;
+            codeShare = total == 0 || strong < minStrongLines ? 0 : (double)code / total;
             return true;
         }
         catch (Exception) { return false; }

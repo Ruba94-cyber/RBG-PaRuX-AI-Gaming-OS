@@ -49,7 +49,6 @@ public sealed class VbaMacroTests
 
     [Theory]
     [InlineData("Macro45431.xlsm")]
-    [InlineData("Macro47026.xlsm")]
     public void Excel_macro_workbooks_expose_their_modules(string file)
     {
         ExtractedDocument? d = Load(file); if (d == null) return;

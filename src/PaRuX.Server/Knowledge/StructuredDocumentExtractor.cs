@@ -106,7 +106,7 @@ public static class StructuredDocumentExtractor
                 if (result.Tier == DocumentTier.MetadataOnly && result.Segments.Count == 0)
                 {
                     ExtractedDocument meta = MetadataOnly(path, info);
-                    return meta with { Note = result.Note ?? meta.Note, Extractor = result.Extractor };
+                    return MacroAugmenter.Augment(path, meta with { Note = result.Note ?? meta.Note, Extractor = result.Extractor }, limits, ct);
                 }
                 return MacroAugmenter.Augment(path, result, limits, ct);   // an Office file with VBA macros is also a program: index its source
             }

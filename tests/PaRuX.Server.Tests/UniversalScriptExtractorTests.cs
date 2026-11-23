@@ -111,6 +111,38 @@ Done:
         Assert.Contains(d.Segments, s => s.Text.Contains("Helper.xscr") && s.Text.Contains("Main.xscr"));
     }
 
+    /// <summary>
+    /// Local probe over a folder of real scripts of an in-house application, supplied by the developer through PARUX_PROBE_SCRIPTS (never in the repo):
+    /// every file must be read, and what was extracted is written to PARUX_CAN_PROBE_OUT for inspection. Skipped when the variable is not set.
+    /// </summary>
+    [Fact]
+    public void Real_scripts_of_a_local_folder_are_all_indexed_when_a_probe_folder_is_given()
+    {
+        string? folder = Environment.GetEnvironmentVariable("PARUX_PROBE_SCRIPTS");
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+        var files = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories).Where(f => f.EndsWith(".esl", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".eslx", StringComparison.OrdinalIgnoreCase)).Take(60).ToList();
+        var report = new StringBuilder();
+        int claimed = 0;
+        foreach (string f in files)
+        {
+            ExtractedDocument d = StructuredDocumentExtractor.Extract(f);
+            if (d.Extractor == "script" && d.Tier == DocumentTier.Structured) claimed++;
+            report.AppendLine($"{Path.GetFileName(f)}: {d.Extractor}/{d.Tier} segments={d.Segments.Count} note={d.Note}");
+        }
+        string outDir = Environment.GetEnvironmentVariable("PARUX_CAN_PROBE_OUT") ?? "";
+        if (outDir.Length > 0)
+        {
+            Directory.CreateDirectory(outDir);
+            File.WriteAllText(Path.Combine(outDir, "script-probe.txt"), report.ToString());
+            if (files.Count > 0)
+            {
+                ExtractedDocument big = StructuredDocumentExtractor.Extract(files.OrderByDescending(f => new FileInfo(f).Length).First());
+                File.WriteAllText(Path.Combine(outDir, "script-probe-overview.txt"), string.Join("\n-----\n", big.Segments.Take(4).Select(s => "[" + s.Position.Describe() + "]\n" + s.Text)));
+            }
+        }
+        Assert.True(files.Count == 0 || claimed >= files.Count * 0.9, $"only {claimed} of {files.Count} scripts were read as scripts");
+    }
+
     [Fact]
     public void Utf16_scripts_with_a_byte_order_mark_are_read()
     {
