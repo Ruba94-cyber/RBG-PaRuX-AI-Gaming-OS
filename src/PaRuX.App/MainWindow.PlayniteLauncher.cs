@@ -32,6 +32,26 @@ public sealed partial class MainWindow
         {
             if (App.IsShuttingDown || CorporateMode.IsActive) return;
             if (action == PlayniteLauncherAction.None) action = PlayniteLauncherAction.Open;
+            // A direct controller, tray shortcut or second-instance request
+            // MUST NOT move PaRuX over a running game before Core can refuse
+            // the actual Playnite start. Reject here before PadBringForward.
+            if (PlayniteLauncherForegroundPolicy.RequiresGamePreflight(action))
+            {
+                if (GamingManager.Current.IsActive)
+                {
+                    PadToast(PadT("Finish the active game before opening another Playnite mode.",
+                        "Termina il gioco attivo prima di aprire un'altra modalità Playnite."));
+                    return;
+                }
+                GamingCallResult<PlayniteStatusDto> before = await PlayniteClient.Current.GetStatusAsync();
+                if (!before.Succeeded ||
+                    !PlayniteLauncherForegroundPolicy.MayOpen(action, false, before.Value))
+                {
+                    PadToast(PadT("Cannot safely open Playnite while a game is active or its status is unknown.",
+                        "Impossibile aprire Playnite in sicurezza mentre un gioco è attivo o lo stato è sconosciuto."));
+                    return;
+                }
+            }
             PadBringForward();
             if (_plSurface is { } open)
             {
