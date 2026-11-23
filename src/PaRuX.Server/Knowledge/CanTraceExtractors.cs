@@ -232,6 +232,7 @@ internal sealed class CanTraceAggregator
         sb.Append("Frames: ").Append(s.Count).Append(" (Rx ").Append(s.Rx).Append(", Tx ").Append(s.Tx).Append(s.Remote > 0 ? ", remote " + s.Remote : "").Append(')');
         if (s.DlcMax > 0) sb.Append("; data length ").Append(s.DlcMin == s.DlcMax ? s.DlcMax.ToString(CultureInfo.InvariantCulture) : s.DlcMin + "-" + s.DlcMax).Append(" bytes");
         sb.AppendLine();
+        sb.Append("The first frame with this ID is at ").Append(_posUnit).Append(' ').Append(s.FirstPos).Append(" and the last at ").Append(_posUnit).Append(' ').Append(s.LastPos).AppendLine(".");
         sb.Append("First seen ").Append(T(s.FirstT)).Append(" (").Append(_posUnit).Append(' ').Append(s.FirstPos).Append("), last seen ")
           .Append(T(s.LastT)).Append(" (").Append(_posUnit).Append(' ').Append(s.LastPos).AppendLine(")");
         if (s.Count > 1 && !double.IsInfinity(s.MinDt))

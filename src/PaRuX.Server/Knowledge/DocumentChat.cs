@@ -41,7 +41,7 @@ public static class DocumentChatPlanner
 
         "Retrieved passages are a subset of indexed text, not proof that every file/page, table, image or scanned section was read. " +
         "Never claim full-library coverage or verified completeness without independent coverage evidence. "
-        + "Distinguish source facts from your interpretation; never treat filename-only results as technical evidence.";
+        + "Distinguish source facts from your interpretation; never treat filename-only results as technical evidence. Reply in the language of the question.";
 
     private static readonly HashSet<string> Stop = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -121,6 +121,11 @@ public static class DocumentChatPlanner
                 (h.Text + " " + h.FileName + " " + h.Position.Heading).Contains(name, StringComparison.OrdinalIgnoreCase))))
             return false;
         IReadOnlyList<string> terms = ContentTerms(query);
+        // A question that names an indexed file is directed at it: the file name always matches, so it is not evidence of coverage,
+        // and one real content word in common is enough (the words of an Italian question rarely equal those of English evidence).
+        bool namesFile = hits.Any(h => h.FileName.Length >= 4 && query.Contains(h.FileName, StringComparison.OrdinalIgnoreCase));
+        if (namesFile)
+            terms = terms.Where(t => !hits.Any(h => h.FileName.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
         if (terms.Count == 0) return false;
         double best = 0;
         foreach (KnowledgeHit h in hits)
@@ -129,7 +134,7 @@ public static class DocumentChatPlanner
             double covered = terms.Count(t => haystack.Contains(t, StringComparison.Ordinal));
             best = Math.Max(best, covered / terms.Count);
         }
-        return best >= 0.5;
+        return best >= (namesFile ? 0.25 : 0.5);
     }
 
     /// <summary>
@@ -221,13 +226,25 @@ public static class DocumentChatPlanner
         return false;
     }
 
+    /// <summary>
+    /// True when the question is little more than the identifier ("P0420", "invoice INV_2026_884"). A sentence that merely CONTAINS an
+    /// identifier ("which signals does message ETC7 carry and how often is it sent") asks for facts spread over the passage; showing
+    /// only the line that carries the identifier answered those with a header, so they go to the model together with the passages.
+    /// </summary>
+    internal static bool IsPureLookup(string query)
+    {
+        IReadOnlyList<string> exact = KnowledgeIndex.ExactTerms(query);
+        int other = ContentTerms(query).Count(t => !exact.Any(e => e.Contains(t, StringComparison.OrdinalIgnoreCase) || t.Contains(e, StringComparison.OrdinalIgnoreCase)));
+        return other <= 2;
+    }
+
     public static DocumentChatPlan Plan(string query, IReadOnlyList<KnowledgeHit> hits)
     {
         if (!IsSufficient(query, hits))
             return new(DocumentChatKind.NotEnoughInformation, NotEnoughInformationText, Array.Empty<string>(), Array.Empty<KnowledgeHit>());
         hits = hits.Where(IsSourceEvidence).ToList();
         var citations = hits.Select(h => h.Citation).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        bool lookup = KnowledgeIndex.ExactTerms(query).Count > 0 && hits.Any(h => h.Match == "exact") && !NeedsReasoning(query);
+        bool lookup = KnowledgeIndex.ExactTerms(query).Count > 0 && hits.Any(h => h.Match == "exact") && !NeedsReasoning(query) && IsPureLookup(query);
         if (!lookup) return new(DocumentChatKind.NeedsModel, string.Empty, citations, hits);
 
         var sb = new StringBuilder("Found in the selected documents (no language model was needed):\n");

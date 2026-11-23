@@ -66,6 +66,30 @@ public sealed class DocumentQuestionRetrievalTests
         Assert.Equal(1, fittedDense[0].ChunkId);                                                               // best-ranked is kept first
     }
 
+    [Theory]
+    [InlineData("P0420", true)]
+    [InlineData("what is P0420", true)]
+    [InlineData("invoice INV_2026_884", true)]
+    [InlineData("Che segnali contiene il messaggio ETC7 nel DBC?", false)]
+    [InlineData("quali codici DM1 risultano attivi e da quali indirizzi sorgente", false)]
+    public void Only_a_bare_identifier_question_is_answered_without_the_model(string query, bool expected) =>
+        Assert.Equal(expected, DocumentChatPlanner.IsPureLookup(query));
+
+    [Fact]
+    public void A_question_naming_an_indexed_file_needs_only_one_real_word_in_common()
+    {
+        var evidence = new[] { Hit("CAN-X.asc", "CAN trace file CAN-X.asc Frames read: 30875; distinct (channel, CAN ID) pairs: 221") };
+        Assert.True(DocumentChatPlanner.IsSufficient("Quanti frame e quanti ID distinti ci sono in CAN-X.asc?", evidence));
+        // the file name alone is not coverage: an unrelated question about the same file is still declined
+        Assert.False(DocumentChatPlanner.IsSufficient("Qual e' la pressione dell'olio motore nel file CAN-X.asc?", evidence));
+        // without a file name the strict rule is unchanged
+        Assert.False(DocumentChatPlanner.IsSufficient("Quanti frame e quanti ID distinti ci sono nel registro?", evidence));
+    }
+
+    [Fact]
+    public void Grounding_asks_for_the_language_of_the_question() =>
+        Assert.Contains("language of the question", DocumentChatPlanner.GroundingInstruction);
+
     [Fact]
     public void A_single_oversized_passage_is_shortened_not_refused()
     {
