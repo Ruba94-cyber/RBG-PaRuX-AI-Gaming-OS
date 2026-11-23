@@ -26,6 +26,7 @@ internal sealed class GamesToolsHome : StackPanel
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
     private bool _busy;
     private bool _refreshing;
+    private readonly Button _consoleAction;
 
     public GamesToolsHome(Action<string> openSection)
     {
@@ -44,9 +45,11 @@ internal sealed class GamesToolsHome : StackPanel
         _playniteStatus.Text = T("Playnite status not checked yet.", "Stato Playnite non ancora controllato.");
         Children.Add(_playniteStatus);
 
+        _consoleAction = ActionButton("PlayniteConsole",
+            T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"),
+            () => OpenPlayniteAsync(PlayniteLauncherAction.Console));
         Children.Add(Actions(
-            ActionButton("PlayniteConsole", T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"),
-                () => OpenPlayniteAsync(PlayniteLauncherAction.Console)),
+            _consoleAction,
             ActionButton("PlayniteDesktop", T("Playnite Desktop", "Playnite Desktop"),
                 () => OpenPlayniteAsync(PlayniteLauncherAction.Desktop)),
             ActionButton("PlayniteSetup", T("Install / locate / configure Playnite", "Installa / individua / configura Playnite"),
@@ -102,6 +105,9 @@ internal sealed class GamesToolsHome : StackPanel
         // the parent Games page was constructed. The host refreshes this when
         // the user actually enters the Tools tab, and the button can retry.
     }
+
+    /// <summary>The first focus target for PaRuX's desktop controller buttons.</summary>
+    internal bool FocusPrimaryAction() => _consoleAction.Focus(FocusState.Programmatic);
 
     private static TextBlock Heading(string text, double size) => new()
     {
