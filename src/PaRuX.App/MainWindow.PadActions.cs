@@ -65,13 +65,23 @@ public sealed partial class MainWindow
                 case PadActionId.GamingLibrary:
                     PadBringForward();
                     if (_consoleModeActive) { if (!ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace(); }
-                    else { ShowStudioWorkspace(StudioWorkspace.Games); GameLibraryPage.OnShown(); }
+                    else
+                    {
+                        ShowStudioWorkspace(StudioWorkspace.Games);
+                        GameLibraryPage.OnShown();
+                        GameLibraryPage.OpenToolsFromController();
+                    }
                     break;
                 case PadActionId.SwitchWorkspace:
                     PadBringForward();
                     if (_consoleModeActive) SwitchConsoleWorkspace();
                     else if (ConsoleOnGamingWorkspace()) ShowChat();
-                    else { ShowStudioWorkspace(StudioWorkspace.Games); GameLibraryPage.OnShown(); }
+                    else
+                    {
+                        ShowStudioWorkspace(StudioWorkspace.Games);
+                        GameLibraryPage.OnShown();
+                        GameLibraryPage.OpenToolsFromController();
+                    }
                     break;
                 case PadActionId.MiniAgent:
                     if (App.BubbleWin is { } bubble) bubble.ShowExpanded();
