@@ -418,7 +418,7 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
     [Fact]
     public async Task Oversized_streamed_tool_arguments_are_rejected_before_invocation()
     {
-        string oversized = "{\\"payload\\":\\"" + new string('a', McpToolCallAdmission.MaxArgumentsCharacters) + "\\"}";
+        string oversized = JsonSerializer.Serialize(new { payload = new string('a', McpToolCallAdmission.MaxArgumentsCharacters) });
         _turns.Add(() => new[]
         {
             new Step(0, ToolDelta(0, "oversized", "lookup", oversized)),
