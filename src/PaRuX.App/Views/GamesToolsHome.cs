@@ -81,9 +81,11 @@ internal sealed class GamesToolsHome : StackPanel
         var quick = new Expander
         {
             Header = T("Quick Resume and paused-game modding", "Ripresa rapida e mod per giochi in pausa"),
-            Content = new QuickResumePanel(),
             IsExpanded = false
         };
+        // The Quick Resume panel inspects open applications when loaded. Create
+        // it only after the owner expands this section, never on Games first paint.
+        quick.Expanding += (_, _) => quick.Content ??= new QuickResumePanel();
         AutomationProperties.SetAutomationId(quick, "GamesTools_QuickResume_Expander");
         Children.Add(quick);
 
@@ -92,9 +94,9 @@ internal sealed class GamesToolsHome : StackPanel
             "La vecchia libreria resta accessibile in Libreria durante la migrazione. Nessun file viene eliminato o spostato.")));
         Children.Add(_message);
 
-        // Detection is read-only, on demand and non-blocking; no Playnite
-        // process or account is started simply by opening Games tools.
-        Loaded += async (_, _) => await RefreshPlayniteAsync();
+        // Do not start the local Core or Playnite discovery merely because
+        // the parent Games page was constructed. The host refreshes this when
+        // the user actually enters the Tools tab, and the button can retry.
     }
 
     private static TextBlock Heading(string text, double size) => new()
@@ -151,10 +153,29 @@ internal sealed class GamesToolsHome : StackPanel
         return button;
     }
 
-    private Task OpenPlayniteAsync(PlayniteLauncherAction action)
+    private async Task OpenPlayniteAsync(PlayniteLauncherAction action)
     {
+        // A frontend hotkey must not steal focus from a game. Core enforces the
+        // same rule again at the process boundary; the UI gives early feedback.
+        if (action is PlayniteLauncherAction.Console or PlayniteLauncherAction.Desktop)
+        {
+            var status = await PlayniteClient.Current.GetStatusAsync();
+            if (!status.Succeeded || status.Value is not { } snapshot)
+            {
+                _message.Text = T("Cannot verify whether a game is running. Check the Core connection before launching Playnite.",
+                    "Impossibile verificare se un gioco è attivo. Controlla il Core prima di avviare Playnite.");
+                return;
+            }
+            if (snapshot.Session.TrackedProcessCount > 0 ||
+                snapshot.Session.State is "game-detected" or "yielding" or "yielded")
+            {
+                _message.Text = T("A game is active. Finish playing before opening another Playnite mode.",
+                    "Un gioco è in esecuzione. Termina la partita prima di aprire un'altra modalità Playnite.");
+                return;
+            }
+        }
+        _message.Text = string.Empty;
         App.MainWin?.ShowPlayniteLauncher(action, gamepad: true, fromRequest: true);
-        return Task.CompletedTask;
     }
 
     private Task OpenSectionAsync(string section)
@@ -163,7 +184,7 @@ internal sealed class GamesToolsHome : StackPanel
         return Task.CompletedTask;
     }
 
-    private async Task RefreshPlayniteAsync()
+    internal async Task RefreshPlayniteAsync()
     {
         if (_refreshing) return;
         _refreshing = true;
