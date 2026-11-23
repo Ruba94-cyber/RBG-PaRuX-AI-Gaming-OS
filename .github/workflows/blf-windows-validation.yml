@@ -1,0 +1,48 @@
+# Isolated safety regression on synthetic CAN BLF content only.
+name: BLF - bounded Windows parser regression
+
+on:
+  push:
+    branches:
+      - fix/blf-bounded-alignment-20261123
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blf-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  can-regression:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore Server tests
+        run: dotnet restore tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -p:Platform=x64
+      - name: Compile source and test graph
+        run: dotnet build tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-restore --nologo
+      - name: Validate CAN ASC and BLF extractors
+        run: |
+          dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-build --no-restore --filter "FullyQualifiedName~CanTraceExtractorTests" --blame-hang --blame-hang-timeout 4m --logger "trx;LogFileName=can-blf-regression.trx" --results-directory TestResults
+      - name: Preserve synthetic result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: can-blf-regression
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+          retention-days: 7
