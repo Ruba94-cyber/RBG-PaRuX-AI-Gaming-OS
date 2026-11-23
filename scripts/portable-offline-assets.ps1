@@ -58,6 +58,12 @@ function Copy-PaRuXVcRuntime {
         $candidates += @(Get-ChildItem -LiteralPath $vs -Directory -Recurse -Filter "Microsoft.VC14*.CRT" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match '\\Redist\\MSVC\\[0-9.]+\\x64\\Microsoft\.VC14\d\.CRT$' })
     }
+    # Build PCs without the Visual Studio C++ workload (Build Tools only, no admin rights) can point to a folder holding the x64 DLLs
+    # taken from the official signed vc_redist.x64.exe. The same Microsoft-signature check below still applies to every file.
+    $overrideDir = $env:PARUX_VC_REDIST_X64_DIR
+    if (-not [string]::IsNullOrWhiteSpace($overrideDir) -and (Test-Path -LiteralPath $overrideDir -PathType Container)) {
+        $candidates = @(Get-Item -LiteralPath $overrideDir)
+    }
     $source = $candidates | Sort-Object { [version]((Get-Item (Join-Path $_.FullName "vcruntime140.dll")).VersionInfo.FileVersion -replace '[^0-9.].*$', '') } -Descending |
         Select-Object -First 1
     if ($null -eq $source) {
