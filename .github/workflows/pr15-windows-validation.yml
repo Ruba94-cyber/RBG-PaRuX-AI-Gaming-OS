@@ -69,3 +69,26 @@ jobs:
           path: TestResults/*.trx
           if-no-files-found: ignore
           retention-days: 7
+
+  main-baseline-winui:
+    name: Diagnostic control - unchanged main WinUI build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - name: Checkout unchanged main, not the feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore original main WinUI project
+        shell: pwsh
+        run: dotnet restore src/PaRuX.App/PaRuX.App.csproj -p:Platform=x64
+      - name: Compile original main to distinguish existing XAML failures
+        shell: pwsh
+        run: dotnet build src/PaRuX.App/PaRuX.App.csproj -c Release -p:Platform=x64 --no-restore --nologo
