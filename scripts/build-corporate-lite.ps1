@@ -502,11 +502,17 @@ if ($Smoke) {
         $s = Invoke-WebRequest -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/knowledge/search?q=test") -Headers $h -UseBasicParsing
         if ($s.StatusCode -ne 200) { throw "Knowledge search not available." }
         # Actual ONNX load: basic keyword search can return 200 without the embedding model.
+        # Corporate status is observational by design (an idle ONNX session is not re-created by a status check, so no RAM is
+        # reserved for unused models). Prove the real native load by performing a real embedding first, then read the status.
+        $probe = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/v1/embeddings") -Method Post -Headers $h -ContentType "application/json" -Body '{"input":"smoke test"}' -TimeoutSec 120
+        if (-not $probe.data -or @($probe.data[0].embedding).Count -lt 1) { throw "Offline smoke: bundled embedding ONNX engine returned no vector." }
         $emb = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/embeddings/engine") -Headers $h -TimeoutSec 120
         if (-not $emb.Installed -or -not $emb.Loaded) {
             throw "Offline smoke: bundled embedding ONNX engine failed real native load."
         }
         if ($RequireReranker) {
+            $rr = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/rerank") -Method Post -Headers $h -ContentType "application/json" -Body '{"query":"engine temperature","documents":["coolant temperature sensor","radio volume"],"topK":2}' -TimeoutSec 120
+            if (@($rr).Count -lt 1) { throw "Offline smoke: bundled reranker ONNX engine returned no ranking." }
             $rer = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/engine") -Headers $h -TimeoutSec 120
             if (-not $rer.Installed -or -not $rer.Loaded) {
                 throw "Offline smoke: bundled reranker ONNX engine failed real native load."
