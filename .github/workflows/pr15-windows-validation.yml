@@ -1,0 +1,71 @@
+# Draft-only native source verification. Deliberately no installer, signing,
+# release, external games, Playnite launch or physical gamepad assumptions.
+name: PR15 - Windows Playnite UI and server checks
+
+on:
+  push:
+    branches:
+      - feat/playnite-first-games-tools-20261123
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr15-playnite-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  winui-compile:
+    name: WinUI x64 Release compilation
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore unpackaged WinUI application
+        shell: pwsh
+        run: dotnet restore src/PaRuX.App/PaRuX.App.csproj -p:Platform=x64
+      - name: Compile PaRuX Desktop / Console without publishing
+        shell: pwsh
+        run: dotnet build src/PaRuX.App/PaRuX.App.csproj -c Release -p:Platform=x64 --no-restore --nologo
+
+  playnite-unit-tests:
+    name: Core Playnite and controller regression tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore Server test graph
+        shell: pwsh
+        run: dotnet restore tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -p:Platform=x64
+      - name: Compile Server and linked pad/Playnite tests
+        shell: pwsh
+        run: dotnet build tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-restore --nologo
+      - name: Execute focused Playnite / controller xUnit tests
+        shell: pwsh
+        run: |
+          dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-build --no-restore --filter "FullyQualifiedName~PlayniteComponentTests|FullyQualifiedName~PlayniteForegroundAdmissionTests|FullyQualifiedName~PlayniteLauncherTests|FullyQualifiedName~PlayniteGameSessionTrackerTests|FullyQualifiedName~PadActionTests" --blame-hang --blame-hang-timeout 4m --logger "trx;LogFileName=playnite-focused-tests.trx" --results-directory TestResults
+      - name: Publish synthetic test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr15-playnite-unit-tests
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+          retention-days: 7
