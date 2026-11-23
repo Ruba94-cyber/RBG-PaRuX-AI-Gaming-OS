@@ -172,6 +172,25 @@ public sealed class CanTraceExtractorTests : IDisposable
         Assert.Contains("Frames read: 1", d.FullText);
     }
 
+    [Fact]
+    public void Blf_written_by_an_independent_library_is_read_correctly_when_present()
+    {
+        // Produced with python-can's BLFWriter (independent of this extractor): 2000 x 0x18FE4A03, 200 x 0x123 (Tx),
+        // 4 x J1939 DM1, 50 CAN FD frames and 1 error frame.
+        const string path = @"C:\Users\DTS\Desktop\Parux\can-probe\py.blf";
+        if (!File.Exists(path)) return;
+        ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
+        string t = d.FullText;
+        Assert.Equal("can-blf", d.Extractor);
+        Assert.Contains("Frames read: 2254", t);
+        Assert.Contains("error frames: 1", t);
+        Assert.Contains("CAN ID 0x18FE4A03x", t);
+        Assert.Contains("Frames: 2000 (Rx 2000, Tx 0)", t);
+        Assert.Contains("(Rx 0, Tx 200)", t);
+        Assert.Contains("0x456 FD", t);
+        Assert.Contains("SPN 291 FMI 5", t);
+    }
+
     // ---- real files supplied by the owner (skipped when absent, e.g. on CI) ----
     [Theory]
     [InlineData(@"C:\Users\DTS\Desktop\CAN-20260807-092922.asc")]
