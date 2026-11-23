@@ -302,7 +302,10 @@ public sealed class GameModDropInServiceTests : IDisposable
         }
         try
         {
-            Assert.False(File.Exists(installed.InstalledFile));
+            // Windows can report File.Exists differently for a dangling
+            // symlink depending on filesystem/runner. The security invariant
+            // is that the link is detected and the receipt is NOT forgotten.
+            Assert.NotNull(new FileInfo(installed.InstalledFile).LinkTarget);
             Assert.Throws<InvalidDataException>(() =>
                 Service().Remove(new(installed.Id, Consent: true, OfflineGameClosedConfirmed: true)));
             Assert.Single(Service().List());
