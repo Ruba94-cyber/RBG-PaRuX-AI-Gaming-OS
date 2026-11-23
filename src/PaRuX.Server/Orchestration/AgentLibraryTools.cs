@@ -350,16 +350,16 @@ public sealed class AgentLibraryTools
                 ["confirmation_id"] = Confirmation()
             }, "manual_game_id", "process_id", "started_utc", "relative_path", "proposed_text", "offline_confirmed");
         Add(GameModPatchTool,
-            "Prepare a single-key INI/CFG setting change for a PaRuX-managed offline game paused via Quick Resume. The model never reads the original config. Explicit user confirmation is required for the preview, then the owner must separately review and approve applying it. Not live gameplay injection.",
+            "Prepare one existing INI/CFG key or scalar JSON property change for a PaRuX-managed OFFLINE game paused via Quick Resume. For JSON, section is an optional dot-separated object path, key is a property name and value is a JSON literal of the SAME type (e.g. true, 60, or a quoted string). No object/array replacement. The AI never reads the original file. A separate owner confirmation prepares the preview; the owner must then inspect the full before/after and approve the reversible apply. Not live injection.",
             new JsonObject
             {
                 ["manual_game_id"] = Str("PaRuX-managed game id, not a folder path.", 64),
                 ["process_id"] = Pid(),
                 ["started_utc"] = Str("Exact paused process time from quick_resume_list.", 40),
-                ["relative_path"] = Str("Existing INI/CFG path relative to managed game root.", 240),
-                ["section"] = Str("Optional INI section without brackets.", 80),
-                ["key"] = Str("Existing INI setting name, ASCII letters/digits/dot/dash/underscore.", 80),
-                ["value"] = Str("One-line replacement setting value, at most 256 characters.", 256),
+                ["relative_path"] = Str("Existing INI, CFG or JSON file relative to managed game root.", 240),
+                ["section"] = Str("INI/CFG section, or for JSON an optional dot-separated path of existing nested objects.", 80),
+                ["key"] = Str("Existing setting name; for JSON a simple ASCII property name with letters/digits/dash/underscore.", 80),
+                ["value"] = Str("One-line value <=256 chars: INI plain text; JSON valid scalar literal, e.g. 60, true or \\"high\\".", 256),
                 ["offline_confirmed"] = new JsonObject { ["type"] = "boolean",
                     ["description"] = "Owner confirms offline single-player ownership/permission." },
                 ["confirmation_id"] = Confirmation()
@@ -634,11 +634,12 @@ public sealed class AgentLibraryTools
         string value = a.Values["value"].GetString() ?? "";
         if (gameId.Length is < 1 or > 64 || !TemporaryGameModService.SafeRelativeConfig(path)
             || !(path.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
-                || path.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase))
+                || path.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
             || !Bool(a, "offline_confirmed"))
         {
             outcome = "refused";
-            return Failed + "Only an existing INI/CFG setting of a managed offline game can be proposed.";
+            return Failed + "Only an existing INI/CFG key or JSON scalar property of a managed offline game can be proposed.";
         }
         if (!DateTime.TryParse(Text(a, "started_utc"),
                 System.Globalization.CultureInfo.InvariantCulture,
@@ -662,8 +663,9 @@ public sealed class AgentLibraryTools
             pid.ToString(System.Globalization.CultureInfo.InvariantCulture),
             StartedText(paused.StartedUtc), path, section, key,
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))));
+        string format = path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "JSON property" : "INI/CFG setting";
         string? gate = Gate(a, GameModPatchTool, binding,
-            "Allow the AI to preview an INI/CFG setting change in paused game " + subject
+            "Allow the AI to preview a " + format + " change in paused game " + subject
             + " (file " + Redact(path) + ", key " + Redact(key)
             + ")? The file will not be modified until you review and approve the preview.",
             out outcome);
