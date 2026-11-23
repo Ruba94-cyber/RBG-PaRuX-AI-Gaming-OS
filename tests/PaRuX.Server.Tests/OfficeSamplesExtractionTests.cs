@@ -60,6 +60,39 @@ public sealed class OfficeSamplesExtractionTests
         Assert.Contains("25 Nm", t);                          // only present inside the attached workbook
     }
 
+    [Theory]
+    [InlineData("Wartungsanleitung_Pumpe.docx", "52 Nm", "500 Betriebsstunden", "Überdruck im Hydraulikkreis", "Druckbegrenzungsventil")]
+    [InlineData("Contrat_Maintenance.pdf", "24 mois", "1,5 %", "12 %", "Lyon")]
+    [InlineData("Inventario_Almacen.xlsx", "BR-4412", "380", "Pasillo C-7", "Rodamiento 6205")]
+    [InlineData("Firmware_3_2_Release_Notes.docx", "bus-off", "bootloader version required", "2.1", "KI-77")]
+    public void Documents_in_other_languages_expose_every_fact_the_acceptance_run_asks_about(string file, string a, string b, string c, string d)
+    {
+        string? t = Text(file, ""); if (t == null) return;
+        foreach (string fact in new[] { a, b, c, d }) Assert.Contains(fact, t);
+    }
+
+    /// <summary>Developer tool, not a check: writes the extracted passages of a folder to a JSON file so retrieval models can be compared offline.
+    /// Runs only when PARUX_DUMP_FOLDERS (";"-separated) and PARUX_DUMP_FILE are set; nothing is written otherwise.</summary>
+    [Fact]
+    public void Dump_passages_for_offline_retrieval_evaluation()
+    {
+        string? folders = Environment.GetEnvironmentVariable("PARUX_DUMP_FOLDERS"), file = Environment.GetEnvironmentVariable("PARUX_DUMP_FILE");
+        if (string.IsNullOrEmpty(folders) || string.IsNullOrEmpty(file)) return;
+        var rows = new List<object>();
+        foreach (string f in folders.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            IEnumerable<string> paths = Directory.Exists(f) ? Directory.EnumerateFiles(f, "*.*", SearchOption.AllDirectories) : File.Exists(f) ? new[] { f } : Array.Empty<string>();
+            foreach (string p in paths)
+            {
+                ExtractedDocument d = StructuredDocumentExtractor.Extract(p);
+                foreach (DocumentSegment s in d.Segments)
+                    for (int i = 0; i < s.Text.Length; i += 900)
+                        rows.Add(new { file = Path.GetFileName(p), pos = s.Position.Describe(), text = s.Text.Substring(i, Math.Min(900, s.Text.Length - i)) });
+            }
+        }
+        File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(rows));
+    }
+
     [Fact]
     public void PDF_pages_are_extracted()
     {

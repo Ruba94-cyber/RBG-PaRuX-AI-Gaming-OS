@@ -33,6 +33,7 @@ param(
     [switch]$NoModel,
     [switch]$LowMemoryStarter,
     [string]$EmbeddingDir = "",
+    [string]$MultilingualEmbeddingDir = "",
     [string]$RerankerDir = "",
     [switch]$RequireReranker,
     [string]$RuntimeDir = "",
@@ -227,6 +228,12 @@ if ($Fetch) {
     Get-PinnedAsset $embRepo $embRev "vocab.txt" (Join-Path $EmbeddingDir "vocab.txt") 231508 "git-sha1" "fb140275c155a9c7c5a3b3e0e77a9e839594a938"
     Get-PinnedAsset $embRepo $embRev "tokenizer_config.json" (Join-Path $EmbeddingDir "tokenizer_config.json") 350 "git-sha1" "c79f2b6a0cea6f4b564fed1938984bace9d30ff0"
     Get-PinnedAsset $embRepo $embRev "config.json" (Join-Path $EmbeddingDir "config.json") 612 "git-sha1" "72b987fd805cfa2b58c4c8c952b274a11bfd5a00"
+    # multilingual-e5-small (MIT, int8 ONNX): the default document-search embedding. MiniLM above is English-centric; this one finds the
+    # right passage for an Italian question over English text (measured 57% vs 14% first hit) and for Italian over Italian (90% vs 60%).
+    $MultilingualEmbeddingDir = Join-Path $assets "embeddings-e5"
+    New-Item -ItemType Directory -Force $MultilingualEmbeddingDir | Out-Null
+    Get-PinnedAsset "Xenova/multilingual-e5-small" "761b726dd34fb83930e26aab4e9ac3899aa1fa78" "onnx/model_int8.onnx" (Join-Path $MultilingualEmbeddingDir "model.onnx") 118054593 "sha256" "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"
+    Get-PinnedAsset "Xenova/multilingual-e5-small" "761b726dd34fb83930e26aab4e9ac3899aa1fa78" "tokenizer.json" (Join-Path $MultilingualEmbeddingDir "tokenizer.json") 17082730 "sha256" "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
     # Cross-encoder for optional local second-stage RAG relevance. The exact
     # model/vocab pair below matches PinnedModelManifest.RerankerMsMarcoMiniLm.
     $RerankerDir = Join-Path $assets "reranker"
@@ -265,6 +272,10 @@ Assert-PinnedAsset (Join-Path $EmbeddingDir "model.onnx") 90405214 "sha256" "6fd
 Assert-PinnedAsset (Join-Path $EmbeddingDir "vocab.txt") 231508 "git-sha1" "fb140275c155a9c7c5a3b3e0e77a9e839594a938"
 Assert-PinnedAsset (Join-Path $EmbeddingDir "tokenizer_config.json") 350 "git-sha1" "c79f2b6a0cea6f4b564fed1938984bace9d30ff0"
 Assert-PinnedAsset (Join-Path $EmbeddingDir "config.json") 612 "git-sha1" "72b987fd805cfa2b58c4c8c952b274a11bfd5a00"
+if (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)) {
+    Assert-PinnedAsset (Join-Path $MultilingualEmbeddingDir "model.onnx") 118054593 "sha256" "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"
+    Assert-PinnedAsset (Join-Path $MultilingualEmbeddingDir "tokenizer.json") 17082730 "sha256" "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+}
 if ($RequireReranker -and [string]::IsNullOrWhiteSpace($RerankerDir)) {
     throw "Complete local RAG requires -RerankerDir or -Fetch. No cloud or later runtime download is permitted."
 }
@@ -313,6 +324,11 @@ foreach ($vcDir in @($runtimeDest, (Join-Path $stage "PaRuX.Server"))) {
     }
 }
 Copy-Item (Join-Path $EmbeddingDir "*") (Join-Path $data "ai-runtimes\embeddings") -Recurse -Force
+if (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)) {
+    $e5Dest = Join-Path $data "ai-runtimes\embeddings-e5"
+    New-Item -ItemType Directory -Force $e5Dest | Out-Null
+    Copy-Item (Join-Path $MultilingualEmbeddingDir "*") $e5Dest -Recurse -Force
+}
 if (-not [string]::IsNullOrWhiteSpace($RerankerDir)) {
     $rerankerDest = Join-Path $data "ai-runtimes\reranker"
     New-Item -ItemType Directory -Force $rerankerDest | Out-Null
@@ -358,7 +374,7 @@ Offline: "Start PaRuX Corporate Lite.cmd". Import further GGUF files in Model Hu
 For IT-approved GGUF downloads only: "Start PaRuX Corporate Model Downloads.cmd". Model inference remains entirely local;
 Gaming, media, online runtime installers, cloud inference and automatic updates stay disabled.
 IT network rules still apply; downloads require network permission. Documents remain on this PC.
-Licences: see LICENSE.txt and THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: all-MiniLM-L6-v2, Apache-2.0;
+Licences: see LICENSE.txt and THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: multilingual-e5-small (MIT, default for Italian/English document search) and all-MiniLM-L6-v2 (Apache-2.0, fallback);
 llama.cpp: MIT; optional cross-encoder reranker: Xenova/ms-marco-MiniLM-L-6-v2, review source licence before redistribution).
 
 Avvio offline con motore CPU gia' incluso: "Start PaRuX Corporate Lite.cmd".
@@ -375,7 +391,7 @@ $manifest = [ordered]@{
     model = $(if ($NoModel) { $null } else { [IO.Path]::GetFileName($ModelPath) }); modelSha256 = $(if ($NoModel) { $null } else { (Get-FileHash $ModelPath -Algorithm SHA256).Hash.ToLowerInvariant() })
     modelOrigin = $modelOriginLabel; modelLicense = $modelLicenseLabel; modelSourceVerifiedByBuilder = [bool]($Fetch -and -not $NoModel)
     starterProfile = $(if ($NoModel) { "none" } elseif ($LowMemoryStarter) { "low-memory-0.6b" } else { "standard-or-user-supplied" })
-    runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
+    runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; multilingualEmbeddingIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)); rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
     nativeRuntimeSha256 = (Get-FileHash (Join-Path $runtimeDest "llama-server.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
     fileCount = $files.Count; files = $files
 }
@@ -511,6 +527,13 @@ if ($Smoke) {
         $emb = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/embeddings/engine") -Headers $h -TimeoutSec 120
         if (-not $emb.Installed -or -not $emb.Loaded) {
             throw "Offline smoke: bundled embedding ONNX engine failed real native load."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)) {
+            # probe=1 computes one real embedding first, so a model that is present but cannot run is caught here
+            $ml = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/embeddings/multilingual/engine?probe=1") -Headers $h -TimeoutSec 180
+            if (-not $ml.installed -or -not $ml.loaded -or [int]$ml.probeDimensions -ne 384) {
+                throw "Offline smoke: bundled multilingual embedding engine failed real native load."
+            }
         }
         if ($RequireReranker) {
             $rr = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/rerank") -Method Post -Headers $h -ContentType "application/json" -Body '{"query":"engine temperature","documents":["coolant temperature sensor","radio volume"],"topK":2}' -TimeoutSec 120

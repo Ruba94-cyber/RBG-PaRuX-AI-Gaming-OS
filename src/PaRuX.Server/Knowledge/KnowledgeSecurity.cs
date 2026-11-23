@@ -206,6 +206,13 @@ public sealed record PinnedModelManifest(string Repository, string Revision, IRe
         new PinnedFile("vocab.txt", "vocab.txt", 231508, GitBlobSha1: "fb140275c155a9c7c5a3b3e0e77a9e839594a938")
     });
 
+    /// <summary>Xenova/multilingual-e5-small (int8 ONNX export of intfloat/multilingual-e5-small, MIT) at a fixed commit; digests are the LFS SHA-256 values published in the Hugging Face file listing.</summary>
+    public static PinnedModelManifest MultilingualE5SmallInt8 { get; } = new("Xenova/multilingual-e5-small", "761b726dd34fb83930e26aab4e9ac3899aa1fa78", new[]
+    {
+        new PinnedFile("onnx/model_int8.onnx", "model.onnx", 118054593, Sha256: "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"),
+        new PinnedFile("tokenizer.json", "tokenizer.json", 17082730, Sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39")
+    });
+
     /// <summary>sentence-transformers/all-MiniLM-L6-v2 at a fixed commit; digests read from the Hugging Face file listing (LFS SHA-256, git blob SHA-1 for small files).</summary>
     public static PinnedModelManifest MiniLmL6V2 { get; } = new("sentence-transformers/all-MiniLM-L6-v2", "1110a243fdf4706b3f48f1d95db1a4f5529b4d41", new[]
     {
