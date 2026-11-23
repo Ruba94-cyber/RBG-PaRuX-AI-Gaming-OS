@@ -1,3 +1,13 @@
+## 2026-11-23 - MAINLINE RESUME (supersedes older branch-specific handoffs)
+
+**Canonical source branch: `main`**. Owner requested source consolidation and minimal branches; integration PR #17 squash-merged into `main` at `2e2d630ff1e52f8cb7281f215a7d45e47b2de750`. Historic draft PRs #8/#9/#12–#16 and diagnostic #21 are closed. Do not resume against `integration/20261123-b` or an old draft PR.
+
+**No GitHub Actions** (the complete `.github/workflows` directory was removed from `main`). Native verification is **pending**, especially full xUnit after the last sandbox ACL fixes, actual AppContainer isolation, real Playnite/gamepad/HDR/eGPU, clean Corporate PC, FlaUI, packaging and signing. Do not call main a release-approved build; see `docs/validation/INTEGRATION_REPORT_2026-11-23.md`.
+
+**Next authorized Windows checkout:** `tools/validation-runs/verify-main-local.ps1 -FullSuite -SandboxSmoke` (plus `-UiSmoke` from a real desktop). Collect local TRX, diagnose any failing assertions rather than skipping them. Nothing runs as a background cloud job.
+
+**Branch discipline:** avoid new long-lived stacks; small reviewed changes go to `main`. Compare six `worktree-agent-*` branches for unique WIP (AI connectors, optional components, training, sandboxed chat code, Playnite theme, obsolete native gaming UI). Integrate only complete/reviewed portions and do not delete WIP. `tools/prune-integrated-branches.ps1` offers an opt-in dry-run-first cleanup of 12 already absorbed refs from an authenticated local Git checkout; this repository connector cannot delete remote refs itself.
+
 ## 2026-11-23 - Integration branch: see docs/HANDOFF_2026-11-23_integration.md and docs/validation/INTEGRATION_REPORT_2026-11-23.md
 
 ## 2026-11-22 - RESUME HERE: see docs/HANDOFF_2026-11-22.md (owner direction change, merged vs pending branches, next steps)
