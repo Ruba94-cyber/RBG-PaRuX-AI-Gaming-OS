@@ -161,20 +161,20 @@ internal sealed class GamesToolsHome : StackPanel
     {
         // A frontend hotkey must not steal focus from a game. Core enforces the
         // same rule again at the process boundary; the UI gives early feedback.
-        if (action is PlayniteLauncherAction.Console or PlayniteLauncherAction.Desktop)
+        if (PlayniteLauncherForegroundPolicy.RequiresGamePreflight(action))
         {
-            var status = await PlayniteClient.Current.GetStatusAsync();
-            if (!status.Succeeded || status.Value is not { } snapshot)
-            {
-                _message.Text = T("Cannot verify whether a game is running. Check the Core connection before launching Playnite.",
-                    "Impossibile verificare se un gioco è attivo. Controlla il Core prima di avviare Playnite.");
-                return;
-            }
-            if (snapshot.Session.TrackedProcessCount > 0 ||
-                snapshot.Session.State is "game-detected" or "yielding" or "yielded")
+            if (GamingManager.Current.IsActive)
             {
                 _message.Text = T("A game is active. Finish playing before opening another Playnite mode.",
                     "Un gioco è in esecuzione. Termina la partita prima di aprire un'altra modalità Playnite.");
+                return;
+            }
+            var status = await PlayniteClient.Current.GetStatusAsync();
+            if (!status.Succeeded ||
+                !PlayniteLauncherForegroundPolicy.MayOpen(action, GamingManager.Current.IsActive, status.Value))
+            {
+                _message.Text = T("Cannot safely open Playnite while a game is active or its status is unknown.",
+                    "Impossibile aprire Playnite in sicurezza mentre un gioco è attivo o lo stato è sconosciuto.");
                 return;
             }
         }
