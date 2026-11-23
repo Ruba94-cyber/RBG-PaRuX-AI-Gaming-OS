@@ -25,6 +25,7 @@ internal sealed class GamesToolsHome : StackPanel
     private readonly TextBlock _playniteStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
     private bool _busy;
+    private bool _refreshing;
 
     public GamesToolsHome(Action<string> openSection)
     {
@@ -44,13 +45,13 @@ internal sealed class GamesToolsHome : StackPanel
         Children.Add(_playniteStatus);
 
         Children.Add(Actions(
-            Button("PlayniteConsole", T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"),
+            ActionButton("PlayniteConsole", T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"),
                 () => OpenPlayniteAsync(PlayniteLauncherAction.Console)),
-            Button("PlayniteDesktop", T("Playnite Desktop", "Playnite Desktop"),
+            ActionButton("PlayniteDesktop", T("Playnite Desktop", "Playnite Desktop"),
                 () => OpenPlayniteAsync(PlayniteLauncherAction.Desktop)),
-            Button("PlayniteSetup", T("Install / locate / configure Playnite", "Installa / individua / configura Playnite"),
+            ActionButton("PlayniteSetup", T("Install / locate / configure Playnite", "Installa / individua / configura Playnite"),
                 () => OpenPlayniteAsync(PlayniteLauncherAction.Settings)),
-            Button("PlayniteRefresh", T("Check Playnite status", "Controlla stato Playnite"),
+            ActionButton("PlayniteRefresh", T("Check Playnite status", "Controlla stato Playnite"),
                 RefreshPlayniteAsync)));
 
         Children.Add(Heading(T("AI mod studio", "Studio mod IA"), 20));
@@ -58,21 +59,21 @@ internal sealed class GamesToolsHome : StackPanel
             "Not just skins: review AI-proposed configuration edits, texture packages and installed compatible ZIP mods. Every write requires separate consent and supported game formats; never patch executables or anti-cheat.",
             "Non solo skin: rivedi modifiche di configurazione proposte dall'IA, pacchetti texture e mod ZIP compatibili già installate. Ogni modifica richiede conferma separata e formati supportati; mai patch a eseguibili o anti-cheat.")));
         Children.Add(Actions(
-            Button("AiProposals", T("Review AI mod proposals", "Rivedi proposte mod IA"),
+            ActionButton("AiProposals", T("Review AI mod proposals", "Rivedi proposte mod IA"),
                 () => TemporaryGameModsDialog.ShowPendingAiProposalsAsync(XamlRoot)),
-            Button("AiRestore", T("Restore AI configuration mods", "Ripristina mod configurazione IA"),
+            ActionButton("AiRestore", T("Restore AI configuration mods", "Ripristina mod configurazione IA"),
                 () => TemporaryGameModsDialog.ShowRestoreListAsync(XamlRoot)),
-            Button("AssetStudio", T("Create an AI texture mod", "Crea una mod texture IA"),
+            ActionButton("AssetStudio", T("Create an AI texture mod", "Crea una mod texture IA"),
                 () => GameAssetModStudioDialog.ShowAsync(XamlRoot)),
-            Button("InstalledMods", T("Manage installed compatible mods", "Gestisci mod compatibili installate"),
+            ActionButton("InstalledMods", T("Manage installed compatible mods", "Gestisci mod compatibili installate"),
                 () => GameModDropInDialog.ShowInstalledAsync(XamlRoot))));
 
         Children.Add(Heading(T("Downloads, installs and saves", "Download, installazioni e salvataggi"), 20));
         Children.Add(Actions(
-            Button("Downloads", T("Open downloads", "Apri download"), () => OpenSectionAsync("Downloads")),
-            Button("Install", T("Inspect / stage / import games", "Controlla / prepara / importa giochi"), () => OpenSectionAsync("Add")),
-            Button("Backups", T("Save backups and Gaming status", "Backup salvataggi e stato Gaming"), () => OpenSectionAsync("Devices")),
-            Button("Controller", T("Configure controller buttons", "Configura pulsanti controller"),
+            ActionButton("Downloads", T("Open downloads", "Apri download"), () => OpenSectionAsync("Downloads")),
+            ActionButton("Install", T("Inspect / stage / import games", "Controlla / prepara / importa giochi"), () => OpenSectionAsync("Add")),
+            ActionButton("Backups", T("Save backups and Gaming status", "Backup salvataggi e stato Gaming"), () => OpenSectionAsync("Devices")),
+            ActionButton("Controller", T("Configure controller buttons", "Configura pulsanti controller"),
                 () => App.MainWin?.RunPadActionAsync(PadActionId.OpenSettings) ?? Task.CompletedTask)));
 
         // Reuses the existing no-input-injection Quick Resume / reversible mod
@@ -118,7 +119,7 @@ internal sealed class GamesToolsHome : StackPanel
         return panel;
     }
 
-    private Button Button(string id, string title, Func<Task> action)
+    private Button ActionButton(string id, string title, Func<Task> action)
     {
         var button = new Button
         {
@@ -164,8 +165,8 @@ internal sealed class GamesToolsHome : StackPanel
 
     private async Task RefreshPlayniteAsync()
     {
-        if (_busy) return;
-        _busy = true;
+        if (_refreshing) return;
+        _refreshing = true;
         try
         {
             var result = await PlayniteClient.Current.GetStatusAsync();
@@ -196,6 +197,6 @@ internal sealed class GamesToolsHome : StackPanel
             Log.Write("GamesTools Playnite status read failed: " + ex.GetType().Name);
             _playniteStatus.Text = T("Playnite status could not be read.", "Impossibile leggere lo stato Playnite.");
         }
-        finally { _busy = false; }
+        finally { _refreshing = false; }
     }
 }
