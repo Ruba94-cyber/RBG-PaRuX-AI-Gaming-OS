@@ -42,7 +42,7 @@ public sealed partial class MainWindow
                 await Task.Delay(250);
             if (App.IsShuttingDown) return;
 
-            bool console = _consoleModeActive;
+            bool console = _consoleModeActive || _playniteConsoleHandoffActive;
             SignInSessionInfo session = SignInSessionProbe.Probe();
             DateTimeOffset? shellStart = null;
             try { using Process me = Process.GetCurrentProcess(); shellStart = new DateTimeOffset(me.StartTime.ToUniversalTime(), TimeSpan.Zero); }
@@ -59,7 +59,7 @@ public sealed partial class MainWindow
             while (!App.IsShuttingDown && DateTime.UtcNow < stop)
             {
                 await Task.Delay(SignInStatePollInterval);
-                bool now = _consoleModeActive;
+                bool now = _consoleModeActive || _playniteConsoleHandoffActive;
                 if (now != last)
                 {
                     await SignInAppListClient.Current.ReportShellStateAsync(now, System.Threading.CancellationToken.None);
