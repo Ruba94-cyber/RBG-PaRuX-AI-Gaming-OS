@@ -371,4 +371,71 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
         Harness h = NewHarness();
         Assert.Null(await h.Loop.OpenFirstAsync(CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Unknown_and_invalid_tool_calls_are_never_executed_and_receive_precise_feedback()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "not-offered", "delete_everything", "{}")),
+            new Step(0, ToolDelta(1, "broken", "lookup", "{\"query\":")),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        _turns.Add(() => new[] { new Step(0, Delta("I need to retry.")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
+        Harness h = NewHarness();
+        await RunAsync(h);
+
+        Assert.Empty(h.ToolInvocations);
+        JsonArray messages = _requests[1]["messages"]!.AsArray();
+        Assert.Equal("not-offered", messages[2]!["tool_call_id"]!.GetValue<string>());
+        Assert.Equal("broken", messages[3]!["tool_call_id"]!.GetValue<string>());
+        Assert.Contains("NOT executed", messages[2]!["content"]!.GetValue<string>());
+        Assert.Contains("NOT executed", messages[3]!["content"]!.GetValue<string>());
+        Assert.Equal("I need to retry.", Text(h));
+    }
+
+    [Fact]
+    public async Task Mixed_valid_and_invalid_calls_keep_original_ids_and_reply_order()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "bad-first", "lookup", "{\"q\":")),
+            new Step(0, ToolDelta(1, "good-second", "lookup", "{\"q\":2}")),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        _turns.Add(() => new[] { new Step(0, Delta("Done.")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
+
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Equal(("lookup", "{\"q\":2}"), Assert.Single(h.ToolInvocations));
+        JsonArray messages = _requests[1]["messages"]!.AsArray();
+        Assert.Equal("bad-first", messages[2]!["tool_call_id"]!.GetValue<string>());
+        Assert.Contains("NOT executed", messages[2]!["content"]!.GetValue<string>());
+        Assert.Equal("good-second", messages[3]!["tool_call_id"]!.GetValue<string>());
+        Assert.Equal("result-for-lookup", messages[3]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Fenced_json_is_normalized_and_repeated_tool_ids_are_made_unique()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "same-id", "lookup", "```json\n{\"q\":1,}\n```")),
+            new Step(0, ToolDelta(1, "same-id", "lookup", "{}")),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        _turns.Add(() => new[] { new Step(0, Delta("OK")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
+        Harness h = NewHarness();
+        await RunAsync(h);
+
+        Assert.Equal(2, h.ToolInvocations.Count);
+        Assert.Equal("{\"q\":1}", h.ToolInvocations[0].Args);
+        JsonArray messages = _requests[1]["messages"]!.AsArray();
+        string id1 = messages[2]!["tool_call_id"]!.GetValue<string>();
+        string id2 = messages[3]!["tool_call_id"]!.GetValue<string>();
+        Assert.Equal("same-id", id1);
+        Assert.NotEqual(id1, id2);
+        Assert.Equal(id2, messages[1]!["tool_calls"]![1]!["id"]!.GetValue<string>());
+        Assert.Equal("OK", Text(h));
+    }
 }

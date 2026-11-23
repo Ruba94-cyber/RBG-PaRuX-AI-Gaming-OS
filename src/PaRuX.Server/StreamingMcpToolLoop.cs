@@ -28,6 +28,7 @@ internal sealed class StreamingMcpToolLoop
 
     private readonly JsonObject _payload;
     private readonly JsonArray _tools;
+    private readonly IReadOnlySet<string> _advertisedToolNames;
     private readonly OpenRound _open;
     private readonly Func<string, string, CancellationToken, Task<string>> _invokeTool;
     private readonly Func<string, CancellationToken, Task> _writeFrame;
@@ -48,6 +49,7 @@ internal sealed class StreamingMcpToolLoop
     {
         _payload = payload;
         _tools = tools;
+        _advertisedToolNames = McpToolCallAdmission.AdvertisedNames(tools);
         _open = open;
         _invokeTool = invokeTool;
         _writeFrame = writeFrame;
@@ -134,11 +136,18 @@ internal sealed class StreamingMcpToolLoop
     private async Task ExecuteToolsAsync(TurnResult turn, int round, CancellationToken cancellationToken)
     {
         var callsArray = new JsonArray();
-        var allowed = new JsonArray();
-        var skipped = new List<string>();
+        var usedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (PendingToolCall call in turn.ToolCalls)
         {
-            string id = string.IsNullOrEmpty(call.Id) ? "call_" + round + "_" + call.Index : call.Id;
+            string id = call.Id;
+            // A malformed provider can repeat or omit tool IDs. All tool messages in an
+            // assistant turn must have unique IDs for reliable result correlation.
+            if (id.Length is 0 or > 128 || !usedIds.Add(id))
+            {
+                int suffix = 0;
+                do { id = "call_" + round + "_" + call.Index + "_" + suffix++; }
+                while (!usedIds.Add(id));
+            }
             string arguments = call.Arguments.Length == 0 ? "{}" : call.Arguments.ToString();
             callsArray.Add(new JsonObject
             {
@@ -148,53 +157,73 @@ internal sealed class StreamingMcpToolLoop
             });
         }
 
+        // Verify the exact tool name and JSON syntax before any user-facing or
+        // external tool invocation. Incomplete and unadvertised calls are NOT run.
+        int roundAllowance = Math.Min(_maxCallsPerRound, Math.Max(0, _maxCallsPerTurn - _toolCallsUsed));
+        var admittedCalls = new JsonArray();
+        var refused = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int i = 0; i < callsArray.Count; i++)
+        {
+            JsonObject call = callsArray[i]!.AsObject();
+            string id = call["id"]!.GetValue<string>();
+            if (i >= roundAllowance)
+            {
+                refused[id] = "Tool call skipped: the per-turn tool-call limit was reached.";
+                continue;
+            }
+            JsonObject fn = call["function"]!.AsObject();
+            McpToolCallAdmission.Result admission = McpToolCallAdmission.Inspect(
+                fn["name"]!.GetValue<string>(), fn["arguments"]!.GetValue<string>(), _advertisedToolNames);
+            if (!admission.Allowed)
+            {
+                refused[id] = "Tool call NOT executed: " + admission.Error +
+                    " Retry with an advertised tool name and complete JSON arguments.";
+                continue;
+            }
+            fn["arguments"] = admission.ArgumentsJson;
+            admittedCalls.Add(call.DeepClone());
+        }
+
         var assistant = new JsonObject { ["role"] = "assistant", ["content"] = turn.Content.ToString(), ["tool_calls"] = callsArray };
         if (turn.Reasoning.Length > 0) assistant["reasoning_content"] = turn.Reasoning.ToString();
         _payload["messages"]!.AsArray().Add(assistant);
-
-        // Calls over the per-round / per-turn allowance still get a tool message (the protocol requires
-        // one per tool_call_id) saying plainly that they did not run.
-        int roundAllowance = Math.Min(_maxCallsPerRound, Math.Max(0, _maxCallsPerTurn - _toolCallsUsed));
-        int index = 0;
-        foreach (JsonNode? node in callsArray)
-        {
-            if (index++ < roundAllowance) allowed.Add(node!.DeepClone());
-            else skipped.Add(node!["id"]!.GetValue<string>());
-        }
 
         var names = callsArray.Select(c => c!["function"]!["name"]!.GetValue<string>()).ToArray();
         await _writeFrame("data: " + JsonSerializer.Serialize(new { parux_event = "tool_calls", round, names }) + "\n\n",
             cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<McpToolCallBatchExecutor.Result> results = await McpToolCallBatchExecutor.ExecuteAsync(
-            allowed, _invokeTool, cancellationToken).ConfigureAwait(false);
-        _toolCallsUsed += allowed.Count;
+            admittedCalls, _invokeTool, cancellationToken).ConfigureAwait(false);
+        _toolCallsUsed += admittedCalls.Count;
+        var byId = results.ToDictionary(result => result.Id, StringComparer.Ordinal);
 
-        foreach (McpToolCallBatchExecutor.Result result in results)
+        // Write tool messages in the MODEL'S original order, including refused
+        // siblings. Each ID receives exactly one result, so providers cannot
+        // misattribute a successful tool reply to an invalid neighbour.
+        foreach (JsonNode? node in callsArray)
         {
-            string resultText = result.Content;
-            if (_toolResultCharactersRemaining <= 0)
+            string id = node!["id"]!.GetValue<string>();
+            string resultText;
+            if (refused.TryGetValue(id, out string? reason))
+                resultText = reason;
+            else if (byId.TryGetValue(id, out McpToolCallBatchExecutor.Result? result))
             {
-                resultText = "Tool result omitted: the cumulative tool-result budget is exhausted.";
+                resultText = result.Content;
+                if (_toolResultCharactersRemaining <= 0)
+                    resultText = "Tool result omitted: the cumulative tool-result budget is exhausted.";
+                else
+                {
+                    int limit = Math.Min(8_000, _toolResultCharactersRemaining);
+                    if (resultText.Length > limit)
+                        resultText = resultText[..limit] + "\n[tool result truncated by the Context Engine budget]";
+                    _toolResultCharactersRemaining = Math.Max(0, _toolResultCharactersRemaining - resultText.Length);
+                }
             }
             else
-            {
-                int resultLimit = Math.Min(8_000, _toolResultCharactersRemaining);
-                if (resultText.Length > resultLimit)
-                    resultText = resultText[..resultLimit] + "\n[tool result truncated by the Context Engine budget]";
-                _toolResultCharactersRemaining = Math.Max(0, _toolResultCharactersRemaining - resultText.Length);
-            }
+                resultText = "Tool call NOT executed: no result was returned.";
             _payload["messages"]!.AsArray().Add(new JsonObject
             {
-                ["role"] = "tool", ["tool_call_id"] = result.Id, ["content"] = resultText
-            });
-        }
-        foreach (string id in skipped)
-        {
-            _payload["messages"]!.AsArray().Add(new JsonObject
-            {
-                ["role"] = "tool", ["tool_call_id"] = id,
-                ["content"] = "Tool call skipped: the per-turn tool-call limit was reached."
+                ["role"] = "tool", ["tool_call_id"] = id, ["content"] = resultText
             });
         }
     }
