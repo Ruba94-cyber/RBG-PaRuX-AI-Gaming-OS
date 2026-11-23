@@ -590,6 +590,48 @@ public sealed class PlayniteReturnWatchPolicyTests
     }
 
     [Fact]
+    public void Explicit_console_test_return_never_steals_focus_from_a_running_game()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = false },
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedClosedCounter = 9,
+                PaRuXLaunchedPlaynite = false,
+                TrackedProcessCount = 1
+            }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(8, status, forceReturn: true));
+        Assert.True(PlayniteReturnWatchPolicy.KeepPendingClose(8, status, forceReturn: true));
+
+        status.Session.TrackedProcessCount = 0;
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(8, status, forceReturn: true));
+        Assert.False(PlayniteReturnWatchPolicy.KeepPendingClose(8, status, forceReturn: true));
+    }
+
+    [Fact]
+    public void Explicit_console_test_requires_a_real_new_close_and_no_running_playnite()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = false },
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedClosedCounter = 5,
+                PaRuXLaunchedPlaynite = true
+            }
+        };
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(4, status, forceReturn: true));
+        status.Session.PaRuXLaunchedPlaynite = false;
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(null, status, forceReturn: true));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(5, status, forceReturn: true));
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(4, status, forceReturn: true));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(4, status)); // owner setting still respected by normal mode
+    }
+
+    [Fact]
     public void Return_is_refused_when_disabled_or_counter_unknown_or_unchanged()
     {
         var status = new PlayniteStatusDto
