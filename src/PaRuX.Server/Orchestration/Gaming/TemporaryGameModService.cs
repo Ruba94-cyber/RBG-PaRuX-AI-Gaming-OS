@@ -199,6 +199,31 @@ public sealed class TemporaryGameModService
             expectedOriginalSha: Digest(originalBytes));
     }
 
+    /// <summary>
+    /// Prepare 2-8 existing INI/CFG or JSON gameplay settings in one file as a
+    /// single preview/approval/rollback transaction. No writes on this path;
+    /// the shared PreviewCore rechecks exact game/process/file SHA afterward.
+    /// </summary>
+    public GameModPreviewDto PreviewBatchSettingPatch(GameModBatchPatchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.OfflineSinglePlayerConfirmed)
+            throw new ArgumentException("Confirm this is your offline single-player game.");
+
+        string target = ResolveTarget(request.ManualGameId, request.RelativePath, out ManualGameDto game);
+        RequirePause(game, request.ProcessId, request.StartedUtc);
+        byte[] originalBytes = File.ReadAllBytes(target);
+        string original;
+        try { original = new UTF8Encoding(false, true).GetString(originalBytes); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("Only UTF-8 game configuration is supported."); }
+        ValidateText(request.RelativePath, original);
+
+        string patched = GameSettingBatchPatch.Apply(original, request.RelativePath, request.Edits);
+        return PreviewCore(request.ManualGameId, request.ProcessId, request.StartedUtc,
+            request.RelativePath, patched, request.OfflineSinglePlayerConfirmed,
+            expectedOriginalSha: Digest(originalBytes));
+    }
+
     private GameModPreviewDto PreviewCore(string gameId, int processId, DateTime startedUtc,
         string relativePath, string proposedText, bool offlineConfirmed,
         string? expectedOriginalSha = null)
