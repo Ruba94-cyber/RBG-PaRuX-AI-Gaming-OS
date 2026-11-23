@@ -367,6 +367,40 @@ public sealed class AgentLibraryTools
                     ["description"] = "Owner confirms offline single-player ownership/permission." },
                 ["confirmation_id"] = Confirmation()
             }, "manual_game_id", "process_id", "started_utc", "relative_path", "key", "value", "offline_confirmed");
+        Add(GameModBatchPatchTool,
+            "Prepare one atomic gameplay preset of 2-8 existing scalar settings in a single INI/CFG/JSON file for an owner-approved OFFLINE managed game PAUSED via Quick Resume. This never edits game files without a separate owner approval; previews are diffed and restored as ONE transaction. For JSON each value must be a JSON scalar literal matching the existing type. The AI never reads the original game config or applies/restores the mod. No scripts, executables, DRM or multiplayer changes.",
+            new JsonObject
+            {
+                ["manual_game_id"] = Str("Registered PaRuX-managed portable game id.", 64),
+                ["process_id"] = Pid(),
+                ["started_utc"] = Str("Exact paused process start time from quick_resume_list.", 40),
+                ["relative_path"] = Str("One existing INI, CFG or JSON config path relative to the managed game.", 240),
+                ["edits"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "2-8 changes to distinct EXISTING settings in the SAME config file.",
+                    ["minItems"] = GameSettingBatchPatch.MinEdits,
+                    ["maxItems"] = GameSettingBatchPatch.MaxEdits,
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["section"] = Str("INI section or JSON nested object path; empty for root.", 80),
+                            ["key"] = Str("Name of an existing property, not a new key.", 80),
+                            ["value"] = Str("INI text or an exact JSON scalar literal; no scripts.", 256)
+                        },
+                        ["required"] = new JsonArray(JsonValue.Create("key"), JsonValue.Create("value")),
+                        ["additionalProperties"] = false
+                    }
+                },
+                ["offline_confirmed"] = new JsonObject
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Owner confirms authorized offline single-player modifications."
+                },
+                ["confirmation_id"] = Confirmation()
+            }, "manual_game_id", "process_id", "started_utc", "relative_path", "edits", "offline_confirmed");
         return schemas;
     }
 
@@ -1000,6 +1034,46 @@ public sealed class AgentLibraryTools
             case "process_id":
                 if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int pid) && pid >= 1) return true;
                 error = "\"process_id\" must be a positive integer."; return false;
+            case "edits":
+                if (v.ValueKind != JsonValueKind.Array ||
+                    v.GetArrayLength() is < GameSettingBatchPatch.MinEdits or > GameSettingBatchPatch.MaxEdits)
+                {
+                    error = "A gameplay preset must contain 2-8 setting edits.";
+                    return false;
+                }
+                foreach (JsonElement edit in v.EnumerateArray())
+                {
+                    if (edit.ValueKind != JsonValueKind.Object)
+                    {
+                        error = "Each gameplay edit must be an object.";
+                        return false;
+                    }
+                    var fields = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (JsonProperty property in edit.EnumerateObject())
+                    {
+                        if (!fields.Add(property.Name) ||
+                            property.Name is not ("section" or "key" or "value") ||
+                            property.Value.ValueKind != JsonValueKind.String)
+                        {
+                            error = "Gameplay edits may contain only unique text section/key/value fields.";
+                            return false;
+                        }
+                        string textValue = property.Value.GetString() ?? string.Empty;
+                        int length = property.Name == "value" ? 256 : 80;
+                        if (textValue.Length > length || textValue.Any(char.IsControl) ||
+                            (property.Name == "key" && textValue.Length == 0))
+                        {
+                            error = "Gameplay edit text is missing, too long or contains a control character.";
+                            return false;
+                        }
+                    }
+                    if (!fields.Contains("key") || !fields.Contains("value"))
+                    {
+                        error = "Every gameplay edit requires key and value.";
+                        return false;
+                    }
+                }
+                return true;
             case "tags":
             case "collections":
                 int max = name == "tags" ? GameTitleStore.MaxTags : GameTitleStore.MaxCollections;
