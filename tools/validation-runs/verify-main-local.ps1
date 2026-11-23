@@ -55,7 +55,7 @@ try {
     Invoke-Checked 'Build server test graph (Release x64)' @('build', $serverTests, '-c', 'Release', '-p:Platform=x64', '--no-restore', '--nologo')
     Invoke-Checked 'Build WinUI desktop (Release x64)' @('build', $appProject, '-c', 'Release', '-p:Platform=x64', '--nologo')
 
-    $filter = 'FullyQualifiedName~CanTraceExtractorTests|FullyQualifiedName~MediaCapabilityRoutingTests|FullyQualifiedName~ModelDownloadServiceTests|FullyQualifiedName~GameModDropInServiceTests|FullyQualifiedName~WebSessionRouteDecisionTests|FullyQualifiedName~PlayniteComponentTests|FullyQualifiedName~TemporaryGameModServiceTests|FullyQualifiedName~MultilingualEmbeddingTests|FullyQualifiedName~CorporateCpuMemoryPlannerTests'
+    $filter = 'FullyQualifiedName~CanTraceExtractorTests|FullyQualifiedName~MediaCapabilityRoutingTests|FullyQualifiedName~ModelDownloadServiceTests|FullyQualifiedName~GameModDropInServiceTests|FullyQualifiedName~WebSessionRouteDecisionTests|FullyQualifiedName~PlayniteComponentTests|FullyQualifiedName~PlayniteTheme|FullyQualifiedName~TemporaryGameModServiceTests|FullyQualifiedName~MultilingualEmbeddingTests|FullyQualifiedName~CorporateCpuMemoryPlannerTests'
     Invoke-Checked 'Focused integration regressions' @(
         'test', $serverTests, '-c', 'Release', '-p:Platform=x64', '--no-build', '--no-restore',
         '--filter', $filter, '--blame-hang', '--blame-hang-timeout', '4m',
