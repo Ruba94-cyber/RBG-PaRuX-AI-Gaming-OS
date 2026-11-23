@@ -102,8 +102,8 @@ public sealed class LibraryAgentToolsTests
         Assert.Contains(AgentLibraryTools.GameModPatchTool, names);
         Assert.Contains(AgentLibraryTools.GameModBatchPatchTool, names);
         Assert.True(AgentLibraryTools.RequiresConfirmation(AgentLibraryTools.GameModBatchPatchTool));
-        JsonNode batch = Assert.Single(schemas.Where(x =>
-            x!["function"]!["name"]!.GetValue<string>() == AgentLibraryTools.GameModBatchPatchTool))!;
+        JsonNode batch = Assert.Single(schemas, x =>
+            x!["function"]!["name"]!.GetValue<string>() == AgentLibraryTools.GameModBatchPatchTool)!;
         Assert.Equal(2, batch["function"]!["parameters"]!["properties"]!["edits"]!["minItems"]!.GetValue<int>());
         Assert.Equal(8, batch["function"]!["parameters"]!["properties"]!["edits"]!["maxItems"]!.GetValue<int>());
         foreach (JsonNode? s in schemas)
