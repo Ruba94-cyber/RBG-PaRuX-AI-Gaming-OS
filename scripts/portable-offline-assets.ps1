@@ -1,12 +1,12 @@
 <#
  Shared build-machine asset verification for the complete Standard Portable ZIP.
- This script defines a $ProgressPreference = "SilentlyContinue"   # see build-corporate-lite.ps1: the 5.1 progress bar makes large downloads ~10x slower
-
-function only: no network, writes or model installs occur
+ This script defines a function only: no network, writes or model installs occur
  until Resolve-PaRuXPortableOfflineAssets is explicitly called by the builder.
  Native dependencies are shipped INSIDE the ZIP, never installed on the target.
 #>
 . (Join-Path $PSScriptRoot "llama-cpu-pin.ps1")
+$ProgressPreference = "SilentlyContinue"   # see build-corporate-lite.ps1: the 5.1 progress bar makes large downloads ~10x slower
+
 function Assert-PaRuXPinnedAsset {
     param([string]$File, [long]$Size, [string]$HashKind, [string]$Digest)
     if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { throw "Missing offline asset: $File" }
