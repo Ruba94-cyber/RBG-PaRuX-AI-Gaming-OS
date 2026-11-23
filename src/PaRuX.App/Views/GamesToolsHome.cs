@@ -125,7 +125,7 @@ internal sealed class GamesToolsHome : StackPanel
     {
         var button = new Button
         {
-            Content = title,
+            Content = new TextBlock { Text = title, TextWrapping = TextWrapping.Wrap },
             MinHeight = 48,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left
