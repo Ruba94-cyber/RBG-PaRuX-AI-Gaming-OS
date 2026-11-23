@@ -434,6 +434,41 @@ public sealed class PlayniteThemeServiceTests : IDisposable
         Assert.Equal(ComponentOwnership.USER_MANAGED, svc.Detect().Ownership);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rollback_failed_ownership_journal_restores_the_files_and_preserves_existing_backups(bool replaceExisting)
+    {
+        if (replaceExisting) MakeUserTheme("original-user-content");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: replaceExisting))).Stage);
+        Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+
+        // Deliberately make the persisted journal path a DIRECTORY so File.Move
+        // cannot replace it. This synthetic fault does not change global ACLs.
+        string journal = Path.Combine(_root, "state", "theme.json");
+        File.Delete(journal);
+        Directory.CreateDirectory(journal);
+        PlayniteThemeActionResultDto result = svc.Rollback(consent: true);
+
+        Assert.False(result.Ok);
+        Assert.True(Directory.Exists(Path.Combine(Themes, Folder)));
+        Assert.True(File.Exists(Path.Combine(Themes, Folder, "theme.yaml")));
+        Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+
+        if (replaceExisting)
+        {
+            string backup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+            Assert.Equal("original-user-content", File.ReadAllText(Path.Combine(backup, Folder, "mine.txt")));
+            Assert.False(File.Exists(Path.Combine(Themes, Folder, "mine.txt")));
+        }
+        else
+        {
+            Assert.Empty(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        }
+    }
+
     [Fact]
     public async Task A_busy_existing_folder_makes_the_swap_fail_and_the_original_stays_intact()
     {
