@@ -25,6 +25,20 @@ request; it is not reloaded automatically except in the always-on Local AI mode.
 Open **Games**, then **Add & import**: add a local game executable, scan your stores, or import an emulator folder.
 Steam, Epic and GOG discovery is read-only and opt-in. Launch needs your confirmation. Real scans of all three stores are not yet recorded.
 
+## Console mode: Playnite Fullscreen + Aniki ReMake (preferred)
+
+**Architecture:** PaRuX remains the single AI/Gaming controller and optional Playnite launcher; the TV-facing game library interface is **Playnite Fullscreen** with **Aniki ReMake**. Do not build a second Aniki-like native UI. The older native Console Home remains legacy fallback during migration, not the design target.
+
+**First setup:** in `Settings > Gaming > Playnite Console Mode` (also available during first-run onboarding), let PaRuX detect your existing Playnite installation or point it to the correct folder. Playnite is **optional and user-managed**. You can independently detect/locate the Aniki ReMake Fullscreen theme, review an official version/checksum, opt into an installer, and choose it for Fullscreen. PaRuX's theme installation and selection each require explicit confirmation; the previous configuration is backed up. Your existing Playnite game library is not replaced or imported destructively.
+
+**Required companion:** Aniki ReMake requires **Aniki Helper**. In Playnite Desktop, open **Add-ons (F9) > Browse > Generic**, install/update **Aniki Helper**, restart Playnite and follow Aniki's first-setup assistant. The theme alone is **not** proof that Aniki is fully operational. Other Aniki integrations remain optional. Official installation guide: https://mike-aniki.github.io/Aniki-ReMake/guide/Install-Aniki-ReMake.html .
+
+**Console start:** selecting Console startup and a connected TV uses the existing display policy, then launches the installed Playnite Fullscreen when the `ConsoleStartsPlaynite` switch is enabled. The theme chosen in Playnite is left unchanged at launch; no theme is silently applied. A controller can request the existing Desktop/Fullscreen switch; PaRuX does not silently install virtual-pad drivers. In the Console test, returning to PaRuX after closing Playnite is optional and **must wait until any tracked game process has exited**.
+
+**Safety:** theme endpoints are desktop-owner-only (web sessions denied), downloads only use allowed official hosts and bounded archives, theme selection refuses to edit files while Playnite runs, and rollback is available only for a PaRuX-managed theme in the **same exact Playnite data folder**. Switching to another portable Playnite profile with the same Aniki theme ID never transfers removal or selection-restore rights.
+
+**Status:** the source and focused regression tests were integrated on `main` on 2026-11-23, but the post-integration native Windows build, full xUnit, real Playnite/Aniki Helper start, physical controller/TV test, HDR/eGPU and clean Corporate installation have **not** been run here. Use the local-only `tools/validation-runs/verify-main-local.ps1 -FullSuite -SandboxSmoke` and physically test the complete handoff before a release. No GitHub Actions.
+
 ## A game starts behind another window or does not enter fullscreen
 
 **Source-only option, not yet verified on physical Windows games:** for a game added by choosing its local executable, open **Games → Game details → Launch profile → After-launch assistance**. The default is **None**. You can opt into **Bring to foreground**, **Foreground + Alt+Enter**, **Foreground + one center click**, or **All**. The advanced section also offers an optional delay and individual toggles.
