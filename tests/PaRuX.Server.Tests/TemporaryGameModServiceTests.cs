@@ -149,6 +149,90 @@ public sealed class TemporaryGameModServiceTests : IDisposable
     }
 
     [Fact]
+    public void Json_property_patch_previews_then_applies_and_restores_a_non_skin_game_config()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "options.json");
+        string original = "{\"graphics\":{\"fps\":60,\"vSync\":true},\"difficulty\":\"normal\"}";
+        File.WriteAllText(file, original);
+        var service = Service();
+        var request = new GameModSettingPatchRequest(_entryId, 999999, _started,
+            "config/options.json", "graphics", "fps", "120", true);
+
+        GameModPreviewDto preview = service.PreviewSettingPatch(request);
+        Assert.Equal(original, File.ReadAllText(file)); // An AI proposal never writes.
+        using (var updated = System.Text.Json.JsonDocument.Parse(preview.ProposedText))
+        {
+            Assert.Equal(120, updated.RootElement.GetProperty("graphics").GetProperty("fps").GetInt32());
+            Assert.True(updated.RootElement.GetProperty("graphics").GetProperty("vSync").GetBoolean());
+            Assert.Equal("normal", updated.RootElement.GetProperty("difficulty").GetString());
+        }
+        Assert.Throws<ArgumentException>(() => service.Apply(new(preview.PreviewId, false)));
+        var applied = service.Apply(new(preview.PreviewId, true));
+        Assert.Equal(preview.ProposedText, File.ReadAllText(file));
+        _alive = false;
+        Assert.Equal(1, Service().RestoreExited());
+        Assert.Equal(original, File.ReadAllText(file));
+        Assert.Empty(service.List());
+    }
+
+    [Fact]
+    public void Json_root_string_property_can_be_changed_only_to_a_valid_quoted_json_string()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "options.json");
+        File.WriteAllText(file, "{\"difficulty\":\"normal\"}");
+        var service = Service();
+        var request = new GameModSettingPatchRequest(_entryId, 999999, _started,
+            "config/options.json", "", "difficulty", "\"hard\"", true);
+
+        GameModPreviewDto preview = service.PreviewSettingPatch(request);
+        using var updated = System.Text.Json.JsonDocument.Parse(preview.ProposedText);
+        Assert.Equal("hard", updated.RootElement.GetProperty("difficulty").GetString());
+        Assert.Throws<ArgumentException>(() =>
+            service.PreviewSettingPatch(request with { Value = "hard" })); // Not a JSON literal.
+        Assert.Equal("{\"difficulty\":\"normal\"}", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void Json_patch_rejects_missing_duplicate_complex_and_type_changing_properties()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "options.json");
+        var service = Service();
+        var request = new GameModSettingPatchRequest(_entryId, 999999, _started,
+            "config/options.json", "graphics", "fps", "90", true);
+        File.WriteAllText(file, "{\"graphics\":{\"fps\":60,\"modes\":[1,2]}}");
+
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Key = "missing" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Key = "modes" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Value = "true" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Value = "{\"fps\":120}" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Section = "graphics..level" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Section = "graphics.missing" }));
+        File.WriteAllText(file, "{\"graphics\":{\"fps\":60,\"fps\":90}}");
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
+        File.WriteAllText(file, "{\"graphics\":{\"fps\":60},\"unrelated\":{\"a\":1,\"a\":2}}");
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
+        File.WriteAllText(file, "{\"graphics\":{\"fps\":60},\"graphics\":{\"fps\":90}}");
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
+        Assert.Empty(service.ListPreviews());
+    }
+
+    [Fact]
+    public void Json_patch_requires_approved_offline_paused_managed_game()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "options.json");
+        File.WriteAllText(file, "{\"effects\":true}");
+        var service = Service();
+        var request = new GameModSettingPatchRequest(_entryId, 999999, _started,
+            "config/options.json", "", "effects", "false", false);
+
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
+        _paused = false;
+        Assert.Throws<InvalidOperationException>(() =>
+            service.PreviewSettingPatch(request with { OfflineSinglePlayerConfirmed = true }));
+        Assert.Equal("{\"effects\":true}", File.ReadAllText(file));
+    }
+
+    [Fact]
     public void No_offline_confirmation_or_no_paused_game_never_grants_a_preview()
     {
         var service = Service();

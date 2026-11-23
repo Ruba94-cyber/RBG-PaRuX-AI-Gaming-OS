@@ -9,7 +9,12 @@ public sealed record GameModProposalRequest(
     string ManualGameId, int ProcessId, DateTime StartedUtc,
     string RelativePath, string ProposedText, bool OfflineSinglePlayerConfirmed);
 
-/// <summary>AI-safe one-setting patch proposal; original config stays in the owner-only review UI.</summary>
+/// <summary>
+/// AI-safe one-setting patch proposal. For INI/CFG, Section is the INI section and
+/// Value is plain text. For JSON, Section is an optional dot-separated path of
+/// existing nested objects and Value must be a JSON scalar literal, e.g. true,
+/// 120 or "high". The original config remains in the owner-only review UI.
+/// </summary>
 public sealed record GameModSettingPatchRequest(
     string ManualGameId, int ProcessId, DateTime StartedUtc,
     string RelativePath, string Section, string Key, string Value,

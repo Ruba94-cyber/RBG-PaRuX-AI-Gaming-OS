@@ -175,9 +175,11 @@ public sealed class TemporaryGameModService
     {
         ArgumentNullException.ThrowIfNull(request);
         string ext = Path.GetExtension(request.RelativePath ?? "");
-        if (!ext.Equals(".ini", StringComparison.OrdinalIgnoreCase)
-            && !ext.Equals(".cfg", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Only INI/CFG files support a single-key preview.");
+        bool ini = ext.Equals(".ini", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".cfg", StringComparison.OrdinalIgnoreCase);
+        bool json = ext.Equals(".json", StringComparison.OrdinalIgnoreCase);
+        if (!ini && !json)
+            throw new ArgumentException("A one-setting patch requires an existing INI, CFG or JSON file.");
         if (!request.OfflineSinglePlayerConfirmed)
             throw new ArgumentException("Confirm that this game is offline and single-player.");
         string target = ResolveTarget(request.ManualGameId, request.RelativePath, out ManualGameDto game);
@@ -187,7 +189,9 @@ public sealed class TemporaryGameModService
         try { original = new UTF8Encoding(false, true).GetString(originalBytes); }
         catch (DecoderFallbackException) { throw new InvalidDataException("Only UTF-8 game configuration is supported."); }
         ValidateText(request.RelativePath, original);
-        string patch = GameIniSettingPatch.Apply(original, request.Section, request.Key, request.Value);
+        string patch = json
+            ? GameJsonSettingPatch.Apply(original, request.Section, request.Key, request.Value)
+            : GameIniSettingPatch.Apply(original, request.Section, request.Key, request.Value);
         // PreviewCore repeats identity/hash checks against a fresh file read; a changed
         // original can never be silently published from the first snapshot.
         return PreviewCore(request.ManualGameId, request.ProcessId, request.StartedUtc,
