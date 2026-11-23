@@ -155,6 +155,25 @@ UAI-08–12 cover the missing connector SDK, delegated Microsoft 365 and Google 
 **Competitive references checked 2026-11-18.** Official workflow references include [LM Studio server settings](https://lmstudio.ai/docs/developer/core/server/settings), [LM Studio model loading](https://lmstudio.ai/docs/cli/local-models/load), [Codex long-horizon workflows](https://developers.openai.com/blog/run-long-horizon-tasks-with-codex), [multi-agent coordination](https://developers.openai.com/api/docs/guides/agents-api/multi-agent), [Claude Code](https://code.claude.com/docs/en/overview), [Locally Uncensored](https://github.com/PurpleDoubleD/locally-uncensored), [Unsloth](https://unsloth.ai/docs) and [Playnite](https://playnite.link/). Refresh supplier details before comparisons. Measure overlapping workflows with the same local model, hardware, tasks and settings where feasible. Record task success, interventions, latency, resource use and recovery. Disclose cloud-agent model and cost differences separately. Best-in-class status and performance superiority remain unproven.
 
 **Status rule.** Mark DONE only after applicable implementation, targeted and regression tests, real integration and UI, failure recovery, independent review and hardware/security checks pass. Record blocked and unrun gates explicitly. Preserve prior evidence and identify unmerged work.
+## 2026-11-16 — Draft Gaming HDR / TV source checkpoint (PR #9; NOT RELEASED)
+
+**PARTIAL / unverified:** Read-only per-output Windows CCD HDR/WCG probe,
+with legacy Advanced Color treated as unknown; per-game System/Prefer/Require
+HDR readiness policy (Require blocks before Gaming hard-off and rechecks
+before process creation). Console TV and game profile show observations,
+and Gaming Devices now selects the explicitly configured TV instead of
+silently targeting the primary monitor. Direct display mode changes are
+blocked when HDR/WCG/ambiguous Advanced Color is active, because the
+existing 15s resolution/Hz rollback does not restore HDR color state.
+Offline unit/source fixtures authored for dual-monitor, WCG, invalid
+profiles, hot cable/state changes and no OS mutation. This is not a
+Windows-tested HDR toggle and does not implement VRR or HDR streaming.
+**BLOCKED-EXTERNAL:** native Windows SDK interop, 4K HDR TV / 120 Hz,
+eGPU/iGPU, controllers, FlaUI, full xUnit and gaming FPS/performance.
+**P0 next:** transactional opt-in HDR state toggle/restoration journal
+with genuine Windows native acceptance and explicit original-state
+comparison; never merge before build/test/hardware approval.
+Keep PR #8 Corporate independently draft. No Actions/merge/tag/release.
 
 ## 2026-11-15 — 4.2.0 PUBLISHED as GitHub pre-release
 

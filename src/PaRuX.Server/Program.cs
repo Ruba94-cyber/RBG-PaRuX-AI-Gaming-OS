@@ -356,6 +356,7 @@ builder.Services.AddSingleton<GameLaunchHookService>();
 builder.Services.AddSingleton<GamingDisplayTopologyService>();
 builder.Services.AddSingleton<OwnedGameWindowPlacementService>();
 PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.AddPlayniteIntegration(builder.Services);
+builder.Services.AddSingleton<OwnedGamePostLaunchService>();
 builder.Services.AddSingleton<GamingDisplayModeService>();
 builder.Services.AddSingleton<IStreamingHost, WindowsStreamingHost>();
 builder.Services.AddSingleton<IStreamingDisplayController>(sp =>
