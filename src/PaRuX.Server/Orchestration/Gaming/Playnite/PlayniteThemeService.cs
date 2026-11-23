@@ -663,6 +663,7 @@ internal sealed class PlayniteThemeService
         {
         if (!SameDataFolder(DataFolder(), dataFolder))
             return Refused("The selected Playnite profile changed. Refresh the theme status before editing.");
+        if (PlayniteRunning()) return Refused("Playnite started while the theme was being configured. Close it and retry.");
         string config = PlayniteThemeConfig.FilePath(dataFolder);
         try
         {
@@ -679,6 +680,7 @@ internal sealed class PlayniteThemeService
             try
             {
                 File.WriteAllBytes(temp, changed);
+                if (PlayniteRunning()) return Refused("Playnite was started during configuration; the original file was not replaced.");
                 File.Move(temp, config, overwrite: true);
             }
             finally { try { if (File.Exists(temp)) File.Delete(temp); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
