@@ -1067,8 +1067,14 @@ public sealed class AgentLibraryTools
         if (root.ValueKind != JsonValueKind.Object) { error = "the arguments must be a JSON object."; return false; }
 
         (string[] required, string[] optional) = Shapes[tool];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonProperty p in root.EnumerateObject())
         {
+            // JsonDocument permits duplicate object properties. Never silently
+            // replace one argument with another after parsing: the owner must
+            // authorize one unambiguous complete request, including edits.
+            if (!seen.Add(p.Name))
+            { error = "duplicate argument \"" + Bound(p.Name, 40) + "\"."; return false; }
             if (!required.Contains(p.Name, StringComparer.Ordinal) && !optional.Contains(p.Name, StringComparer.Ordinal))
             { error = "unknown argument \"" + Bound(p.Name, 40) + "\"."; return false; }
             if (!ValidValue(p.Name, p.Value, out error)) return false;
