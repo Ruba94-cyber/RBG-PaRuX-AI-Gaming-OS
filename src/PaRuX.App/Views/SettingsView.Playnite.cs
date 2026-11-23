@@ -34,8 +34,8 @@ namespace PaRuX.Views
         private StackPanel BuildPlayniteSection()
         {
             StackPanel section = OwnerSection("Gaming & AI Sharing", T("PLAYNITE CONSOLE MODE", "PLAYNITE MODALITÀ CONSOLE"),
-                T("Playnite is optional and stays yours: PaRuX finds it, can open it as Desktop or Fullscreen (Console) on the TV you chose, and while a Playnite game runs it stops PaRuX's own AI and frees the graphics card, then gives AI back when the game ends. PaRuX never changes Playnite, its themes or its library, and never closes a program it did not start.",
-                  "Playnite è facoltativo e resta tuo: PaRuX lo trova, può aprirlo come Desktop o Fullscreen (Console) sulla TV scelta e, mentre un gioco di Playnite è in corso, ferma l'IA di PaRuX e libera la scheda video, poi restituisce l'IA a fine gioco. PaRuX non modifica Playnite, i suoi temi o la sua libreria e non chiude mai un programma che non ha avviato."),
+                T("Playnite is optional and stays yours: PaRuX finds it, can open it as Desktop or Fullscreen (Console) on the TV you chose, and while a Playnite game runs it stops PaRuX's own AI and frees the graphics card, then gives AI back when the game ends. PaRuX never changes your Playnite library; it only installs or selects the optional Aniki ReMake theme after your explicit confirmation and can restore the previous choice. It never closes programs it did not start.",
+                  "Playnite è facoltativo e resta tuo: PaRuX lo trova, può aprirlo come Desktop o Fullscreen (Console) sulla TV scelta e, mentre un gioco di Playnite è in corso, ferma l'IA di PaRuX e libera la scheda video, poi restituisce l'IA a fine gioco. PaRuX non modifica la tua libreria Playnite; installa o seleziona il tema Aniki ReMake solo dopo una tua conferma esplicita e può ripristinare la scelta precedente. Non chiude programmi che non ha avviato."),
                 out _plRows, out _plStatus, PlayniteIdPrefix,
                 (T("Refresh", "Aggiorna"), () => _ = RefreshPlayniteAsync()),
                 (T("Open Playnite Desktop", "Apri Playnite Desktop"), () => _ = LaunchPlayniteAsync(PlayniteModes.Desktop)),
