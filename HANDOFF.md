@@ -1,3 +1,13 @@
+## 2026-11-23 - PLAYNITE / ANIKI CONSOLE MAINLINE INTEGRATION (source only)
+
+- `main` now contains the Console Playnite/Aniki ReMake setup integration (`f7ddd00a05a95b0df370f612b1126a8f9a53eac4`, plus later security/test/docs fixes). It includes Detect / Locate existing / owner-consented Install / Skip, consented Fullscreen theme selection and restoration, a Console readiness view, new desktop-owner-only endpoints, 600+ lines of synthetic test coverage, first-run/Settings integration and an optional default-on Console -> Playnite Fullscreen handoff.
+- Official Aniki ReMake requires **Aniki Helper** (install via Playnite Desktop F9, Browse > Generic, then restart). Its automatic presence/version validation is not yet implemented. Never claim that having the theme installed means Aniki is fully ready.
+- An independent source security review found that a Playnite profile switch could otherwise inherit another profile's managed theme ID and delete its owner-managed folder; corrected by binding managed ownership and restoration to the **exact Playnite data root**, with two negative regression tests. A failed ownership write must no longer report successful theme installation.
+- The existing `PlayniteReturnWatchPolicy` safety guard for games surviving Playnite was retained rather than replaced by the older worktree; an explicit Test Console return still needs the original close counter and zero tracked game processes.
+- `worktree-agent-ae07cc4f375494e83` was selectively ported and is superseded for the Playnite/Aniki slice. **Do not simply merge its old commit**: it would regress game-focus safety. Other WIP worktrees remain unmerged and may still contain valuable code.
+- Do not build a replacement native Console/TV UI; **Playnite Fullscreen with Aniki** is the target UX. The legacy native presenter remains during migration. No removal of native UI has been validated on a physical gamepad/TV.
+- **Unverified on the new integrated main:** WinUI x64 native compile, complete Server xUnit, actual Playnite/Aniki Helper, controller focus, HDR/eGPU, Store/corporate bundles, and real-game resource handoff. No GitHub Actions. Run `tools/validation-runs/verify-main-local.ps1 -FullSuite -SandboxSmoke` on an authorized Windows x64 checkout and perform physical console acceptance before any release.
+
 ## 2026-11-23 - MAINLINE RESUME (supersedes older branch-specific handoffs)
 
 **Canonical source branch: `main`**. Owner requested source consolidation and minimal branches; integration PR #17 squash-merged into `main` at `2e2d630ff1e52f8cb7281f215a7d45e47b2de750`. Historic draft PRs #8/#9/#12–#16 and diagnostic #21 are closed. Do not resume against `integration/20261123-b` or an old draft PR.
