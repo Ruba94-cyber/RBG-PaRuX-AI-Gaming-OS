@@ -48,3 +48,12 @@ Solo i numeri della sezione B. Nessun benchmark comparativo.
 4. Confronto AnythingLLM; test UI; verifica primo avvio automatico sul pacchetto.
 5. Non supportati: .pst/.ost/MF4, macro in .ppt legacy.
 6. Merge su `main` solo dopo verifica e approvazione.
+
+## J. Consolidamento sorgenti su `main` (aggiornamento 2026-11-23)
+- Il proprietario ha richiesto esplicitamente il consolidamento del codice su `main` e la riduzione dei branch.
+- PR #17 mergiata in `main` mediante squash: commit `2e2d630ff1e52f8cb7281f215a7d45e47b2de750`, contenente i fix di sicurezza BLF e sandbox, i fix ai test e la rimozione di ogni workflow `.github/workflows`.
+- PR diagnostica #21 chiusa senza importare il suo workflow; il solo codice di rafforzamento ACL e dei test è stato portato nel consolidamento. PR #8/#9/#12–#16 chiuse perché superate dal consolidamento.
+- L'ultimo full-run Windows precedente al consolidamento aveva ancora test AppContainer falliti in ambiente ospitato; i successivi fix non sono stati ricontrollati con una suite Windows completa. **Non dichiarare verde il full-run**, né verificati Playnite/controller/HDR/eGPU o Corporate su PC pulito.
+- Runner manuale e non distruttivo: `tools/validation-runs/verify-main-local.ps1` (report `.trx` esclusivamente locali in `artifacts/local-validation/`). Nessuna GitHub Action; nessun build MSI/Portable firmato o release avviata.
+- Rimangono separati i worktree `worktree-agent-*` con modifiche WIP non sottoposte a build/review. Non cancellarli come se fossero tutti già integrati.
+- Pulizia facoltativa con Git autenticato: `tools/prune-integrated-branches.ps1` (dry-run predefinito, `-Apply` solo per i branch di PR già assorbite; non tocca i worktree non integrati).
