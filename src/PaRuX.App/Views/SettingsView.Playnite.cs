@@ -24,6 +24,9 @@ namespace PaRuX.Views
         private ComboBox? _plMode, _plFallback;
         private TextBox? _plPath;
         private Button? _plInstallConfirm, _plSkip;
+        private ToggleSwitch? _plConsoleStarts;
+        private ConsoleComponentsPanel? _plTheme;
+        private TextBlock? _plReadiness;
         private PlayniteStatusDto? _plState;
         private PlayniteInstallPlanDto? _plPlan;
         private bool _plLoading, _plApplying;
@@ -40,13 +43,14 @@ namespace PaRuX.Views
                 (T("Switch Console / Desktop", "Passa Console / Desktop"), () => _ = SwitchPlayniteAsync()),
                 (T("Skip Playnite", "Salta Playnite"), () => _ = TogglePlayniteSkipAsync()),
                 (T("Install Playnite (official release)", "Installa Playnite (versione ufficiale)"), () => _ = PlayniteInstallPlanAsync()),
-                (T("Open the Console Mode launcher", "Apri il launcher Console Mode"), () => App.MainWin?.ShowPlayniteLauncher(PlayniteLauncherAction.Open)));
+                (T("Open the Console Mode launcher", "Apri il launcher Console Mode"), () => App.MainWin?.ShowPlayniteLauncher(PlayniteLauncherAction.Open)),
+                (T("Test console mode", "Prova la modalità console"), () => _ = TestConsoleModeAsync()));
             AutomationProperties.SetAutomationId(section, PlayniteIdPrefix + "_Section");
             var card = (StackPanel)((Border)section.Children[1]).Child;
 
             if (card.Children.LastOrDefault() is StackPanel buttons)
             {
-                string[] ids = { "Refresh", "LaunchDesktop", "LaunchConsole", "Switch", "Skip", "Install", "OpenLauncher" };
+                string[] ids = { "Refresh", "LaunchDesktop", "LaunchConsole", "Switch", "Skip", "Install", "OpenLauncher", "TestConsole" };
                 for (int i = 0; i < buttons.Children.Count && i < ids.Length; i++)
                     AutomationProperties.SetAutomationId(buttons.Children[i], PlayniteIdPrefix + "_" + ids[i] + "_Button");
                 _plSkip = buttons.Children[4] as Button;
@@ -85,6 +89,18 @@ namespace PaRuX.Views
             card.Children.Insert(card.Children.Count - 1, _plFallback);
             _plReturn = PlayniteToggle(card, "ReturnToPaRuX", T("Return to PaRuX when Playnite (started by PaRuX) closes", "Torna a PaRuX quando Playnite (avviato da PaRuX) si chiude"));
             _plStartup = PlayniteToggle(card, "StartWithPaRuX", T("Start Playnite when PaRuX starts", "Avvia Playnite quando si avvia PaRuX"));
+            _plConsoleStarts = PlayniteToggle(card, "ConsoleStartsPlaynite", T("Start Playnite Fullscreen (Aniki ReMake) in Console mode", "Avvia Playnite Fullscreen (Aniki ReMake) in modalità Console"));
+
+            // Optional Aniki ReMake theme component (Detect -> Locate / Install / Skip) and the live state rows of the whole Console flow.
+            _plReadiness = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85,
+                Text = T("Console mode starts Playnite Fullscreen with the theme you selected in Playnite, on the TV you chose, for any controller.",
+                         "La modalità Console avvia Playnite Fullscreen con il tema che hai selezionato in Playnite, sulla TV scelta, per qualsiasi controller.") };
+            AutomationProperties.SetAutomationId(_plReadiness, PlayniteIdPrefix + "_ConsoleFlow_Text");
+            card.Children.Insert(card.Children.Count - 1, _plReadiness);
+            _plTheme = new ConsoleComponentsPanel(PlayniteIdPrefix + "_Theme", includePlaynite: false);
+            _plTheme.StateChanged += () => _ = RefreshPlayniteAsync();
+            card.Children.Insert(card.Children.Count - 1, _plTheme.Root);
+            _ = _plTheme.RefreshAsync();
 
             // Pieces that already exist elsewhere: shown here so the whole Console Mode is one page.
             var importLegacy = new Button { Content = T("Import settings from the legacy launcher (read-only)", "Importa le impostazioni dal vecchio launcher (sola lettura)") };
@@ -160,9 +176,7 @@ namespace PaRuX.Views
                 var pad = SettingsStore.Current.Data.PadActions;
                 AddPlayniteRow("Pad", T("Controller buttons (any pad)", "Pulsanti del controller (qualsiasi pad)"),
                     (pad?.Enabled ?? true) ? T("on - set actions in Controller buttons", "attivo - imposta le azioni in Pulsanti del controller") : T("off", "spento"));
-                string tv = SettingsStore.Current.Data.ConsoleTargetDisplayId;
-                AddPlayniteRow("Display", T("TV / display for Console", "TV / schermo per Console"),
-                    string.IsNullOrWhiteSpace(tv) ? T("not chosen (set it in Console / TV)", "non scelto (impostalo in Console / TV)") : T("chosen", "scelto"));
+                await AddConsoleReadinessRowsAsync(status.Value);
             }
             finally { _plLoading = false; }
         }
@@ -190,6 +204,7 @@ namespace PaRuX.Views
                 _plOnlyWhenTv!.IsOn = st.Settings.ConsoleOnlyWhenTargetConnected;
                 _plReturn!.IsOn = st.Settings.ReturnToPaRuXOnClose;
                 _plStartup!.IsOn = st.Settings.LaunchAtStartup;
+                _plConsoleStarts!.IsOn = st.Settings.ConsoleStartsPlaynite;
                 SelectByTag(_plMode!, st.Settings.StartMode);
                 SelectByTag(_plFallback!, st.Settings.FallbackWithoutDisplay);
             }
@@ -223,7 +238,8 @@ namespace PaRuX.Views
                 ConsoleOnlyWhenTargetConnected = _plOnlyWhenTv!.IsOn,
                 FallbackWithoutDisplay = (_plFallback!.SelectedItem as ComboBoxItem)?.Tag as string ?? ConsoleStartupPolicy.FallbackNormal,
                 ReturnToPaRuXOnClose = _plReturn!.IsOn,
-                LaunchAtStartup = _plStartup!.IsOn
+                LaunchAtStartup = _plStartup!.IsOn,
+                ConsoleStartsPlaynite = _plConsoleStarts!.IsOn
             };
             var saved = await PlayniteClient.Current.SaveSettingsAsync(s);
             SetPlayniteStatus(saved.Succeeded ? T("Saved.", "Salvato.") : T("Not saved: ", "Non salvato: ") + saved.Error);
@@ -278,6 +294,45 @@ namespace PaRuX.Views
             if (_plPlan is not { Available: true } plan) return;
             if (_plInstallConfirm is not null) _plInstallConfirm.Visibility = Visibility.Collapsed;
             SetPlayniteStatus(await PlayniteSetupFlow.InstallAsync(plan, SetPlayniteStatus));
+            await RefreshPlayniteAsync();
+        }
+
+        // The state rows of the Console flow come from Core (Playnite, theme), the saved display and the existing pad services (any pad).
+        private async Task AddConsoleReadinessRowsAsync(PlayniteStatusDto status)
+        {
+            PlayniteThemeComponentDto? theme = null;
+            try { theme = (await PlayniteClient.Current.GetThemeStatusAsync()).Value?.Component; }
+            catch (Exception) { /* shown as "not checked yet" */ }
+            bool displayChosen = !string.IsNullOrWhiteSpace(SettingsStore.Current.Data.ConsoleTargetDisplayId);
+            var pads = new System.Collections.Generic.List<string>();
+            try { foreach (var d in WindowsRawGamepadSource.ListDevices()) pads.Add(string.IsNullOrWhiteSpace(d.Name) ? "?" : d.Name); }
+            catch (Exception) { /* no pad enumeration available: reported as none found */ }
+            foreach (ConsoleReadinessRow row in ConsoleModeReadiness.Build(status.Component, theme, displayChosen, pads, T))
+            {
+                if (row.Id == "Playnite") continue;   // already shown as the Playnite component row above
+                string mark = row.State switch { ConsoleReadinessState.Ok => "[OK] ", ConsoleReadinessState.Missing => "[x] ", ConsoleReadinessState.Skipped => "[-] ", _ => "[!] " };
+                AddPlayniteRow(row.Id, mark + row.Label, row.Detail);
+            }
+        }
+
+        // One button: start Playnite Fullscreen exactly as Console mode would, and come back to PaRuX when it closes.
+        private async Task TestConsoleModeAsync()
+        {
+            var status = await PlayniteClient.Current.GetStatusAsync();
+            if (!status.Succeeded || status.Value is null) { SetPlayniteStatus(status.Error ?? T("PaRuX could not read the Playnite state.", "PaRuX non ha potuto leggere lo stato di Playnite.")); return; }
+            if (!ConsoleModeReadiness.CanTest(status.Value.Component))
+            {
+                SetPlayniteStatus(T("Playnite with its Fullscreen app is needed first: locate it or install it above.", "Serve prima Playnite con la sua app Fullscreen: indicalo o installalo qui sopra."));
+                return;
+            }
+            SetPlayniteStatus(T("Starting Playnite Fullscreen. Close it (Playnite menu > Exit) and PaRuX comes back.", "Avvio Playnite Fullscreen. Chiudilo (menu di Playnite > Esci) e PaRuX torna in primo piano."));
+            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, MainWindow.PlayniteDisplayId());
+            if (result.Error is { } error) { SetPlayniteStatus(error); return; }
+            SetPlayniteStatus(result.Value?.Message ?? (result.Value?.Outcome == "started"
+                ? T("Playnite Fullscreen started. Close it and PaRuX comes back.", "Playnite Fullscreen avviato. Chiudilo e PaRuX torna in primo piano.")
+                : T("Playnite was already running; nothing was started twice.", "Playnite era già in esecuzione; non è stato avviato due volte.")));
+            if (result.Value is { Ok: true, Outcome: "started" })
+                App.MainWin?.BeginPlayniteReturnWatch(status.Value.Session.PaRuXLaunchedClosedCounter, forceReturn: true);
             await RefreshPlayniteAsync();
         }
 

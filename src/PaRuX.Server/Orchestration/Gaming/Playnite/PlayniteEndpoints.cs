@@ -35,6 +35,10 @@ public static class PlayniteEndpoints
         services.AddSingleton<IPlayniteYieldTarget>(sp => new OrchestratorYieldTarget(sp.GetRequiredService<WorkloadOrchestrator>()));
         services.AddSingleton(sp => new PlayniteInstaller(new HttpClient { Timeout = TimeSpan.FromMinutes(20) }));
         services.AddSingleton<PlayniteSessionService>();
+        services.AddSingleton<PlayniteThemeStore>();
+        services.AddSingleton(sp => new PlayniteThemeService(new HttpClient { Timeout = TimeSpan.FromMinutes(30) },
+            sp.GetRequiredService<IPlayniteEnvironment>(), sp.GetRequiredService<PlayniteThemeStore>(),
+            () => sp.GetRequiredService<PlayniteSettingsStore>().LocatedFolder));
         return services;
     }
 
@@ -134,6 +138,58 @@ public static class PlayniteEndpoints
         {
             installer.Cancel();
             return Results.Ok(installer.Status);
+        }).RequireDesktopOwner();
+
+        // Optional Aniki ReMake Fullscreen theme (Detect -> Locate / Install with PaRuX / Skip). Same desktop-owner gate as Playnite itself.
+        const string theme = root + "/theme";
+        app.MapGet(theme + "/status", (PlayniteThemeService svc) =>
+            Results.Ok(new PlayniteThemeStatusDto { Component = svc.Detect(), Install = svc.InstallStatus })).RequireDesktopOwner();
+
+        app.MapGet(theme + "/plan", async (PlayniteThemeService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ResolveAsync(ct))).RequireDesktopOwner();
+
+        app.MapPost(theme + "/install", (PlayniteThemeInstallRequest request, PlayniteThemeService svc) =>
+        {
+            string? refusal = svc.Begin(request);
+            return refusal is null ? Results.Accepted(theme + "/install/status", svc.InstallStatus) : Results.BadRequest(new { error = refusal });
+        }).RequireDesktopOwner();
+
+        app.MapGet(theme + "/install/status", (PlayniteThemeService svc) => Results.Ok(svc.InstallStatus)).RequireDesktopOwner();
+
+        app.MapPost(theme + "/install/cancel", (PlayniteThemeService svc) =>
+        {
+            svc.Cancel();
+            return Results.Ok(svc.InstallStatus);
+        }).RequireDesktopOwner();
+
+        app.MapPost(theme + "/locate", (PlayniteThemeLocateRequest request, PlayniteThemeService svc) =>
+        {
+            (PlayniteThemeComponentDto? component, string? error) = svc.Locate(request?.Path);
+            return component is null ? Results.BadRequest(new { error }) : Results.Ok(component);
+        }).RequireDesktopOwner();
+
+        app.MapPost(theme + "/skip", (PlayniteThemeService svc) =>
+            svc.SetSkipped(true) ? Results.Ok(svc.Detect()) : Results.Problem("The choice could not be saved.")).RequireDesktopOwner();
+
+        app.MapPost(theme + "/unskip", (PlayniteThemeService svc) =>
+            svc.SetSkipped(false) ? Results.Ok(svc.Detect()) : Results.Problem("The choice could not be saved.")).RequireDesktopOwner();
+
+        app.MapPost(theme + "/select", (PlayniteThemeConsentRequest? request, PlayniteThemeService svc) =>
+        {
+            PlayniteThemeActionResultDto result = svc.Select(request?.Consent == true);
+            return result.Ok ? Results.Ok(result) : Results.Conflict(result);
+        }).RequireDesktopOwner();
+
+        app.MapPost(theme + "/restore-selection", (PlayniteThemeConsentRequest? request, PlayniteThemeService svc) =>
+        {
+            PlayniteThemeActionResultDto result = svc.RestoreSelection(request?.Consent == true);
+            return result.Ok ? Results.Ok(result) : Results.Conflict(result);
+        }).RequireDesktopOwner();
+
+        app.MapPost(theme + "/rollback", (PlayniteThemeConsentRequest? request, PlayniteThemeService svc) =>
+        {
+            PlayniteThemeActionResultDto result = svc.Rollback(request?.Consent == true);
+            return result.Ok ? Results.Ok(result) : Results.Conflict(result);
         }).RequireDesktopOwner();
     }
 }

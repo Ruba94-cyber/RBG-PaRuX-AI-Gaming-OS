@@ -556,7 +556,8 @@ namespace PaRuX.Views
                 ConsoleOnlyWhenTargetConnected = _onlyTv.IsOn,
                 FallbackWithoutDisplay = (_fallback.SelectedItem as ComboBoxItem)?.Tag as string ?? ConsoleStartupPolicy.FallbackNormal,
                 ReturnToPaRuXOnClose = _return.IsOn,
-                LaunchAtStartup = _startup.IsOn
+                LaunchAtStartup = _startup.IsOn,
+                ConsoleStartsPlaynite = _status.Settings.ConsoleStartsPlaynite   // set in Settings > Console mode; never reset here
             };
             var saved = await PlayniteClient.Current.SaveSettingsAsync(s, _lifetime.Token);
             SetMessage(saved.Succeeded ? T("Saved.", "Salvato.") : T("Not saved: ", "Non salvato: ") + saved.Error);

@@ -93,6 +93,6 @@ public sealed class PlayniteSettingsStore
     {
         AiYieldEnabled = s.AiYieldEnabled, StartMode = s.StartMode, TargetDisplayId = s.TargetDisplayId,
         ConsoleOnlyWhenTargetConnected = s.ConsoleOnlyWhenTargetConnected, FallbackWithoutDisplay = s.FallbackWithoutDisplay,
-        ReturnToPaRuXOnClose = s.ReturnToPaRuXOnClose, LaunchAtStartup = s.LaunchAtStartup, Skipped = s.Skipped
+        ReturnToPaRuXOnClose = s.ReturnToPaRuXOnClose, LaunchAtStartup = s.LaunchAtStartup, ConsoleStartsPlaynite = s.ConsoleStartsPlaynite, Skipped = s.Skipped
     };
 }

@@ -43,6 +43,8 @@ public sealed class PlayniteSettingsDto
     public bool ReturnToPaRuXOnClose { get; set; } = true;
     /// <summary>Start Playnite (in StartMode) when PaRuX itself starts. Off by default.</summary>
     public bool LaunchAtStartup { get; set; }
+    /// <summary>When PaRuX itself starts in Console mode, start Playnite Fullscreen (with the theme the owner selected in Playnite). On by default; needs Playnite found and not skipped.</summary>
+    public bool ConsoleStartsPlaynite { get; set; } = true;
     public bool Skipped { get; set; }
 }
 
@@ -70,10 +72,10 @@ public sealed class PlayniteSessionDto
 /// </summary>
 public static class PlayniteReturnWatchPolicy
 {
-    public static bool ShouldBringForward(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+    public static bool ShouldBringForward(long? beforeLaunchCounter, PlayniteStatusDto? current, bool forceReturn = false) =>
         beforeLaunchCounter.HasValue &&
         current is not null &&
-        current.Settings.ReturnToPaRuXOnClose &&
+        (current.Settings.ReturnToPaRuXOnClose || forceReturn) &&
         !current.Session.PaRuXLaunchedPlaynite &&
         current.Session.TrackedProcessCount == 0 &&
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
@@ -82,10 +84,10 @@ public static class PlayniteReturnWatchPolicy
     /// A game can outlive Playnite itself. Do not steal focus while it is running;
     /// keep the old counter until its tracked process exits, then return to PaRuX.
     /// </summary>
-    public static bool KeepPendingClose(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+    public static bool KeepPendingClose(long? beforeLaunchCounter, PlayniteStatusDto? current, bool forceReturn = false) =>
         beforeLaunchCounter.HasValue &&
         current is not null &&
-        current.Settings.ReturnToPaRuXOnClose &&
+        (current.Settings.ReturnToPaRuXOnClose || forceReturn) &&
         !current.Session.PaRuXLaunchedPlaynite &&
         current.Session.TrackedProcessCount > 0 &&
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;

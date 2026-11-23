@@ -75,6 +75,21 @@ namespace PaRuX.Views
             };
         }
 
+        private ConsoleComponentsPanel? _consoleComponents;
+
+        /// <summary>
+        /// Optional Console mode components (Playnite and the Aniki ReMake theme) in the same Detect / Locate / Install / Skip pattern as the
+        /// runtimes. Nothing is installed or changed without a confirm press, skipping is always possible, and Settings > Console mode offers
+        /// the same panel later.
+        /// </summary>
+        private void AddOptionalConsoleComponents()
+        {
+            if (_consoleComponents is not null || ComponentsList?.Parent is not StackPanel parent) return;
+            _consoleComponents = new ConsoleComponentsPanel("Onboarding_ConsoleComponents", includePlaynite: true);
+            parent.Children.Add(_consoleComponents.Root);
+            _ = _consoleComponents.RefreshAsync();
+        }
+
         private void StartAiRefreshes()
         {
             if (PaRuX.Contracts.CorporateMode.IsActive)
@@ -87,6 +102,7 @@ namespace PaRuX.Views
             }
             _ = RefreshModelDownloadsAsync();
             _ = RefreshLocalAiRootAsync();
+            AddOptionalConsoleComponents();
             _ = RefreshComponentsAsync();
             _ = RefreshFirstModelAdviceAsync();
             _ = RefreshReadyCheckAsync();

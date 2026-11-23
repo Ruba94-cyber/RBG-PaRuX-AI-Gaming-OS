@@ -52,6 +52,39 @@ namespace PaRuX.Services
         public Task<GamingCallResult<PlayniteInstallStatusDto>> CancelInstallAsync(CancellationToken ct = default) =>
             SendAsync<PlayniteInstallStatusDto>(HttpMethod.Post, Root + "/install/cancel", null, ct);
 
+        // ---- Optional Aniki ReMake Fullscreen theme (Detect -> Locate / Install with PaRuX / Skip) ----
+
+        public Task<GamingCallResult<PlayniteThemeStatusDto>> GetThemeStatusAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeStatusDto>(HttpMethod.Get, Root + "/theme/status", null, ct);
+
+        public Task<GamingCallResult<PlayniteThemePlanDto>> GetThemePlanAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemePlanDto>(HttpMethod.Get, Root + "/theme/plan", null, ct);
+
+        public Task<GamingCallResult<PlayniteThemeInstallStatusDto>> InstallThemeAsync(PlayniteThemeInstallRequest request, CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeInstallStatusDto>(HttpMethod.Post, Root + "/theme/install", request, ct);
+
+        public Task<GamingCallResult<PlayniteThemeInstallStatusDto>> GetThemeInstallStatusAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeInstallStatusDto>(HttpMethod.Get, Root + "/theme/install/status", null, ct);
+
+        public Task<GamingCallResult<PlayniteThemeInstallStatusDto>> CancelThemeInstallAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeInstallStatusDto>(HttpMethod.Post, Root + "/theme/install/cancel", null, ct);
+
+        public Task<GamingCallResult<PlayniteThemeComponentDto>> LocateThemeAsync(string path, CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeComponentDto>(HttpMethod.Post, Root + "/theme/locate", new PlayniteThemeLocateRequest { Path = path }, ct);
+
+        public Task<GamingCallResult<PlayniteThemeComponentDto>> SkipThemeAsync(bool skip, CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeComponentDto>(HttpMethod.Post, Root + (skip ? "/theme/skip" : "/theme/unskip"), null, ct);
+
+        /// <summary>Selects Aniki ReMake in Playnite's Fullscreen configuration. The caller must have shown the consent text first.</summary>
+        public Task<GamingCallResult<PlayniteThemeActionResultDto>> SelectThemeAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeActionResultDto>(HttpMethod.Post, Root + "/theme/select", new PlayniteThemeConsentRequest { Consent = true }, ct);
+
+        public Task<GamingCallResult<PlayniteThemeActionResultDto>> RestoreThemeSelectionAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeActionResultDto>(HttpMethod.Post, Root + "/theme/restore-selection", new PlayniteThemeConsentRequest { Consent = true }, ct);
+
+        public Task<GamingCallResult<PlayniteThemeActionResultDto>> RollbackThemeAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteThemeActionResultDto>(HttpMethod.Post, Root + "/theme/rollback", new PlayniteThemeConsentRequest { Consent = true }, ct);
+
         /// <summary>Streaming mode status (existing owner-only endpoint), shown on the Console Mode page.</summary>
         public Task<GamingCallResult<JsonElement>> GetStreamingStatusAsync(CancellationToken ct = default) =>
             SendAsync<JsonElement>(HttpMethod.Get, "/api/v1/gaming/streaming", null, ct);

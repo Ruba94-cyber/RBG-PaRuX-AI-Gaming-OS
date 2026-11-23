@@ -767,6 +767,17 @@ DENY GET /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/sql/query
 DENY GET /openapi.json
+DENY GET /api/v1/gaming/playnite/theme/status
+DENY GET /api/v1/gaming/playnite/theme/plan
+DENY GET /api/v1/gaming/playnite/theme/install/status
+DENY POST /api/v1/gaming/playnite/theme/install
+DENY POST /api/v1/gaming/playnite/theme/install/cancel
+DENY POST /api/v1/gaming/playnite/theme/locate
+DENY POST /api/v1/gaming/playnite/theme/skip
+DENY POST /api/v1/gaming/playnite/theme/unskip
+DENY POST /api/v1/gaming/playnite/theme/select
+DENY POST /api/v1/gaming/playnite/theme/restore-selection
+DENY POST /api/v1/gaming/playnite/theme/rollback
 DENY GET /api/v1/embeddings/multilingual/engine
 DENY GET /api/v1/reranker/multilingual/engine
 DENY POST /api/v1/embeddings/multilingual/engine/install

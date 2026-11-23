@@ -55,6 +55,7 @@ public sealed partial class MainWindow
                     try { await EnterConsoleModeAsync(); }
                     finally { _consoleRoutingInProgress = false; }
                     Log.Write("Console/TV start preference: TV connected, opened Console mode.");
+                    await ApplyPlayniteConsoleStartAsync();
                     break;
                 case ConsoleStartupDecision.Minimize:
                     if (AppWindow.Presenter is OverlappedPresenter overlapped)

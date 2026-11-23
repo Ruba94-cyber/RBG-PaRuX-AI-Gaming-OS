@@ -39,6 +39,28 @@ public sealed partial class MainWindow
         catch (Exception ex) { Log.Write("Playnite startup failed: " + ex.GetType().Name); }
     }
 
+    /// <summary>
+    /// When the owner chooses Console startup, hand off the screen to the installed
+    /// Playnite Fullscreen client. Aniki ReMake is an optional Playnite theme selected
+    /// separately with consent; this method never installs or mutates Playnite.
+    /// </summary>
+    internal async Task ApplyPlayniteConsoleStartAsync()
+    {
+        try
+        {
+            if (App.IsShuttingDown || !_consoleModeActive) return;
+            var before = await PlayniteClient.Current.GetStatusAsync();
+            if (!before.Succeeded || before.Value is not { } s) return;
+            if (!ConsoleModeReadiness.ShouldStartWithConsole(s.Settings, s.Component)) return;
+
+            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, PlayniteDisplayId());
+            Log.Write("Console startup handoff to Playnite: " + (result.Value?.Outcome ?? result.Error ?? "no answer"));
+            if (result.Succeeded && result.Value is { Ok: true, Outcome: "started" })
+                BeginPlayniteReturnWatch(s.Session.PaRuXLaunchedClosedCounter);
+        }
+        catch (Exception ex) { Log.Write("Playnite Console startup failed: " + ex.GetType().Name); }
+    }
+
     /// <summary>Pad action: Console &lt;-&gt; Desktop for a Playnite PaRuX started. A refusal is shown as a short toast.</summary>
     private async Task PadSwitchPlayniteAsync()
     {
@@ -52,7 +74,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Watches (bounded, one loop) until the Playnite that PaRuX started closes, then returns to PaRuX if the owner wants that.</summary>
-    internal void BeginPlayniteReturnWatch(long? beforeLaunchCounter = null)
+    internal void BeginPlayniteReturnWatch(long? beforeLaunchCounter = null, bool forceReturn = false)
     {
         if (Interlocked.Exchange(ref _playniteWatchRunning, 1) == 1) return;
         _ = Task.Run(async () =>
@@ -68,7 +90,7 @@ public sealed partial class MainWindow
                     {
                         long counter = s.Session.PaRuXLaunchedClosedCounter;
                         baseline ??= counter;
-                        if (PlayniteReturnWatchPolicy.ShouldBringForward(baseline, s))
+                        if (PlayniteReturnWatchPolicy.ShouldBringForward(baseline, s, forceReturn))
                         {
                             _dispatcher.TryEnqueue(PadBringForward);
                             return;
@@ -76,7 +98,7 @@ public sealed partial class MainWindow
                         // Playnite can close while a launched game remains running.
                         // Keep the pending close visible, and keep watching the game,
                         // instead of stealing focus or timing out after two minutes.
-                        if (!PlayniteReturnWatchPolicy.KeepPendingClose(baseline, s))
+                        if (!PlayniteReturnWatchPolicy.KeepPendingClose(baseline, s, forceReturn))
                             baseline = counter;
                         idle = s.Session.PaRuXLaunchedPlaynite || s.Session.TrackedProcessCount > 0 ? 0 : idle + 1;
                     }
