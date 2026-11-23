@@ -81,6 +81,27 @@ public static class PlayniteReturnWatchPolicy
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
 
     /// <summary>
+    /// Clear an owned Console handoff after the exact Playnite launch has closed and
+    /// every tracked game has exited. This deliberately does NOT depend on the
+    /// optional "bring PaRuX to front" preference.
+    /// </summary>
+    public static bool OwnedCloseSettled(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount == 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+
+    /// <summary>
+    /// When Playnite was already running and is not PaRuX-owned, clear only the
+    /// Console handoff after an observed process exit. Never foreground PaRuX.
+    /// </summary>
+    public static bool ExternalCloseSettled(PlayniteStatusDto? current, bool observedRunning) =>
+        observedRunning && current is not null &&
+        !current.Session.PlayniteRunning &&
+        current.Session.TrackedProcessCount == 0;
+
+    /// <summary>
     /// A game can outlive Playnite itself. Do not steal focus while it is running;
     /// keep the old counter until its tracked process exits, then return to PaRuX.
     /// </summary>

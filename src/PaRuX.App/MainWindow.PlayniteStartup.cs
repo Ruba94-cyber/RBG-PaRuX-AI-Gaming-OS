@@ -67,6 +67,11 @@ public sealed partial class MainWindow
             _playniteConsoleHandoffActive = true;
             if (result.Value!.Outcome == "started" || status.Session.PaRuXLaunchedPlaynite)
                 BeginPlayniteReturnWatch(status.Session.PaRuXLaunchedClosedCounter);
+            else
+                // An existing user-owned Fullscreen cannot increment our owned-close
+                // counter. Observe its exit for state cleanup, never to steal focus.
+                BeginPlayniteReturnWatch(watchExternalClose: true,
+                    externalInitiallyRunning: status.Session.PlayniteRunning || status.Component.Running);
             return true;
         }
         catch (Exception ex)
@@ -89,14 +94,17 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Watches (bounded, one loop) until the Playnite that PaRuX started closes, then returns to PaRuX if the owner wants that.</summary>
-    internal void BeginPlayniteReturnWatch(long? beforeLaunchCounter = null, bool forceReturn = false)
+    internal void BeginPlayniteReturnWatch(long? beforeLaunchCounter = null, bool forceReturn = false,
+        bool watchExternalClose = false, bool externalInitiallyRunning = false)
     {
         if (Interlocked.Exchange(ref _playniteWatchRunning, 1) == 1) return;
+        bool consoleHandoffWatcher = _playniteConsoleHandoffActive;
         _ = Task.Run(async () =>
         {
             try
             {
                 long? baseline = beforeLaunchCounter;
+                bool observedExternalRunning = externalInitiallyRunning;
                 int idle = 0;
                 while (!App.IsShuttingDown && idle < 40)   // at most ~2 minutes without a PaRuX-started Playnite
                 {
@@ -105,10 +113,21 @@ public sealed partial class MainWindow
                     {
                         long counter = s.Session.PaRuXLaunchedClosedCounter;
                         baseline ??= counter;
-                        if (PlayniteReturnWatchPolicy.ShouldBringForward(baseline, s, forceReturn))
+                        if (watchExternalClose)
+                        {
+                            observedExternalRunning |= s.Session.PlayniteRunning || s.Component.Running;
+                            if (PlayniteReturnWatchPolicy.ExternalCloseSettled(s, observedExternalRunning))
+                            {
+                                // The user started this instance: never bring PaRuX forward.
+                                _playniteConsoleHandoffActive = false;
+                                return;
+                            }
+                        }
+                        if (!watchExternalClose && PlayniteReturnWatchPolicy.OwnedCloseSettled(baseline, s))
                         {
                             _playniteConsoleHandoffActive = false;
-                            _dispatcher.TryEnqueue(PadBringForward);
+                            if (PlayniteReturnWatchPolicy.ShouldBringForward(baseline, s, forceReturn))
+                                _dispatcher.TryEnqueue(PadBringForward);
                             return;
                         }
                         // Playnite can close while a launched game remains running.
@@ -123,7 +142,13 @@ public sealed partial class MainWindow
                 }
             }
             catch (Exception ex) { Log.Write("Playnite return watch stopped: " + ex.GetType().Name); }
-            finally { Interlocked.Exchange(ref _playniteWatchRunning, 0); }
+            finally
+            {
+                // Avoid a permanently stuck Console state after a provider failure,
+                // a cancelled watch or the bounded idle timeout; never auto-focus here.
+                if (consoleHandoffWatcher) _playniteConsoleHandoffActive = false;
+                Interlocked.Exchange(ref _playniteWatchRunning, 0);
+            }
         });
     }
 }
