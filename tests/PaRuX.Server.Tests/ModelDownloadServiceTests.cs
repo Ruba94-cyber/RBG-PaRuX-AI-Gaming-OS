@@ -1212,7 +1212,10 @@ public sealed class ModelDownloadServiceTests : IDisposable
         var handler = new FakeHandler
         {
             OnSend = (req, ct) => Task.FromResult(req.Method == HttpMethod.Head
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Array.Empty<byte>()) }
+                // An unknown-size response deliberately reserves a conservative
+                // 64 GiB. This fixture downloads three bytes, so advertise its
+                // actual synthetic length rather than requiring a 65 GiB CI disk.
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[3]) }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 9, 9, 9 }) })
         };
         var service = new ModelDownloadService(new HttpClient(handler), new HttpClient(handler));
