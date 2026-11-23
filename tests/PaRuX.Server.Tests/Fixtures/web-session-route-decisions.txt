@@ -463,6 +463,7 @@ DENY POST /api/v1/gaming/mods/skin-studio/export
 DENY POST /api/v1/gaming/mods/skin-studio/generate
 DENY POST /api/v1/gaming/mods/skin-studio/restyle
 DENY POST /api/v1/gaming/mods/temporary/apply
+DENY POST /api/v1/gaming/mods/temporary/batch-patch-preview
 DENY POST /api/v1/gaming/mods/temporary/patch-preview
 DENY POST /api/v1/gaming/mods/temporary/preview
 DENY POST /api/v1/gaming/mods/temporary/restore
