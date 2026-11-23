@@ -439,7 +439,7 @@ public sealed partial class ManualGameLibraryView : UserControl
             foreach (UIElement element in section.Items) panel.Children.Add(element);
             panels[section.Id] = panel;
         }
-        bar.SelectionChanged += (sender, _) =>
+        bar.SelectionChanged += (sender, args) =>
         {
             string? tag = (sender.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (var pair in panels) pair.Value.Visibility = pair.Key == tag ? Visibility.Visible : Visibility.Collapsed;
