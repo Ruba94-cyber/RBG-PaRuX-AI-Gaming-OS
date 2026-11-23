@@ -292,6 +292,9 @@ internal sealed class PlayniteThemeService
     /// <summary>"Locate existing": the owner points at the theme folder or at a Playnite data folder; PaRuX only remembers it (USER_MANAGED).</summary>
     public (PlayniteThemeComponentDto? Component, string? Error) Locate(string? input)
     {
+        if (!_single.Wait(0)) return (null, "A theme operation is running; retry when it is finished.");
+        try
+        {
         if (string.IsNullOrWhiteSpace(input)) return (null, "Choose the Aniki ReMake theme folder or the Playnite data folder.");
         if (_single.CurrentCount == 0) return (null, "Wait for the current theme installation to finish before changing Playnite locations.");
         string full;
@@ -309,6 +312,8 @@ internal sealed class PlayniteThemeService
         if (data is null) return (null, "No Aniki ReMake theme folder or Playnite data folder with Themes\\Fullscreen was found there.");
         if (!_store.Update(s => { s.DataFolder = data; s.Skipped = false; })) return (null, "The location could not be saved.");
         return (Detect(), null);
+        }
+        finally { _single.Release(); }
     }
 
     // ---- release plan ----
@@ -582,7 +587,9 @@ internal sealed class PlayniteThemeService
     public PlayniteThemeActionResultDto Rollback(bool consent)
     {
         if (!consent) return Refused("This needs your explicit confirmation.");
-        if (_single.CurrentCount == 0) return Refused("An installation is running.");
+        if (!_single.Wait(0)) return Refused("A theme operation is already running.");
+        try
+        {
         if (PlayniteRunning()) return Refused("Playnite is running. Close it first; PaRuX never changes themes while Playnite runs.");
         PlayniteThemeComponentDto c = Detect();
         if (!c.Detected || c.Ownership != ComponentOwnership.PARUX_MANAGED || c.ThemeFolder is null || c.ThemeFolderName is null)
@@ -619,6 +626,8 @@ internal sealed class PlayniteThemeService
         {
             return Refused("The theme could not be rolled back (" + ex.GetType().Name + ").");
         }
+        }
+        finally { _single.Release(); }
     }
 
     // ---- selecting the theme in Playnite (single consented, backed-up, reversible config change) ----
@@ -632,7 +641,7 @@ internal sealed class PlayniteThemeService
             return Refused("Playnite is running, so PaRuX will not edit its configuration. Close Playnite (Desktop and Fullscreen), or choose the Aniki ReMake theme yourself in Playnite Fullscreen > Settings > Theme.");
         if (!c.ConfigReadable) return Refused("Playnite's Fullscreen configuration has no readable Theme setting. Start Playnite Fullscreen once, or choose the theme in Playnite yourself.");
         if (c.Selected) return new PlayniteThemeActionResultDto { Ok = true, Outcome = "already-selected", Message = "Aniki ReMake is already the selected Fullscreen theme." };
-        return ChangeTheme(c.ThemeFolderName, "selected", previous => _store.Update(s => { s.SelectedByPaRuX = c.ThemeFolderName; s.SelectionDataFolder = DataFolder(); s.PreviousTheme = previous; }));
+        return ChangeTheme(c.PlayniteDataFolder!, c.ThemeFolderName, "selected", previous => _store.Update(s => { s.SelectedByPaRuX = c.ThemeFolderName; s.SelectionDataFolder = c.PlayniteDataFolder; s.PreviousTheme = previous; }));
     }
 
     /// <summary>Puts the previously selected theme back, but only if PaRuX made the change and nothing has changed it since.</summary>
@@ -645,12 +654,17 @@ internal sealed class PlayniteThemeService
             return Refused("Playnite is running, so PaRuX will not edit its configuration. Close it first, or change the theme in Playnite yourself.");
         if (st.SelectedByPaRuX is null || st.PreviousTheme is null || !c.CanRestoreSelection)
             return Refused("PaRuX did not change the theme, or it was changed afterwards, so PaRuX leaves it as it is.");
-        return ChangeTheme(st.PreviousTheme, "restored", _ => _store.Update(s => { s.SelectedByPaRuX = null; s.SelectionDataFolder = null; s.PreviousTheme = null; }));
+        return ChangeTheme(c.PlayniteDataFolder!, st.PreviousTheme, "restored", _ => _store.Update(s => { s.SelectedByPaRuX = null; s.SelectionDataFolder = null; s.PreviousTheme = null; }));
     }
 
-    private PlayniteThemeActionResultDto ChangeTheme(string newTheme, string outcome, Func<string?, bool> record)
+    private PlayniteThemeActionResultDto ChangeTheme(string dataFolder, string newTheme, string outcome, Func<string?, bool> record)
     {
-        string config = PlayniteThemeConfig.FilePath(DataFolder());
+        if (!_single.Wait(0)) return Refused("A theme operation is already running.");
+        try
+        {
+        if (!SameDataFolder(DataFolder(), dataFolder))
+            return Refused("The selected Playnite profile changed. Refresh the theme status before editing.");
+        string config = PlayniteThemeConfig.FilePath(dataFolder);
         try
         {
             byte[] original = File.ReadAllBytes(config);
@@ -693,6 +707,8 @@ internal sealed class PlayniteThemeService
         {
             return Refused("Playnite's configuration could not be changed (" + ex.GetType().Name + "); nothing was changed.");
         }
+        }
+        finally { _single.Release(); }
     }
 
     private static PlayniteThemeActionResultDto Refused(string message) => new() { Ok = false, Outcome = "refused", Message = message };
