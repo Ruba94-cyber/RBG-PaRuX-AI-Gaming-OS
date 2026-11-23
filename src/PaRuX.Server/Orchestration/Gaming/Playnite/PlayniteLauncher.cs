@@ -135,7 +135,26 @@ internal sealed class PlayniteLauncher
 
         lock (_gate)
         {
-            // One instance: any Playnite already running is brought forward, never duplicated.
+            // A just-started process may not yet be visible in a Windows process snapshot.
+            // The exact process PaRuX owns is stronger evidence than discovery, and must
+            // prevent another launch even if a user has since changed the located folder.
+            if (_owned is { HasExited: false } owned)
+            {
+                bool sameMode = string.Equals(_ownedMode, mode, StringComparison.Ordinal);
+                bool focused = _host.Focus(owned.Id);
+                return new PlayniteLaunchResultDto
+                {
+                    Ok = sameMode,
+                    Outcome = "already-running",
+                    Mode = _ownedMode,
+                    Message = sameMode
+                        ? (focused ? "Playnite is already running; it was brought to the front."
+                                   : "Playnite is already running; Windows kept the focus elsewhere.")
+                        : "Playnite is already running in the other mode. Use Switch mode or close it first."
+                };
+            }
+
+            // For Playnite not launched by PaRuX, use the read-only OS process snapshot.
             PlayniteRunningProcess? running = _env.RunningPlaynite()
                 .FirstOrDefault(r => PlayniteLocator.IsInFolder(r.ExePath, component.Folder));
             if (running is not null)
@@ -160,8 +179,16 @@ internal sealed class PlayniteLauncher
                 _owned = started;
                 _ownedMode = mode;
                 LastExePath = exe;
-                started.Exited += () => Interlocked.Increment(ref _closedCounter);
-                if (started.HasExited) Interlocked.Increment(ref _closedCounter);
+                // An exit that races event subscription and the initial HasExited
+                // check must advance the return-watch counter exactly once.
+                int exitRecorded = 0;
+                void RecordExit()
+                {
+                    if (Interlocked.Exchange(ref exitRecorded, 1) == 0)
+                        Interlocked.Increment(ref _closedCounter);
+                }
+                started.Exited += RecordExit;
+                if (started.HasExited) RecordExit();
                 return new PlayniteLaunchResultDto { Ok = true, Outcome = "started", Mode = mode, Message = note };
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -181,6 +208,19 @@ internal sealed class PlayniteLauncher
             return Refused("Playnite was not started by PaRuX, so PaRuX will not close it. Close it yourself, then start the other mode here.");
         if (gameRunning) return Refused("A game is running. Close the game first.");
         string target = current == PlayniteModes.Console ? PlayniteModes.Desktop : PlayniteModes.Console;
+
+        // Preflight before touching the currently running Playnite. A missing TV, skipped
+        // component or unavailable target executable must never close a working session.
+        if (settings.Skipped) return Refused("Playnite is skipped. Choose it again in Settings before switching modes.");
+        if (!component.Detected || string.IsNullOrWhiteSpace(component.Folder))
+            return Refused("Playnite was not found. Locate it before switching modes.");
+        var (resolvedMode, _, _) = ResolveMode(settings, target, displayId);
+        if (resolvedMode != target)
+            return Refused("The chosen display is not connected. Playnite was left running in its current mode.");
+        string? targetExe = target == PlayniteModes.Console ? component.FullscreenExe : component.DesktopExe;
+        if (targetExe is null || !CustomExecutableInputProvider.IsSafeHelperPath(targetExe))
+            return Refused("The other Playnite executable is missing or unsafe. The current session was left open.");
+
         owned.CloseMainWindow();
         if (!owned.WaitForExit(10_000))
             return Refused("Playnite did not close in time (it may be asking to save). PaRuX never force-closes it; close it yourself.");

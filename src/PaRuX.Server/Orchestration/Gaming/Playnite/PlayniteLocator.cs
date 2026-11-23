@@ -150,7 +150,7 @@ internal sealed class PlayniteLocator
         {
             (Path.Combine(_env.LocalAppData, "Playnite"), "local-app-data"),
             (Path.Combine(_env.AppData, "Playnite"), "app-data"),
-            (Path.Combine(_env.ProgramFiles, "Playnite"), "local-app-data")
+            (Path.Combine(_env.ProgramFiles, "Playnite"), "program-files")
         };
         foreach ((string folder, string source) in known)
         {

@@ -17,7 +17,7 @@ public sealed class PlayniteComponentDto
     public bool Detected { get; set; }
     /// <summary>"installed" | "portable" | "running" | "located" | "none"</summary>
     public string InstallKind { get; set; } = "none";
-    /// <summary>"registry" | "local-app-data" | "app-data" | "process" | "user-located" | "none"</summary>
+    /// <summary>"registry" | "local-app-data" | "app-data" | "program-files" | "process" | "user-located" | "none"</summary>
     public string Source { get; set; } = "none";
     public string? Folder { get; set; }
     public string? DesktopExe { get; set; }
@@ -61,6 +61,34 @@ public sealed class PlayniteSessionDto
     public int YieldAttempts { get; set; }
     /// <summary>Increments each time a Playnite process PaRuX started has closed; the app returns to PaRuX on a change.</summary>
     public long PaRuXLaunchedClosedCounter { get; set; }
+}
+
+/// <summary>
+/// Pure return-to-AI policy. The caller captures the close counter before opening
+/// Playnite, so even a process that closes before the first UI poll is observed.
+/// Never bring PaRuX forward while another PaRuX-started Playnite is still alive.
+/// </summary>
+public static class PlayniteReturnWatchPolicy
+{
+    public static bool ShouldBringForward(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount == 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+
+    /// <summary>
+    /// A game can outlive Playnite itself. Do not steal focus while it is running;
+    /// keep the old counter until its tracked process exits, then return to PaRuX.
+    /// </summary>
+    public static bool KeepPendingClose(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount > 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
 }
 
 public sealed class PlayniteStatusDto
