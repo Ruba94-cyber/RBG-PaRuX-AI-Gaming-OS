@@ -1,3 +1,15 @@
+## 2026-11-24 — MAINLINE CONTINUATION: SAFE AI TOOLS + PLAYNITE CONSOLE LIFECYCLE
+
+**Integrated directly on `main`, with no new development branch and NO GitHub Actions:**
+
+- Playnite Console handoff cleanup now covers both owner-launched and already-running user-managed Fullscreen sessions. It clears Console state after process/game exit even when Return to PaRuX is disabled; it never foregrounds PaRuX for an external user-owned process. Pure regressions added.
+- A Playnite Desktop fallback caused by TV disconnect is explicitly distinguished from a successful Fullscreen handoff. A successful Desktop fallback does not trigger the native Console window or a second Playnite startup. Legacy Console remains available only when Playnite itself is unavailable/refused.
+- Added `McpToolCallAdmission` to the **existing** streamed AI tool loop (not the unverified Python AppContainer WIP). Before running tools, require exact announced tool names and complete JSON-object arguments; preserve valid JSON verbatim; normalize only a syntactic Markdown JSON fence or trailing comma. Unknown tools, non-objects, duplicate keys, truncated JSON and oversized calls are refused with a model-visible explanation. Original parallel execution and per-call reply ordering are preserved; duplicate provider IDs are normalized.
+- Bound tool-call streaming **during SSE ingestion**: up to 64 distinct calls per model turn and 64 KiB arguments per call. Avoid accumulating huge JSON buffers; over-limit tool calls do NOT execute. Added unit and synthetic streaming tests to `McpToolCallAdmissionTests`, `StreamingMcpToolLoopTests`, `ConsoleModeReadinessTests` and `PlayniteReturnWatchPolicyTests`.
+- The focused test classes are included in the manual Windows runner `tools/validation-runs/verify-main-local.ps1`. Do not add workflow YAML or invoke Actions.
+- **Not validated in this GitHub-connector session:** WinUI/Server native .NET build, full xUnit/FlaUI, Playnite/Aniki Helper operation on an actual TV+controller, clean Corporate portable launch, real-game GPU/VRAM/FPS, and streaming tool invocation against a real local model. Run physical Windows x64 acceptance before calling a release stable.
+- Other WIP feature branches (Knowledge web connectors, optional runtime components, AI Python execution, advanced training, and native UI redesign) are NOT blindly merged. Source-only MCP admission above is a narrowly scoped substitute; do not accidentally rebase the full unfinished AI Python AppContainer branch into main.
+
 ## 2026-11-23 - PLAYNITE-FIRST CONSOLE START AND RECOVERY
 
 - Main now starts Playnite Fullscreen **before** the legacy native Console presenter when an explicitly selected TV is connected and the Console Playnite preference is enabled. Only a Core-confirmed Fullscreen result is accepted; Desktop fallback never counts as successful console handoff. PaRuX does not open its native Gaming Home on an accepted handoff. The old UI remains only as fallback and has NOT been deleted.
