@@ -52,9 +52,9 @@ public sealed class PlayniteForegroundAdmissionTests
             Session = new PlayniteSessionDto { State = state, TrackedProcessCount = processes }
         };
         Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
-            PlayniteLauncherAction.Console, nativeGameActive: false, dto));
+            PlayniteLauncherAction.Console, nativeGameActive: false, status: dto));
         Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
-            PlayniteLauncherAction.Desktop, nativeGameActive: false, dto));
+            PlayniteLauncherAction.Desktop, nativeGameActive: false, status: dto));
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class PlayniteForegroundAdmissionTests
         Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
             PlayniteLauncherAction.Console, nativeGameActive: false, status: null));
         Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
-            PlayniteLauncherAction.Console, nativeGameActive: true, ready));
+            PlayniteLauncherAction.Console, nativeGameActive: true, status: ready));
         Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
             PlayniteLauncherAction.Open, nativeGameActive: true, status: null));
         Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
