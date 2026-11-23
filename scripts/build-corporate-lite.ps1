@@ -34,6 +34,7 @@ param(
     [switch]$LowMemoryStarter,
     [string]$EmbeddingDir = "",
     [string]$MultilingualEmbeddingDir = "",
+    [string]$MultilingualRerankerDir = "",
     [string]$RerankerDir = "",
     [switch]$RequireReranker,
     [string]$RuntimeDir = "",
@@ -234,6 +235,12 @@ if ($Fetch) {
     New-Item -ItemType Directory -Force $MultilingualEmbeddingDir | Out-Null
     Get-PinnedAsset "Xenova/multilingual-e5-small" "761b726dd34fb83930e26aab4e9ac3899aa1fa78" "onnx/model_int8.onnx" (Join-Path $MultilingualEmbeddingDir "model.onnx") 118054593 "sha256" "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"
     Get-PinnedAsset "Xenova/multilingual-e5-small" "761b726dd34fb83930e26aab4e9ac3899aa1fa78" "tokenizer.json" (Join-Path $MultilingualEmbeddingDir "tokenizer.json") 17082730 "sha256" "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+    # Multilingual cross-encoder (mmarco-mMiniLMv2, Apache-2.0, int8): second-stage ranking when question and evidence differ in language.
+    # Matches PinnedModelManifest.MultilingualRerankerInt8; the English reranker below stays as the fallback.
+    $MultilingualRerankerDir = Join-Path $assets "reranker-mmarco"
+    New-Item -ItemType Directory -Force $MultilingualRerankerDir | Out-Null
+    Get-PinnedAsset "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1" "1427fd652930e4ba29e8149678df786c240d8825" "onnx/model_qint8_avx512.onnx" (Join-Path $MultilingualRerankerDir "model.onnx") 118620017 "sha256" "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4"
+    Get-PinnedAsset "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1" "1427fd652930e4ba29e8149678df786c240d8825" "tokenizer.json" (Join-Path $MultilingualRerankerDir "tokenizer.json") 17082660 "sha256" "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626"
     # Cross-encoder for optional local second-stage RAG relevance. The exact
     # model/vocab pair below matches PinnedModelManifest.RerankerMsMarcoMiniLm.
     $RerankerDir = Join-Path $assets "reranker"
@@ -275,6 +282,10 @@ Assert-PinnedAsset (Join-Path $EmbeddingDir "config.json") 612 "git-sha1" "72b98
 if (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)) {
     Assert-PinnedAsset (Join-Path $MultilingualEmbeddingDir "model.onnx") 118054593 "sha256" "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"
     Assert-PinnedAsset (Join-Path $MultilingualEmbeddingDir "tokenizer.json") 17082730 "sha256" "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+}
+if (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)) {
+    Assert-PinnedAsset (Join-Path $MultilingualRerankerDir "model.onnx") 118620017 "sha256" "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4"
+    Assert-PinnedAsset (Join-Path $MultilingualRerankerDir "tokenizer.json") 17082660 "sha256" "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626"
 }
 if ($RequireReranker -and [string]::IsNullOrWhiteSpace($RerankerDir)) {
     throw "Complete local RAG requires -RerankerDir or -Fetch. No cloud or later runtime download is permitted."
@@ -328,6 +339,11 @@ if (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)) {
     $e5Dest = Join-Path $data "ai-runtimes\embeddings-e5"
     New-Item -ItemType Directory -Force $e5Dest | Out-Null
     Copy-Item (Join-Path $MultilingualEmbeddingDir "*") $e5Dest -Recurse -Force
+}
+if (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)) {
+    $mmDest = Join-Path $data "ai-runtimes\rerank-mmarco"
+    New-Item -ItemType Directory -Force $mmDest | Out-Null
+    Copy-Item (Join-Path $MultilingualRerankerDir "*") $mmDest -Recurse -Force
 }
 if (-not [string]::IsNullOrWhiteSpace($RerankerDir)) {
     $rerankerDest = Join-Path $data "ai-runtimes\reranker"
@@ -391,7 +407,7 @@ $manifest = [ordered]@{
     model = $(if ($NoModel) { $null } else { [IO.Path]::GetFileName($ModelPath) }); modelSha256 = $(if ($NoModel) { $null } else { (Get-FileHash $ModelPath -Algorithm SHA256).Hash.ToLowerInvariant() })
     modelOrigin = $modelOriginLabel; modelLicense = $modelLicenseLabel; modelSourceVerifiedByBuilder = [bool]($Fetch -and -not $NoModel)
     starterProfile = $(if ($NoModel) { "none" } elseif ($LowMemoryStarter) { "low-memory-0.6b" } else { "standard-or-user-supplied" })
-    runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; multilingualEmbeddingIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)); rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
+    runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; multilingualEmbeddingIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)); multilingualRerankerIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)); rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
     nativeRuntimeSha256 = (Get-FileHash (Join-Path $runtimeDest "llama-server.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
     fileCount = $files.Count; files = $files
 }
@@ -535,8 +551,14 @@ if ($Smoke) {
                 throw "Offline smoke: bundled multilingual embedding engine failed real native load."
             }
         }
+        if (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)) {
+            $mr = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/multilingual/engine?probe=1") -Headers $h -TimeoutSec 180
+            if (-not $mr.installed -or -not $mr.loaded -or $null -eq $mr.probeScore) {
+                throw "Offline smoke: bundled multilingual reranker failed real native load."
+            }
+        }
         if ($RequireReranker) {
-            $rr = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/rerank") -Method Post -Headers $h -ContentType "application/json" -Body '{"query":"engine temperature","documents":["coolant temperature sensor","radio volume"],"topK":2}' -TimeoutSec 120
+            $rr =Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/rerank") -Method Post -Headers $h -ContentType "application/json" -Body '{"query":"engine temperature","documents":["coolant temperature sensor","radio volume"],"topK":2}' -TimeoutSec 120
             if (@($rr).Count -lt 1) { throw "Offline smoke: bundled reranker ONNX engine returned no ranking." }
             $rer = Invoke-RestMethod -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/reranker/engine") -Headers $h -TimeoutSec 120
             if (-not $rer.Installed -or -not $rer.Loaded) {

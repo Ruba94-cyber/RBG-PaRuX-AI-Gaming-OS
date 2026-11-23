@@ -1291,6 +1291,14 @@ app.MapPost("/api/v1/embeddings/multilingual/engine/install", async (PaRuX.Serve
     { return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status503ServiceUnavailable); }
 }).RequireDesktopOwner();
 
+app.MapGet("/api/v1/reranker/multilingual/engine", (PaRuX.Server.Knowledge.MultilingualRerankerProvider provider, int? probe) => Results.Ok(provider.GetStatus(probe == 1)));
+app.MapPost("/api/v1/reranker/multilingual/engine/install", async (PaRuX.Server.Knowledge.MultilingualRerankerProvider provider, CancellationToken ct) =>
+{
+    try { return Results.Ok(new { message = await provider.InstallAsync(null, ct) }); }
+    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or TaskCanceledException)
+    { return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status503ServiceUnavailable); }
+}).RequireDesktopOwner();
+
 app.MapPost("/api/v1/embeddings/engine/install", async (EmbeddingService embeddings, CancellationToken ct) =>
 {
     try

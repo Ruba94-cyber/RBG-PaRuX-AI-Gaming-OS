@@ -42,7 +42,7 @@ Solo i numeri della sezione B. Nessun benchmark comparativo.
 - Push **bloccato**: account attivo `teamdtsiveco-code` con permesso READ (403). Nessun tag/release. Branch e bundle locale pronti.
 
 ## I. Limiti / prossimi passi
-1. Reranker multilingue (mmarco-mMiniLMv2 int8) non integrato → rifiuti "informazioni insufficienti" cross-lingua residui.
+1. Reranker multilingue (mmarco-mMiniLMv2 int8): INTEGRATO a fine sessione (provider con fallback sull'inglese, file pinnati con SHA-256, endpoint /api/v1/reranker/multilingual/engine, script di build, 2 test verdi con modello reale). NON ancora misurato end-to-end: serve ricostruire un pacchetto e rieseguire le 34 domande di accettazione.
 2. Scelta modelli finale (candidati: Qwen3-4B-Instruct-2507, Qwen3.5-4B, Gemma-4-E4B; piccoli: Qwen3.5-2B, Qwen3-1.7B) non completata; pacchetti attuali usano 4B e 0.6B.
 3. Ricostruire i pacchetti finali con e5 e misurare; build Portable/Installer, hash, firma.
 4. Confronto AnythingLLM; test UI; verifica primo avvio automatico sul pacchetto.
