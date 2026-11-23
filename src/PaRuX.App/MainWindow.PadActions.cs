@@ -88,6 +88,14 @@ public sealed partial class MainWindow
                 case PadActionId.PauseResumeGame:
                     await PadPauseResumeAsync();
                     break;
+                case PadActionId.LaunchPlayniteConsole:
+                    // PaRuX owns the button binding and opens its controller-friendly
+                    // launcher; Playnite remains the optional games frontend.
+                    ShowPlayniteLauncher(PlayniteLauncherAction.Console, gamepad: true, fromRequest: true);
+                    break;
+                case PadActionId.LaunchPlayniteDesktop:
+                    ShowPlayniteLauncher(PlayniteLauncherAction.Desktop, gamepad: true, fromRequest: true);
+                    break;
                 case PadActionId.SwitchPlaynite:
                     await PadSwitchPlayniteAsync();
                     break;
