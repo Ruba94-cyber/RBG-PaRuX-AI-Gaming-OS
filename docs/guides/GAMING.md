@@ -25,6 +25,8 @@ request; it is not reloaded automatically except in the always-on Local AI mode.
 Open **Games**, then **Add & import**: add a local game executable, scan your stores, or import an emulator folder.
 Steam, Epic and GOG discovery is read-only and opt-in. Launch needs your confirmation. Real scans of all three stores are not yet recorded.
 
+**Latest console lifecycle:** PaRuX clears a Playnite-first Console handoff after its owner-launched process and tracked games close, **even if the user disabled automatic foreground return**. If an existing, user-launched Playnite Fullscreen was reused, PaRuX monitors its exit only to clear the handoff; it never automatically foregrounds itself. If the selected TV disconnects and Core launches Playnite Desktop instead, PaRuX does not overlay its old native Console interface or launch a second Playnite instance. A local Windows PC is still required to validate these edge cases.
+
 ## Console mode: Playnite Fullscreen + Aniki ReMake (preferred)
 
 **Architecture:** PaRuX remains the single AI/Gaming controller and optional Playnite launcher; the TV-facing game library interface is **Playnite Fullscreen** with **Aniki ReMake**. Do not build a second Aniki-like native UI. The older native Console Home remains legacy fallback during migration, not the design target.
