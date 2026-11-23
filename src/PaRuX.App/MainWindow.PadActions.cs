@@ -102,9 +102,7 @@ public sealed partial class MainWindow
                     await PadSwitchPlayniteAsync();
                     break;
                 case PadActionId.OpenSettings:
-                    PadBringForward();
-                    ShowSettings();
-                    SettingsPage.ShowPadButtons();
+                    ShowPadControllerSettings();
                     break;
             }
         }
@@ -114,6 +112,14 @@ public sealed partial class MainWindow
             PadToast(PadT("The controller action failed.", "L'azione del controller non è riuscita."));
         }
         finally { _padActionBusy = false; }
+    }
+
+    /// <summary>One shared entry for explicit controller settings requests from Games tools and pad actions.</summary>
+    internal void ShowPadControllerSettings()
+    {
+        PadBringForward();
+        ShowSettings();
+        SettingsPage.ShowPadButtons();
     }
 
     // ---- bring PaRuX forward (only ever called because the owner pressed the bound button) --------------------------------------
