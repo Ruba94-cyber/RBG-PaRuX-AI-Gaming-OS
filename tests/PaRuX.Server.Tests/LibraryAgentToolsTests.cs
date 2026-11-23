@@ -245,6 +245,25 @@ public sealed class LibraryAgentToolsTests
         Assert.Empty(backend.Calls);
     }
 
+    [Theory]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","manual_game_id":"m2","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"offline_confirmed":true}""")]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"edits":[{"key":"a","value":"4"},{"key":"b","value":"5"}],"offline_confirmed":true}""")]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"offline_confirmed":true,"offline_confirmed":false}""")]
+    [InlineData(AgentLibraryTools.GameModProposeTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/settings.ini","proposed_text":"a=1","offline_confirmed":true,"offline_confirmed":false}""")]
+    public async Task Duplicate_tool_arguments_are_rejected_before_any_consent_or_backend_call(
+        string tool, string json)
+    {
+        var (tools, backend, consent) = Make();
+        string result = await Call(tools, tool, json, bypass: true);
+        Assert.Contains("duplicate argument", result);
+        Assert.Empty(consent.List());
+        Assert.Empty(backend.Calls);
+    }
+
     [Fact]
     public async Task Ai_mod_proposal_refuses_unpaused_or_online_unconfirmed_game()
     {
