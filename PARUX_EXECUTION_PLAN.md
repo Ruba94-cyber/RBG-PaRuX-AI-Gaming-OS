@@ -1,3 +1,5 @@
+**CURRENT 2026-11-23: use `main` as canonical source.** PR #17 integrated via squash (`2e2d630ff1e52f8cb7281f215a7d45e47b2de750`). GitHub Actions forbidden; do not restore workflow files. Physical Windows acceptance and complete xUnit after the last fixes are PENDING, so main is source-integrated but NOT RELEASE READY. See `HANDOFF.md` top entry and `tools/validation-runs/verify-main-local.ps1`. Keep six unique WIP `worktree-agent-*` branches until their code has been reviewed/ported, and use short-lived branches only when necessary; prune already-merged branches via the local dry-run script.
+
 **RESUME ON ANOTHER PC: read docs/HANDOFF_2026-11-22.md first.** Unmerged agent branches are pushed to origin (worktree-agent-*).
 
 ## 2026-11-22 OWNER DIRECTION CHANGE (supersedes native Gaming/TV direction below)
