@@ -18,7 +18,8 @@ param(
     [string]$WorkRoot = (Join-Path ([IO.Path]::GetTempPath()) ("parux-can-qa-" + [Guid]::NewGuid().ToString("N"))),
     [string]$ResultsFile = "",
     [int]$IndexTimeoutMinutes = 30,
-    [int]$ChatTimeoutMinutes = 8
+    [int]$ChatTimeoutMinutes = 8,
+    [string]$QuestionsFile = ""   # optional JSON list of { q, all } appended to the built-in CAN questions
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
@@ -45,7 +46,8 @@ if (-not (Test-Path $boot)) { throw "Core did not start" }
 $startS = [math]::Round($sw.Elapsed.TotalSeconds, 1)
 $b = Get-Content $boot -Raw | ConvertFrom-Json; $ep = $b.endpoint.TrimEnd('/'); $h = @{ "X-PaRuX-Token" = $b.token }
 function Mem { [math]::Round((Get-Process PaRuX, PaRuX.Server, llama-server -ErrorAction SilentlyContinue | Measure-Object WorkingSet64 -Sum).Sum / 1MB) }
-$R = [ordered]@{ zip = (Split-Path $ZipPath -Leaf); zipSha256 = (Get-FileHash $ZipPath).Hash; coreStartSeconds = $startS; ramIdleMb = (Mem); files = @() }
+$freeMb = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1KB)
+$R = [ordered]@{ freeRamAtStartMb = $freeMb; zip = (Split-Path $ZipPath -Leaf); zipSha256 = (Get-FileHash $ZipPath).Hash; coreStartSeconds = $startS; ramIdleMb = (Mem); files = @() }
 foreach ($f in Get-ChildItem $data) { $R.files += "{0} {1:N1} MB" -f $f.Name, ($f.Length / 1MB) }
 
 try {
@@ -67,6 +69,7 @@ try {
         @{ q = "Quanti frame e quanti ID distinti ci sono in DTC DMS Can Recording.asc?"; all = @("281491", "266") }
         @{ q = "Quale e' la durata della registrazione CAN-20260730-123749.asc?"; all = @("23.4") }
     )
+    if ($QuestionsFile) { foreach ($x in (Get-Content -LiteralPath $QuestionsFile -Raw -Encoding UTF8 | ConvertFrom-Json)) { $questions += @{ q = [string]$x.q; all = @($x.all) } } }
     function Ask([string]$q) {
         $req = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Post, "$ep/api/v1/chat/completions"); $req.Headers.Add("X-PaRuX-Token", $b.token)
         $body = @{ model = "local-default"; stream = $true; max_tokens = 260; messages = @(@{ role = "user"; content = $q }); documents = @{ enabled = $true; sourceIds = @($id) } } | ConvertTo-Json -Depth 6 -Compress

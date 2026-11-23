@@ -174,6 +174,10 @@ internal sealed class DbcExtractor : IDocumentExtractor
         return sink.Build(path, Name, note);
     }
 
+    /// <summary>DBC cycle/delay attributes are milliseconds by convention (GenMsgCycleTime, GenMsgDelayTime ...); a bare "100" let a small model answer "100 seconds".</summary>
+    private static string TimeUnit(string attribute) =>
+        attribute.Contains("CycleTime", StringComparison.OrdinalIgnoreCase) || attribute.Contains("DelayTime", StringComparison.OrdinalIgnoreCase) ? " ms" : string.Empty;
+
     private static bool IsNoNode(string n) => n is "Vector__XXX" or "";
 
     private static string SignalText(Msg msg, Sig s, string sender)
@@ -301,7 +305,7 @@ internal sealed class DbcExtractor : IDocumentExtractor
                 string attr = t[1].Text;
                 string kind = t[2].Text;
                 if (kind == "BO_" && t.Count >= 5 && long.TryParse(t[3].Text, out long bid) && byId.TryGetValue(bid, out Msg? bm))
-                    bm.Attributes.Add(attr + " = " + t[4].Text);
+                    bm.Attributes.Add(attr + " = " + t[4].Text + TimeUnit(attr));
                 else if (kind == "SG_" && t.Count >= 6 && long.TryParse(t[3].Text, out long gid) && byId.TryGetValue(gid, out Msg? gm))
                     gm.Signals.FirstOrDefault(x => x.Name == t[4].Text)?.Attributes.Add(attr + " = " + t[5].Text);
                 break;

@@ -91,6 +91,19 @@ public sealed class DocumentQuestionRetrievalTests
         Assert.Contains("language of the question", DocumentChatPlanner.GroundingInstruction);
 
     [Fact]
+    public void Dbc_cycle_time_carries_its_unit_so_a_small_model_cannot_answer_seconds()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "parux-unit-" + Guid.NewGuid().ToString("N") + ".dbc");
+        try
+        {
+            File.WriteAllText(path, "VERSION \"\"\n\nBU_: ECU\n\nBO_ 2566801923 ETC7: 8 ECU\n SG_ Sig1 : 0|8@1+ (1,0) [0|255] \"\" Vector__XXX\n\nBA_ \"GenMsgCycleTime\" BO_ 2566801923 100;\n");
+            string t = StructuredDocumentExtractor.Extract(path).FullText;
+            Assert.Contains("GenMsgCycleTime = 100 ms", t);
+        }
+        finally { try { File.Delete(path); } catch (IOException) { } }
+    }
+
+    [Fact]
     public void A_single_oversized_passage_is_shortened_not_refused()
     {
         string hex = string.Join(" ", Enumerable.Range(0, 2000).Select(i => (i % 256).ToString("X2")));
