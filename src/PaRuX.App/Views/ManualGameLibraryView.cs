@@ -30,6 +30,7 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly TextBlock _heading = new();
     private bool _consolePresentation;
     private SelectorBar? _sectionBar;
+    private GamesToolsHome? _toolsHome;
     private readonly StackPanel _discoveredGames = new() { Spacing = 8 };
     private readonly TextBlock _discoveryStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _steamRefresh = new();
@@ -411,7 +412,7 @@ public sealed partial class ManualGameLibraryView : UserControl
         AutomationProperties.SetAutomationId(openTools, "GameLibrary_OpenTools_Button");
         openTools.Click += (_, _) => OpenGamesSection("Tools");
         root.Children.Add(openTools);
-        var toolsHome = new GamesToolsHome(OpenGamesSection);
+        var toolsHome = _toolsHome = new GamesToolsHome(OpenGamesSection);
         var sections = new (string Id, string Title, List<UIElement> Items)[]
         {
             ("Library", T("Library", "Libreria"), new List<UIElement> { _universal }),
@@ -475,6 +476,24 @@ public sealed partial class ManualGameLibraryView : UserControl
         Content = pageHost;
         Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
         Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
+    }
+
+    /// <summary>
+    /// Desktop controller entry: bring up Playnite-first tools and put focus
+    /// on the first launcher action. Legacy Console still uses its tile surface.
+    /// Only the user-initiated pad action invokes this method.
+    /// </summary>
+    public void OpenToolsFromController()
+    {
+        OpenGamesSection("Tools");
+        if (_toolsHome?.FocusPrimaryAction() != true)
+        {
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if ((_sectionBar?.SelectedItem as SelectorBarItem)?.Tag as string == "Tools")
+                    _toolsHome?.FocusPrimaryAction();
+            });
+        }
     }
 
     /// <summary>Shared navigation for Games tools. No refresh, scan or install happens merely by changing sections.</summary>
