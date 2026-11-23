@@ -47,6 +47,17 @@ public sealed class CanTraceExtractorTests : IDisposable
     }
 
     [Fact]
+    public void Asc_header_saying_relative_but_with_cumulative_times_is_not_summed()
+    {
+        var sb = new StringBuilder("date x\nbase hex  timestamps relative\n");
+        for (int i = 0; i < 300; i++) sb.Append((i * 0.01).ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture)).Append(" 1 100 Rx d 1 01\n");
+        ExtractedDocument d = StructuredDocumentExtractor.Extract(Write("cum.asc", sb.ToString()));
+        string all = d.FullText;
+        Assert.Contains("never decrease", all);
+        Assert.Contains("duration 2.990000 s", all);        // not the sum of all values
+    }
+
+    [Fact]
     public void Asc_relative_timestamps_accumulate_and_dm1_trouble_codes_are_decoded()
     {
         // DM1 from SA 0x00: lamps byte 0x04 -> red-stop on; DTC SPN 0x0123 (291) FMI 5, occurrences 3
@@ -136,7 +147,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         Assert.Contains("0.002000 s (frame 2)", txt);               // 200 * 10 us
     }
 
-    private static byte[] Pad(int len) => new byte[len & 3 ? 4 - (len & 3) : 0];
+    private static byte[] Pad(int len) => new byte[(len & 3) != 0 ? 4 - (len & 3) : 0];
 
     [Fact]
     public void Blf_without_signature_fails_with_a_reason_and_no_content()

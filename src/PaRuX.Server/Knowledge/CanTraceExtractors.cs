@@ -269,7 +269,7 @@ internal sealed class AscTraceExtractor : IDocumentExtractor
         var agg = new CanTraceAggregator("line");
         var sink = new AutomotiveSink(limits);
         var header = new StringBuilder();
-        bool hex = true, relative = false, truncated = false;
+        bool hex = true, relative = false, truncated = false, relativeChecked = false;
         double clock = 0;
         long lineNo = 0, chars = 0;
 
@@ -302,6 +302,15 @@ internal sealed class AscTraceExtractor : IDocumentExtractor
                 continue;   // Begin/End Triggerblock and other markers carry no frame
             }
 
+            if (relative && !relativeChecked)
+            {
+                relativeChecked = true;
+                if (TimestampsLookCumulative(path))
+                {
+                    relative = false;
+                    header.AppendLine("Note: the header says 'timestamps relative' but the values never decrease, so they are read as time since the start of the trace, not as deltas.");
+                }
+            }
             // tokens
             int cnt = s.Split(parts, ' ', StringSplitOptions.RemoveEmptyEntries);
             if (cnt < 3) { agg.Unparsed++; continue; }
@@ -342,6 +351,30 @@ internal sealed class AscTraceExtractor : IDocumentExtractor
 
         return agg.Build(path, Name, sink, header.ToString(),
             truncated ? "File larger than the structured-parsing limit: only the first part was read." : null, truncated);
+    }
+
+    /// <summary>
+    /// A genuine delta trace jumps up and down (inter-frame gaps vary). Hundreds of frames whose time never goes backwards
+    /// mean the writer labelled cumulative times as "relative"; summing them would produce an absurd duration.
+    /// </summary>
+    internal static bool TimestampsLookCumulative(string path)
+    {
+        try
+        {
+            using var reader = new StreamReader(path, Encoding.Latin1);
+            double prev = double.NegativeInfinity; int n = 0; string? l;
+            while ((l = reader.ReadLine()) != null && n < 4000)
+            {
+                ReadOnlySpan<char> s = l.AsSpan().TrimStart();
+                if (s.Length == 0 || !char.IsDigit(s[0])) continue;
+                int sp = s.IndexOf(' ');
+                if (sp <= 0 || !double.TryParse(s[..sp], NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) continue;
+                if (v < prev) return false;
+                prev = v; n++;
+            }
+            return n >= 200;
+        }
+        catch (Exception) { return false; }
     }
 
     private static bool ParseId(ReadOnlySpan<char> tok, bool hex, out uint id, out bool ext)
