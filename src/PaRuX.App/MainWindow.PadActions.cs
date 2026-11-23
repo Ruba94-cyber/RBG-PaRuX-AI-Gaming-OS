@@ -68,8 +68,10 @@ public sealed partial class MainWindow
                     else
                     {
                         ShowStudioWorkspace(StudioWorkspace.Games);
-                        GameLibraryPage.OnShown();
+                        // Set the lightweight Tools surface BEFORE the page's
+                        // on-shown refresh so no native catalogue scan is queued.
                         GameLibraryPage.OpenToolsFromController();
+                        GameLibraryPage.OnShown();
                     }
                     break;
                 case PadActionId.SwitchWorkspace:
@@ -79,8 +81,10 @@ public sealed partial class MainWindow
                     else
                     {
                         ShowStudioWorkspace(StudioWorkspace.Games);
-                        GameLibraryPage.OnShown();
+                        // Set the lightweight Tools surface BEFORE the page's
+                        // on-shown refresh so no native catalogue scan is queued.
                         GameLibraryPage.OpenToolsFromController();
+                        GameLibraryPage.OnShown();
                     }
                     break;
                 case PadActionId.MiniAgent:
