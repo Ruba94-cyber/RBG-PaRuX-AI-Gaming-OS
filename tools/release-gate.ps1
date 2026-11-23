@@ -20,15 +20,48 @@ function Fail-Gate([string]$text) { throw "PaRuX release gate failed: $text" }
 
 Write-Gate "repository: $root"
 
+# GitHub Actions are allowed ONLY for the six explicitly reviewed, read-only
+# Windows validation workflows below. Their Git blob IDs are pinned: even a
+# one-line workflow edit, newly added workflow, or dirty working copy fails
+# the release gate until the workflow and this allowlist are re-reviewed.
+# This is NOT approval to publish, sign, deploy or access release secrets.
+$approvedValidationWorkflows = @{
+    '.github/workflows/blf-windows-validation.yml' = 'a81a3adb4923687e727b3b154efa5d7bc02d2a8d'
+    '.github/workflows/ci-gate-validation.yml' = 'd9c1e3601f30815ed1212dfcd50b4fe242e37b76'
+    '.github/workflows/integration-failure-repairs.yml' = '0510bc5dd6d3e1ac77b8e35184823a69f0b44d4a'
+    '.github/workflows/pr15-windows-validation.yml' = '9a19c4c66e02a35efe965df1da965af29f684bf8'
+    '.github/workflows/pr16-windows-validation.yml' = '4e6f67ef6d3bfa87c51d39c6ab95b4400847139d'
+    '.github/workflows/pr17-integration-windows-validation.yml' = '3e4201f6dd83b0f95381ae5b53d45ae6e7866cfd'
+}
 $workflowRoot = Join-Path $root '.github\workflows'
+$validatedWorkflowCount = 0
 if (Test-Path $workflowRoot) {
-    $workflowFiles = @(Get-ChildItem $workflowRoot -File -Recurse -ErrorAction SilentlyContinue)
-    if ($workflowFiles.Count -gt 0) {
-        $workflowNames = ($workflowFiles | ForEach-Object { $_.FullName.Substring($root.Length + 1) }) -join ', '
-        Fail-Gate ("GitHub Actions are disabled by project policy, but workflow file(s) exist: " + $workflowNames)
+    $workflowFiles = @(Get-ChildItem $workflowRoot -File -Recurse -Force -ErrorAction Stop)
+    foreach ($workflowFile in $workflowFiles) {
+        if (($workflowFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Fail-Gate 'A workflow file is a symlink/reparse point: refusing to trust its target.'
+        }
+        $relative = $workflowFile.FullName.Substring($root.Length + 1).Replace('\', '/')
+        if (-not $approvedValidationWorkflows.ContainsKey($relative)) {
+            Fail-Gate ("An unreviewed GitHub Actions workflow exists: " + $relative)
+        }
+        $entry = @(& git -C $root ls-files -s -- $relative)
+        if ($LASTEXITCODE -ne 0 -or $entry.Count -ne 1) {
+            Fail-Gate ("Cannot attest the tracked Git blob for " + $relative)
+        }
+        $blob = [regex]::Match([string]$entry[0], '^(?:100644|100755)\s+(?<sha>[a-f0-9]{40})\s+0\s+')
+        if (-not $blob.Success -or $blob.Groups['sha'].Value -ne $approvedValidationWorkflows[$relative]) {
+            Fail-Gate ("The validation workflow changed without review: " + $relative)
+        }
+        & git -C $root diff --quiet -- $relative
+        if ($LASTEXITCODE -ne 0) { Fail-Gate ("Unreviewed worktree change in " + $relative) }
+        & git -C $root diff --cached --quiet -- $relative
+        if ($LASTEXITCODE -ne 0) { Fail-Gate ("Unreviewed staged change in " + $relative) }
+        $validatedWorkflowCount++
     }
 }
-Write-Gate "GitHub Actions policy: PASS (no workflow files)"
+Write-Gate ("GitHub Actions policy: PASS (" + $validatedWorkflowCount +
+    " exact reviewed validation workflow(s), no release/deployment approval)")
 
 $planPath = Join-Path $root 'PARUX_EXECUTION_PLAN.md'
 if (-not (Test-Path $planPath -PathType Leaf)) {
