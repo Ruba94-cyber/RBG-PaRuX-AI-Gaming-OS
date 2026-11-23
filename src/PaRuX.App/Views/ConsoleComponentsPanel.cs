@@ -193,6 +193,14 @@ namespace PaRuX.Views
                   (t.Selected ? T(", selected in Playnite", ", selezionato in Playnite") : T(", not selected", ", non selezionato")) +
                   (t.LicenseFile is null ? string.Empty : T(", license kept", ", licenza conservata"));
             Row("Theme", T("Aniki ReMake theme: ", "Tema Aniki ReMake: ") + theme);
+            string helper = t is null ? T("not checked", "non controllato") :
+                t.Skipped ? T("theme skipped", "tema saltato") :
+                t.AnikiHelperFoundOnDisk
+                    ? (t.AnikiHelperVersion ?? T("version unknown", "versione sconosciuta")) +
+                        T(" (manifest found; verify in Playnite)", " (manifest trovato; verifica in Playnite)")
+                    : T("required: install/update from Playnite Desktop > Add-ons (F9) > Browse > Generic",
+                        "richiesto: installa/aggiorna da Playnite Desktop > Add-ons (F9) > Browse > Generic");
+            Row("AnikiHelper", T("Aniki Helper: ", "Aniki Helper: ") + helper);
             if (t?.Message is { Length: > 0 } m && !t.Detected) Row("ThemeNote", m);
 
             string[] actions = t?.Actions ?? Array.Empty<string>();
