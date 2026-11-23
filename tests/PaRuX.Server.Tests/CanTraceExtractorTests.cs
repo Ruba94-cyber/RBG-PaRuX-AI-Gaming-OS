@@ -150,6 +150,68 @@ public sealed class CanTraceExtractorTests : IDisposable
     private static byte[] Pad(int len) => new byte[(len & 3) != 0 ? 4 - (len & 3) : 0];
 
     [Fact]
+    public void Blf_odd_sized_container_padding_keeps_the_following_frame()
+    {
+        byte[] first = Array.Empty<byte>();
+        for (int i = 0; i < 256; i++)
+        {
+            byte[] candidate = Container(CanObject(1, 0x100, new byte[] { (byte)i, (byte)(i ^ 0x5A) }, 100));
+            uint size = BitConverter.ToUInt32(candidate, 8);
+            if ((size & 3) is 1 or 3) { first = candidate; break; }
+        }
+        Assert.NotEmpty(first); // Reproduce odd on-disk object size, not just even padding.
+        byte[] second = Container(CanObject(1, 0x200, new byte[] { 2, 3 }, 200));
+        using var file = new MemoryStream();
+        var head = new byte[144]; "LOGG"u8.CopyTo(head); BitConverter.GetBytes(144u).CopyTo(head, 4);
+        file.Write(head);
+        file.Write(first);
+        file.Write(second);
+        string path = Path.Combine(_dir, "odd-alignment.blf");
+        File.WriteAllBytes(path, file.ToArray());
+
+        ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
+        Assert.Equal("can-blf", d.Extractor);
+        Assert.Contains("numero di frame): 2", d.FullText);
+        Assert.Contains("CAN ID 0x100", d.FullText);
+        Assert.Contains("CAN ID 0x200", d.FullText);
+    }
+
+    [Fact]
+    public void Blf_untrusted_decompressed_length_is_bounded_before_allocation()
+    {
+        byte[] container = Container(CanObject(1, 0x321, new byte[] { 1 }, 100));
+        // The packed BLF object is tiny, but claims a 128 MiB inflated payload.
+        BitConverter.GetBytes(128u * 1024 * 1024).CopyTo(container, 24);
+        using var file = new MemoryStream();
+        var head = new byte[144]; "LOGG"u8.CopyTo(head); BitConverter.GetBytes(144u).CopyTo(head, 4);
+        file.Write(head);
+        file.Write(container);
+        string path = Path.Combine(_dir, "oversized-declaration.blf");
+        File.WriteAllBytes(path, file.ToArray());
+
+        ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
+        Assert.True(d.Truncated);
+        Assert.DoesNotContain("CAN ID 0x321", d.FullText);
+    }
+
+    [Fact]
+    public void Blf_inflated_payload_larger_than_its_declared_length_is_rejected()
+    {
+        byte[] container = Container(CanObject(1, 0x322, new byte[] { 2 }, 100));
+        BitConverter.GetBytes(1u).CopyTo(container, 24); // compressed stream inflates beyond this
+        using var file = new MemoryStream();
+        var head = new byte[144]; "LOGG"u8.CopyTo(head); BitConverter.GetBytes(144u).CopyTo(head, 4);
+        file.Write(head);
+        file.Write(container);
+        string path = Path.Combine(_dir, "underreported-declaration.blf");
+        File.WriteAllBytes(path, file.ToArray());
+
+        ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
+        Assert.Contains("unreadable part-way", d.Note);
+        Assert.DoesNotContain("CAN ID 0x322", d.FullText);
+    }
+
+    [Fact]
     public void Blf_without_signature_fails_with_a_reason_and_no_content()
     {
         string path = Path.Combine(_dir, "bad.blf"); File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
