@@ -70,6 +70,28 @@ public sealed class PlayniteStatusDto
     public PlayniteSessionDto Session { get; set; } = new();
 }
 
+/// <summary>
+/// UI admission policy for NEW Playnite Desktop/Fullscreen requests, before
+/// any window activation. Gamepad, shortcut and Games Tools entry points
+/// must use the same predicate. The Core independently rechecks game activity
+/// when the launch request actually arrives.
+/// </summary>
+public static class PlayniteLauncherForegroundPolicy
+{
+    public static bool RequiresGamePreflight(PlayniteLauncherAction action) =>
+        action is PlayniteLauncherAction.Console or PlayniteLauncherAction.Desktop;
+
+    public static bool MayOpen(PlayniteLauncherAction action, bool nativeGameActive, PlayniteStatusDto? status)
+    {
+        if (!RequiresGamePreflight(action)) return true; // explicit settings/setup can be opened by the owner
+        if (nativeGameActive || status?.Session is not { } session) return false;
+        // A nonzero process count and all transitional/failure states fail closed.
+        // An unrecognized new session state must not automatically steal focus.
+        return session.TrackedProcessCount == 0 &&
+            session.State is "idle" or "disabled";
+    }
+}
+
 public sealed class PlayniteLocateRequest { public string Path { get; set; } = string.Empty; }
 
 public sealed class PlayniteLaunchRequest
