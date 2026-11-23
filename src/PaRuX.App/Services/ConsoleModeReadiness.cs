@@ -18,6 +18,14 @@ namespace PaRuX.Services
         public static bool ShouldStartWithConsole(PlayniteSettingsDto settings, PlayniteComponentDto component) =>
             settings.ConsoleStartsPlaynite && !settings.Skipped && !component.Skipped && component.Detected && component.FullscreenExe is not null;
 
+        /// <summary>
+        /// A Console-first handoff is complete only when the Core confirms an actual Fullscreen
+        /// start or an existing Fullscreen instance. A Desktop fallback, refusal or unknown mode
+        /// must not hide the PaRuX UI.
+        /// </summary>
+        public static bool AcceptedConsoleHandoff(PlayniteLaunchResultDto? launch) =>
+            launch is { Ok: true, Mode: PlayniteModes.Console, Outcome: "started" or "already-running" };
+
         /// <summary>The one-button test needs a Playnite with the Fullscreen executable that the owner has not skipped.</summary>
         public static bool CanTest(PlayniteComponentDto component) =>
             component.Detected && !component.Skipped && component.FullscreenExe is not null;
