@@ -169,7 +169,13 @@ function Get-PinnedAsset {
 . (Join-Path $PSScriptRoot "llama-cpu-pin.ps1")
 if ($Fetch) {
     # llama.cpp (MIT) CPU build from the official releases.
-    $rels = Invoke-RestMethod "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" -Headers @{ "User-Agent" = "PaRuX-build" }
+    # An explicit -RuntimeTag selects that exact reviewed release instead of the newest one (which has no reviewed pin yet).
+    if ($RuntimeTag) {
+        if ($RuntimeTag -notmatch '^[A-Za-z0-9._-]+$') { throw "Untrusted llama.cpp release tag." }
+        $rels = @(Invoke-RestMethod ("https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/" + $RuntimeTag) -Headers @{ "User-Agent" = "PaRuX-build" })
+    } else {
+        $rels = Invoke-RestMethod "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20" -Headers @{ "User-Agent" = "PaRuX-build" }
+    }
     $rel = $rels | Where-Object { @($_.assets | Where-Object { $_.name -match '^llama-.*-bin-win-cpu-x64\.zip$' }).Count -gt 0 } | Select-Object -First 1
     if (-not $rel) { throw "No official win-cpu-x64 llama.cpp asset found in recent releases." }
     $asset = $rel.assets | Where-Object { $_.name -match '^llama-.*-bin-win-cpu-x64\.zip$' } | Select-Object -First 1
