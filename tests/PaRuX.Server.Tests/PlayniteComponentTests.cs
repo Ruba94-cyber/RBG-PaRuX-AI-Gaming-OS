@@ -7,6 +7,25 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
+public sealed class PlayniteForegroundAdmissionTests
+{
+    [Fact]
+    public void A_tracked_game_blocks_another_Playnite_launch_and_focus()
+    {
+        PlayniteLaunchResultDto blocked = Assert.IsType<PlayniteLaunchResultDto>(
+            PlayniteForegroundAdmission.Check(gameRunning: true));
+        Assert.False(blocked.Ok);
+        Assert.Equal("refused", blocked.Outcome);
+        Assert.Contains("game is running", blocked.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_finished_game_does_not_block_a_new_Playnite_launch()
+    {
+        Assert.Null(PlayniteForegroundAdmission.Check(gameRunning: false));
+    }
+}
+
 public sealed class PlayniteLocatorTests
 {
     // IsSafeHelperPath needs real files, so the folder fixtures below are real temp folders.
