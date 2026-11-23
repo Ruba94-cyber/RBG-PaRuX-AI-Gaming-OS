@@ -481,6 +481,20 @@ public sealed class PadActionTests
     }
 
     [Fact]
+    public void Existing_Games_controller_binding_keeps_its_persisted_key_during_Playnite_migration()
+    {
+        // This binding already exists on owner pads. Its stored key must not
+        // change when Desktop starts opening Tools and legacy TV keeps Library.
+        Assert.Equal("gamingLibrary", PadActionCatalog.KeyOf(PadActionId.GamingLibrary));
+        Assert.True(PadActionCatalog.TryParse("gamingLibrary", out PadActionId id));
+        Assert.Equal(PadActionId.GamingLibrary, id);
+        PadActionInfo action = PadActionCatalog.Get(id);
+        Assert.Contains("Games tools", action.En);
+        Assert.Contains("strumenti Giochi", action.It);
+        Assert.True(PadActionPolicy.Decide(id, new PadActionContext(false, false, false)).Allowed);
+    }
+
+    [Fact]
     public void ScreenshotNamesAreSafeAndTheFolderIsBounded()
     {
         Assert.Equal("parux-20261121-100203-045.png", PadActionPolicy.ScreenshotFileName(new DateTime(2026, 11, 21, 10, 2, 3, 45)));
