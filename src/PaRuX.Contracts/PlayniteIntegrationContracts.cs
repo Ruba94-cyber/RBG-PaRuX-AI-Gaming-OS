@@ -17,7 +17,7 @@ public sealed class PlayniteComponentDto
     public bool Detected { get; set; }
     /// <summary>"installed" | "portable" | "running" | "located" | "none"</summary>
     public string InstallKind { get; set; } = "none";
-    /// <summary>"registry" | "local-app-data" | "app-data" | "process" | "user-located" | "none"</summary>
+    /// <summary>"registry" | "local-app-data" | "app-data" | "program-files" | "process" | "user-located" | "none"</summary>
     public string Source { get; set; } = "none";
     public string? Folder { get; set; }
     public string? DesktopExe { get; set; }
@@ -63,11 +63,61 @@ public sealed class PlayniteSessionDto
     public long PaRuXLaunchedClosedCounter { get; set; }
 }
 
+/// <summary>
+/// Pure return-to-AI policy. The caller captures the close counter before opening
+/// Playnite, so even a process that closes before the first UI poll is observed.
+/// Never bring PaRuX forward while another PaRuX-started Playnite is still alive.
+/// </summary>
+public static class PlayniteReturnWatchPolicy
+{
+    public static bool ShouldBringForward(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount == 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+
+    /// <summary>
+    /// A game can outlive Playnite itself. Do not steal focus while it is running;
+    /// keep the old counter until its tracked process exits, then return to PaRuX.
+    /// </summary>
+    public static bool KeepPendingClose(long? beforeLaunchCounter, PlayniteStatusDto? current) =>
+        beforeLaunchCounter.HasValue &&
+        current is not null &&
+        current.Settings.ReturnToPaRuXOnClose &&
+        !current.Session.PaRuXLaunchedPlaynite &&
+        current.Session.TrackedProcessCount > 0 &&
+        current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
+}
+
 public sealed class PlayniteStatusDto
 {
     public PlayniteComponentDto Component { get; set; } = new();
     public PlayniteSettingsDto Settings { get; set; } = new();
     public PlayniteSessionDto Session { get; set; } = new();
+}
+
+/// <summary>
+/// UI admission policy for NEW Playnite Desktop/Fullscreen requests, before
+/// any window activation. Gamepad, shortcut and Games Tools entry points
+/// must use the same predicate. The Core independently rechecks game activity
+/// when the launch request actually arrives.
+/// </summary>
+public static class PlayniteLauncherForegroundPolicy
+{
+    public static bool RequiresGamePreflight(PlayniteLauncherAction action) =>
+        action is PlayniteLauncherAction.Console or PlayniteLauncherAction.Desktop;
+
+    public static bool MayOpen(PlayniteLauncherAction action, bool nativeGameActive, PlayniteStatusDto? status)
+    {
+        if (!RequiresGamePreflight(action)) return true; // explicit settings/setup can be opened by the owner
+        if (nativeGameActive || status?.Session is not { } session) return false;
+        // A nonzero process count and all transitional/failure states fail closed.
+        // An unrecognized new session state must not automatically steal focus.
+        return session.TrackedProcessCount == 0 &&
+            (session.State is "idle" or "disabled");
+    }
 }
 
 public sealed class PlayniteLocateRequest { public string Path { get; set; } = string.Empty; }

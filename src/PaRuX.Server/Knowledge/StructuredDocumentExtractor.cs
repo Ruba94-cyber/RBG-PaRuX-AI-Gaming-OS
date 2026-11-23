@@ -79,9 +79,9 @@ public static class StructuredDocumentExtractor
         new PdfExtractor(), new WordExtractor(), new PresentationExtractor(), new OpenXmlSpreadsheetExtractor(),
         new LegacyWorkbookExtractor(),
         // Specific structured formats first, then the generic ones, then sniffed text.
-        new DbcExtractor(), new ArxmlExtractor(), new OdxExtractor(), new CddExtractor(), new A2lExtractor(),
+        new DbcExtractor(), new AscTraceExtractor(), new BlfTraceExtractor(), new MsgExtractor(), new LegacyDocExtractor(), new LegacyPptExtractor(), new ArxmlExtractor(), new OdxExtractor(), new CddExtractor(), new A2lExtractor(),
         new ImageOcrExtractor(),
-        .. GenericExtractors.All, new TextFileExtractor()
+        .. GenericExtractors.All, new UniversalScriptExtractor(), new TextFileExtractor()
     ];
 
     public static IReadOnlyList<IDocumentExtractor> Registered => Extractors;
@@ -106,9 +106,9 @@ public static class StructuredDocumentExtractor
                 if (result.Tier == DocumentTier.MetadataOnly && result.Segments.Count == 0)
                 {
                     ExtractedDocument meta = MetadataOnly(path, info);
-                    return meta with { Note = result.Note ?? meta.Note, Extractor = result.Extractor };
+                    return MacroAugmenter.Augment(path, meta with { Note = result.Note ?? meta.Note, Extractor = result.Extractor }, limits, ct);
                 }
-                return result;
+                return MacroAugmenter.Augment(path, result, limits, ct);   // an Office file with VBA macros is also a program: index its source
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)

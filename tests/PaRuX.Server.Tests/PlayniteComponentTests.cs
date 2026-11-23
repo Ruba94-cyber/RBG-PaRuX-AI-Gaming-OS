@@ -7,6 +7,74 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
+public sealed class PlayniteForegroundAdmissionTests
+{
+    [Fact]
+    public void A_tracked_game_blocks_another_Playnite_launch_and_focus()
+    {
+        PlayniteLaunchResultDto blocked = Assert.IsType<PlayniteLaunchResultDto>(
+            PlayniteForegroundAdmission.Check(gameRunning: true));
+        Assert.False(blocked.Ok);
+        Assert.Equal("refused", blocked.Outcome);
+        Assert.Contains("game is running", blocked.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_finished_game_does_not_block_a_new_Playnite_launch()
+    {
+        Assert.Null(PlayniteForegroundAdmission.Check(gameRunning: false));
+    }
+
+    [Fact]
+    public void PaRuX_native_gaming_hard_off_also_blocks_a_frontend_launch()
+    {
+        PlayniteLaunchResultDto blocked = Assert.IsType<PlayniteLaunchResultDto>(
+            PlayniteForegroundAdmission.Check(gameRunning: false, gamingHardOff: true));
+        Assert.False(blocked.Ok);
+        Assert.Equal("refused", blocked.Outcome);
+    }
+
+    [Theory]
+    [InlineData("idle", 0, true)]
+    [InlineData("disabled", 0, true)]
+    [InlineData("idle", 1, false)]
+    [InlineData("game-detected", 0, false)]
+    [InlineData("yielding", 0, false)]
+    [InlineData("yielded", 0, false)]
+    [InlineData("restoring", 0, false)]
+    [InlineData("failed", 0, false)]
+    [InlineData("user-override", 0, false)]
+    [InlineData("future-state", 0, false)]
+    public void Controller_and_hub_playnite_preflight_is_strict(string state, int processes, bool allowed)
+    {
+        var dto = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto { State = state, TrackedProcessCount = processes }
+        };
+        Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: false, status: dto));
+        Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Desktop, nativeGameActive: false, status: dto));
+    }
+
+    [Fact]
+    public void Controller_preflight_refuses_unknown_core_and_paRuX_native_game_before_focus()
+    {
+        var ready = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto { State = "idle", TrackedProcessCount = 0 }
+        };
+        Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: false, status: null));
+        Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: true, status: ready));
+        Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Open, nativeGameActive: true, status: null));
+        Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Settings, nativeGameActive: true, status: null));
+    }
+}
+
 public sealed class PlayniteLocatorTests
 {
     // IsSafeHelperPath needs real files, so the folder fixtures below are real temp folders.
@@ -83,6 +151,29 @@ public sealed class PlayniteLocatorTests
             Assert.Null(c.FullscreenExe);
         }
         finally { Directory.Delete(target, true); }
+    }
+
+    [Fact]
+    public void Program_files_install_is_identified_with_the_correct_source()
+    {
+        string root = MakeFolder();
+        string installed = Path.Combine(root, "Playnite");
+        Directory.CreateDirectory(installed);
+        try
+        {
+            string desktop = Path.Combine(installed, "Playnite.DesktopApp.exe");
+            File.WriteAllBytes(desktop, new byte[] { 1 });
+            var env = new FakeEnv { ProgramFiles = root };
+            env.Files.Add(desktop);
+
+            PlayniteComponentDto component = new PlayniteLocator(env).Detect();
+
+            Assert.True(component.Detected);
+            Assert.Equal("program-files", component.Source);
+            Assert.Equal(installed, component.Folder);
+            Assert.Equal(ComponentOwnership.SYSTEM_DETECTED, component.Ownership);
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
@@ -180,6 +271,54 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void A_just_started_owned_playnite_is_not_started_twice_when_discovery_lags()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null).Ok);
+        Assert.Empty(e.Running); // The Windows discovery snapshot has not caught up yet.
+
+        PlayniteLaunchResultDto again = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null);
+
+        Assert.True(again.Ok);
+        Assert.Equal("already-running", again.Outcome);
+        Assert.Equal(PlayniteModes.Console, again.Mode);
+        Assert.Single(h.Starts);
+        Assert.Equal(new[] { h.Last!.Id }, h.Focused);
+    }
+
+    [Fact]
+    public void A_just_started_owned_playnite_refuses_the_other_mode_without_creating_an_instance()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        Assert.Empty(e.Running);
+
+        PlayniteLaunchResultDto result = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null);
+
+        Assert.False(result.Ok);
+        Assert.Equal("already-running", result.Outcome);
+        Assert.Equal(PlayniteModes.Desktop, result.Mode);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+    }
+
+    [Fact]
+    public void An_exited_owned_playnite_can_be_restarted_when_windows_discovery_is_empty()
+    {
+        var (l, h, e, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Console, null).Ok);
+        h.Last!.ExitNow();
+        Assert.Empty(e.Running);
+
+        PlayniteLaunchResultDto result = l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null);
+
+        Assert.True(result.Ok);
+        Assert.Equal("started", result.Outcome);
+        Assert.Equal(2, h.Starts.Count);
+        Assert.Equal(PlayniteModes.Desktop, l.LaunchedMode);
+    }
+
+    [Fact]
     public void Running_in_the_other_mode_is_not_duplicated_nor_claimed_as_success()
     {
         var (l, h, e, c, dir) = Make();
@@ -239,6 +378,19 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void An_owned_process_exit_event_is_counted_only_once_even_if_it_is_reported_twice()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        long initial = l.ClosedCounter;
+
+        h.Last!.ExitNow();
+        h.Last.ExitNow();
+
+        Assert.Equal(initial + 1, l.ClosedCounter);
+    }
+
+    [Fact]
     public void Switch_closes_only_a_playnite_paRuX_started_and_starts_the_other_mode()
     {
         var (l, h, _, c, _) = Make();
@@ -267,6 +419,69 @@ public sealed class PlayniteLauncherTests
         var r = l.Switch(c, new PlayniteSettingsDto(), gameRunning: true, null);
         Assert.False(r.Ok);
         Assert.Equal(0, h.Last!.CloseCalls);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_when_required_tv_is_disconnected()
+    {
+        var (l, h, _, c, _) = Make(displayConnected: false);
+        var settings = new PlayniteSettingsDto { ConsoleOnlyWhenTargetConnected = true, TargetDisplayId = "TV1" };
+        Assert.True(l.Launch(c, settings, PlayniteModes.Desktop, null).Ok);
+
+        PlayniteLaunchResultDto result = l.Switch(c, settings, gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Equal("refused", result.Outcome);
+        Assert.Contains("display", result.Message!, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+        Assert.Equal(PlayniteModes.Desktop, l.LaunchedMode);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_when_fullscreen_executable_is_missing()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        c.FullscreenExe = null;
+
+        PlayniteLaunchResultDto result = l.Switch(c, new PlayniteSettingsDto(), gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_when_playnite_was_skipped()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+
+        PlayniteLaunchResultDto result = l.Switch(c,
+            new PlayniteSettingsDto { Skipped = true }, gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
+    }
+
+    [Fact]
+    public void Switch_does_not_close_desktop_if_playnite_component_disappears()
+    {
+        var (l, h, _, c, _) = Make();
+        Assert.True(l.Launch(c, new PlayniteSettingsDto(), PlayniteModes.Desktop, null).Ok);
+        c.Detected = false;
+
+        PlayniteLaunchResultDto result = l.Switch(c, new PlayniteSettingsDto(), gameRunning: false, displayId: null);
+
+        Assert.False(result.Ok);
+        Assert.Single(h.Starts);
+        Assert.Equal(0, h.Last!.CloseCalls);
+        Assert.True(l.PaRuXLaunched);
     }
 
     [Fact]
@@ -313,6 +528,82 @@ public sealed class PlayniteSettingsStoreTests : IDisposable
         File.WriteAllText(_path, "{ not json");
         Assert.True(new PlayniteSettingsStore(_path).Get().AiYieldEnabled);
         Assert.Equal("{ not json", File.ReadAllText(_path));
+    }
+}
+
+public sealed class PlayniteReturnWatchPolicyTests
+{
+    [Fact]
+    public void A_playnite_that_exits_before_first_poll_still_triggers_return()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = true },
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = false,
+                PaRuXLaunchedClosedCounter = 8
+            }
+        };
+
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(7, status));
+    }
+
+    [Fact]
+    public void A_mode_switch_does_not_return_while_the_replacement_playnite_is_running()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = true,
+                PaRuXLaunchedClosedCounter = 12
+            }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(11, status));
+        status.Session.PaRuXLaunchedPlaynite = false;
+        status.Session.PaRuXLaunchedClosedCounter++;
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(12, status));
+    }
+
+    [Fact]
+    public void A_game_surviving_playnite_close_defers_return_until_the_game_exits()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto
+            {
+                PaRuXLaunchedPlaynite = false,
+                PaRuXLaunchedClosedCounter = 4,
+                TrackedProcessCount = 1
+            }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.True(PlayniteReturnWatchPolicy.KeepPendingClose(3, status));
+
+        status.Session.TrackedProcessCount = 0;
+
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.KeepPendingClose(3, status));
+    }
+
+    [Fact]
+    public void Return_is_refused_when_disabled_or_counter_unknown_or_unchanged()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = false },
+            Session = new PlayniteSessionDto { PaRuXLaunchedClosedCounter = 3 }
+        };
+
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(2, status));
+        status.Settings.ReturnToPaRuXOnClose = true;
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(null, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(4, status));
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(2, null));
     }
 }
 

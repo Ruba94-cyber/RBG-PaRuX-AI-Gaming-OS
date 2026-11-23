@@ -148,8 +148,8 @@ public sealed class GenericExtractorTests : IDisposable
             + "--BND\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\nContent-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + pdf + "\r\n--BND--\r\n";
         var doc = Run("a.eml", eml);
         string t = doc.FullText;
-        Assert.Contains("From: Jane Doe", t);
-        Assert.Contains("Subject: Quarterly r\u00e9sum\u00e9", t);
+        Assert.Contains("From (mittente): Jane Doe", t);
+        Assert.Contains("Subject (oggetto): Quarterly r\u00e9sum\u00e9", t);
         Assert.Contains("Hello \u2713 body line", t);
         Assert.Contains("Attachment: report.pdf", t);
         Assert.DoesNotContain("%PDF", t);
@@ -157,15 +157,16 @@ public sealed class GenericExtractorTests : IDisposable
     }
 
     [Fact]
-    public void Eml_html_only_body_is_stripped_and_msg_is_metadata_only_with_note()
+    public void Eml_html_only_body_is_stripped_and_a_damaged_msg_is_metadata_only_with_note()
     {
         var doc = Run("h.eml", "From: a@example.invalid\nSubject: s\nContent-Type: text/html\n\n<p>Hello <b>html</b></p><script>x()</script>\n");
         Assert.Contains("Hello html", doc.FullText);
         Assert.DoesNotContain("x()", doc.FullText);
         File.WriteAllBytes(P("a.msg"), new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 1, 2, 3 });
         var msg = StructuredDocumentExtractor.Extract(P("a.msg"));
+        // .msg is read now (see LegacyOfficeExtractorTests); a damaged one stays findable by name with the reason as a note.
         Assert.Equal(DocumentTier.MetadataOnly, msg.Tier);
-        Assert.Contains(".msg", msg.Note);
+        Assert.False(string.IsNullOrWhiteSpace(msg.Note));
     }
 
     [Fact]

@@ -21,7 +21,10 @@ public enum PadActionId
     Screenshot,
     PauseResumeGame,
     OpenSettings,
-    SwitchPlaynite
+    SwitchPlaynite,
+    // Append only: action ids are persisted indirectly through the stable string keys below.
+    LaunchPlayniteConsole,
+    LaunchPlayniteDesktop
 }
 
 public sealed record PadActionInfo(PadActionId Id, string Key, string En, string It, bool NeedsLocalAi, bool Available)
@@ -35,7 +38,7 @@ public static class PadActionCatalog
     {
         new PadActionInfo(PadActionId.None, "none", "None", "Nessuna", false, true),
         new PadActionInfo(PadActionId.OpenMenu, "openMenu", "Open PaRuX menu (keeps the game running)", "Apri il menu PaRuX (il gioco resta in esecuzione)", false, true),
-        new PadActionInfo(PadActionId.GamingLibrary, "gamingLibrary", "Return to Gaming library (TV)", "Torna alla libreria Gaming (TV)", false, true),
+        new PadActionInfo(PadActionId.GamingLibrary, "gamingLibrary", "Open Games tools (Desktop) / library (legacy TV)", "Apri strumenti Giochi (Desktop) / libreria (TV precedente)", false, true),
         new PadActionInfo(PadActionId.SwitchWorkspace, "switchWorkspace", "Switch Gaming / AI", "Passa tra Gaming e AI", false, true),
         new PadActionInfo(PadActionId.MiniAgent, "miniAgent", "Start mini agent (Quick Chat)", "Avvia il mini agente (Quick Chat)", true, true),
         new PadActionInfo(PadActionId.Dictation, "dictation", "Dictation (push-to-talk toggle)", "Dettatura (attiva/disattiva push-to-talk)", true, true),
@@ -43,6 +46,8 @@ public static class PadActionCatalog
         new PadActionInfo(PadActionId.PauseResumeGame, "pauseResume", "Pause / resume the running game", "Pausa / riprendi il gioco in corso", false, true),
         new PadActionInfo(PadActionId.OpenSettings, "openSettings", "Open Settings > Controller buttons", "Apri Impostazioni > Pulsanti del controller", false, true),
         new PadActionInfo(PadActionId.SwitchPlaynite, "switchPlaynite", "Switch Playnite Console / Desktop", "Passa Playnite tra Console e Desktop", false, true),
+        new PadActionInfo(PadActionId.LaunchPlayniteConsole, "playniteConsole", "Open Playnite in Console (Fullscreen)", "Apri Playnite in modalità Console (schermo intero)", false, true),
+        new PadActionInfo(PadActionId.LaunchPlayniteDesktop, "playniteDesktop", "Open Playnite in Desktop mode", "Apri Playnite in modalità Desktop", false, true),
     };
 
     public static PadActionInfo Get(PadActionId id) => All.First(a => a.Id == id);

@@ -167,7 +167,7 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
             _root, "\"" + node + "\" web/verify.mjs", CancellationToken.None,
             timeout: TimeSpan.FromSeconds(120), networkMode: WindowsCodingSandbox.NetworkMode.None);
 
-        Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output} {result.Error}");
+        Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output} {result.Error}; setup: {result.SetupTimings}");
         Assert.Contains("ESM-OK", result.Output, StringComparison.Ordinal);
     }
 
@@ -185,6 +185,7 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
             timeout: TimeSpan.FromSeconds(30), networkMode: WindowsCodingSandbox.NetworkMode.None);
 
         Assert.False(result.TimedOut, result.Output);
+        Assert.True(result.ExitCode == 3, $"Exit {result.ExitCode}: {result.Output} {result.Error}; setup: {result.SetupTimings}");
         Assert.Contains("PRE-RAN", result.Output, StringComparison.Ordinal);
         Assert.Contains("SCRIPT-RAN test", result.Output, StringComparison.Ordinal);
         Assert.Equal(3, result.ExitCode);
@@ -214,7 +215,7 @@ public sealed class WindowsCodingSandboxIntegrationTests : IDisposable
             timeout: TimeSpan.FromSeconds(60), networkMode: WindowsCodingSandbox.NetworkMode.None);
 
         Assert.False(result.TimedOut, result.Output);
-        Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output} {result.Error}");
+        Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output} {result.Error}; setup: {result.SetupTimings}");
         Assert.Contains("pass 1", result.Output, StringComparison.Ordinal);
     }
 

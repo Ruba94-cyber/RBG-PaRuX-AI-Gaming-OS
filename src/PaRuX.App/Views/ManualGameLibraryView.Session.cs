@@ -39,6 +39,14 @@ public sealed partial class ManualGameLibraryView
     {
         ApplySetupProfilePresentation();
         UpdateStoreDiscoveryOffer();
+        if ((_sectionBar?.SelectedItem as Microsoft.UI.Xaml.Controls.SelectorBarItem)?.Tag as string == "Tools")
+        {
+            // Desktop controller entry targets Playnite tools, not the obsolete
+            // native tile catalogue. Skip game/store scans and list hydration
+            // unless the owner explicitly returns to the Library section.
+            await UpdateGamingStatusAsync();
+            return;
+        }
         if (_universal is not null)
             await _universal.RefreshVisibleTitlesAsync();
         await RefreshAsync();

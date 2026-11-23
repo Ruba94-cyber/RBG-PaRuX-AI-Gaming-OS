@@ -30,6 +30,7 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly TextBlock _heading = new();
     private bool _consolePresentation;
     private SelectorBar? _sectionBar;
+    private GamesToolsHome? _toolsHome;
     private readonly StackPanel _discoveredGames = new() { Spacing = 8 };
     private readonly TextBlock _discoveryStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _steamRefresh = new();
@@ -115,7 +116,7 @@ public sealed partial class ManualGameLibraryView : UserControl
     public ManualGameLibraryView()
     {
         var root = _root;
-        _heading.Text = T("Game library", "Libreria giochi");
+        _heading.Text = T("Games", "Giochi");
         _heading.FontSize = 28;
         _heading.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         root.Children.Add(_heading);
@@ -399,9 +400,23 @@ public sealed partial class ManualGameLibraryView : UserControl
         List<UIElement> all = root.Children.ToList();
         root.Children.Clear();
         root.Children.Add(all[0]);   // page title
+        // Transition entry: Playnite-first tools are one click away without
+        // changing existing Library deep links, saved data or old UI test navigation.
+        var openTools = new Button
+        {
+            Content = T("Playnite & Games tools", "Playnite e strumenti Giochi"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            MinHeight = 48
+        };
+        AutomationProperties.SetAutomationId(openTools, "GameLibrary_OpenTools_Button");
+        openTools.Click += (_, _) => OpenGamesSection("Tools");
+        root.Children.Add(openTools);
+        var toolsHome = _toolsHome = new GamesToolsHome(OpenGamesSection);
         var sections = new (string Id, string Title, List<UIElement> Items)[]
         {
             ("Library", T("Library", "Libreria"), new List<UIElement> { _universal }),
+            ("Tools", T("Playnite & tools", "Playnite e strumenti"), new List<UIElement> { toolsHome }),
             ("Downloads", T("Downloads", "Download"), all.Skip(downloadsStart).Take(addStart - downloadsStart).ToList()),
             ("Add", T("Add & import", "Aggiungi e importa"),
                 new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(async () => { await LoadAsync(); if (_universal is not null) await _universal.ReloadTitlesNowAsync(); }), _universal.AddTools }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
@@ -424,10 +439,13 @@ public sealed partial class ManualGameLibraryView : UserControl
             foreach (UIElement element in section.Items) panel.Children.Add(element);
             panels[section.Id] = panel;
         }
-        bar.SelectionChanged += (sender, _) =>
+        bar.SelectionChanged += (sender, args) =>
         {
             string? tag = (sender.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (var pair in panels) pair.Value.Visibility = pair.Key == tag ? Visibility.Visible : Visibility.Collapsed;
+            // No hidden detection or Core startup: inspect optional Playnite
+            // only when the user explicitly opens the Playnite-first hub.
+            if (tag == "Tools") _ = toolsHome.RefreshPlayniteAsync();
         };
         _universal.ImportGamesRequested += () =>
         {
@@ -458,5 +476,36 @@ public sealed partial class ManualGameLibraryView : UserControl
         Content = pageHost;
         Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
         Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
+    }
+
+    /// <summary>
+    /// Desktop controller entry: bring up Playnite-first tools and put focus
+    /// on the first launcher action. Legacy Console still uses its tile surface.
+    /// Only the user-initiated pad action invokes this method.
+    /// </summary>
+    public void OpenToolsFromController()
+    {
+        OpenGamesSection("Tools");
+        if (_toolsHome?.FocusPrimaryAction() != true)
+        {
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if ((_sectionBar?.SelectedItem as SelectorBarItem)?.Tag as string == "Tools")
+                    _toolsHome?.FocusPrimaryAction();
+            });
+        }
+    }
+
+    /// <summary>Shared navigation for Games tools. No refresh, scan or install happens merely by changing sections.</summary>
+    private void OpenGamesSection(string section)
+    {
+        SelectorBar? bar = _sectionBar;
+        if (bar is null) return;
+        SelectorBarItem? item = bar.Items.OfType<SelectorBarItem>()
+            .FirstOrDefault(x => string.Equals(x.Tag as string, section, StringComparison.Ordinal));
+        if (item is null) return;
+        bar.SelectedItem = item;
+        _pageScroll?.ChangeView(null, 0, null, disableAnimation: true);
+        item.Focus(FocusState.Programmatic);
     }
 }

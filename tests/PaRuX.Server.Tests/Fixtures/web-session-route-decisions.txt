@@ -463,6 +463,7 @@ DENY POST /api/v1/gaming/mods/skin-studio/export
 DENY POST /api/v1/gaming/mods/skin-studio/generate
 DENY POST /api/v1/gaming/mods/skin-studio/restyle
 DENY POST /api/v1/gaming/mods/temporary/apply
+DENY POST /api/v1/gaming/mods/temporary/batch-patch-preview
 DENY POST /api/v1/gaming/mods/temporary/patch-preview
 DENY POST /api/v1/gaming/mods/temporary/preview
 DENY POST /api/v1/gaming/mods/temporary/restore
@@ -766,3 +767,7 @@ DENY GET /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/sql/query
 DENY GET /openapi.json
+DENY GET /api/v1/embeddings/multilingual/engine
+DENY GET /api/v1/reranker/multilingual/engine
+DENY POST /api/v1/embeddings/multilingual/engine/install
+DENY POST /api/v1/reranker/multilingual/engine/install

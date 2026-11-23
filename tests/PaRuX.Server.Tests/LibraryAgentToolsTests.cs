@@ -30,6 +30,13 @@ public sealed class LibraryAgentToolsTests
                 "preview-patch", "Synthetic", request.RelativePath, new string('a', 64),
                 "CONFIDENTIAL ORIGINAL", request.Value, DateTime.UtcNow.AddMinutes(5), "Review only"));
         }
+        public Task<GameModPreviewDto> ProposeBatchSettingPatchAsync(GameModBatchPatchRequest request, CancellationToken ct)
+        {
+            Calls.Add("batch:" + request.ManualGameId + ":" + request.Edits.Count);
+            return Task.FromResult(new GameModPreviewDto(
+                "preview-batch", "Synthetic", request.RelativePath, new string('a', 64),
+                "CONFIDENTIAL ORIGINAL", "safe proposed config", DateTime.UtcNow.AddMinutes(5), "Review only"));
+        }
         public Task<GameModPreviewDto> ProposeTemporaryModAsync(GameModProposalRequest request, CancellationToken ct)
         {
             Calls.Add("mod-propose:" + request.ManualGameId);
@@ -90,9 +97,15 @@ public sealed class LibraryAgentToolsTests
         var (tools, _, _) = Make();
         JsonArray schemas = tools.GetToolSchemas();
         var names = schemas.Select(s => s!["function"]!["name"]!.GetValue<string>()).ToList();
-        Assert.Equal(16, names.Count);
+        Assert.Equal(17, names.Count);
         Assert.Contains(AgentLibraryTools.GameModProposeTool, names);
         Assert.Contains(AgentLibraryTools.GameModPatchTool, names);
+        Assert.Contains(AgentLibraryTools.GameModBatchPatchTool, names);
+        Assert.True(AgentLibraryTools.RequiresConfirmation(AgentLibraryTools.GameModBatchPatchTool));
+        JsonNode batch = Assert.Single(schemas, x =>
+            x!["function"]!["name"]!.GetValue<string>() == AgentLibraryTools.GameModBatchPatchTool)!;
+        Assert.Equal(2, batch["function"]!["parameters"]!["properties"]!["edits"]!["minItems"]!.GetValue<int>());
+        Assert.Equal(8, batch["function"]!["parameters"]!["properties"]!["edits"]!["maxItems"]!.GetValue<int>());
         foreach (JsonNode? s in schemas)
             Assert.False(s!["function"]!["parameters"]!["additionalProperties"]!.GetValue<bool>());
         Assert.All(names, n => Assert.True(AgentLibraryTools.IsBuiltInTool(n)));
@@ -157,6 +170,98 @@ public sealed class LibraryAgentToolsTests
         Assert.DoesNotContain("CONFIDENTIAL ORIGINAL", result);
         Assert.Single(backend.Calls);
         Assert.Empty(consent.List());
+    }
+
+    [Fact]
+    public async Task Gameplay_batch_requires_two_step_owner_consent_and_binds_all_values()
+    {
+        var (tools, backend, consent) = Make();
+        DateTime started = new(2026, 11, 5, 10, 0, 0, DateTimeKind.Utc);
+        backend.QuickStatus = new QuickResumeStatusDto(new[]
+        {
+            new QuickResumeAppDto(333, "Demo", "Demo Game", started, Suspended: true,
+                CanSuspend: true, Reason: null)
+        });
+        string json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            manual_game_id = "m1",
+            process_id = 333,
+            started_utc = started.ToString("O"),
+            relative_path = "config/gameplay.json",
+            edits = new[]
+            {
+                new { section = "combat", key = "damage", value = "2" },
+                new { section = "combat", key = "stamina", value = "3" }
+            },
+            offline_confirmed = true
+        });
+
+        Assert.Contains("Confirmation required", await Call(
+            tools, AgentLibraryTools.GameModBatchPatchTool, json, bypass: true));
+        Assert.Empty(backend.Calls);
+        AgentLibraryConsentItem consentItem = Assert.Single(consent.List());
+        Assert.Contains("2 gameplay settings", consentItem.Summary);
+        Assert.True(consent.Approve(consentItem.Id));
+
+        JsonObject approved = JsonNode.Parse(json)!.AsObject();
+        approved["confirmation_id"] = consentItem.Id;
+        JsonObject tampered = JsonNode.Parse(approved.ToJsonString())!.AsObject();
+        tampered["edits"]![1]!["value"] = "999";
+        Assert.Contains("Confirmation required", await Call(
+            tools, AgentLibraryTools.GameModBatchPatchTool, tampered.ToJsonString(), bypass: true));
+        Assert.Empty(backend.Calls); // the prior approval cannot be reused after a value change
+
+        string result = await Call(
+            tools, AgentLibraryTools.GameModBatchPatchTool, approved.ToJsonString(), bypass: true);
+        Assert.Contains("NOTHING has changed", result);
+        Assert.DoesNotContain("CONFIDENTIAL ORIGINAL", result);
+        Assert.Equal("batch:m1:2", Assert.Single(backend.Calls));
+        Assert.Equal("confirmation-required", tools.Audit.Snapshot()
+            .First(x => x.Tool == AgentLibraryTools.GameModBatchPatchTool).Outcome);
+        Assert.StartsWith("Library tool failed:", await Call(
+            tools, AgentLibraryTools.GameModBatchPatchTool,
+            """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"section":"combat","key":"damage","value":"2"}],"offline_confirmed":true}"""));
+    }
+
+    [Fact]
+    public async Task Gameplay_batch_rejects_unpaused_game_and_malformed_nested_edit_arguments()
+    {
+        var (tools, backend, _) = Make();
+        const string unpaused = """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"offline_confirmed":true}""";
+        Assert.StartsWith("Library tool failed:", await Call(
+            tools, AgentLibraryTools.GameModBatchPatchTool, unpaused));
+        Assert.Empty(backend.Calls);
+
+        foreach (string bad in new[]
+        {
+            """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":3}],"offline_confirmed":true}""",
+            """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3","command":"danger"}],"offline_confirmed":true}""",
+            """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3","key":"c"}],"offline_confirmed":true}"""
+        })
+        {
+            Assert.StartsWith("Library tool failed:", await Call(
+                tools, AgentLibraryTools.GameModBatchPatchTool, bad));
+        }
+        Assert.Empty(backend.Calls);
+    }
+
+    [Theory]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","manual_game_id":"m2","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"offline_confirmed":true}""")]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"edits":[{"key":"a","value":"4"},{"key":"b","value":"5"}],"offline_confirmed":true}""")]
+    [InlineData(AgentLibraryTools.GameModBatchPatchTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/gameplay.json","edits":[{"key":"a","value":"2"},{"key":"b","value":"3"}],"offline_confirmed":true,"offline_confirmed":false}""")]
+    [InlineData(AgentLibraryTools.GameModProposeTool,
+        """{"manual_game_id":"m1","process_id":333,"started_utc":"2026-11-05T10:00:00Z","relative_path":"config/settings.ini","proposed_text":"a=1","offline_confirmed":true,"offline_confirmed":false}""")]
+    public async Task Duplicate_tool_arguments_are_rejected_before_any_consent_or_backend_call(
+        string tool, string json)
+    {
+        var (tools, backend, consent) = Make();
+        string result = await Call(tools, tool, json, bypass: true);
+        Assert.Contains("duplicate argument", result);
+        Assert.Empty(consent.List());
+        Assert.Empty(backend.Calls);
     }
 
     [Fact]

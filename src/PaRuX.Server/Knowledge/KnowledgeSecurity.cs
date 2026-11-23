@@ -96,7 +96,7 @@ public static class SensitivePathPolicy
     }
 
     /// <summary>True when a path below an allowed folder must be skipped (credential folder, key file, password database).</summary>
-    public static SensitiveFinding EvaluateEntry(string relativeOrFullPath, bool isDirectory)
+    public static SensitiveFinding EvaluateEntry(string relativeOrFullPath, bool isDirectory, string? fullPathForContentCheck = null)
     {
         string p = Norm(relativeOrFullPath);
         string name = Path.GetFileName(p);
@@ -109,7 +109,10 @@ public static class SensitivePathPolicy
         }
         if (BlockedFileNames.Contains(name, StringComparer.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: credential or key file.");
-        if (BlockedExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
+        // ".asc" is both an armored PGP key and the Vector CAN trace format. Only a file whose header proves it is a CAN trace is kept.
+        bool canTrace = fullPathForContentCheck != null && Path.GetExtension(name).Equals(".asc", StringComparison.OrdinalIgnoreCase) &&
+                        AscTraceExtractor.LooksLikeTrace(fullPathForContentCheck);
+        if (!canTrace && BlockedExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: key, certificate or password-database file.");
         if (name.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: environment file that usually holds secrets.");
@@ -201,6 +204,20 @@ public sealed record PinnedModelManifest(string Repository, string Revision, IRe
     {
         new PinnedFile("onnx/model.onnx", "model.onnx", 90992115, Sha256: "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870"),
         new PinnedFile("vocab.txt", "vocab.txt", 231508, GitBlobSha1: "fb140275c155a9c7c5a3b3e0e77a9e839594a938")
+    });
+
+    /// <summary>Xenova/multilingual-e5-small (int8 ONNX export of intfloat/multilingual-e5-small, MIT) at a fixed commit; digests are the LFS SHA-256 values published in the Hugging Face file listing.</summary>
+    public static PinnedModelManifest MultilingualE5SmallInt8 { get; } = new("Xenova/multilingual-e5-small", "761b726dd34fb83930e26aab4e9ac3899aa1fa78", new[]
+    {
+        new PinnedFile("onnx/model_int8.onnx", "model.onnx", 118054593, Sha256: "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"),
+        new PinnedFile("tokenizer.json", "tokenizer.json", 17082730, Sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39")
+    });
+
+    /// <summary>cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (multilingual mMARCO cross-encoder, Apache-2.0) at a fixed commit; int8 AVX512 ONNX export. Digests computed from the downloaded files.</summary>
+    public static PinnedModelManifest MultilingualRerankerInt8 { get; } = new("cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "1427fd652930e4ba29e8149678df786c240d8825", new[]
+    {
+        new PinnedFile("onnx/model_qint8_avx512.onnx", "model.onnx", 118620017, Sha256: "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4"),
+        new PinnedFile("tokenizer.json", "tokenizer.json", 17082660, Sha256: "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626")
     });
 
     /// <summary>sentence-transformers/all-MiniLM-L6-v2 at a fixed commit; digests read from the Hugging Face file listing (LFS SHA-256, git blob SHA-1 for small files).</summary>

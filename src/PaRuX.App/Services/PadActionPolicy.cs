@@ -35,6 +35,15 @@ public static class PadActionPolicy
                     ? new PadActionDecision(false, "Gaming is active: the AI workspace stays closed.",
                         "Gaming è attivo: l'area AI resta chiusa.")
                     : PadActionDecision.Allow;
+            case PadActionId.LaunchPlayniteConsole:
+            case PadActionId.LaunchPlayniteDesktop:
+                // A controller command must not launch/focus a frontend over an active game.
+                // Playnite's own game lifecycle continues to own the foreground.
+                return ctx.GamingActive
+                    ? new PadActionDecision(false,
+                        "A game is active: close it before opening another Playnite mode.",
+                        "Un gioco è attivo: chiudilo prima di aprire un'altra modalità Playnite.")
+                    : PadActionDecision.Allow;
             case PadActionId.PauseResumeGame:
                 return ctx.GamingActive
                     ? PadActionDecision.Allow

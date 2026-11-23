@@ -149,7 +149,7 @@ namespace PaRuX.Server.Tests
                 WindowsCodingSandbox.Result result = await WindowsCodingSandbox.RunAsync(
                     tempDir, "echo hello", System.Threading.CancellationToken.None);
 
-                Assert.True(result.ExitCode == 0, $"ExitCode: {result.ExitCode}, Error: {result.Error}, Output: {result.Output}");
+                Assert.True(result.ExitCode == 0, $"ExitCode: {result.ExitCode}, Error: {result.Error}, Output: {result.Output}, Setup: {result.SetupTimings}");
                 Assert.Contains("hello", result.Output);
             }
             finally

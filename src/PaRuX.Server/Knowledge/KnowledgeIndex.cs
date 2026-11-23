@@ -404,7 +404,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS kn_tri USING fts5(text, content='kn_chunks', 
             {
                 if (name.StartsWith("~$", StringComparison.Ordinal)) continue;       // Office lock files
                 if ((attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
-                SensitiveFinding sensitiveFile = SensitivePathPolicy.EvaluateEntry(Rel(root, entry), false);
+                SensitiveFinding sensitiveFile = SensitivePathPolicy.EvaluateEntry(Rel(root, entry), false, entry);
                 if (sensitiveFile.Verdict == SensitiveVerdict.Blocked) { policySkips.Add((Rel(root, entry), sensitiveFile.Reason ?? "Skipped by policy.")); continue; }
                 files.Add(entry);
             }
@@ -923,8 +923,9 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
     // ------------------------------------------------------------------------------------------------------ search
 
     private static readonly Regex IdentifierPattern = new(
-        @"(?<![A-Za-z0-9])(0x[0-9A-Fa-f]{2,}|[A-Za-z][A-Za-z0-9]*[_\-.][A-Za-z0-9][A-Za-z0-9_\-.]*|[PCBU][0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{2})?|[A-Za-z]{2,}\d{3,}|\d+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9])",
+        @"(?<![A-Za-z0-9])(0x[0-9A-Fa-f]{2,}x?|[A-Za-z][A-Za-z0-9]*[_\-.][A-Za-z0-9][A-Za-z0-9_\-.]*|[PCBU][0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{2})?|[A-Za-z]{2,}\d{3,}|[A-Z]{2,5}\d{1,2}|\d+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9])",
         RegexOptions.Compiled);
+    private static readonly Regex FileNameLike = new(@"\.(asc|dbc|blf|cdd|a2l|arxml|odx|pdf|docx?|docm|dotx|dotm|xlsx?|xlsm|xlsb|xltx|pptx?|pptm|potx|odt|ods|odp|rtf|eml|msg|epub|html?|csv|tsv|txt|md|json|ya?ml|toml|ini|cfg|xml|log|zip|7z|esl|eslx|xscr|vbs|vba|bas|cls|py|js|ts|cs|java|go|rs|c|h|cpp|hpp|sh|ps1|bat|cmd|sql|m|ahk|can|cin|st|lua|tcl|ipynb|hex|s19|mf4|mdf|dll|exe)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex Quoted = new("\"([^\"]{2,})\"", RegexOptions.Compiled);
 
     /// <summary>The identifiers (codes, parameters, DTCs, quoted phrases) a query asks for exactly.</summary>
@@ -933,7 +934,11 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
         var terms = new List<string>();
         foreach (Match m in Quoted.Matches(query)) terms.Add(m.Groups[1].Value.Trim());
         string rest = Quoted.Replace(query, " ");
-        foreach (Match m in IdentifierPattern.Matches(rest)) terms.Add(m.Value);
+        // A question that names a file ("in CAN-1234.asc, how many ...") is scoping, not looking up an identifier: file names
+        // are kept as exact terms only for a short lookup such as the bare name of a file.
+        bool isQuestion = rest.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length >= 4;
+        foreach (Match m in IdentifierPattern.Matches(rest))
+            if (!(isQuestion && FileNameLike.IsMatch(m.Value))) terms.Add(m.Value);
         return terms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 

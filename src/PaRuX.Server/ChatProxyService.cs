@@ -311,7 +311,9 @@ public sealed class ChatProxyService
             ApplyContextPack(request, context.Pack);
             if (documentMode) PaRuX.Server.Knowledge.DocumentChatPlanner.ApplyGrounding(request);
             sources = DisplaySources(context.Pack);
-            mcpTools = context.ToolSchemas;
+            // Document questions are answered from the cited passages only. Tool definitions (about 1,200 tokens) add nothing there and, on a
+            // 2,048-token window chosen under memory pressure, left no room for the passages and the reply.
+            mcpTools = documentMode ? new JsonArray() : context.ToolSchemas;
         }
 
         // Workbook review is available only to the local desktop owner and a scoped conversation.

@@ -49,6 +49,18 @@ public static class TemporaryGameModEndpoints
             { return Results.Problem("Temporary game setting could not be safely inspected."); }
         }).RequireDesktopOwner().WithMetadata(new RequestSizeLimitAttribute(16384));
 
+        // Owner-only batch preview: 2-8 settings in one existing config,
+        // with one independent application approval and one rollback receipt.
+        app.MapPost("/api/v1/gaming/mods/temporary/batch-patch-preview", (
+            GameModBatchPatchRequest request, TemporaryGameModService mods) =>
+        {
+            try { return Results.Ok(mods.PreviewBatchSettingPatch(request)) as IResult; }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            { return Results.Problem("Gameplay preset could not be safely inspected."); }
+        }).RequireDesktopOwner().WithMetadata(new RequestSizeLimitAttribute(16384));
+
         app.MapPost("/api/v1/gaming/mods/temporary/apply", (
             GameModApplyRequest request, TemporaryGameModService mods) =>
         {

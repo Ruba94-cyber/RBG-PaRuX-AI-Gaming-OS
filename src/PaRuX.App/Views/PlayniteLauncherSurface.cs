@@ -445,10 +445,13 @@ namespace PaRuX.Views
             SetMessage(mode == PlayniteModes.Console ? T("Starting Playnite in Console mode...", "Avvio Playnite in modalità Console...") : T("Starting Playnite in Desktop mode...", "Avvio Playnite in modalità Desktop..."));
             try
             {
+                long? beforeCounter = _status?.Session.PaRuXLaunchedClosedCounter;
+                bool wasOwned = _status?.Session.PaRuXLaunchedPlaynite == true;
                 var result = await PlayniteClient.Current.LaunchAsync(mode, MainWindow.PlayniteDisplayId(), _lifetime.Token);
                 bool ok = result.Succeeded && result.Value is { Ok: true };
                 SetMessage(result.Error ?? result.Value?.Message ?? (ok ? T("Playnite started.", "Playnite avviato.") : T("Playnite was not started.", "Playnite non è stato avviato.")));
-                App.MainWin?.BeginPlayniteReturnWatch();
+                if (ok && (result.Value?.Outcome == "started" || wasOwned))
+                    App.MainWin?.BeginPlayniteReturnWatch(beforeCounter);
                 if (ok && fromRequest) { await Task.Delay(1500, _lifetime.Token); _closeDialog(); }
             }
             catch (OperationCanceledException) { }
@@ -462,9 +465,11 @@ namespace PaRuX.Views
             SetBusy(true);
             try
             {
+                long? beforeCounter = _status?.Session.PaRuXLaunchedClosedCounter;
                 var result = await PlayniteClient.Current.SwitchAsync(MainWindow.PlayniteDisplayId(), _lifetime.Token);
                 SetMessage(result.Error ?? result.Value?.Message ?? T("Switched.", "Cambiato."));
-                App.MainWin?.BeginPlayniteReturnWatch();
+                if (result.Succeeded && result.Value is { Ok: true })
+                    App.MainWin?.BeginPlayniteReturnWatch(beforeCounter);
             }
             catch (OperationCanceledException) { }
             finally { SetBusy(false); }

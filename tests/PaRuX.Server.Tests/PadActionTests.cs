@@ -462,6 +462,10 @@ public sealed class PadActionTests
     [InlineData(PadActionId.SwitchWorkspace, false, true, true)]
     [InlineData(PadActionId.PauseResumeGame, false, true, false)]
     [InlineData(PadActionId.PauseResumeGame, true, true, true)]
+    [InlineData(PadActionId.LaunchPlayniteConsole, true, true, false)]
+    [InlineData(PadActionId.LaunchPlayniteConsole, false, false, true)]
+    [InlineData(PadActionId.LaunchPlayniteDesktop, true, false, false)]
+    [InlineData(PadActionId.LaunchPlayniteDesktop, false, true, true)]
     public void HardOffMatrix(PadActionId action, bool gamingActive, bool onGaming, bool allowed)
     {
         var d = PadActionPolicy.Decide(action, new PadActionContext(gamingActive, true, onGaming));
@@ -478,6 +482,60 @@ public sealed class PadActionTests
         foreach (var a in PadActionCatalog.All.Where(a => a.NeedsLocalAi))
             Assert.False(PadActionPolicy.Decide(a.Id, new PadActionContext(true, false, false)).Allowed);
         Assert.Equal(PadActionCatalog.All.Count, PadActionCatalog.All.Select(a => a.Key).Distinct().Count());
+    }
+
+    [Fact]
+    public void PlaynitePadActionsHaveStableKeysAndSurviveSettingsRoundTrip()
+    {
+        // Existing actions retain their string keys. These bindings opt in to
+        // launching the optional Playnite frontend; the default pad layout is untouched.
+        Assert.Equal("switchPlaynite", PadActionCatalog.KeyOf(PadActionId.SwitchPlaynite));
+        Assert.Equal("playniteConsole", PadActionCatalog.KeyOf(PadActionId.LaunchPlayniteConsole));
+        Assert.Equal("playniteDesktop", PadActionCatalog.KeyOf(PadActionId.LaunchPlayniteDesktop));
+        var settings = new PadActionSettings
+        {
+            Bindings = new()
+            {
+                PadButtonBinding.Make("any", "x:Guide", PadActionId.LaunchPlayniteConsole, PadTrigger.Hold),
+                PadButtonBinding.Make("any", "x:Back", PadActionId.LaunchPlayniteDesktop),
+            }
+        };
+        var loaded = JsonSerializer.Deserialize<PadActionSettings>(JsonSerializer.Serialize(settings))!;
+        Assert.Equal(PadActionId.LaunchPlayniteConsole, loaded.EffectiveBindings[0].ActionId);
+        Assert.Equal(PadTrigger.Hold, loaded.EffectiveBindings[0].TriggerKind);
+        Assert.Equal(PadActionId.LaunchPlayniteDesktop, loaded.EffectiveBindings[1].ActionId);
+        Assert.DoesNotContain(new PadActionSettings().EffectiveBindings,
+            x => x.ActionId is PadActionId.LaunchPlayniteConsole or PadActionId.LaunchPlayniteDesktop);
+    }
+
+    [Fact]
+    public void PlayniteActionsAreLocalizedAndNeverRequireInference()
+    {
+        foreach (PadActionId action in new[] { PadActionId.LaunchPlayniteDesktop, PadActionId.LaunchPlayniteConsole })
+        {
+            PadActionInfo info = PadActionCatalog.Get(action);
+            Assert.False(info.NeedsLocalAi);
+            Assert.True(info.Available);
+            Assert.False(string.IsNullOrWhiteSpace(info.En));
+            Assert.False(string.IsNullOrWhiteSpace(info.It));
+            Assert.True(PadActionPolicy.Decide(action, new PadActionContext(false, false, false)).Allowed);
+            Assert.True(PadActionPolicy.Decide(action, new PadActionContext(false, true, false)).Allowed);
+            Assert.False(PadActionPolicy.Decide(action, new PadActionContext(true, false, false)).Allowed);
+        }
+    }
+
+    [Fact]
+    public void Existing_Games_controller_binding_keeps_its_persisted_key_during_Playnite_migration()
+    {
+        // This binding already exists on owner pads. Its stored key must not
+        // change when Desktop starts opening Tools and legacy TV keeps Library.
+        Assert.Equal("gamingLibrary", PadActionCatalog.KeyOf(PadActionId.GamingLibrary));
+        Assert.True(PadActionCatalog.TryParse("gamingLibrary", out PadActionId id));
+        Assert.Equal(PadActionId.GamingLibrary, id);
+        PadActionInfo action = PadActionCatalog.Get(id);
+        Assert.Contains("Games tools", action.En);
+        Assert.Contains("strumenti Giochi", action.It);
+        Assert.True(PadActionPolicy.Decide(id, new PadActionContext(false, false, false)).Allowed);
     }
 
     [Fact]

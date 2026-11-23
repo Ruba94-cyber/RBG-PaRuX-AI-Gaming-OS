@@ -117,9 +117,15 @@ builder.Services.AddSingleton<RerankerService>();
 builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<RagStore>(sp =>
     new RagStore(sp.GetRequiredService<EmbeddingService>(), sp.GetRequiredService<RerankerService>()));
+// Registered BEFORE the MiniLM bridge: the catalog picks "the chosen embedder, else the first installed one", so the multilingual model is used
+// whenever it is installed and MiniLM remains the fallback (and the engine of the legacy memory/RAG stores, which resolve the last registration).
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.MultilingualE5EmbeddingProvider>();
+builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => sp.GetRequiredService<PaRuX.Server.Knowledge.MultilingualE5EmbeddingProvider>());
 builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => new LegacyMiniLmEmbeddingProvider(sp.GetRequiredService<EmbeddingService>()));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog>(sp => new PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog(sp.GetServices<IRetrievalEmbeddingProvider>()));
-builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>()));
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.MultilingualRerankerProvider>();
+builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new PaRuX.Server.Knowledge.FallbackRerankerProvider(
+    sp.GetRequiredService<PaRuX.Server.Knowledge.MultilingualRerankerProvider>(), new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>())));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeJobService>();
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.WatchedFolderStore>();
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(sp =>
@@ -356,6 +362,7 @@ builder.Services.AddSingleton<GameLaunchHookService>();
 builder.Services.AddSingleton<GamingDisplayTopologyService>();
 builder.Services.AddSingleton<OwnedGameWindowPlacementService>();
 PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.AddPlayniteIntegration(builder.Services);
+builder.Services.AddSingleton<OwnedGamePostLaunchService>();
 builder.Services.AddSingleton<GamingDisplayModeService>();
 builder.Services.AddSingleton<IStreamingHost, WindowsStreamingHost>();
 builder.Services.AddSingleton<IStreamingDisplayController>(sp =>
@@ -1276,6 +1283,21 @@ app.MapPost("/api/v1/research/deep", async (
 }).RequireDesktopOwner();
 
 app.MapGet("/api/v1/embeddings/engine", (EmbeddingService embeddings) => Results.Ok(embeddings.GetStatus()));
+app.MapGet("/api/v1/embeddings/multilingual/engine", (PaRuX.Server.Knowledge.MultilingualE5EmbeddingProvider provider, int? probe) => Results.Ok(provider.GetStatus(probe == 1)));
+app.MapPost("/api/v1/embeddings/multilingual/engine/install", async (PaRuX.Server.Knowledge.MultilingualE5EmbeddingProvider provider, CancellationToken ct) =>
+{
+    try { return Results.Ok(new { message = await provider.InstallAsync(null, ct) }); }
+    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or TaskCanceledException)
+    { return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status503ServiceUnavailable); }
+}).RequireDesktopOwner();
+
+app.MapGet("/api/v1/reranker/multilingual/engine", (PaRuX.Server.Knowledge.MultilingualRerankerProvider provider, int? probe) => Results.Ok(provider.GetStatus(probe == 1)));
+app.MapPost("/api/v1/reranker/multilingual/engine/install", async (PaRuX.Server.Knowledge.MultilingualRerankerProvider provider, CancellationToken ct) =>
+{
+    try { return Results.Ok(new { message = await provider.InstallAsync(null, ct) }); }
+    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or TaskCanceledException)
+    { return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status503ServiceUnavailable); }
+}).RequireDesktopOwner();
 
 app.MapPost("/api/v1/embeddings/engine/install", async (EmbeddingService embeddings, CancellationToken ct) =>
 {

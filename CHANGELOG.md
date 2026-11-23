@@ -8,6 +8,15 @@
 - **Fixes:** the Italian first-run text for the no-runtime path no longer shows English "Setup is incomplete"; the UI test harness waits for pane policy before toggling and exempts only pointer-only ScrollBar parts in the accessibility sweep.
 - Verification and limits are listed in `docs/RELEASE_NOTES_4.2.0.md`. The signing certificate is self-signed; SmartScreen reputation is not established.
 
+## Integration branch 2026-11-23 (unreleased; not part of any signed release)
+
+- **Integrated PRs:** #8 (Corporate live-memory routing, CPU-only diagnostics), #9 (per-game launch focus and post-launch actions), #12-#16 (Playnite safe switch and pad commands, reversible JSON/AI gameplay mods, Games tools). Conflicts resolved in `KnowledgeService`, `SmartRouterService`, `ManualGameLibraryView` (post-launch status text ported to `ManualGameLibraryView.Launch.cs`) and tests.
+- **Build fixes:** `CS0029` in `ManualGameLibraryView` (a lambda parameter named `_` shadowed the discard); `CS0136` in `GameLaunchProfileValidator` (PR #9). The WMC XAML errors were cascades of the C# failure.
+- **Knowledge / documents:** new readers for Vector CAN traces (`.asc`, `.blf`: per-ID evidence with file/line positions, J1939 PGN/source address, DM1 trouble codes), Outlook `.msg` (with attachments and declared code pages), Word 97-2003 `.doc` and PowerPoint 97-2003 `.ppt` (live revision, speaker notes); `.eml` attachments are now indexed; `.asc` is accepted only when its header proves a CAN trace (armored PGP keys stay blocked).
+- **Document chat:** short identifiers (`ETC7`, `DM1`, hex IDs with the trailing `x`) are exact terms; a file name in a question scopes the search instead of triggering an identifier lookup; only bare-identifier questions are answered without the model; a question naming an indexed file needs one shared content word; passages are fitted to the context window with a density-aware token estimate; tool definitions are no longer sent in document mode; the answer follows the language of the question; DBC cycle/delay attributes carry `ms`. Opt-in local trace: `PARUX_DOCUMENT_CHAT_TRACE=1`.
+- **Build scripts:** `-RuntimeTag` is honoured by `build-corporate-lite.ps1` (reviewed llama.cpp pin); `PARUX_VC_REDIST_X64_DIR` lets a build PC without the Visual Studio C++ workload supply the signed VC++ runtime DLLs; the Corporate smoke test now proves ONNX loading with a real embedding/rerank call (Corporate status checks are observational by design).
+- **Known limits:** `.pst/.ost` and MF4/MDF are not read; the bundled 0.6B starter model is weak on multi-part and numeric questions; real-device acceptance beyond the runs recorded in `docs/validation/` is still open.
+
 ## Unreleased (post-4.0.1, source only)
 
 - Portable Standard now stages a complete SHA-256-locked llama.cpp Vulkan engine/DLL payload while omitting the heavyweight CUDA/uv/media/model assets and optional standalone CLI. The ZIP is inspected and its native files hashed; optional Windows smoke launches the isolated Core and native binary loader.

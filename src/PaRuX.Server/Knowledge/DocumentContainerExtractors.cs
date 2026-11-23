@@ -22,6 +22,7 @@ internal sealed class EmailExtractor : StreamExtractor
         public StringBuilder Plain = new();
         public StringBuilder Html = new();
         public List<string> Attachments = new();
+        public List<(string Name, byte[] Data)> AttachmentData = new();
     }
 
     public override void Read(Stream stream, string fileName, ExtractionSink sink)
@@ -42,7 +43,7 @@ internal sealed class EmailExtractor : StreamExtractor
         sink.Section("headers");
         foreach (string want in new[] { "From", "To", "Cc", "Subject", "Date" })
             foreach (var h in parsed.Headers.Where(h => h.Name.Equals(want, StringComparison.OrdinalIgnoreCase)))
-                sink.Line(want + ": " + DecodeWords(h.Value));
+                sink.Line(want + HeaderGloss(want) + ": " + DecodeWords(h.Value));
         sink.Section("body");
         string body = parsed.Plain.Length > 0 ? parsed.Plain.ToString() : "";
         foreach (string l in body.Split('\n')) if (l.Trim().Length > 0) sink.Line(l.TrimEnd('\r'));
@@ -52,7 +53,45 @@ internal sealed class EmailExtractor : StreamExtractor
         {
             sink.Section("attachments");
             foreach (string a in parsed.Attachments.Take(500)) sink.Line("Attachment: " + a);
+            // The attached documents are read with the same readers as any other file, so a question about their content can be answered.
+            int done = 0;
+            foreach (var (attName, attData) in parsed.AttachmentData)
+            {
+                sink.Ct.ThrowIfCancellationRequested();
+                if (++done > 40 || sink.Exhausted) break;
+                IndexAttachment(attName, attData, sink);
+            }
         }
+    }
+
+    /// <summary>Italian equivalent of a standard header name, so a question in Italian ("chi e' il mittente") matches an English header.</summary>
+    private static string HeaderGloss(string header) => header switch
+    {
+        "From" => " (mittente)", "To" => " (destinatario)", "Cc" => " (copia conoscenza)", "Subject" => " (oggetto)", "Date" => " (data)", _ => string.Empty
+    };
+
+    private const int MaxAttachmentBytes = 25 * 1024 * 1024;
+
+    private static void IndexAttachment(string name, byte[] data, ExtractionSink sink)
+    {
+        if (data.Length == 0 || data.Length > MaxAttachmentBytes) return;
+        string safe = new string(Path.GetFileName(name).Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
+        if (safe.Length == 0) return;
+        string dir = Path.Combine(Path.GetTempPath(), "parux-att-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            string tmp = Path.Combine(dir, safe);
+            File.WriteAllBytes(tmp, data);
+            ExtractedDocument inner = StructuredDocumentExtractor.Extract(tmp, sink.Limits, sink.Ct);
+            if (inner.Tier is not (DocumentTier.Structured or DocumentTier.Text)) return;
+            foreach (DocumentSegment seg in inner.Segments)
+            {
+                sink.Section("attachment " + safe + (seg.Position.Heading != null ? " > " + seg.Position.Heading : string.Empty));
+                foreach (string line in seg.Text.Replace("\r", string.Empty).Split(new[] { (char)10 })) if (line.Trim().Length > 0) sink.Line(line);
+            }
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
 
     private static void Parse(string text, int depth, Parsed result, ExtractionSink sink, bool top)
@@ -96,6 +135,7 @@ internal sealed class EmailExtractor : StreamExtractor
         if (attachment || !(type == "text/plain" || type == "text/html"))
         {
             result.Attachments.Add((filename ?? "(unnamed " + type + ")") + " [" + type + ", " + bytes.Length + " bytes]");
+            if (filename != null && bytes.Length > 0 && bytes.Length <= MaxAttachmentBytes && result.AttachmentData.Count < 40) result.AttachmentData.Add((filename, bytes));
             return;
         }
         string decoded = Charset(Param(ctype, "charset")).GetString(bytes);
