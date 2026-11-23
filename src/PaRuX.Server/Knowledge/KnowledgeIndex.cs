@@ -923,8 +923,9 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
     // ------------------------------------------------------------------------------------------------------ search
 
     private static readonly Regex IdentifierPattern = new(
-        @"(?<![A-Za-z0-9])(0x[0-9A-Fa-f]{2,}|[A-Za-z][A-Za-z0-9]*[_\-.][A-Za-z0-9][A-Za-z0-9_\-.]*|[PCBU][0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{2})?|[A-Za-z]{2,}\d{3,}|\d+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9])",
+        @"(?<![A-Za-z0-9])(0x[0-9A-Fa-f]{2,}x?|[A-Za-z][A-Za-z0-9]*[_\-.][A-Za-z0-9][A-Za-z0-9_\-.]*|[PCBU][0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{2})?|[A-Za-z]{2,}\d{3,}|[A-Z]{2,5}\d{1,2}|\d+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9])",
         RegexOptions.Compiled);
+    private static readonly Regex FileNameLike = new(@"\.(asc|dbc|blf|cdd|a2l|arxml|odx|pdf|docx?|xlsx?|pptx?|csv|txt|md|json|xml|log|zip)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex Quoted = new("\"([^\"]{2,})\"", RegexOptions.Compiled);
 
     /// <summary>The identifiers (codes, parameters, DTCs, quoted phrases) a query asks for exactly.</summary>
@@ -933,7 +934,11 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
         var terms = new List<string>();
         foreach (Match m in Quoted.Matches(query)) terms.Add(m.Groups[1].Value.Trim());
         string rest = Quoted.Replace(query, " ");
-        foreach (Match m in IdentifierPattern.Matches(rest)) terms.Add(m.Value);
+        // A question that names a file ("in CAN-1234.asc, how many ...") is scoping, not looking up an identifier: file names
+        // are kept as exact terms only for a short lookup such as the bare name of a file.
+        bool isQuestion = rest.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length >= 4;
+        foreach (Match m in IdentifierPattern.Matches(rest))
+            if (!(isQuestion && FileNameLike.IsMatch(m.Value))) terms.Add(m.Value);
         return terms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 

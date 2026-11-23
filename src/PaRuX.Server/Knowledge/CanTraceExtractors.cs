@@ -171,8 +171,9 @@ internal sealed class CanTraceAggregator
         foreach (var pair in _ids.OrderBy(p => p.Key.Channel).ThenBy(p => p.Key.Id))
         {
             if (sink.Full) break;
-            sink.Add(IdText(name, pair.Key, pair.Value),
-                $"CAN ID {IdName(pair.Key)} ch{pair.Key.Channel} ({_posUnit}s {pair.Value.FirstPos}-{pair.Value.LastPos})");
+            string heading = $"CAN ID {IdName(pair.Key)} ch{pair.Key.Channel} ({_posUnit}s {pair.Value.FirstPos}-{pair.Value.LastPos})";
+            string prefix = $"CAN ID {IdName(pair.Key)} ch{pair.Key.Channel} in {name} (continued, {_posUnit}s {pair.Value.FirstPos}-{pair.Value.LastPos}):";
+            AddSmall(sink, IdText(name, pair.Key, pair.Value), heading, prefix);
         }
 
         if (_dm1.Count > 0 && !sink.Full)
@@ -185,11 +186,35 @@ internal sealed class CanTraceAggregator
                   .Append(" (").Append(_posUnit).Append(' ').Append(e.FirstPos).Append(") to ").Append(T(e.LastT))
                   .Append(" (").Append(_posUnit).Append(' ').Append(e.LastPos).AppendLine(")");
             if (Dm1Dropped > 0) sb.AppendLine("More than " + MaxDm1Kept + " distinct DM1 states: later ones were not listed.");
-            sink.Add(sb.ToString(), "J1939 DM1 diagnostic trouble codes " + name);
+            AddSmall(sink, sb.ToString(), "J1939 DM1 diagnostic trouble codes " + name, "J1939 DM1 (PGN 0xFECA) active diagnostic trouble codes in " + name + " (continued):");
         }
 
         if (truncated || sink.Truncated) sink.MarkTruncated();
         return sink.Build(path, extractor, Frames == 0 ? (note ?? "No CAN frames were found in this trace.") : note);
+    }
+
+    /// <summary>
+    /// Retrieval chunks are small, so every segment stays under ~800 characters and the later ones repeat the identifying
+    /// prefix: a passage that is retrieved alone still says which file, ID and positions it describes.
+    /// </summary>
+    private static void AddSmall(AutomotiveSink sink, string text, string heading, string prefix)
+    {
+        const int Max = 800;
+        var cur = new StringBuilder();
+        bool first = true;
+        foreach (string line in text.Split('\n'))
+        {
+            string l = line.TrimEnd('\r');
+            if (l.Length == 0) continue;
+            if (cur.Length > 0 && cur.Length + l.Length + 1 > Max)
+            {
+                if (!sink.Add(cur.ToString(), heading)) return;
+                cur.Clear(); first = false;
+            }
+            if (cur.Length == 0 && !first) cur.AppendLine(prefix);
+            cur.AppendLine(l);
+        }
+        if (cur.Length > 0) sink.Add(cur.ToString(), heading);
     }
 
     private static string IdName(Key k) =>

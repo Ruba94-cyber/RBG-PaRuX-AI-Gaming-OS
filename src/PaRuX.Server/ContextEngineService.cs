@@ -90,6 +90,44 @@ public sealed class ContextEngineService
     /// the conversion used: lower-ranked passages are dropped rather than the question being refused.
     /// An unknown window (0) keeps the default.
     /// </summary>
+    /// <summary>
+    /// Rough token cost of a passage. Ordinary prose runs ~3 characters per token, but hexadecimal and numeric text (CAN payloads,
+    /// identifiers, tables) costs about one token per character because digits are tokenised one by one. The character budget alone
+    /// let five dense passages overflow a 4,096-token window.
+    /// </summary>
+    internal static double EstimatePassageTokens(string text)
+    {
+        double tokens = 0;
+        foreach (string word in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            bool dense = word.Length >= 2 && (word.Any(char.IsDigit) || word.All(char.IsUpper)) && word.All(c => Uri.IsHexDigit(c) || c is 'x' or 'X' or '.' or ',' or ':' or '-');
+            tokens += dense ? word.Length : word.Length / 3.5 + 0.5;
+        }
+        return tokens;
+    }
+
+    /// <summary>Keeps the best-ranked passages whose estimated token cost fits the retrieved-context budget; the top passage is always kept (shortened if needed).</summary>
+    internal static IReadOnlyList<PaRuX.Server.Knowledge.KnowledgeHit> FitPassagesToBudget(IReadOnlyList<PaRuX.Server.Knowledge.KnowledgeHit> hits, int maxCharacters)
+    {
+        double budget = maxCharacters / 2.5;
+        var kept = new List<PaRuX.Server.Knowledge.KnowledgeHit>();
+        double used = 0;
+        foreach (var hit in hits)
+        {
+            double cost = EstimatePassageTokens(hit.Text);
+            if (used + cost > budget)
+            {
+                if (kept.Count > 0) continue;
+                int allowed = (int)Math.Max(200, hit.Text.Length * (budget / Math.Max(1, cost)));
+                kept.Add(hit with { Text = hit.Text[..Math.Min(hit.Text.Length, allowed)] });
+                used = budget;
+                continue;
+            }
+            kept.Add(hit); used += cost;
+        }
+        return kept;
+    }
+
     internal static int CharactersForContextWindow(int contextTokens, int replyReserveTokens)
     {
         if (contextTokens <= 0) return DefaultMaxCharacters;
@@ -220,7 +258,7 @@ public sealed class ContextEngineService
         {
             // Scoped document chat: only the chosen sources, position-bearing citations, nothing else mixed in.
             IReadOnlyList<PaRuX.Server.Knowledge.KnowledgeHit> scoped =
-                PaRuX.Server.Knowledge.DocumentChatPlanner.Search(request.Query, 6, request.DocumentScope!.SourceIds);
+                FitPassagesToBudget(PaRuX.Server.Knowledge.DocumentChatPlanner.Search(request.Query, 6, request.DocumentScope!.SourceIds), maxCharacters);
             groups.Add(scoped.Select(h => new ContextCandidate(RagKindFor(h.FilePath), "rag:" + h.FilePath + "#" + h.ChunkId, h.Citation, h.Text, h.Citation)).ToList());
         }
         if (ragTask != null)

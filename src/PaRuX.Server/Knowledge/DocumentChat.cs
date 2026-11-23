@@ -255,9 +255,21 @@ public static class DocumentChatPlanner
         {
             IReadOnlyCollection<string> allowed = service.ScopedSourceIds(sourceIds);
             if (allowed.Count == 0) return Array.Empty<KnowledgeHit>();
-            return FocusOnRelevant(service.Index.Search(query, KnowledgeSearchMode.Auto, topK, allowed));
+            // A question that names an indexed file ("in DTC DMS Can Recording.asc ...") is about that file: keep its passages
+            // only, drawing from a wider candidate pool so the named file is not crowded out by identical IDs in other files.
+            IReadOnlyList<KnowledgeHit> pool = service.Index.Search(query, KnowledgeSearchMode.Auto, Math.Max(topK, 30), allowed);
+            IReadOnlyList<KnowledgeHit> named = KeepNamedFiles(query, pool);
+            return FocusOnRelevant(named.Take(topK).ToList());
         }
         catch (Exception) { return Array.Empty<KnowledgeHit>(); }
+    }
+
+    /// <summary>Hits from the files whose exact name appears in the question; all hits when the question names none (or none matches).</summary>
+    internal static IReadOnlyList<KnowledgeHit> KeepNamedFiles(string query, IReadOnlyList<KnowledgeHit> hits)
+    {
+        if (hits.Count == 0) return hits;
+        var named = hits.Where(h => h.FileName.Length >= 4 && query.Contains(h.FileName, StringComparison.OrdinalIgnoreCase)).ToList();
+        return named.Count > 0 ? named : hits;
     }
 
     public static void ApplyGrounding(ChatCompletionRequest request)
