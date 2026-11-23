@@ -456,6 +456,9 @@ public sealed class PlayniteThemeServiceTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(Themes, Folder)));
         Assert.True(File.Exists(Path.Combine(Themes, Folder, "theme.yaml")));
         Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+        // Even on a failed atomic File.Move, PaRuX does not retain stale journal
+        // temporaries which may contain user-specific local installation paths.
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "state"), "theme.json.*.tmp"));
 
         if (replaceExisting)
         {
