@@ -65,7 +65,18 @@ public sealed partial class ManualGameLibraryView
     /// </summary>
     public void ApplyConsoleMode(bool enabled)
     {
+        bool enteringLegacyConsole = enabled && !_consolePresentation;
         _consolePresentation = enabled;
+        // Until native Console/TV is retired, its existing pad focus engine
+        // assumes the Library's game tile surface is visible. A user might
+        // enter it while the new Games tools tab is selected: restore the old
+        // Library surface once on the transition, never on every UI resize.
+        if (enteringLegacyConsole && _sectionBar is { } sectionBar)
+        {
+            SelectorBarItem? library = sectionBar.Items.OfType<SelectorBarItem>()
+                .FirstOrDefault(x => string.Equals(x.Tag as string, "Library", StringComparison.Ordinal));
+            if (library is not null) sectionBar.SelectedItem = library;
+        }
         _root.MaxWidth = enabled ? 1800 : 1500;
         // Console Home is for playing and managing the session. Desktop-only
         // filesystem editing remains available unchanged in normal mode.

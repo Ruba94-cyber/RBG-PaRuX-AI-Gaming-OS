@@ -65,13 +65,27 @@ public sealed partial class MainWindow
                 case PadActionId.GamingLibrary:
                     PadBringForward();
                     if (_consoleModeActive) { if (!ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace(); }
-                    else { ShowStudioWorkspace(StudioWorkspace.Games); GameLibraryPage.OnShown(); }
+                    else
+                    {
+                        ShowStudioWorkspace(StudioWorkspace.Games);
+                        // Set the lightweight Tools surface BEFORE the page's
+                        // on-shown refresh so no native catalogue scan is queued.
+                        GameLibraryPage.OpenToolsFromController();
+                        GameLibraryPage.OnShown();
+                    }
                     break;
                 case PadActionId.SwitchWorkspace:
                     PadBringForward();
                     if (_consoleModeActive) SwitchConsoleWorkspace();
                     else if (ConsoleOnGamingWorkspace()) ShowChat();
-                    else { ShowStudioWorkspace(StudioWorkspace.Games); GameLibraryPage.OnShown(); }
+                    else
+                    {
+                        ShowStudioWorkspace(StudioWorkspace.Games);
+                        // Set the lightweight Tools surface BEFORE the page's
+                        // on-shown refresh so no native catalogue scan is queued.
+                        GameLibraryPage.OpenToolsFromController();
+                        GameLibraryPage.OnShown();
+                    }
                     break;
                 case PadActionId.MiniAgent:
                     if (App.BubbleWin is { } bubble) bubble.ShowExpanded();
@@ -100,9 +114,7 @@ public sealed partial class MainWindow
                     await PadSwitchPlayniteAsync();
                     break;
                 case PadActionId.OpenSettings:
-                    PadBringForward();
-                    ShowSettings();
-                    SettingsPage.ShowPadButtons();
+                    ShowPadControllerSettings();
                     break;
             }
         }
@@ -112,6 +124,14 @@ public sealed partial class MainWindow
             PadToast(PadT("The controller action failed.", "L'azione del controller non è riuscita."));
         }
         finally { _padActionBusy = false; }
+    }
+
+    /// <summary>One shared entry for explicit controller settings requests from Games tools and pad actions.</summary>
+    internal void ShowPadControllerSettings()
+    {
+        PadBringForward();
+        ShowSettings();
+        SettingsPage.ShowPadButtons();
     }
 
     // ---- bring PaRuX forward (only ever called because the owner pressed the bound button) --------------------------------------

@@ -5,6 +5,20 @@ using PaRuX.Contracts;
 
 namespace PaRuX.Server.Orchestration.Gaming.Playnite;
 
+/// <summary>Pure admission policy: no frontend focus stealing during a tracked game.</summary>
+internal static class PlayniteForegroundAdmission
+{
+    internal static PlayniteLaunchResultDto? Check(bool gameRunning, bool gamingHardOff = false) =>
+        (gameRunning || gamingHardOff)
+            ? new PlayniteLaunchResultDto
+            {
+                Ok = false,
+                Outcome = "refused",
+                Message = "A game is running. Finish playing before opening Playnite again."
+            }
+            : null;
+}
+
 public static class PlayniteEndpoints
 {
     /// <summary>Registers the Playnite component services. The watcher itself is added by the caller outside of test hosts.</summary>
@@ -86,8 +100,15 @@ public static class PlayniteEndpoints
             settings.SetSkipped(false) ? Results.Ok(session.Component(true)) : Results.Problem("The choice could not be saved."))
             .RequireDesktopOwner();
 
-        app.MapPost(root + "/launch", (PlayniteLaunchRequest? request, PlayniteSessionService session, PlayniteLauncher launcher, PlayniteSettingsStore settings) =>
+        app.MapPost(root + "/launch", (PlayniteLaunchRequest? request, PlayniteSessionService session,
+            PlayniteLauncher launcher, PlayniteSettingsStore settings, PaRuX.Server.LocalRuntimeService runtime) =>
         {
+            // One frontend per game session: launching/focusing Playnite during
+            // a tracked game would steal focus and could disrupt controller input.
+            // Apply this at the owner-only Core boundary as well as in the UI,
+            // since shortcuts and controller hotkeys also reach this endpoint.
+            PlayniteLaunchResultDto? blocked = PlayniteForegroundAdmission.Check(session.GameRunning, runtime.GamingMode);
+            if (blocked is not null) return Results.Conflict(blocked);
             PlayniteLaunchResultDto result = launcher.Launch(session.Component(true), settings.Get(), request?.Mode, request?.DisplayId);
             return result.Outcome == "refused" ? Results.Conflict(result) : Results.Ok(result);
         }).RequireDesktopOwner();

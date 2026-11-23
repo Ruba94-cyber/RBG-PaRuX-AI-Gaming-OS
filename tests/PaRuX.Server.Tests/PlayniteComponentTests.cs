@@ -7,6 +7,74 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
+public sealed class PlayniteForegroundAdmissionTests
+{
+    [Fact]
+    public void A_tracked_game_blocks_another_Playnite_launch_and_focus()
+    {
+        PlayniteLaunchResultDto blocked = Assert.IsType<PlayniteLaunchResultDto>(
+            PlayniteForegroundAdmission.Check(gameRunning: true));
+        Assert.False(blocked.Ok);
+        Assert.Equal("refused", blocked.Outcome);
+        Assert.Contains("game is running", blocked.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_finished_game_does_not_block_a_new_Playnite_launch()
+    {
+        Assert.Null(PlayniteForegroundAdmission.Check(gameRunning: false));
+    }
+
+    [Fact]
+    public void PaRuX_native_gaming_hard_off_also_blocks_a_frontend_launch()
+    {
+        PlayniteLaunchResultDto blocked = Assert.IsType<PlayniteLaunchResultDto>(
+            PlayniteForegroundAdmission.Check(gameRunning: false, gamingHardOff: true));
+        Assert.False(blocked.Ok);
+        Assert.Equal("refused", blocked.Outcome);
+    }
+
+    [Theory]
+    [InlineData("idle", 0, true)]
+    [InlineData("disabled", 0, true)]
+    [InlineData("idle", 1, false)]
+    [InlineData("game-detected", 0, false)]
+    [InlineData("yielding", 0, false)]
+    [InlineData("yielded", 0, false)]
+    [InlineData("restoring", 0, false)]
+    [InlineData("failed", 0, false)]
+    [InlineData("user-override", 0, false)]
+    [InlineData("future-state", 0, false)]
+    public void Controller_and_hub_playnite_preflight_is_strict(string state, int processes, bool allowed)
+    {
+        var dto = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto { State = state, TrackedProcessCount = processes }
+        };
+        Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: false, status: dto));
+        Assert.Equal(allowed, PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Desktop, nativeGameActive: false, status: dto));
+    }
+
+    [Fact]
+    public void Controller_preflight_refuses_unknown_core_and_paRuX_native_game_before_focus()
+    {
+        var ready = new PlayniteStatusDto
+        {
+            Session = new PlayniteSessionDto { State = "idle", TrackedProcessCount = 0 }
+        };
+        Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: false, status: null));
+        Assert.False(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Console, nativeGameActive: true, status: ready));
+        Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Open, nativeGameActive: true, status: null));
+        Assert.True(PlayniteLauncherForegroundPolicy.MayOpen(
+            PlayniteLauncherAction.Settings, nativeGameActive: true, status: null));
+    }
+}
+
 public sealed class PlayniteLocatorTests
 {
     // IsSafeHelperPath needs real files, so the folder fixtures below are real temp folders.
