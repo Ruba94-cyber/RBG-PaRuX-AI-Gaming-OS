@@ -52,10 +52,23 @@ public sealed partial class MainWindow
                         || LocalAiController.Current.IsGameActive())
                         return;
                     _consoleRoutingInProgress = true;
-                    try { await EnterConsoleModeAsync(); }
+                    try
+                    {
+                        // Preferred Console UI is Playnite Fullscreen + the owner's Aniki theme:
+                        // avoid creating the heavy legacy Gaming Home just to cover it immediately.
+                        if (await TryStartPlayniteConsoleAsync())
+                        {
+                            if (AppWindow.Presenter is OverlappedPresenter overlappedConsole)
+                                overlappedConsole.Minimize();
+                            Log.Write("Console startup: Playnite Fullscreen accepted; PaRuX remains available for AI.");
+                            break;
+                        }
+
+                        // Fallback only when Playnite is absent, skipped, refused, or not actually Fullscreen.
+                        await EnterConsoleModeAsync();
+                        Log.Write("Console startup: Playnite unavailable; opened the legacy Console fallback.");
+                    }
                     finally { _consoleRoutingInProgress = false; }
-                    Log.Write("Console/TV start preference: TV connected, opened Console mode.");
-                    await ApplyPlayniteConsoleStartAsync();
                     break;
                 case ConsoleStartupDecision.Minimize:
                     if (AppWindow.Presenter is OverlappedPresenter overlapped)
