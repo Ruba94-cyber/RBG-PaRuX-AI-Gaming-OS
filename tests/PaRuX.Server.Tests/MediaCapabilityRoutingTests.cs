@@ -30,6 +30,7 @@ public sealed class MediaCapabilityRoutingTests : IDisposable
     {
         MediaCapabilityRouting.FactsOverride = null;
         MediaCapabilityRouting.CapabilityModeRoot = null;
+        MediaCatalogueLive.HardwareOverride = null;
         _rootScope.Dispose();
         PaRuXDataRoot.UseForTests(_previousDataRoot);
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -68,6 +69,10 @@ public sealed class MediaCapabilityRoutingTests : IDisposable
     public void Automatic_router_pick_is_effective_but_not_an_explicit_checkpoint_pin()
     {
         Facts(new() { ["z_image_turbo_nvfp4.safetensors"] = Good() });
+        // Automatic selection is hardware-aware: a headless CI runner has
+        // unknown GPU memory and must not auto-admit the checkpoint.
+        // Supply a deterministic high-capacity GPU for this unit contract.
+        MediaCatalogueLive.HardwareOverride = new MediaHardware(24L << 30, 64L << 30);
 
         MediaCheckpointEffective effective = MediaCheckpointResolution.Resolve("image");
 
