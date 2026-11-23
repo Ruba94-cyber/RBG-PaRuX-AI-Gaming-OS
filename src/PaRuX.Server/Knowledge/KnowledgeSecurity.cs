@@ -213,6 +213,13 @@ public sealed record PinnedModelManifest(string Repository, string Revision, IRe
         new PinnedFile("tokenizer.json", "tokenizer.json", 17082730, Sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39")
     });
 
+    /// <summary>cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (multilingual mMARCO cross-encoder, Apache-2.0) at a fixed commit; int8 AVX512 ONNX export. Digests computed from the downloaded files.</summary>
+    public static PinnedModelManifest MultilingualRerankerInt8 { get; } = new("cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "1427fd652930e4ba29e8149678df786c240d8825", new[]
+    {
+        new PinnedFile("onnx/model_qint8_avx512.onnx", "model.onnx", 118620017, Sha256: "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4"),
+        new PinnedFile("tokenizer.json", "tokenizer.json", 17082660, Sha256: "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626")
+    });
+
     /// <summary>sentence-transformers/all-MiniLM-L6-v2 at a fixed commit; digests read from the Hugging Face file listing (LFS SHA-256, git blob SHA-1 for small files).</summary>
     public static PinnedModelManifest MiniLmL6V2 { get; } = new("sentence-transformers/all-MiniLM-L6-v2", "1110a243fdf4706b3f48f1d95db1a4f5529b4d41", new[]
     {

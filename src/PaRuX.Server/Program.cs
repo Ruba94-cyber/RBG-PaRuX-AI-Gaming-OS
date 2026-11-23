@@ -123,7 +123,9 @@ builder.Services.AddSingleton<PaRuX.Server.Knowledge.MultilingualE5EmbeddingProv
 builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => sp.GetRequiredService<PaRuX.Server.Knowledge.MultilingualE5EmbeddingProvider>());
 builder.Services.AddSingleton<IRetrievalEmbeddingProvider>(sp => new LegacyMiniLmEmbeddingProvider(sp.GetRequiredService<EmbeddingService>()));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog>(sp => new PaRuX.Server.Knowledge.KnowledgeEmbedderCatalog(sp.GetServices<IRetrievalEmbeddingProvider>()));
-builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>()));
+builder.Services.AddSingleton<PaRuX.Server.Knowledge.MultilingualRerankerProvider>();
+builder.Services.AddSingleton<IRetrievalRerankerProvider>(sp => new PaRuX.Server.Knowledge.FallbackRerankerProvider(
+    sp.GetRequiredService<PaRuX.Server.Knowledge.MultilingualRerankerProvider>(), new LegacyMiniLmRerankerProvider(sp.GetRequiredService<RerankerService>())));
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeJobService>();
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.WatchedFolderStore>();
 builder.Services.AddSingleton<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(sp =>

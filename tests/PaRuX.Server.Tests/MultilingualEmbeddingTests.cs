@@ -134,6 +134,32 @@ public sealed class MultilingualEmbeddingTests : IDisposable
     private sealed record GoldenCase(string text, int[] ids);
 
     [Fact]
+    public void The_multilingual_reranker_without_its_model_never_throws_and_the_fallback_uses_the_legacy_one()
+    {
+        using var provider = new MultilingualRerankerProvider(Path.Combine(_dir, "no-rerank"));
+        Assert.False(provider.IsAvailable);
+        Assert.All(provider.TryScoreBatch("q", new[] { "a", "b" }), s => Assert.Null(s));
+        Assert.Matches("^[0-9a-f]{64}$", PinnedModelManifest.MultilingualRerankerInt8.Files[0].Sha256!);
+        Assert.Equal(40, PinnedModelManifest.MultilingualRerankerInt8.Revision.Length);
+    }
+
+    [Fact]
+    public void The_real_multilingual_reranker_prefers_the_passage_that_answers_an_italian_question_over_english_evidence()
+    {
+        string root = Environment.GetEnvironmentVariable("PARUX_RERANK_DIR") ?? @"C:\Users\DTS\Desktop\Parux\models\rerank";
+        if (!File.Exists(Path.Combine(root, "model.onnx")) || !File.Exists(Path.Combine(root, "tokenizer.json"))) return;
+        using var provider = new MultilingualRerankerProvider(root);
+        var scores = provider.TryScoreBatch("Qual e' il periodo di invio del messaggio?", new[]
+        {
+            "Cycle time (transmission period): 100 ms for this message.",
+            "The coolant temperature sensor reports a plausible value.",
+            "Penalty of 2.5 percent for each week of delay."
+        });
+        Assert.All(scores, s => Assert.NotNull(s));
+        Assert.True(scores[0] > scores[1] && scores[0] > scores[2]);
+    }
+
+    [Fact]
     public void The_real_model_places_an_italian_question_closer_to_its_english_passage_than_to_unrelated_text()
     {
         string root = Path.Combine(Environment.GetEnvironmentVariable("PARUX_E5_DIR") ?? @"C:\Users\DTS\Desktop\Parux\models\e5", "");
