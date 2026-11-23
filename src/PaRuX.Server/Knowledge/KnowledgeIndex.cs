@@ -404,7 +404,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS kn_tri USING fts5(text, content='kn_chunks', 
             {
                 if (name.StartsWith("~$", StringComparison.Ordinal)) continue;       // Office lock files
                 if ((attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
-                SensitiveFinding sensitiveFile = SensitivePathPolicy.EvaluateEntry(Rel(root, entry), false);
+                SensitiveFinding sensitiveFile = SensitivePathPolicy.EvaluateEntry(Rel(root, entry), false, entry);
                 if (sensitiveFile.Verdict == SensitiveVerdict.Blocked) { policySkips.Add((Rel(root, entry), sensitiveFile.Reason ?? "Skipped by policy.")); continue; }
                 files.Add(entry);
             }

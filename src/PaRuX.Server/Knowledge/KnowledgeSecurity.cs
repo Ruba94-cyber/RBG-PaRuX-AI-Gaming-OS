@@ -96,7 +96,7 @@ public static class SensitivePathPolicy
     }
 
     /// <summary>True when a path below an allowed folder must be skipped (credential folder, key file, password database).</summary>
-    public static SensitiveFinding EvaluateEntry(string relativeOrFullPath, bool isDirectory)
+    public static SensitiveFinding EvaluateEntry(string relativeOrFullPath, bool isDirectory, string? fullPathForContentCheck = null)
     {
         string p = Norm(relativeOrFullPath);
         string name = Path.GetFileName(p);
@@ -109,7 +109,10 @@ public static class SensitivePathPolicy
         }
         if (BlockedFileNames.Contains(name, StringComparer.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: credential or key file.");
-        if (BlockedExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
+        // ".asc" is both an armored PGP key and the Vector CAN trace format. Only a file whose header proves it is a CAN trace is kept.
+        bool canTrace = fullPathForContentCheck != null && Path.GetExtension(name).Equals(".asc", StringComparison.OrdinalIgnoreCase) &&
+                        AscTraceExtractor.LooksLikeTrace(fullPathForContentCheck);
+        if (!canTrace && BlockedExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: key, certificate or password-database file.");
         if (name.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
             return new(SensitiveVerdict.Blocked, "Skipped: environment file that usually holds secrets.");
