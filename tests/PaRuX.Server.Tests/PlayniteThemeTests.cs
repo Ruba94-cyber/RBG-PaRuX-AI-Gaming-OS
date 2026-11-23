@@ -602,4 +602,49 @@ public sealed class PlayniteThemeServiceTests : IDisposable
         Assert.Null(svc.Locate("relative\\path").Component);
         Assert.Null(svc.Locate("").Component);
     }
+
+    [Fact]
+    public async Task A_second_Playnite_profile_with_the_same_Aniki_id_is_never_mistaken_for_a_managed_theme()
+    {
+        byte[] pkg = MakeTheme();
+        var (svc, _) = Make(pkg);
+        Assert.Equal("completed", (await Install(svc, Req(pkg))).Stage);
+
+        string otherData = Path.Combine(_root, "OtherPortable", "Playnite");
+        string userFolder = Path.Combine(otherData, "Themes", "Fullscreen", Folder);
+        Directory.CreateDirectory(userFolder);
+        File.WriteAllText(Path.Combine(userFolder, "theme.yaml"),
+            "ThemeApiVersion: 2.10.0\nMode: Fullscreen\nId: " + Folder + "\nName: Aniki ReMake\nVersion: 3.6.0");
+        File.WriteAllText(Path.Combine(userFolder, "important-user-file.txt"), "do not delete");
+
+        Assert.NotNull(svc.Locate(otherData).Component);
+        var result = svc.Detect();
+        Assert.Equal(ComponentOwnership.USER_MANAGED, result.Ownership);
+        Assert.False(result.CanRollback);
+        Assert.False(svc.Rollback(consent: true).Ok);
+        Assert.Equal("do not delete", File.ReadAllText(Path.Combine(userFolder, "important-user-file.txt")));
+    }
+
+    [Fact]
+    public async Task A_second_Playnite_profile_cannot_inherit_Aniki_selection_restore_rights()
+    {
+        PlayniteThemeService svc = await Installed();
+        WriteConfig("OldOwnerTheme");
+        Assert.True(svc.Select(consent: true).Ok);
+        Assert.True(svc.Detect().CanRestoreSelection);
+
+        string otherData = Path.Combine(_root, "AnotherPlaynite");
+        string userFolder = Path.Combine(otherData, "Themes", "Fullscreen", Folder);
+        Directory.CreateDirectory(userFolder);
+        File.WriteAllText(Path.Combine(userFolder, "theme.yaml"),
+            "Mode: Fullscreen\nId: " + Folder + "\nName: Aniki ReMake\nVersion: 3.6.0");
+        string otherConfig = Path.Combine(otherData, "fullscreenConfig.json");
+        File.WriteAllText(otherConfig, "{\"Theme\":\"" + Folder + "\"}");
+        byte[] previousUserBytes = File.ReadAllBytes(otherConfig);
+
+        Assert.NotNull(svc.Locate(otherData).Component);
+        Assert.False(svc.Detect().CanRestoreSelection);
+        Assert.False(svc.RestoreSelection(consent: true).Ok);
+        Assert.Equal(previousUserBytes, File.ReadAllBytes(otherConfig));
+    }
 }
