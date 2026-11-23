@@ -21,6 +21,9 @@ public sealed class PlayniteThemeComponentDto
     public bool ConfigReadable { get; set; }
     /// <summary>True when the selected Playnite Fullscreen theme is this Aniki ReMake folder.</summary>
     public bool Selected { get; set; }
+    /// <summary>Read-only evidence of the Aniki Helper extension manifest in this Playnite profile. This does NOT prove it loaded successfully.</summary>
+    public bool AnikiHelperFoundOnDisk { get; set; }
+    public string? AnikiHelperVersion { get; set; }
     /// <summary>True when any Playnite process is running (the configuration is then never edited).</summary>
     public bool PlayniteRunning { get; set; }
     /// <summary>The MIT license file kept next to the theme (file name), or null.</summary>
