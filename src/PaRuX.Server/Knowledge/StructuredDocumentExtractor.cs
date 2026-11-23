@@ -79,7 +79,7 @@ public static class StructuredDocumentExtractor
         new PdfExtractor(), new WordExtractor(), new PresentationExtractor(), new OpenXmlSpreadsheetExtractor(),
         new LegacyWorkbookExtractor(),
         // Specific structured formats first, then the generic ones, then sniffed text.
-        new DbcExtractor(), new AscTraceExtractor(), new BlfTraceExtractor(), new ArxmlExtractor(), new OdxExtractor(), new CddExtractor(), new A2lExtractor(),
+        new DbcExtractor(), new AscTraceExtractor(), new BlfTraceExtractor(), new MsgExtractor(), new LegacyDocExtractor(), new LegacyPptExtractor(), new ArxmlExtractor(), new OdxExtractor(), new CddExtractor(), new A2lExtractor(),
         new ImageOcrExtractor(),
         .. GenericExtractors.All, new TextFileExtractor()
     ];
