@@ -733,6 +733,86 @@ public sealed class AgentLibraryTools
         }
     }
 
+    private string ProposeGameSettingBatch(Args a, out string outcome, out string? subject, out Task<string>? pending)
+    {
+        pending = null;
+        subject = null;
+        string gameId = Text(a, "manual_game_id") ?? "";
+        string path = Text(a, "relative_path") ?? "";
+        if (gameId.Length is < 1 or > 64 || !TemporaryGameModService.SafeRelativeConfig(path) ||
+            !(path.EndsWith(".ini", StringComparison.OrdinalIgnoreCase) ||
+              path.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase) ||
+              path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) ||
+            !Bool(a, "offline_confirmed"))
+        {
+            outcome = "refused";
+            return Failed + "Only existing settings in one managed offline INI/CFG/JSON game config can be proposed.";
+        }
+
+        if (!DateTime.TryParse(Text(a, "started_utc"), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal |
+                System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime started))
+        {
+            outcome = "invalid-arguments";
+            return Failed + "Invalid paused process start time.";
+        }
+
+        int pid = Int(a, "process_id") ?? 0;
+        QuickResumeAppDto? paused = _backend.QuickResumeListAsync(CancellationToken.None)
+            .GetAwaiter().GetResult().Apps.FirstOrDefault(x => x.ProcessId == pid && x.Suspended
+                && QuickResumePolicy.SameProcess(x.StartedUtc, started));
+        if (paused is null || GameAutoSuspendPolicy.IsExcludedProcess(paused.ProcessName))
+        {
+            outcome = "refused";
+            return Failed + "The exact offline game process must be paused in Quick Resume.";
+        }
+
+        var edits = a.Values["edits"].EnumerateArray().Select(e =>
+            new GameModSettingEdit(
+                e.TryGetProperty("section", out JsonElement section) ? section.GetString() ?? "" : "",
+                e.GetProperty("key").GetString() ?? "",
+                e.GetProperty("value").GetString() ?? "")).ToArray();
+
+        // A confirmation is bound to the entire ordered edit list. A model
+        // cannot reuse a previously approved identifier with different keys or
+        // values, even if it uses a permissive agent execution mode.
+        string editHash = Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(edits))));
+        subject = Clean(paused.ProcessName, 60);
+        string binding = AgentLibraryConsentStore.Bind(GameModBatchPatchTool, gameId,
+            pid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            StartedText(paused.StartedUtc), path, editHash);
+        string? gate = Gate(a, GameModBatchPatchTool, binding,
+            "Allow the AI to PREVIEW " + edits.Length + " gameplay settings in paused game "
+            + subject + " (file " + Redact(path) + ")? No game file changes until you inspect and approve the full diff separately.",
+            out outcome);
+        if (gate is not null) return gate;
+
+        pending = RunSettingBatchAsync(new GameModBatchPatchRequest(
+            gameId, pid, paused.StartedUtc, path, edits, true));
+        outcome = "success";
+        return string.Empty;
+    }
+
+    private async Task<string> RunSettingBatchAsync(GameModBatchPatchRequest request)
+    {
+        try
+        {
+            GameModPreviewDto preview = await _backend.ProposeBatchSettingPatchAsync(
+                request, CancellationToken.None).ConfigureAwait(false);
+            // Original config is never returned to the model.
+            return "Prepared " + request.Edits.Count + "-setting gameplay preset preview "
+                + preview.PreviewId + " for " + Clean(preview.GameName, 80) + " / "
+                + Redact(preview.RelativePath)
+                + ". The owner must review the COMPLETE diff and approve it in PaRuX Game Mods. NOTHING has changed.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or
+            InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return Failed + "gameplay preset preview was refused by the safe game-config and paused-process policy.";
+        }
+    }
+
     private string ProposeGameMod(Args a, out string outcome, out string? subject, out Task<string>? pending)
     {
         pending = null;
