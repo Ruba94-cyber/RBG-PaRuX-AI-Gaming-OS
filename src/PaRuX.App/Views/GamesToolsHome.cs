@@ -50,7 +50,9 @@ internal sealed class GamesToolsHome : StackPanel
             ActionButton("PlayniteDesktop", T("Playnite Desktop", "Playnite Desktop"),
                 () => OpenPlayniteAsync(PlayniteLauncherAction.Desktop)),
             ActionButton("PlayniteSetup", T("Install / locate / configure Playnite", "Installa / individua / configura Playnite"),
-                () => OpenPlayniteAsync(PlayniteLauncherAction.Settings)),
+                // The Home page owns Detect / Locate / Install / Skip. Opening
+                // the Settings subpage directly would hide that setup flow.
+                () => OpenPlayniteAsync(PlayniteLauncherAction.Open)),
             ActionButton("PlayniteRefresh", T("Check Playnite status", "Controlla stato Playnite"),
                 RefreshPlayniteAsync)));
 
