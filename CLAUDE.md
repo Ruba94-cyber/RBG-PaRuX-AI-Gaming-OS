@@ -3,6 +3,14 @@
 ## Mission
 Finish RBG PaRuX AI Studio (PaRuX) into a best-in-class source-available local-AI operating environment. Claude/Codex are development tools only; shipped core AI operation must not depend on proprietary cloud inference.
 
+## Mainline consolidation and test policy (owner direction, 2026-11-23)
+- **Canonical development branch: `main`.** Prefer reviewed, coherent changes committed there when safe. Create a short-lived feature branch/PR only for conflict isolation, security review, or unfinished work; merge back promptly and do not accumulate stacked draft PRs.
+- **No GitHub Actions.** Never add, run, restore or reintroduce `.github/workflows/*`. Use the opt-in local Windows acceptance runner `tools/validation-runs/verify-main-local.ps1`, keeping TRX reports private and local.
+- PR #17 was **squash-merged** to `main` at `2e2d630ff1e52f8cb7281f215a7d45e47b2de750`. This merges *source only*, not a certified release. Do not claim post-merge full xUnit, real Playnite/physical pad/HDR/eGPU, Corporate-clean-PC, AppContainer isolation, signing or installer acceptance without new real evidence.
+- Historic PRs #8/#9/#12–#16 have been superseded/closed; do not reopen them to resume work. Remaining `worktree-agent-*` branches contain unique WIP and must be compared/reviewed before integration, never force-reset or blindly deleted.
+- Branch pruning uses the manual dry-run-first `tools/prune-integrated-branches.ps1` on an authorized checkout. It is **not** a GitHub Actions workflow, and deliberately excludes worktrees/remote checkpoints.
+- The 2026-11-22 product pivot holds: Playnite is optional and owner-managed; new native Gaming Home redesign is paused. Keep controller/resource handoff and explicit owner consent gates.
+
 ## ONE canonical execution plan
 Read and maintain exactly one operational plan:
 
