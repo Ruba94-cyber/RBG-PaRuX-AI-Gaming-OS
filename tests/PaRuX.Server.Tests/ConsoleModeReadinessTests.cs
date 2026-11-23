@@ -49,6 +49,7 @@ public sealed class ConsoleModeReadinessTests
         Assert.Contains(rows, r => r.Id == "Playnite" && r.State == ConsoleReadinessState.Ok);
         Assert.Contains(rows, r => r.Id == "ThemeInstalled" && r.State == ConsoleReadinessState.Attention);
         Assert.Contains(rows, r => r.Id == "ThemeSelected" && r.State == ConsoleReadinessState.Attention);
+        Assert.Contains(rows, r => r.Id == "AnikiHelper" && r.State == ConsoleReadinessState.Attention);
         Assert.Contains(rows, r => r.Id == "Display" && r.State == ConsoleReadinessState.Attention);
         Assert.Contains(rows, r => r.Id == "Controller" && r.State == ConsoleReadinessState.Attention);
     }
@@ -62,12 +63,15 @@ public sealed class ConsoleModeReadinessTests
             Selected = true,
             Version = "3.6.0",
             ConfigReadable = true,
-            PlayniteDataFolderFound = true
+            PlayniteDataFolderFound = true,
+            AnikiHelperFoundOnDisk = true,
+            AnikiHelperVersion = "1.3.6"
         };
         var rows = ConsoleModeReadiness.Build(Installed(), theme, true, new[] { "Wireless Controller" }, T);
 
         Assert.Contains(rows, r => r.Id == "ThemeInstalled" && r.State == ConsoleReadinessState.Ok);
         Assert.Contains(rows, r => r.Id == "ThemeSelected" && r.State == ConsoleReadinessState.Ok);
+        Assert.Contains(rows, r => r.Id == "AnikiHelper" && r.State == ConsoleReadinessState.Ok);
         Assert.Contains(rows, r => r.Id == "Controller" && r.State == ConsoleReadinessState.Ok && r.Detail.Contains("Wireless Controller"));
     }
 }
