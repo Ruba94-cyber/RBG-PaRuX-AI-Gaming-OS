@@ -42,6 +42,8 @@ public interface IAgentLibraryBackend
         Task.FromException<GameModPreviewDto>(new InvalidOperationException("Temporary mod preview unavailable."));
     Task<GameModPreviewDto> ProposeSettingPatchAsync(GameModSettingPatchRequest request, CancellationToken ct) =>
         Task.FromException<GameModPreviewDto>(new InvalidOperationException("Setting patch preview unavailable."));
+    Task<GameModPreviewDto> ProposeBatchSettingPatchAsync(GameModBatchPatchRequest request, CancellationToken ct) =>
+        Task.FromException<GameModPreviewDto>(new InvalidOperationException("Gameplay batch preview unavailable."));
 }
 
 /// <summary>One pending or decided confirmation. The summary is the text the user sees.</summary>
@@ -187,6 +189,7 @@ public sealed class AgentLibraryTools
     public const string QuickResumeResumeTool = "quick_resume_resume";
     public const string GameModProposeTool = "game_mod_propose";
     public const string GameModPatchTool = "game_mod_patch";
+    public const string GameModBatchPatchTool = "game_mod_batch_patch";
 
     public const int MaxArgumentCharacters = 4096;
     public const int MaxQueryCharacters = 120;
@@ -203,7 +206,7 @@ public sealed class AgentLibraryTools
     private static readonly string[] Reversible = { SetFavoriteTool, SetTagsTool, SetCollectionTool };
     private static readonly string[] AlwaysConfirm =
         { LaunchTool, RemoveEntryTool, EnqueueDownloadTool, QuickResumePauseTool, QuickResumeResumeTool,
-          GameModProposeTool, GameModPatchTool };
+          GameModProposeTool, GameModPatchTool, GameModBatchPatchTool };
 
     private static readonly Regex AbsolutePath = new(
         @"(?:[A-Za-z]:[\\/][^\s""'<>|*?]*)|(?:\\\\[^\s""'<>|]+)|(?:/(?:Users|home|mnt|var|etc|opt)/[^\s""'<>|]*)",
@@ -364,6 +367,40 @@ public sealed class AgentLibraryTools
                     ["description"] = "Owner confirms offline single-player ownership/permission." },
                 ["confirmation_id"] = Confirmation()
             }, "manual_game_id", "process_id", "started_utc", "relative_path", "key", "value", "offline_confirmed");
+        Add(GameModBatchPatchTool,
+            "Prepare one atomic gameplay preset of 2-8 existing scalar settings in a single INI/CFG/JSON file for an owner-approved OFFLINE managed game PAUSED via Quick Resume. This never edits game files without a separate owner approval; previews are diffed and restored as ONE transaction. For JSON each value must be a JSON scalar literal matching the existing type. The AI never reads the original game config or applies/restores the mod. No scripts, executables, DRM or multiplayer changes.",
+            new JsonObject
+            {
+                ["manual_game_id"] = Str("Registered PaRuX-managed portable game id.", 64),
+                ["process_id"] = Pid(),
+                ["started_utc"] = Str("Exact paused process start time from quick_resume_list.", 40),
+                ["relative_path"] = Str("One existing INI, CFG or JSON config path relative to the managed game.", 240),
+                ["edits"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "2-8 changes to distinct EXISTING settings in the SAME config file.",
+                    ["minItems"] = GameSettingBatchPatch.MinEdits,
+                    ["maxItems"] = GameSettingBatchPatch.MaxEdits,
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["section"] = Str("INI section or JSON nested object path; empty for root.", 80),
+                            ["key"] = Str("Name of an existing property, not a new key.", 80),
+                            ["value"] = Str("INI text or an exact JSON scalar literal; no scripts.", 256)
+                        },
+                        ["required"] = new JsonArray(JsonValue.Create("key"), JsonValue.Create("value")),
+                        ["additionalProperties"] = false
+                    }
+                },
+                ["offline_confirmed"] = new JsonObject
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Owner confirms authorized offline single-player modifications."
+                },
+                ["confirmation_id"] = Confirmation()
+            }, "manual_game_id", "process_id", "started_utc", "relative_path", "edits", "offline_confirmed");
         return schemas;
     }
 
@@ -456,6 +493,8 @@ public sealed class AgentLibraryTools
                     return ProposeGameMod(args, out outcome, out subject, out pending);
                 case GameModPatchTool:
                     return ProposeGameSettingPatch(args, out outcome, out subject, out pending);
+                case GameModBatchPatchTool:
+                    return ProposeGameSettingBatch(args, out outcome, out subject, out pending);
             }
 
             if (tool == EnqueueDownloadTool) return Enqueue(args, tool, out outcome, out subject, out pending);
@@ -694,6 +733,86 @@ public sealed class AgentLibraryTools
         }
     }
 
+    private string ProposeGameSettingBatch(Args a, out string outcome, out string? subject, out Task<string>? pending)
+    {
+        pending = null;
+        subject = null;
+        string gameId = Text(a, "manual_game_id") ?? "";
+        string path = Text(a, "relative_path") ?? "";
+        if (gameId.Length is < 1 or > 64 || !TemporaryGameModService.SafeRelativeConfig(path) ||
+            !(path.EndsWith(".ini", StringComparison.OrdinalIgnoreCase) ||
+              path.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase) ||
+              path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) ||
+            !Bool(a, "offline_confirmed"))
+        {
+            outcome = "refused";
+            return Failed + "Only existing settings in one managed offline INI/CFG/JSON game config can be proposed.";
+        }
+
+        if (!DateTime.TryParse(Text(a, "started_utc"), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal |
+                System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime started))
+        {
+            outcome = "invalid-arguments";
+            return Failed + "Invalid paused process start time.";
+        }
+
+        int pid = Int(a, "process_id") ?? 0;
+        QuickResumeAppDto? paused = _backend.QuickResumeListAsync(CancellationToken.None)
+            .GetAwaiter().GetResult().Apps.FirstOrDefault(x => x.ProcessId == pid && x.Suspended
+                && QuickResumePolicy.SameProcess(x.StartedUtc, started));
+        if (paused is null || GameAutoSuspendPolicy.IsExcludedProcess(paused.ProcessName))
+        {
+            outcome = "refused";
+            return Failed + "The exact offline game process must be paused in Quick Resume.";
+        }
+
+        var edits = a.Values["edits"].EnumerateArray().Select(e =>
+            new GameModSettingEdit(
+                e.TryGetProperty("section", out JsonElement section) ? section.GetString() ?? "" : "",
+                e.GetProperty("key").GetString() ?? "",
+                e.GetProperty("value").GetString() ?? "")).ToArray();
+
+        // A confirmation is bound to the entire ordered edit list. A model
+        // cannot reuse a previously approved identifier with different keys or
+        // values, even if it uses a permissive agent execution mode.
+        string editHash = Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(edits))));
+        subject = Clean(paused.ProcessName, 60);
+        string binding = AgentLibraryConsentStore.Bind(GameModBatchPatchTool, gameId,
+            pid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            StartedText(paused.StartedUtc), path, editHash);
+        string? gate = Gate(a, GameModBatchPatchTool, binding,
+            "Allow the AI to PREVIEW " + edits.Length + " gameplay settings in paused game "
+            + subject + " (file " + Redact(path) + ")? No game file changes until you inspect and approve the full diff separately.",
+            out outcome);
+        if (gate is not null) return gate;
+
+        pending = RunSettingBatchAsync(new GameModBatchPatchRequest(
+            gameId, pid, paused.StartedUtc, path, edits, true));
+        outcome = "success";
+        return string.Empty;
+    }
+
+    private async Task<string> RunSettingBatchAsync(GameModBatchPatchRequest request)
+    {
+        try
+        {
+            GameModPreviewDto preview = await _backend.ProposeBatchSettingPatchAsync(
+                request, CancellationToken.None).ConfigureAwait(false);
+            // Original config is never returned to the model.
+            return "Prepared " + request.Edits.Count + "-setting gameplay preset preview "
+                + preview.PreviewId + " for " + Clean(preview.GameName, 80) + " / "
+                + Redact(preview.RelativePath)
+                + ". The owner must review the COMPLETE diff and approve it in PaRuX Game Mods. NOTHING has changed.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or
+            InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return Failed + "gameplay preset preview was refused by the safe game-config and paused-process policy.";
+        }
+    }
+
     private string ProposeGameMod(Args a, out string outcome, out string? subject, out Task<string>? pending)
     {
         pending = null;
@@ -920,6 +1039,8 @@ public sealed class AgentLibraryTools
             "relative_path", "proposed_text", "offline_confirmed" }, new[] { "confirmation_id" }),
         [GameModPatchTool] = (new[] { "manual_game_id", "process_id", "started_utc",
             "relative_path", "key", "value", "offline_confirmed" }, new[] { "section", "confirmation_id" }),
+        [GameModBatchPatchTool] = (new[] { "manual_game_id", "process_id", "started_utc",
+            "relative_path", "edits", "offline_confirmed" }, new[] { "confirmation_id" }),
     };
 
     private static readonly Dictionary<string, int> TextLimits = new(StringComparer.Ordinal)
@@ -946,8 +1067,14 @@ public sealed class AgentLibraryTools
         if (root.ValueKind != JsonValueKind.Object) { error = "the arguments must be a JSON object."; return false; }
 
         (string[] required, string[] optional) = Shapes[tool];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonProperty p in root.EnumerateObject())
         {
+            // JsonDocument permits duplicate object properties. Never silently
+            // replace one argument with another after parsing: the owner must
+            // authorize one unambiguous complete request, including edits.
+            if (!seen.Add(p.Name))
+            { error = "duplicate argument \"" + Bound(p.Name, 40) + "\"."; return false; }
             if (!required.Contains(p.Name, StringComparer.Ordinal) && !optional.Contains(p.Name, StringComparer.Ordinal))
             { error = "unknown argument \"" + Bound(p.Name, 40) + "\"."; return false; }
             if (!ValidValue(p.Name, p.Value, out error)) return false;
@@ -993,6 +1120,46 @@ public sealed class AgentLibraryTools
             case "process_id":
                 if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int pid) && pid >= 1) return true;
                 error = "\"process_id\" must be a positive integer."; return false;
+            case "edits":
+                if (v.ValueKind != JsonValueKind.Array ||
+                    v.GetArrayLength() is < GameSettingBatchPatch.MinEdits or > GameSettingBatchPatch.MaxEdits)
+                {
+                    error = "A gameplay preset must contain 2-8 setting edits.";
+                    return false;
+                }
+                foreach (JsonElement edit in v.EnumerateArray())
+                {
+                    if (edit.ValueKind != JsonValueKind.Object)
+                    {
+                        error = "Each gameplay edit must be an object.";
+                        return false;
+                    }
+                    var fields = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (JsonProperty property in edit.EnumerateObject())
+                    {
+                        if (!fields.Add(property.Name) ||
+                            property.Name is not ("section" or "key" or "value") ||
+                            property.Value.ValueKind != JsonValueKind.String)
+                        {
+                            error = "Gameplay edits may contain only unique text section/key/value fields.";
+                            return false;
+                        }
+                        string textValue = property.Value.GetString() ?? string.Empty;
+                        int length = property.Name == "value" ? 256 : 80;
+                        if (textValue.Length > length || textValue.Any(char.IsControl) ||
+                            (property.Name == "key" && textValue.Length == 0))
+                        {
+                            error = "Gameplay edit text is missing, too long or contains a control character.";
+                            return false;
+                        }
+                    }
+                    if (!fields.Contains("key") || !fields.Contains("value"))
+                    {
+                        error = "Every gameplay edit requires key and value.";
+                        return false;
+                    }
+                }
+                return true;
             case "tags":
             case "collections":
                 int max = name == "tags" ? GameTitleStore.MaxTags : GameTitleStore.MaxCollections;

@@ -233,6 +233,127 @@ public sealed class TemporaryGameModServiceTests : IDisposable
     }
 
     [Fact]
+    public void Gameplay_json_preset_applies_multiple_real_settings_once_and_restores_exact_original()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "gameplay.json");
+        string original = """{"gameplay":{"enemyDamage":1.0,"staminaCost":1.5,"hardcore":false},"difficulty":"normal"}""";
+        File.WriteAllText(file, original);
+        var service = Service();
+        var edits = new[]
+        {
+            new GameModSettingEdit("gameplay", "enemyDamage", "1.25"),
+            new GameModSettingEdit("gameplay", "staminaCost", "0.7"),
+            new GameModSettingEdit("gameplay", "hardcore", "true"),
+            new GameModSettingEdit("", "difficulty", System.Text.Json.JsonSerializer.Serialize("hard"))
+        };
+        var request = new GameModBatchPatchRequest(_entryId, 999999, _started,
+            "config/gameplay.json", edits, true);
+        GameModPreviewDto preview = service.PreviewBatchSettingPatch(request);
+        Assert.Equal(original, preview.OriginalText);
+        Assert.Equal(original, File.ReadAllText(file)); // no writes on proposal
+        using (var doc = System.Text.Json.JsonDocument.Parse(preview.ProposedText))
+        {
+            var gameplay = doc.RootElement.GetProperty("gameplay");
+            Assert.Equal(1.25, gameplay.GetProperty("enemyDamage").GetDouble());
+            Assert.Equal(0.7, gameplay.GetProperty("staminaCost").GetDouble());
+            Assert.True(gameplay.GetProperty("hardcore").GetBoolean());
+            Assert.Equal("hard", doc.RootElement.GetProperty("difficulty").GetString());
+        }
+        Assert.Single(service.ListPreviews());
+        Assert.Throws<ArgumentException>(() => service.Apply(new(preview.PreviewId, false)));
+        Assert.Equal(original, File.ReadAllText(file));
+        GameTemporaryModDto applied = service.Apply(new(preview.PreviewId, true));
+        Assert.Single(service.List());
+        Assert.Equal(preview.ProposedText, File.ReadAllText(file));
+        Assert.Throws<InvalidOperationException>(() => service.Apply(new(preview.PreviewId, true)));
+        Assert.Equal(0, service.RestoreExited()); // original process is still alive
+        _alive = false;
+        Assert.Equal(1, Service().RestoreExited());
+        Assert.Equal(original, File.ReadAllText(file));
+        Assert.Empty(service.List());
+        Assert.NotEmpty(applied.Id);
+    }
+
+    [Fact]
+    public void Gameplay_ini_preset_changes_distinct_existing_keys_in_one_rollback()
+    {
+        string original = "[video]\nbrightness=1\n[gameplay]\nstamina=2\ndamage=5\n";
+        File.WriteAllText(Config, original);
+        var service = Service();
+        var request = new GameModBatchPatchRequest(_entryId, 999999, _started,
+            "config/settings.ini", new[]
+            {
+                new GameModSettingEdit("video", "brightness", "3"),
+                new GameModSettingEdit("gameplay", "stamina", "1"),
+                new GameModSettingEdit("gameplay", "damage", "6")
+            }, true);
+        GameModPreviewDto preview = service.PreviewBatchSettingPatch(request);
+        Assert.Equal("[video]\nbrightness=3\n[gameplay]\nstamina=1\ndamage=6\n", preview.ProposedText);
+        Assert.Equal(original, File.ReadAllText(Config));
+        GameTemporaryModDto mod = service.Apply(new(preview.PreviewId, true));
+        Assert.Equal(preview.ProposedText, File.ReadAllText(Config));
+        Assert.True(service.Restore(new(mod.Id, true)));
+        Assert.Equal(original, File.ReadAllText(Config));
+        Assert.Empty(service.List());
+    }
+
+    [Fact]
+    public void Gameplay_preset_refuses_partial_apply_duplicate_missing_type_changes_and_non_config_paths()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "gameplay.json");
+        string original = """{"combat":{"damage":1,"stamina":2,"flags":[1,2]}}""";
+        File.WriteAllText(file, original);
+        var service = Service();
+        var edits = new[]
+        {
+            new GameModSettingEdit("combat", "damage", "3"),
+            new GameModSettingEdit("combat", "stamina", "5")
+        };
+        var request = new GameModBatchPatchRequest(_entryId, 999999, _started,
+            "config/gameplay.json", edits, true);
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = edits.Take(1).ToArray() }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = Enumerable.Range(0, 9).Select(_ => edits[0]).ToArray() }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = new[] { edits[0], edits[0] } }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = new[] { edits[0], edits[0] with { Key = "Damage" } } }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = new[] { edits[0], edits[1] with { Key = "missing" } } }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = new[] { edits[0], edits[1] with { Value = "false" } } }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { Edits = new[] { edits[0], edits[1] with { Key = "flags" } } }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { RelativePath = "config/note.txt" }));
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(
+            request with { OfflineSinglePlayerConfirmed = false }));
+        _paused = false;
+        Assert.Throws<InvalidOperationException>(() => service.PreviewBatchSettingPatch(request));
+        Assert.Equal(original, File.ReadAllText(file));
+        Assert.Empty(service.ListPreviews());
+    }
+
+    [Fact]
+    public void Gameplay_preset_rejects_corrupted_json_without_changing_any_file()
+    {
+        string file = Path.Combine(Path.GetDirectoryName(Config)!, "gameplay.json");
+        string corrupted = """{"combat":{"damage":1,"stamina":2,}}""";
+        File.WriteAllText(file, corrupted);
+        var request = new GameModBatchPatchRequest(_entryId, 999999, _started,
+            "config/gameplay.json", new[]
+            {
+                new GameModSettingEdit("combat", "damage", "3"),
+                new GameModSettingEdit("combat", "stamina", "5")
+            }, true);
+        var service = Service();
+        Assert.Throws<ArgumentException>(() => service.PreviewBatchSettingPatch(request));
+        Assert.Equal(corrupted, File.ReadAllText(file));
+        Assert.Empty(service.ListPreviews());
+    }
+
+    [Fact]
     public void No_offline_confirmation_or_no_paused_game_never_grants_a_preview()
     {
         var service = Service();

@@ -174,7 +174,8 @@ public sealed class TemporaryGameModService
     public GameModPreviewDto PreviewSettingPatch(GameModSettingPatchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        string ext = Path.GetExtension(request.RelativePath ?? "");
+        string relativePath = request.RelativePath ?? throw new ArgumentException("Choose a config relative path.");
+        string ext = Path.GetExtension(relativePath);
         bool ini = ext.Equals(".ini", StringComparison.OrdinalIgnoreCase) ||
                    ext.Equals(".cfg", StringComparison.OrdinalIgnoreCase);
         bool json = ext.Equals(".json", StringComparison.OrdinalIgnoreCase);
@@ -182,20 +183,51 @@ public sealed class TemporaryGameModService
             throw new ArgumentException("A one-setting patch requires an existing INI, CFG or JSON file.");
         if (!request.OfflineSinglePlayerConfirmed)
             throw new ArgumentException("Confirm that this game is offline and single-player.");
-        string target = ResolveTarget(request.ManualGameId, request.RelativePath, out ManualGameDto game);
+        string target = ResolveTarget(request.ManualGameId, relativePath, out ManualGameDto game);
         RequirePause(game, request.ProcessId, request.StartedUtc);
         byte[] originalBytes = File.ReadAllBytes(target);
         string original;
         try { original = new UTF8Encoding(false, true).GetString(originalBytes); }
         catch (DecoderFallbackException) { throw new InvalidDataException("Only UTF-8 game configuration is supported."); }
-        ValidateText(request.RelativePath, original);
+        ValidateText(relativePath, original);
         string patch = json
             ? GameJsonSettingPatch.Apply(original, request.Section, request.Key, request.Value)
             : GameIniSettingPatch.Apply(original, request.Section, request.Key, request.Value);
         // PreviewCore repeats identity/hash checks against a fresh file read; a changed
         // original can never be silently published from the first snapshot.
         return PreviewCore(request.ManualGameId, request.ProcessId, request.StartedUtc,
-            request.RelativePath, patch, request.OfflineSinglePlayerConfirmed,
+            relativePath, patch, request.OfflineSinglePlayerConfirmed,
+            expectedOriginalSha: Digest(originalBytes));
+    }
+
+    /// <summary>
+    /// Prepare 2-8 existing INI/CFG or JSON gameplay settings in one file as a
+    /// single preview/approval/rollback transaction. No writes on this path;
+    /// the shared PreviewCore rechecks exact game/process/file SHA afterward.
+    /// </summary>
+    public GameModPreviewDto PreviewBatchSettingPatch(GameModBatchPatchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.OfflineSinglePlayerConfirmed)
+            throw new ArgumentException("Confirm this is your offline single-player game.");
+        string relativePath = request.RelativePath ?? throw new ArgumentException("Choose a config relative path.");
+        string ext = Path.GetExtension(relativePath);
+        if (!(ext.Equals(".ini", StringComparison.OrdinalIgnoreCase) ||
+              ext.Equals(".cfg", StringComparison.OrdinalIgnoreCase) ||
+              ext.Equals(".json", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Gameplay presets require a pre-existing INI, CFG or JSON file.");
+
+        string target = ResolveTarget(request.ManualGameId, relativePath, out ManualGameDto game);
+        RequirePause(game, request.ProcessId, request.StartedUtc);
+        byte[] originalBytes = File.ReadAllBytes(target);
+        string original;
+        try { original = new UTF8Encoding(false, true).GetString(originalBytes); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("Only UTF-8 game configuration is supported."); }
+        ValidateText(relativePath, original);
+
+        string patched = GameSettingBatchPatch.Apply(original, relativePath, request.Edits);
+        return PreviewCore(request.ManualGameId, request.ProcessId, request.StartedUtc,
+            relativePath, patched, request.OfflineSinglePlayerConfirmed,
             expectedOriginalSha: Digest(originalBytes));
     }
 
