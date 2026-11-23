@@ -43,7 +43,7 @@ internal sealed class EmailExtractor : StreamExtractor
         sink.Section("headers");
         foreach (string want in new[] { "From", "To", "Cc", "Subject", "Date" })
             foreach (var h in parsed.Headers.Where(h => h.Name.Equals(want, StringComparison.OrdinalIgnoreCase)))
-                sink.Line(want + ": " + DecodeWords(h.Value));
+                sink.Line(want + HeaderGloss(want) + ": " + DecodeWords(h.Value));
         sink.Section("body");
         string body = parsed.Plain.Length > 0 ? parsed.Plain.ToString() : "";
         foreach (string l in body.Split('\n')) if (l.Trim().Length > 0) sink.Line(l.TrimEnd('\r'));
@@ -63,6 +63,12 @@ internal sealed class EmailExtractor : StreamExtractor
             }
         }
     }
+
+    /// <summary>Italian equivalent of a standard header name, so a question in Italian ("chi e' il mittente") matches an English header.</summary>
+    private static string HeaderGloss(string header) => header switch
+    {
+        "From" => " (mittente)", "To" => " (destinatario)", "Cc" => " (copia conoscenza)", "Subject" => " (oggetto)", "Date" => " (data)", _ => string.Empty
+    };
 
     private const int MaxAttachmentBytes = 25 * 1024 * 1024;
 

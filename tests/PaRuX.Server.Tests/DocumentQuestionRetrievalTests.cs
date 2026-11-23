@@ -90,6 +90,14 @@ public sealed class DocumentQuestionRetrievalTests
     public void Grounding_asks_for_the_language_of_the_question() =>
         Assert.Contains("language of the question", DocumentChatPlanner.GroundingInstruction);
 
+    [Theory]
+    [InlineData("Cosa fa la macro TestMacro nel documento SimpleMacro.docm?", "SimpleMacro.docm")]
+    [InlineData("Quali altri file e librerie usa lo script PumpCheck.xscr?", "PumpCheck.xscr")]
+    [InlineData("Che dati contiene il foglio Ordini_2026.xlsm per la consegna?", "Ordini_2026.xlsm")]
+    [InlineData("Di cosa parla la presentazione Piano_Progetto.pptm in dettaglio?", "Piano_Progetto.pptm")]
+    public void A_file_name_with_a_common_extension_inside_a_question_is_not_an_identifier_lookup(string question, string fileName) =>
+        Assert.DoesNotContain(fileName, KnowledgeIndex.ExactTerms(question), StringComparer.OrdinalIgnoreCase);
+
     private static KnowledgeHit Scored(string file, string text, double relevance) =>
         new(1, @"C:\x\" + file, file, text, new DocumentPosition(Heading: "h"), 1.0, "hybrid", relevance);
 

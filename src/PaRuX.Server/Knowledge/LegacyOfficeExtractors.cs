@@ -250,12 +250,12 @@ internal sealed class MsgExtractor : IDocumentExtractor
         string to = Text(cf, st, "0E04", ansi) ?? "", cc = Text(cf, st, "0E03", ansi) ?? "", bcc = Text(cf, st, "0E02", ansi) ?? "";
         DateTime? sent = Time(cf, st, 0x0039) ?? Time(cf, st, 0x0E06);
         var head = new StringBuilder();
-        head.Append("Email message: ").AppendLine(subject);
-        if (from.Length > 0 || fromAddr.Length > 0) head.Append("From: ").Append(from).Append(fromAddr.Length > 0 && fromAddr != from ? " <" + fromAddr + ">" : "").AppendLine();
-        if (to.Length > 0) head.Append("To: ").AppendLine(to);
-        if (cc.Length > 0) head.Append("Cc: ").AppendLine(cc);
-        if (bcc.Length > 0) head.Append("Bcc: ").AppendLine(bcc);
-        if (sent.HasValue) head.Append("Date: ").AppendLine(sent.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " UTC");
+        head.Append("Email message (messaggio e-mail), subject (oggetto): ").AppendLine(subject);
+        if (from.Length > 0 || fromAddr.Length > 0) head.Append("From (mittente): ").Append(from).Append(fromAddr.Length > 0 && fromAddr != from ? " <" + fromAddr + ">" : "").AppendLine();
+        if (to.Length > 0) head.Append("To (destinatario): ").AppendLine(to);
+        if (cc.Length > 0) head.Append("Cc (copia conoscenza): ").AppendLine(cc);
+        if (bcc.Length > 0) head.Append("Bcc (copia nascosta): ").AppendLine(bcc);
+        if (sent.HasValue) head.Append("Date (data): ").AppendLine(sent.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " UTC");
         string heading = (depth == 0 ? "Email: " : "Embedded email: ") + subject;
         sink.Add(head.ToString(), heading + " > headers");
 

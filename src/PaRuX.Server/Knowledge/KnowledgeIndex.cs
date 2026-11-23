@@ -925,7 +925,7 @@ FROM kn_chunks k JOIN kn_files f ON f.id=k.file_id WHERE f.duplicate_of IS NULL 
     private static readonly Regex IdentifierPattern = new(
         @"(?<![A-Za-z0-9])(0x[0-9A-Fa-f]{2,}x?|[A-Za-z][A-Za-z0-9]*[_\-.][A-Za-z0-9][A-Za-z0-9_\-.]*|[PCBU][0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{2})?|[A-Za-z]{2,}\d{3,}|[A-Z]{2,5}\d{1,2}|\d+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9])",
         RegexOptions.Compiled);
-    private static readonly Regex FileNameLike = new(@"\.(asc|dbc|blf|cdd|a2l|arxml|odx|pdf|docx?|xlsx?|pptx?|csv|txt|md|json|xml|log|zip)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex FileNameLike = new(@"\.(asc|dbc|blf|cdd|a2l|arxml|odx|pdf|docx?|docm|dotx|dotm|xlsx?|xlsm|xlsb|xltx|pptx?|pptm|potx|odt|ods|odp|rtf|eml|msg|epub|html?|csv|tsv|txt|md|json|ya?ml|toml|ini|cfg|xml|log|zip|7z|esl|eslx|xscr|vbs|vba|bas|cls|py|js|ts|cs|java|go|rs|c|h|cpp|hpp|sh|ps1|bat|cmd|sql|m|ahk|can|cin|st|lua|tcl|ipynb|hex|s19|mf4|mdf|dll|exe)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex Quoted = new("\"([^\"]{2,})\"", RegexOptions.Compiled);
 
     /// <summary>The identifiers (codes, parameters, DTCs, quoted phrases) a query asks for exactly.</summary>

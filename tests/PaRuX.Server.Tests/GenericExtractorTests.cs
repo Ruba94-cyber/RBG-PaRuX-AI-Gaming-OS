@@ -148,8 +148,8 @@ public sealed class GenericExtractorTests : IDisposable
             + "--BND\r\nContent-Type: application/pdf; name=\"report.pdf\"\r\nContent-Disposition: attachment; filename=\"report.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + pdf + "\r\n--BND--\r\n";
         var doc = Run("a.eml", eml);
         string t = doc.FullText;
-        Assert.Contains("From: Jane Doe", t);
-        Assert.Contains("Subject: Quarterly r\u00e9sum\u00e9", t);
+        Assert.Contains("From (mittente): Jane Doe", t);
+        Assert.Contains("Subject (oggetto): Quarterly r\u00e9sum\u00e9", t);
         Assert.Contains("Hello \u2713 body line", t);
         Assert.Contains("Attachment: report.pdf", t);
         Assert.DoesNotContain("%PDF", t);

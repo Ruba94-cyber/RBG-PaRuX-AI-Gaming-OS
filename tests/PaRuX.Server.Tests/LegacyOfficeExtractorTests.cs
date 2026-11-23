@@ -84,10 +84,10 @@ public sealed class LegacyOfficeExtractorTests
     {
         ExtractedDocument? d = Load(@"msg\simple_test_msg.msg", "msg"); if (d == null) return;
         string t = d.FullText;
-        Assert.Contains("Email message: test message", t);
-        Assert.Contains("From: Travis Ferguson <travis@overwrittenstack.com>", t);
-        Assert.Contains("To: travis@overwrittenstack.com", t);
-        Assert.Contains("Date: 2007-07-06", t);
+        Assert.Contains("subject (oggetto): test message", t);
+        Assert.Contains("From (mittente): Travis Ferguson <travis@overwrittenstack.com>", t);
+        Assert.Contains("To (destinatario): travis@overwrittenstack.com", t);
+        Assert.Contains("Date (data): 2007-07-06", t);
         Assert.Contains("This is a test message.", t);
     }
 
