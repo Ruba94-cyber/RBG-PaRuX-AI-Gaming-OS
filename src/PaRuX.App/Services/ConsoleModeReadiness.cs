@@ -66,6 +66,20 @@ namespace PaRuX.Services
                         t("no: Playnite uses ", "no: Playnite usa ") + (theme.SelectedTheme ?? "?")));
             }
 
+            // The theme's companion is necessary for the actual Aniki UX, but a manifest on disk
+            // does not prove Playnite loaded a compatible version. Never label runtime as verified.
+            bool helperFound = theme?.AnikiHelperFoundOnDisk == true;
+            rows.Add(new("AnikiHelper", t("Aniki Helper extension", "Estensione Aniki Helper"),
+                theme?.Skipped == true ? ConsoleReadinessState.Skipped :
+                    helperFound ? ConsoleReadinessState.Ok : ConsoleReadinessState.Attention,
+                theme?.Skipped == true
+                    ? t("theme skipped", "tema saltato")
+                    : helperFound
+                        ? (theme?.AnikiHelperVersion is { Length: > 0 } hv ? hv + ": " : "") +
+                            t("extension manifest found; check that Playnite loads it", "manifest trovato; verifica che Playnite carichi l'estensione")
+                        : t("required by Aniki: install/update in Playnite Desktop > Add-ons (F9) > Browse > Generic",
+                            "richiesta da Aniki: installa/aggiorna in Playnite Desktop > Add-ons (F9) > Browse > Generic")));
+
             rows.Add(new("Display", t("TV / display chosen", "TV / schermo scelto"),
                 displayChosen ? ConsoleReadinessState.Ok : ConsoleReadinessState.Attention,
                 displayChosen ? t("chosen", "scelto") : t("not chosen (set it in Console / TV)", "non scelto (impostalo in Console / TV)")));
