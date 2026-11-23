@@ -32,7 +32,7 @@ try {
     }
     $origin = (& git remote get-url origin).Trim()
     Check-Exit 'Cannot read origin'
-    if ($origin -notmatch '(^|[/:])github\.com[:/]Ruba94-cyber/RBG-PaRuX-AI-Gaming-OS(\.git)?$') {
+    if ($origin -notmatch '(^|[/:@])github\.com[:/]Ruba94-cyber/RBG-PaRuX-AI-Gaming-OS(\.git)?$') {
         throw "Refusing to act on an unexpected origin: $origin"
     }
     & git fetch origin main --quiet
