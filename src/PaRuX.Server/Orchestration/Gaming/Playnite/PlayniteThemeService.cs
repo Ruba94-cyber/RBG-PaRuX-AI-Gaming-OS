@@ -55,16 +55,27 @@ public sealed class PlayniteThemeStore
         {
             State next = Copy(_state);
             change(next);
+            string? temp = null;
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
-                string temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(next, JsonOptions));
                 File.Move(temp, _path, overwrite: true);
                 _state = next;
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+            finally
+            {
+                // A failed atomic replace must not accumulate stale journals containing
+                // prior theme paths. Never delete the real state file or any backup.
+                if (temp is not null)
+                {
+                    try { if (File.Exists(temp)) File.Delete(temp); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+            }
         }
     }
 
