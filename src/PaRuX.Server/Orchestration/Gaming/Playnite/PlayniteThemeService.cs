@@ -184,6 +184,42 @@ internal sealed class PlayniteThemeService
         return null;
     }
 
+    // Playnite installs extensions per data folder; a valid manifest is evidence that Aniki Helper
+    // is present on disk, NOT that it loaded or is compatible. Never execute a plugin to probe it.
+    internal static (bool Found, string? Version) FindAnikiHelperOnDisk(string playniteDataFolder)
+    {
+        const string helperId = "96a983a3-3f13-4dce-a474-4052b718bb52";
+        string extensions = Path.Combine(playniteDataFolder, "Extensions");
+        try
+        {
+            if (!Directory.Exists(extensions)) return (false, null);
+            int scanned = 0;
+            foreach (string directory in Directory.EnumerateDirectories(extensions))
+            {
+                if (++scanned > 256) break;
+                string manifest = Path.Combine(directory, "extension.yaml");
+                var info = new FileInfo(manifest);
+                if (!info.Exists || info.Length is <= 0 or > 64 * 1024) continue;
+
+                string? id = null;
+                string? version = null;
+                foreach (string raw in File.ReadLines(manifest).Take(96))
+                {
+                    int colon = raw.IndexOf(':');
+                    if (colon <= 0) continue;
+                    string key = raw[..colon].Trim();
+                    string value = raw[(colon + 1)..].Trim().Trim('"', '\'');
+                    if (key.Equals("Id", StringComparison.OrdinalIgnoreCase)) id = value;
+                    else if (key.Equals("Version", StringComparison.OrdinalIgnoreCase)) version = value;
+                }
+                if (Guid.TryParse(id, out Guid valueId) && valueId == Guid.Parse(helperId))
+                    return (true, version is { Length: > 0 and <= 40 } ? version : null);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+        return (false, null);
+    }
+
     // ---- detection (read-only) ----
 
     public PlayniteThemeComponentDto Detect()
@@ -195,6 +231,9 @@ internal sealed class PlayniteThemeService
             PlayniteDataFolder = data, PlayniteDataFolderFound = Directory.Exists(data), Skipped = st.Skipped,
             PlayniteRunning = PlayniteRunning()
         };
+        (bool helperFound, string? helperVersion) = FindAnikiHelperOnDisk(data);
+        c.AnikiHelperFoundOnDisk = helperFound;
+        c.AnikiHelperVersion = helperVersion;
         (bool readable, string? selected) = PlayniteThemeConfig.Read(PlayniteThemeConfig.FilePath(data));
         c.ConfigReadable = readable;
         c.SelectedTheme = selected;
