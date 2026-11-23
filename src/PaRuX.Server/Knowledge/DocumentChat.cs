@@ -261,7 +261,25 @@ public static class DocumentChatPlanner
     public static DocumentChatPlan Plan(string query, IReadOnlyCollection<string>? sourceIds, KnowledgeJobService? service = null)
     {
         IReadOnlyList<KnowledgeHit> hits = Search(query, 6, sourceIds, service);
-        return Plan(query, hits);
+        DocumentChatPlan plan = Plan(query, hits);
+        Trace(query, hits, plan.Kind);
+        return plan;
+    }
+
+    /// <summary>Opt-in local diagnostics (PARUX_DOCUMENT_CHAT_TRACE=1): why a document question was answered, declined or sent to the model. Off by default; nothing leaves the PC.</summary>
+    private static void Trace(string query, IReadOnlyList<KnowledgeHit> hits, DocumentChatKind kind)
+    {
+        if (Environment.GetEnvironmentVariable("PARUX_DOCUMENT_CHAT_TRACE") != "1") return;
+        try
+        {
+            string file = PaRuX.Contracts.PaRuXDataRoot.Combine("logs", "document-chat-trace.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            var sb = new StringBuilder().Append(DateTime.UtcNow.ToString("O")).Append(" kind=").Append(kind).Append(" hits=").Append(hits.Count)
+                .Append(" exact=[").Append(string.Join("|", KnowledgeIndex.ExactTerms(query))).Append("] terms=[").Append(string.Join("|", ContentTerms(query))).Append("] q=").AppendLine(query);
+            foreach (KnowledgeHit h in hits.Take(6)) sb.Append("   ").Append(h.Match).Append(' ').Append(h.Citation).Append(" rel=").Append(h.Relevance?.ToString("0.0")).AppendLine();
+            File.AppendAllText(file, sb.ToString());
+        }
+        catch (Exception) { }
     }
 
     public static IReadOnlyList<KnowledgeHit> Search(string query, int topK, IReadOnlyCollection<string>? sourceIds, KnowledgeJobService? service = null)

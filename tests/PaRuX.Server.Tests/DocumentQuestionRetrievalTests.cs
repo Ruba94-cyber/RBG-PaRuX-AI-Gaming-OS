@@ -100,6 +100,73 @@ public sealed class DocumentQuestionRetrievalTests
         Assert.True(fitted[0].Text.Length >= 200);
     }
 
+    // ---- end-to-end over a real index: search -> file scoping -> plan ----------------------------------------------------
+    private sealed class BagEmbedder : IRetrievalEmbeddingProvider
+    {
+        public RetrievalEmbeddingIdentity Identity { get; } = new("fake-bag", "bag", "1", 256, "none");
+        public bool IsAvailable => true;
+        public float RelevanceThreshold => 0.05f;
+        public float[]? TryEmbed(string text)
+        {
+            var v = new float[256];
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text.ToLowerInvariant(), @"[a-z0-9_]{2,}"))
+            { int h = 17; foreach (char ch in m.Value) h = unchecked(h * 31 + ch); v[(h & 0x7fffffff) % 256] += 1f; }
+            float n = MathF.Sqrt(v.Sum(x => x * x));
+            return n == 0 ? v : v.Select(x => x / n).ToArray();
+        }
+        public IReadOnlyList<float[]?> TryEmbedBatch(IReadOnlyList<string> texts) => texts.Select(TryEmbed).ToList();
+    }
+
+    /// <summary>Like the real ms-marco cross-encoder on a foreign-language question: every score is negative.</summary>
+    private sealed class NegativeReranker : IRetrievalRerankerProvider
+    {
+        public RetrievalRerankerIdentity Identity { get; } = new("test", "neg", "1", "none");
+        public bool IsAvailable => true;
+        public IReadOnlyList<float?> TryScoreBatch(string query, IReadOnlyList<string> documents) =>
+            documents.Select(d => (float?)(-9f + d.Length % 7 * 0.3f)).ToList();
+    }
+
+    private static string MakeTrace(string dir, string name, int ids, int framesPerId)
+    {
+        var sb = new StringBuilder("date x\nbase hex  timestamps absolute\n");
+        double t = 0;
+        for (int f = 0; f < framesPerId; f++)
+            for (int i = 0; i < ids; i++)
+                sb.Append((t += 0.001).ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture)).Append(" 1 18FE").Append((0x10 + i).ToString("X2")).Append("03x Rx d 8 ")
+                  .Append(((f + i) & 255).ToString("X2")).Append(" DF 7F FF FD FF FF FF\n");
+        string path = Path.Combine(dir, name); File.WriteAllText(path, sb.ToString(), Encoding.Latin1); return path;
+    }
+
+    public static IEnumerable<object[]> NamedFileQuestions() => new[]
+    {
+        new object[] { "Quanti frame e quanti ID distinti ci sono in TR-A.asc?", true },
+        new object[] { "Quanti frame ci sono in TR-A.asc?", true },
+        new object[] { "Quale e' la durata della registrazione TR-A.asc?", true },
+        new object[] { "Qual e' la pressione dell'olio motore nel file TR-A.asc?", false },
+    };
+
+    [Theory]
+    [MemberData(nameof(NamedFileQuestions))]
+    public void Questions_naming_a_trace_file_reach_the_model_and_unrelated_ones_are_declined(string question, bool answerable)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "parux-dq-" + Guid.NewGuid().ToString("N")); string docs = Path.Combine(root, "docs");
+        Directory.CreateDirectory(docs);
+        try
+        {
+            MakeTrace(docs, "TR-A.asc", 40, 30); MakeTrace(docs, "TR-B.asc", 25, 20);
+            var index = new KnowledgeIndex(Path.Combine(root, "k.db"), null, new BagEmbedder(), new NegativeReranker());
+            index.IndexFolderAsync("s", docs).GetAwaiter().GetResult();
+            IReadOnlyList<KnowledgeHit> pool = index.Search(question, KnowledgeSearchMode.Auto, 30, null);
+            IReadOnlyList<KnowledgeHit> hits = DocumentChatPlanner.KeepNamedFiles(question, pool).Take(6).ToList();
+            DocumentChatPlan plan = DocumentChatPlanner.Plan(question, hits);
+            Assert.True(hits.Count > 0, "search found nothing");
+            Assert.All(hits, h => Assert.Equal("TR-A.asc", h.FileName));
+            if (answerable) Assert.NotEqual(DocumentChatKind.NotEnoughInformation, plan.Kind);
+            else Assert.Equal(DocumentChatKind.NotEnoughInformation, plan.Kind);
+        }
+        finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); try { Directory.Delete(root, true); } catch (IOException) { } }
+    }
+
     [Fact]
     public void Can_trace_segments_are_small_and_each_names_its_id_and_file()
     {

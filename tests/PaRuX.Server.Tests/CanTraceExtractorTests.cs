@@ -34,7 +34,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         Assert.Equal("can-asc", d.Extractor);
         Assert.Equal(DocumentTier.Structured, d.Tier);
         string all = d.FullText;
-        Assert.Contains("Frames read: 5", all);
+        Assert.Contains("numero di frame): 5", all);
         Assert.Contains("error frames: 1", all);
         Assert.Contains("CAN ID 0x18FE4A03x", all);
         Assert.Contains("PGN 0xFE4A", all);
@@ -54,7 +54,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         ExtractedDocument d = StructuredDocumentExtractor.Extract(Write("cum.asc", sb.ToString()));
         string all = d.FullText;
         Assert.Contains("never decrease", all);
-        Assert.Contains("duration 2.990000 s", all);        // not the sum of all values
+        Assert.Contains("durata della registrazione) 2.990000 s", all);        // not the sum of all values
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class CanTraceExtractorTests : IDisposable
     {
         string path = Write("g.asc", Header + "1.0 x y z\nnot a frame\n2.0 1 100 Rx d 2 01 02\n3.0 1 200 Rx d 4 01\n");
         ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
-        Assert.Contains("Frames read: 2", d.FullText);
+        Assert.Contains("numero di frame): 2", d.FullText);
         Assert.Contains("not understood and skipped: 1", d.FullText);
     }
 
@@ -139,7 +139,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
         Assert.Equal("can-blf", d.Extractor);
         string txt = d.FullText;
-        Assert.Contains("Frames read: 2", txt);
+        Assert.Contains("numero di frame): 2", txt);
         Assert.Contains("CAN ID 0x18FECA00x", txt);
         Assert.Contains("SPN 291 FMI 5", txt);
         Assert.Contains("CAN ID 0x123 (standard 11-bit)", txt);
@@ -169,7 +169,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         file.Write("LOBJ"u8.ToArray()); file.Write(new byte[8]);   // cut off header of a further container
         string path = Path.Combine(_dir, "cut.blf"); File.WriteAllBytes(path, file.ToArray());
         ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
-        Assert.Contains("Frames read: 1", d.FullText);
+        Assert.Contains("numero di frame): 1", d.FullText);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class CanTraceExtractorTests : IDisposable
         ExtractedDocument d = StructuredDocumentExtractor.Extract(path);
         string t = d.FullText;
         Assert.Equal("can-blf", d.Extractor);
-        Assert.Contains("Frames read: 2254", t);
+        Assert.Contains("numero di frame): 2254", t);
         Assert.Contains("error frames: 1", t);
         Assert.Contains("CAN ID 0x18FE4A03x", t);
         Assert.Contains("Frames: 2000 (Rx 2000, Tx 0)", t);

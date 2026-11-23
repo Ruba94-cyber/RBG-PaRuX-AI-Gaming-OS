@@ -156,12 +156,12 @@ internal sealed class CanTraceAggregator
         var sum = new StringBuilder();
         sum.Append("CAN trace file ").AppendLine(name);
         if (headerBlock.Length > 0) sum.AppendLine(headerBlock.TrimEnd());
-        sum.Append("Frames read: ").Append(Frames).Append("; error frames: ").Append(ErrorFrames)
-           .Append("; distinct (channel, CAN ID) pairs: ").Append(_ids.Count)
+        sum.Append("Frames read (frame letti, numero di frame): ").Append(Frames).Append("; error frames: ").Append(ErrorFrames)
+           .Append("; distinct (channel, CAN ID) pairs (ID distinti): ").Append(_ids.Count)
            .Append("; channels: ").AppendLine(_channels.Count == 0 ? "none" : string.Join(", ", _channels));
         if (Frames > 0)
             sum.Append("Trace time ").Append(T(FirstT)).Append(" (").Append(_posUnit).Append(' ').Append(FirstPos).Append(") to ")
-               .Append(T(LastT)).Append(" (").Append(_posUnit).Append(' ').Append(LastPos).Append("), duration ").AppendLine(T(LastT - FirstT));
+               .Append(T(LastT)).Append(" (").Append(_posUnit).Append(' ').Append(LastPos).Append("), duration (durata della registrazione) ").AppendLine(T(LastT - FirstT));
         if (Unparsed > 0) sum.Append("Lines/objects not understood and skipped: ").AppendLine(Unparsed.ToString(CultureInfo.InvariantCulture));
         if (IdLimitHit) sum.AppendLine("More than " + MaxDistinctIds + " distinct IDs: later new IDs were not tracked.");
         sum.AppendLine("Top IDs by frame count: " + string.Join("; ", _ids.OrderByDescending(p => p.Value.Count).Take(12)
@@ -232,7 +232,8 @@ internal sealed class CanTraceAggregator
         sb.Append("Frames: ").Append(s.Count).Append(" (Rx ").Append(s.Rx).Append(", Tx ").Append(s.Tx).Append(s.Remote > 0 ? ", remote " + s.Remote : "").Append(')');
         if (s.DlcMax > 0) sb.Append("; data length ").Append(s.DlcMin == s.DlcMax ? s.DlcMax.ToString(CultureInfo.InvariantCulture) : s.DlcMin + "-" + s.DlcMax).Append(" bytes");
         sb.AppendLine();
-        sb.Append("The first frame with this ID is at ").Append(_posUnit).Append(' ').Append(s.FirstPos).Append(" and the last at ").Append(_posUnit).Append(' ').Append(s.LastPos).AppendLine(".");
+        sb.Append("In ").Append(file).Append(" this ID appears in ").Append(s.Count).Append(" frames (frame): the first frame is at ").Append(_posUnit).Append(' ').Append(s.FirstPos)
+          .Append(" and the last at ").Append(_posUnit).Append(' ').Append(s.LastPos).AppendLine(".");
         sb.Append("First seen ").Append(T(s.FirstT)).Append(" (").Append(_posUnit).Append(' ').Append(s.FirstPos).Append("), last seen ")
           .Append(T(s.LastT)).Append(" (").Append(_posUnit).Append(' ').Append(s.LastPos).AppendLine(")");
         if (s.Count > 1 && !double.IsInfinity(s.MinDt))

@@ -36,7 +36,7 @@ $psi.EnvironmentVariables.Clear(); $sys = $env:SystemRoot
 $vars = @{ SystemRoot = $sys; windir = $sys; SystemDrive = $env:SystemDrive; PATH = "$sys\System32;$sys"; USERNAME = $env:USERNAME
     COMPUTERNAME = $env:COMPUTERNAME; USERPROFILE = $prof; LOCALAPPDATA = "$prof\Local"; APPDATA = "$prof\Roaming"; TEMP = "$prof\Temp"; TMP = "$prof\Temp"
     ProgramFiles = $env:ProgramFiles; ProgramData = $env:ProgramData; NUMBER_OF_PROCESSORS = $env:NUMBER_OF_PROCESSORS
-    PARUX_CORPORATE = "1"; PARUX_CORPORATE_MODEL_DOWNLOADS = "0"; PARUX_DATA_ROOT = (Join-Path $app "PaRuXData"); PARUX_LOCALAI_STATE_DIR = (Join-Path $app "PaRuXData") }
+    PARUX_CORPORATE = "1"; PARUX_CORPORATE_MODEL_DOWNLOADS = "0"; PARUX_DOCUMENT_CHAT_TRACE = "1"; PARUX_DATA_ROOT = (Join-Path $app "PaRuXData"); PARUX_LOCALAI_STATE_DIR = (Join-Path $app "PaRuXData") }
 foreach ($k in $vars.Keys) { $psi.EnvironmentVariables[$k] = [string]$vars[$k] }
 $sw = [Diagnostics.Stopwatch]::StartNew(); $proc = [Diagnostics.Process]::Start($psi)
 $boot = Join-Path $vars.PARUX_DATA_ROOT "server\bootstrap.json"
@@ -99,5 +99,7 @@ try {
 } finally {
     Get-Process PaRuX, PaRuX.Server, llama-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($WorkRoot, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
 }
+$trace = Join-Path $vars.PARUX_DATA_ROOT "logs\document-chat-trace.txt"
+if ($ResultsFile -and (Test-Path $trace)) { Copy-Item $trace ($ResultsFile -replace "\.json$", ".trace.txt") -Force }
 if ($ResultsFile) { $R | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultsFile -Encoding UTF8 }
 $R

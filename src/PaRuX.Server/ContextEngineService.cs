@@ -100,8 +100,12 @@ public sealed class ContextEngineService
         double tokens = 0;
         foreach (string word in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
-            bool dense = word.Length >= 2 && (word.Any(char.IsDigit) || word.All(char.IsUpper)) && word.All(c => Uri.IsHexDigit(c) || c is 'x' or 'X' or '.' or ',' or ':' or '-');
-            tokens += dense ? word.Length : word.Length / 3.5 + 0.5;
+            bool hexLike = word.Length >= 2 && (word.Any(char.IsDigit) || word.All(char.IsUpper)) && word.All(c => Uri.IsHexDigit(c) || c is 'x' or 'X' or '.' or ',' or ':' or '-');
+            if (hexLike) { tokens += word.Length; continue; }
+            // Digits and punctuation are about one token each; runs of letters ~3.8 characters per token plus one token for the run.
+            int letters = 0, other = 0;
+            foreach (char c in word) { if (char.IsLetter(c)) letters++; else other++; }
+            tokens += other + letters / 3.8 + (letters > 0 ? 0.4 : 0);
         }
         return tokens;
     }
@@ -109,7 +113,7 @@ public sealed class ContextEngineService
     /// <summary>Keeps the best-ranked passages whose estimated token cost fits the retrieved-context budget; the top passage is always kept (shortened if needed).</summary>
     internal static IReadOnlyList<PaRuX.Server.Knowledge.KnowledgeHit> FitPassagesToBudget(IReadOnlyList<PaRuX.Server.Knowledge.KnowledgeHit> hits, int maxCharacters)
     {
-        double budget = maxCharacters / 2.5;
+        double budget = maxCharacters / 2.5 * 0.85;   // headroom for the template, the system prompt and tokenizer differences
         var kept = new List<PaRuX.Server.Knowledge.KnowledgeHit>();
         double used = 0;
         foreach (var hit in hits)
