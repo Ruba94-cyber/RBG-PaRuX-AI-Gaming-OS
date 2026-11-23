@@ -589,42 +589,72 @@ internal sealed class PlayniteThemeService
         if (!_single.Wait(0)) return Refused("A theme operation is already running.");
         try
         {
-        if (PlayniteRunning()) return Refused("Playnite is running. Close it first; PaRuX never changes themes while Playnite runs.");
-        PlayniteThemeComponentDto c = Detect();
-        if (!c.Detected || c.Ownership != ComponentOwnership.PARUX_MANAGED || c.ThemeFolder is null || c.ThemeFolderName is null)
-            return Refused("PaRuX did not install this theme, so PaRuX will not change it.");
-        if (c.Selected) return Refused("The theme is selected in Playnite. Restore the previous theme first.");
-        PlayniteThemeStore.State st = _store.Get();
-        string themes = ThemesFolder(DataFolder());
-        string target = c.ThemeFolder;
-        string removed = Path.Combine(themes, BackupPrefix + "removed-" + Guid.NewGuid().ToString("N")[..8]);
-        try
-        {
-            string? backed = st.BackupFolder is not null && IsPaRuXBackup(st.BackupFolder, themes) ? Path.Combine(st.BackupFolder, c.ThemeFolderName) : null;
-            Directory.CreateDirectory(removed);
-            Directory.Move(target, Path.Combine(removed, c.ThemeFolderName));
-            if (backed is not null && Directory.Exists(backed))
+            if (PlayniteRunning()) return Refused("Playnite is running. Close it first; PaRuX never changes themes while Playnite runs.");
+            PlayniteThemeComponentDto c = Detect();
+            if (!c.Detected || c.Ownership != ComponentOwnership.PARUX_MANAGED || c.ThemeFolder is null || c.ThemeFolderName is null)
+                return Refused("PaRuX did not install this theme, so PaRuX will not change it.");
+            if (c.Selected) return Refused("The theme is selected in Playnite. Restore the previous theme first.");
+
+            PlayniteThemeStore.State st = _store.Get();
+            string themes = ThemesFolder(c.PlayniteDataFolder!);
+            string target = c.ThemeFolder;
+            string removed = Path.Combine(themes, BackupPrefix + "removed-" + Guid.NewGuid().ToString("N")[..8]);
+            string retired = Path.Combine(removed, c.ThemeFolderName);
+            string? backed = st.BackupFolder is not null && IsPaRuXBackup(st.BackupFolder, themes)
+                ? Path.Combine(st.BackupFolder, c.ThemeFolderName) : null;
+            bool movedManaged = false;
+            bool restoredOriginal = false;
+            try
             {
-                try { Directory.Move(backed, target); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                Directory.CreateDirectory(removed);
+                Directory.Move(target, retired);
+                movedManaged = true;
+                if (backed is not null && Directory.Exists(backed))
                 {
-                    Directory.Move(Path.Combine(removed, c.ThemeFolderName), target);   // put the PaRuX copy back
-                    TryDelete(removed);
-                    return Refused("The previous folder could not be restored (" + ex.GetType().Name + "); nothing was changed.");
+                    Directory.Move(backed, target);
+                    restoredOriginal = true;
                 }
-                TryDelete(st.BackupFolder!);
-                _store.Update(s => { s.ManagedFolderName = null; s.ManagedVersion = null; s.ManagedDataFolder = null; s.BackupFolder = null; });
+
+                // Filesystem changes are reversible until the ownership journal is durably saved.
+                // Never delete the managed copy while PaRuX still claims that it owns the folder.
+                if (!_store.Update(state =>
+                    {
+                        state.ManagedFolderName = null;
+                        state.ManagedVersion = null;
+                        state.ManagedDataFolder = null;
+                        state.BackupFolder = null;
+                    }))
+                    throw new IOException("The ownership journal could not be saved");
+
+                if (restoredOriginal) TryDelete(st.BackupFolder!);
                 TryDelete(removed);
-                return new PlayniteThemeActionResultDto { Ok = true, Outcome = "rolled-back", Message = "Your previous theme folder was put back." };
+                return new PlayniteThemeActionResultDto
+                {
+                    Ok = true,
+                    Outcome = restoredOriginal ? "rolled-back" : "removed",
+                    Message = restoredOriginal ? "Your previous theme folder was put back." : "The theme PaRuX installed was removed."
+                };
             }
-            _store.Update(s => { s.ManagedFolderName = null; s.ManagedVersion = null; s.ManagedDataFolder = null; s.BackupFolder = null; });
-            TryDelete(removed);
-            return new PlayniteThemeActionResultDto { Ok = true, Outcome = "removed", Message = "The theme PaRuX installed was removed." };
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return Refused("The theme could not be rolled back (" + ex.GetType().Name + ").");
-        }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A failed journal write or move MUST NOT leave the user's original folder lost.
+                bool recovered = true;
+                try
+                {
+                    if (restoredOriginal && backed is not null && Directory.Exists(target) && !Directory.Exists(backed))
+                        Directory.Move(target, backed);
+                    if (movedManaged && Directory.Exists(retired) && !Directory.Exists(target))
+                        Directory.Move(retired, target);
+                }
+                catch (Exception recoveryError) when (recoveryError is IOException or UnauthorizedAccessException)
+                {
+                    recovered = false;
+                }
+                if (recovered) TryDelete(removed);
+                return Refused("The theme rollback failed (" + ex.GetType().Name + "). " +
+                    (recovered ? "The previous state was restored; nothing was removed." :
+                        "Automatic recovery was incomplete. Check the Playnite Themes/Fullscreen folders and the PaRuX backup before retrying."));
+            }
         }
         finally { _single.Release(); }
     }
