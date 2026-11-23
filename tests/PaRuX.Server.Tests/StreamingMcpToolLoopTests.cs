@@ -416,6 +416,38 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Oversized_streamed_tool_arguments_are_rejected_before_invocation()
+    {
+        string oversized = "{\\"payload\\":\\"" + new string('a', McpToolCallAdmission.MaxArgumentsCharacters) + "\\"}";
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "oversized", "lookup", oversized)),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        _turns.Add(() => new[] { new Step(0, Delta("Size rejected.")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        string response = _requests[1]["messages"]![2]!["content"]!.GetValue<string>();
+        Assert.Contains("NOT executed", response);
+        Assert.Contains("64 KiB", response);
+        Assert.Equal("Size rejected.", Text(h));
+    }
+
+    [Fact]
+    public async Task Excessive_tool_call_count_emits_terminal_error_without_invoking_any_tool()
+    {
+        _turns.Add(() => Enumerable.Range(0, 65)
+            .Select(i => new Step(0, ToolDelta(i, "call-" + i, "lookup", "{}")))
+            .Concat(new[] { new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]") }).ToArray());
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Contains(h.Frames, f => f.Text.Contains("too many tool calls"));
+        Assert.Single(_requests);
+    }
+
+    [Fact]
     public async Task Fenced_json_is_normalized_and_repeated_tool_ids_are_made_unique()
     {
         _turns.Add(() => new[]

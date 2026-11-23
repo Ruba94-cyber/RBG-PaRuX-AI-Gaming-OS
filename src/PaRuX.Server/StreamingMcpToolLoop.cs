@@ -32,6 +32,7 @@ internal sealed class StreamingMcpToolLoop
     private readonly OpenRound _open;
     private readonly Func<string, string, CancellationToken, Task<string>> _invokeTool;
     private readonly Func<string, CancellationToken, Task> _writeFrame;
+    private const int MaxPendingCallsPerRound = 64;
     private readonly int _maxCallsPerRound;
     private readonly int _maxCallsPerTurn;
     private int _toolCallsUsed;
@@ -137,6 +138,7 @@ internal sealed class StreamingMcpToolLoop
     {
         var callsArray = new JsonArray();
         var usedIds = new HashSet<string>(StringComparer.Ordinal);
+        var oversizedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (PendingToolCall call in turn.ToolCalls)
         {
             string id = call.Id;
@@ -149,6 +151,7 @@ internal sealed class StreamingMcpToolLoop
                 while (!usedIds.Add(id));
             }
             string arguments = call.Arguments.Length == 0 ? "{}" : call.Arguments.ToString();
+            if (call.ArgumentsTooLarge) oversizedIds.Add(id);
             callsArray.Add(new JsonObject
             {
                 ["id"] = id,
@@ -169,6 +172,11 @@ internal sealed class StreamingMcpToolLoop
             if (i >= roundAllowance)
             {
                 refused[id] = "Tool call skipped: the per-turn tool-call limit was reached.";
+                continue;
+            }
+            if (oversizedIds.Contains(id))
+            {
+                refused[id] = "Tool call NOT executed: arguments exceeded the 64 KiB model-output limit.";
                 continue;
             }
             JsonObject fn = call["function"]!.AsObject();
@@ -270,15 +278,33 @@ internal sealed class StreamingMcpToolLoop
                         if (tdNode is not JsonObject td) continue;
                         int idx = td["index"] is JsonValue iv && iv.TryGetValue(out int parsedIndex) ? parsedIndex : 0;
                         if (!calls.TryGetValue(idx, out PendingToolCall? pending))
+                        {
+                            if (calls.Count >= MaxPendingCallsPerRound)
+                            {
+                                turn.Failed = true;
+                                turn.FailureMessage = "The model emitted too many tool calls in one turn; no tools were executed.";
+                                return turn;
+                            }
                             calls[idx] = pending = new PendingToolCall { Index = idx };
+                        }
                         if (td["id"] is JsonValue idv && idv.TryGetValue(out string? callId) && !string.IsNullOrEmpty(callId))
                             pending.Id = callId;
                         if (td["function"] is JsonObject fn)
                         {
                             if (fn["name"] is JsonValue nv && nv.TryGetValue(out string? nm) && !string.IsNullOrEmpty(nm))
                                 pending.Name += nm;
-                            if (fn["arguments"] is JsonValue av && av.TryGetValue(out string? args) && args is not null)
-                                pending.Arguments.Append(args);
+                            if (fn["arguments"] is JsonValue av && av.TryGetValue(out string? args) && args is not null &&
+                                !pending.ArgumentsTooLarge)
+                            {
+                                // Bound memory while receiving SSE chunks, before the JSON preflight.
+                                // Do not retain partial executable arguments if the bound is exceeded.
+                                if (args.Length > McpToolCallAdmission.MaxArgumentsCharacters - pending.Arguments.Length)
+                                {
+                                    pending.Arguments.Clear();
+                                    pending.ArgumentsTooLarge = true;
+                                }
+                                else pending.Arguments.Append(args);
+                            }
                         }
                     }
                 }
@@ -346,6 +372,7 @@ internal sealed class StreamingMcpToolLoop
         public string Id = string.Empty;
         public string Name = string.Empty;
         public StringBuilder Arguments { get; } = new();
+        public bool ArgumentsTooLarge;
     }
 
     private sealed class TurnResult
