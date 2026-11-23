@@ -42,6 +42,37 @@ public sealed class ConsoleModeReadinessTests
     }
 
     [Fact]
+    public void Console_first_handoff_never_accepts_a_desktop_fallback_or_an_unconfirmed_launch()
+    {
+        Assert.True(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = true, Outcome = "started", Mode = PlayniteModes.Console
+        }));
+        Assert.True(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = true, Outcome = "already-running", Mode = PlayniteModes.Console
+        }));
+
+        Assert.False(ConsoleModeReadiness.AcceptedConsoleHandoff(null));
+        Assert.False(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = true, Outcome = "started", Mode = PlayniteModes.Desktop
+        }));
+        Assert.False(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = false, Outcome = "already-running", Mode = PlayniteModes.Console
+        }));
+        Assert.False(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = true, Outcome = "refused", Mode = PlayniteModes.Console
+        }));
+        Assert.False(ConsoleModeReadiness.AcceptedConsoleHandoff(new PlayniteLaunchResultDto
+        {
+            Ok = true, Outcome = "started", Mode = null
+        }));
+    }
+
+    [Fact]
     public void Readiness_shows_missing_theme_and_missing_pad_without_claiming_console_is_ready()
     {
         var rows = ConsoleModeReadiness.Build(Installed(), null, false, System.Array.Empty<string>(), T);
