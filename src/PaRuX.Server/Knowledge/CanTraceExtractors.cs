@@ -429,6 +429,12 @@ internal sealed class AscTraceExtractor : IDocumentExtractor
 /// <summary>Vector binary log (".blf"): zlib log containers holding classic CAN, CAN FD and CAN error objects.</summary>
 internal sealed class BlfTraceExtractor : IDocumentExtractor
 {
+    // Malformed or compressed BLF input is untrusted. Bound each decoded
+    // container and any cross-container partial object independently of the
+    // (potentially much larger) user's total indexing budget.
+    private const int MaxDecodedContainerBytes = 64 * 1024 * 1024;
+    private const long MaxBufferedBytes = 2L * MaxDecodedContainerBytes;
+
     public string Name => "can-blf";
     public bool CanHandle(string path) => Path.GetExtension(path).Equals(".blf", StringComparison.OrdinalIgnoreCase);
 
@@ -461,31 +467,49 @@ internal sealed class BlfTraceExtractor : IDocumentExtractor
             if (objSize < 16 || objSize > 64 * 1024 * 1024) { corrupt = true; break; }
             byte[] body = new byte[objSize - 16];
             if (ReadFull(fs, body, body.Length) < body.Length) { corrupt = true; break; }
-            int pad = (int)(objSize & 3);
+            int pad = (int)((4 - (objSize & 3)) & 3);
             if (pad > 0) fs.Seek(pad, SeekOrigin.Current);
             if (objType != 10 || body.Length < 16) continue;     // only log containers at file level
 
             ushort method = BitConverter.ToUInt16(body, 0);
             uint declared = BitConverter.ToUInt32(body, 8);
-            if (declared > 256u * 1024 * 1024) { corrupt = true; break; }
+            long remainingBudget = limits.MaxStructuredFileBytes - uncompressedTotal;
+            long allowedBytes = Math.Min(MaxDecodedContainerBytes, remainingBudget);
+            if (allowedBytes <= 0 || declared > allowedBytes) { truncated = true; break; }
             byte[] plain;
             try
             {
                 if (method == 2)
                 {
                     using var zin = new ZLibStream(new MemoryStream(body, 16, body.Length - 16), CompressionMode.Decompress);
-                    using var ms = new MemoryStream((int)Math.Min(declared, int.MaxValue));
-                    zin.CopyTo(ms);
+                    // The declaration is untrusted: do not reserve it as initial capacity.
+                    using var ms = new MemoryStream((int)Math.Min(declared, 64 * 1024u));
+                    byte[] chunk = new byte[64 * 1024];
+                    int read;
+                    while ((read = zin.Read(chunk, 0, chunk.Length)) > 0)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        if (ms.Length + read > declared) { corrupt = true; break; }
+                        ms.Write(chunk, 0, read);
+                    }
+                    if (corrupt) break;
                     plain = ms.ToArray();
                 }
-                else if (method == 0) plain = body.AsSpan(16).ToArray();
+                else if (method == 0)
+                {
+                    if (body.Length - 16 > allowedBytes) { truncated = true; break; }
+                    plain = body.AsSpan(16).ToArray();
+                }
                 else { unsupported++; continue; }
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException) { corrupt = true; break; }
+            if (plain.LongLength != declared) { corrupt = true; break; }
 
             uncompressedTotal += plain.Length;
             if (uncompressedTotal > limits.MaxStructuredFileBytes) { truncated = true; break; }
-            // append, then parse every complete object; a partial one waits for the next container
+            // Keep both an incoming container and an incomplete cross-container
+            // object bounded, even if the BLF object header is malformed.
+            if (inner.Length + plain.LongLength > MaxBufferedBytes) { truncated = true; break; }
             inner.Position = inner.Length;
             inner.Write(plain, 0, plain.Length);
             byte[] buf = inner.GetBuffer();
@@ -497,11 +521,11 @@ internal sealed class BlfTraceExtractor : IDocumentExtractor
                 ushort headerSize = BitConverter.ToUInt16(buf, (int)pos + 4);
                 uint size = BitConverter.ToUInt32(buf, (int)pos + 8);
                 uint type = BitConverter.ToUInt32(buf, (int)pos + 12);
-                if (size < 16) { corrupt = true; break; }
+                if (size < 16 || size > MaxDecodedContainerBytes) { corrupt = true; break; }
                 if (len - pos < size) break;
                 objectNo++;
                 ParseObject(agg, buf.AsSpan((int)pos, (int)size), headerSize, type, objectNo, ref unsupported);
-                pos += size + (size & 3);
+                pos += size + ((4 - (size & 3)) & 3);
                 if (pos > len) pos = len;
             }
             if (corrupt) break;
