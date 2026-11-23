@@ -42,9 +42,32 @@ internal static class GameJsonSettingPatch
         kind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True
             or JsonValueKind.False or JsonValueKind.Null;
 
+    private static bool IsBoolean(JsonValueKind kind) =>
+        kind is JsonValueKind.True or JsonValueKind.False;
+
     private static bool SameType(JsonValueKind a, JsonValueKind b) =>
-        a == b || (a is JsonValueKind.True or JsonValueKind.False &&
-                   b is JsonValueKind.True or JsonValueKind.False);
+        a == b || (IsBoolean(a) && IsBoolean(b));
+
+    // JsonNode serialization would silently collapse duplicate keys anywhere in
+    // the original document. Reject the file instead of altering unrelated data.
+    private static void RequireUniqueKeys(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (JsonProperty p in element.EnumerateObject())
+            {
+                if (!names.Add(p.Name))
+                    throw new ArgumentException("The JSON file contains duplicate property names.");
+                RequireUniqueKeys(p.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement child in element.EnumerateArray())
+                RequireUniqueKeys(child);
+        }
+    }
 
     internal static string Apply(string original, string? section, string? key, string? value)
     {
@@ -75,6 +98,7 @@ internal static class GameJsonSettingPatch
         using (JsonDocument doc = JsonDocument.Parse(original, new JsonDocumentOptions { MaxDepth = 32 }))
         {
             JsonElement current = doc.RootElement;
+            RequireUniqueKeys(current);
             if (current.ValueKind != JsonValueKind.Object)
                 throw new ArgumentException("The game's JSON configuration must be an object.");
             foreach (string parent in parents)
