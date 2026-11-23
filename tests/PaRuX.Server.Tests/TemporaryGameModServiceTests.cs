@@ -209,6 +209,8 @@ public sealed class TemporaryGameModServiceTests : IDisposable
         Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request with { Section = "graphics.missing" }));
         File.WriteAllText(file, "{\"graphics\":{\"fps\":60,\"fps\":90}}");
         Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
+        File.WriteAllText(file, "{\"graphics\":{\"fps\":60},\"unrelated\":{\"a\":1,\"a\":2}}");
+        Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
         File.WriteAllText(file, "{\"graphics\":{\"fps\":60},\"graphics\":{\"fps\":90}}");
         Assert.Throws<ArgumentException>(() => service.PreviewSettingPatch(request));
         Assert.Empty(service.ListPreviews());
