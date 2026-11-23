@@ -92,7 +92,7 @@ try {
     $R.questions = @()
     foreach ($item in $questions) {
         $a = Ask $item.q
-        $missing = @($item.all | Where-Object { $a.answer -notmatch ("(?<![0-9])" + [regex]::Escape($_) + "(?![0-9])") })
+        $missing = @($item.all | Where-Object { $a.answer -notmatch ("(?<![0-9])" + [regex]::Escape($_) + $(if ($_ -like "*.*") { "" } else { "(?![0-9])" })) })
         $R.questions += [ordered]@{ question = $item.q; expected = $item.all; pass = ($a.http -eq 200 -and $missing.Count -eq 0); missing = $missing; http = $a.http; ttftS = $a.ttftS; totalS = $a.totalS; ramMb = $a.ramMb; sources = $a.sources; answer = $a.answer }
     }
     $R.passed = @($R.questions | Where-Object pass).Count; $R.total = $R.questions.Count
