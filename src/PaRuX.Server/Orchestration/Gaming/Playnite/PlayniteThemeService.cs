@@ -296,7 +296,6 @@ internal sealed class PlayniteThemeService
         try
         {
         if (string.IsNullOrWhiteSpace(input)) return (null, "Choose the Aniki ReMake theme folder or the Playnite data folder.");
-        if (_single.CurrentCount == 0) return (null, "Wait for the current theme installation to finish before changing Playnite locations.");
         string full;
         try { full = Path.GetFullPath(input.Trim().Trim('"')); }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return (null, "That path is not valid."); }
