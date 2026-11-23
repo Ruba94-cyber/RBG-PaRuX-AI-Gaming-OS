@@ -45,6 +45,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1 renders a progress bar for every Invoke-WebRequest chunk, which cuts multi-GB model downloads to ~1 MB/s.
+$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 # Reject contradictory package options BEFORE publishing a shell, creating staging
 # directories or fetching third-party assets.
