@@ -247,6 +247,12 @@ namespace PaRuX.Services
             SendAsync<GameModPreviewDto>(HttpMethod.Post,
                 "/api/v1/gaming/mods/temporary/preview", request, ct);
 
+        /// <summary>Preview a 2-8-setting gameplay preset; a separate owner consent is still required to apply.</summary>
+        public Task<GamingCallResult<GameModPreviewDto>> PreviewTemporaryGameBatchPatchAsync(
+            GameModBatchPatchRequest request, CancellationToken ct = default) =>
+            SendAsync<GameModPreviewDto>(HttpMethod.Post,
+                "/api/v1/gaming/mods/temporary/batch-patch-preview", request, ct);
+
         public Task<GamingCallResult<GameTemporaryModDto>> ApplyTemporaryGameModAsync(
             string previewId, bool consent, CancellationToken ct = default) =>
             SendAsync<GameTemporaryModDto>(HttpMethod.Post,
