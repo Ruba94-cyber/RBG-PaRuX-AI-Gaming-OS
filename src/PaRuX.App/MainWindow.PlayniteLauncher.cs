@@ -37,7 +37,7 @@ public sealed partial class MainWindow
             // the actual Playnite start. Reject here before PadBringForward.
             if (PlayniteLauncherForegroundPolicy.RequiresGamePreflight(action))
             {
-                if (GamingManager.Current.IsActive)
+                if (GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive())
                 {
                     PadToast(PadT("Finish the active game before opening another Playnite mode.",
                         "Termina il gioco attivo prima di aprire un'altra modalità Playnite."));
@@ -45,7 +45,8 @@ public sealed partial class MainWindow
                 }
                 GamingCallResult<PlayniteStatusDto> before = await PlayniteClient.Current.GetStatusAsync();
                 if (!before.Succeeded ||
-                    !PlayniteLauncherForegroundPolicy.MayOpen(action, false, before.Value))
+                    !PlayniteLauncherForegroundPolicy.MayOpen(action,
+                        GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive(), before.Value))
                 {
                     PadToast(PadT("Cannot safely open Playnite while a game is active or its status is unknown.",
                         "Impossibile aprire Playnite in sicurezza mentre un gioco è attivo o lo stato è sconosciuto."));
