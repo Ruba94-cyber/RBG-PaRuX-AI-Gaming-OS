@@ -88,7 +88,7 @@ public static class PlayniteLauncherForegroundPolicy
         // A nonzero process count and all transitional/failure states fail closed.
         // An unrecognized new session state must not automatically steal focus.
         return session.TrackedProcessCount == 0 &&
-            session.State is "idle" or "disabled";
+            (session.State is "idle" or "disabled");
     }
 }
 
