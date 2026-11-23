@@ -73,6 +73,20 @@ public sealed class ConsoleModeReadinessTests
     }
 
     [Fact]
+    public void Playnite_desktop_fallback_is_not_mistaken_for_fullscreen_or_unavailable()
+    {
+        Assert.Equal(ConsolePlayniteStartResult.Unavailable, ConsoleModeReadiness.ClassifyStart(null));
+        Assert.Equal(ConsolePlayniteStartResult.Fullscreen, ConsoleModeReadiness.ClassifyStart(new()
+        { Ok = true, Outcome = "started", Mode = PlayniteModes.Console }));
+        Assert.Equal(ConsolePlayniteStartResult.DesktopFallback, ConsoleModeReadiness.ClassifyStart(new()
+        { Ok = true, Outcome = "started", Mode = PlayniteModes.Desktop }));
+        Assert.Equal(ConsolePlayniteStartResult.DesktopFallback, ConsoleModeReadiness.ClassifyStart(new()
+        { Ok = true, Outcome = "already-running", Mode = PlayniteModes.Desktop }));
+        Assert.Equal(ConsolePlayniteStartResult.Unavailable, ConsoleModeReadiness.ClassifyStart(new()
+        { Ok = false, Outcome = "refused", Mode = PlayniteModes.Desktop }));
+    }
+
+    [Fact]
     public void Readiness_shows_missing_theme_and_missing_pad_without_claiming_console_is_ready()
     {
         var rows = ConsoleModeReadiness.Build(Installed(), null, false, System.Array.Empty<string>(), T);

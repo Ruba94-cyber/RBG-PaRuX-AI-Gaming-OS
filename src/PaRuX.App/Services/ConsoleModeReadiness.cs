@@ -6,6 +6,8 @@ namespace PaRuX.Services
 {
     public enum ConsoleReadinessState { Ok, Attention, Missing, Skipped }
 
+    public enum ConsolePlayniteStartResult { Unavailable, Fullscreen, DesktopFallback }
+
     public sealed record ConsoleReadinessRow(string Id, string Label, ConsoleReadinessState State, string Detail);
 
     /// <summary>
@@ -25,6 +27,16 @@ namespace PaRuX.Services
         /// </summary>
         public static bool AcceptedConsoleHandoff(PlayniteLaunchResultDto? launch) =>
             launch is { Ok: true, Mode: PlayniteModes.Console, Outcome: "started" or "already-running" };
+
+        /// <summary>
+        /// A Desktop fallback is a real Playnite launch, but it must NOT be treated as
+        /// Fullscreen success or followed by a second native Console presenter.
+        /// </summary>
+        public static ConsolePlayniteStartResult ClassifyStart(PlayniteLaunchResultDto? launch) =>
+            AcceptedConsoleHandoff(launch) ? ConsolePlayniteStartResult.Fullscreen :
+            launch is { Ok: true, Mode: PlayniteModes.Desktop, Outcome: "started" or "already-running" }
+                ? ConsolePlayniteStartResult.DesktopFallback
+                : ConsolePlayniteStartResult.Unavailable;
 
         /// <summary>The one-button test needs a Playnite with the Fullscreen executable that the owner has not skipped.</summary>
         public static bool CanTest(PlayniteComponentDto component) =>

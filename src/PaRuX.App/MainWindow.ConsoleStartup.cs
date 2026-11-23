@@ -56,15 +56,21 @@ public sealed partial class MainWindow
                     {
                         // Preferred Console UI is Playnite Fullscreen + the owner's Aniki theme:
                         // avoid creating the heavy legacy Gaming Home just to cover it immediately.
-                        if (await TryStartPlayniteConsoleAsync())
+                        ConsolePlayniteStartResult handoff = await TryStartPlayniteConsoleAsync();
+                        if (handoff == ConsolePlayniteStartResult.Fullscreen)
                         {
                             if (AppWindow.Presenter is OverlappedPresenter overlappedConsole)
                                 overlappedConsole.Minimize();
                             Log.Write("Console startup: Playnite Fullscreen accepted; PaRuX remains available for AI.");
                             break;
                         }
+                        if (handoff == ConsolePlayniteStartResult.DesktopFallback)
+                        {
+                            Log.Write("Console startup: Playnite started Desktop due to display fallback; no native Console takeover.");
+                            break;
+                        }
 
-                        // Fallback only when Playnite is absent, skipped, refused, or not actually Fullscreen.
+                        // Fallback only when Playnite was NOT started at all.
                         await EnterConsoleModeAsync();
                         Log.Write("Console startup: Playnite unavailable; opened the legacy Console fallback.");
                     }

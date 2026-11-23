@@ -26,7 +26,8 @@ public sealed partial class MainWindow
     {
         try
         {
-            if (hasPlayRequest || App.IsShuttingDown || _consoleModeActive || _playniteConsoleHandoffActive) return;
+            if (hasPlayRequest || App.IsShuttingDown || _consoleModeActive ||
+                _playniteConsoleHandoffActive || _playniteDesktopFallbackAtStartup) return;
             var status = await PlayniteClient.Current.GetStatusAsync();
             if (!status.Succeeded || status.Value is not { } s) return;
             if (!s.Settings.LaunchAtStartup || s.Settings.Skipped || !s.Component.Detected) return;
@@ -43,26 +44,38 @@ public sealed partial class MainWindow
     // fullscreen presenter. This flag also prevents the independent startup hook from
     // opening a second Playnite instance or re-selecting the Desktop mode.
     private volatile bool _playniteConsoleHandoffActive;
+    private volatile bool _playniteDesktopFallbackAtStartup;
 
     /// <summary>
     /// Console-first startup: open the already installed Playnite Fullscreen directly.
     /// No native PaRuX Gaming Home is constructed on success; no Playnite theme or
     /// controller files are altered. On failure the caller retains its safe legacy fallback.
     /// </summary>
-    internal async Task<bool> TryStartPlayniteConsoleAsync()
+    internal async Task<ConsolePlayniteStartResult> TryStartPlayniteConsoleAsync()
     {
         try
         {
             if (App.IsShuttingDown || _consoleModeActive || _playniteConsoleHandoffActive)
-                return false;
+                return ConsolePlayniteStartResult.Unavailable;
             var before = await PlayniteClient.Current.GetStatusAsync();
-            if (!before.Succeeded || before.Value is not { } status) return false;
-            if (!ConsoleModeReadiness.ShouldStartWithConsole(status.Settings, status.Component)) return false;
+            if (!before.Succeeded || before.Value is not { } status) return ConsolePlayniteStartResult.Unavailable;
+            if (!ConsoleModeReadiness.ShouldStartWithConsole(status.Settings, status.Component)) return ConsolePlayniteStartResult.Unavailable;
 
             var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, PlayniteDisplayId());
             Log.Write("Playnite-first Console handoff: " + (result.Value?.Outcome ?? result.Error ?? "no answer"));
-            if (!result.Succeeded || !ConsoleModeReadiness.AcceptedConsoleHandoff(result.Value))
-                return false;
+            ConsolePlayniteStartResult outcome = result.Succeeded
+                ? ConsoleModeReadiness.ClassifyStart(result.Value)
+                : ConsolePlayniteStartResult.Unavailable;
+            if (outcome == ConsolePlayniteStartResult.DesktopFallback)
+            {
+                // The TV can disconnect between the shell probe and Core's final
+                // launch check. Playnite already started Desktop: do not start it
+                // again or overlay another fullscreen UI on the wrong monitor.
+                _playniteDesktopFallbackAtStartup = true;
+                return outcome;
+            }
+            if (outcome != ConsolePlayniteStartResult.Fullscreen)
+                return ConsolePlayniteStartResult.Unavailable;
 
             _playniteConsoleHandoffActive = true;
             if (result.Value!.Outcome == "started" || status.Session.PaRuXLaunchedPlaynite)
@@ -72,12 +85,12 @@ public sealed partial class MainWindow
                 // counter. Observe its exit for state cleanup, never to steal focus.
                 BeginPlayniteReturnWatch(watchExternalClose: true,
                     externalInitiallyRunning: status.Session.PlayniteRunning || status.Component.Running);
-            return true;
+            return ConsolePlayniteStartResult.Fullscreen;
         }
         catch (Exception ex)
         {
             Log.Write("Playnite-first Console handoff failed: " + ex.GetType().Name);
-            return false;
+            return ConsolePlayniteStartResult.Unavailable;
         }
     }
 
