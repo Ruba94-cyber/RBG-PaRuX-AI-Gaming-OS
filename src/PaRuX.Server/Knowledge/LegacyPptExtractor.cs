@@ -22,6 +22,16 @@ internal sealed class LegacyPptExtractor : IDocumentExtractor
 
     public ExtractedDocument Extract(string path, ExtractionLimits limits, CancellationToken ct)
     {
+        try { return ExtractCore(path, limits, ct); }
+        catch (InvalidDataException ex)
+        {
+            // A damaged or truncated file stays findable by name; the reason (never document content) is kept as the note.
+            return new ExtractedDocument(path, DocumentTier.MetadataOnly, Array.Empty<DocumentSegment>(), false, "Could not be read as " + Name + ": " + ex.Message, Name);
+        }
+    }
+
+    private ExtractedDocument ExtractCore(string path, ExtractionLimits limits, CancellationToken ct)
+    {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         _ct = ct;
         var cf = new CompoundFile(CompoundFile.ReadBounded(path));
