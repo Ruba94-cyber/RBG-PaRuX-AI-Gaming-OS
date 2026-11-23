@@ -35,6 +35,7 @@
     <Compile Include="..\..\src\PaRuX.App\Services\UiLanguage.cs" Link="Linked\UiLanguage.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PromptLibrary.cs" Link="Linked\PromptLibrary.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ChatSamplingPreferences.cs" Link="Linked\ChatSamplingPreferences.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ConsoleModeReadiness.cs" Link="Linked\ConsoleModeReadiness.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ControllerLiveModel.cs" Link="Linked\ControllerLiveModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\RawMappingWizardModel.cs" Link="Linked\RawMappingWizardModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\RawPadEdgeTranslator.cs" Link="Linked\RawPadEdgeTranslator.cs" />
