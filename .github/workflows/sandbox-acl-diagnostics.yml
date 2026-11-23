@@ -1,0 +1,48 @@
+# Ephemeral Windows AppContainer diagnostic. Never touches the owner's PC.
+name: Sandbox - mandatory ACL and AppContainer diagnostics
+
+on:
+  push:
+    branches:
+      - fix/sandbox-required-acl-diagnostics-20261123
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-diag-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  appcontainer-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore Server test graph
+        run: dotnet restore tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -p:Platform=x64
+      - name: Build actual Server and sandbox-linked code
+        run: dotnet build tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-restore --nologo
+      - name: Exercise minimum AppContainer smoke and NPM fixtures
+        run: |
+          dotnet test tests/PaRuX.Server.Tests/PaRuX.Server.Tests.csproj -c Release -p:Platform=x64 --no-build --no-restore --filter "FullyQualifiedName~WindowsCodingSandboxAclTests.RunAsync_InDirectory_CanRunEchoInsideAppContainer|FullyQualifiedName~WindowsCodingSandboxIntegrationTests.Real_no_network_appcontainer_executes_in_workspace_and_scrubs_parent_secret|FullyQualifiedName~WindowsCodingSandboxIntegrationTests.Npm_test_runs_the_package_script_inside_the_offline_sandbox" --blame-hang --blame-hang-timeout 4m --logger "trx;LogFileName=appcontainer-smoke.trx" --results-directory TestResults
+      - name: Preserve synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcontainer-smoke
+          path: TestResults/**
+          if-no-files-found: ignore
+          retention-days: 7
