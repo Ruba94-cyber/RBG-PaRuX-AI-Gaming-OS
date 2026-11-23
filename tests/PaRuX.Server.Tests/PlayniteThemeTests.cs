@@ -604,6 +604,25 @@ public sealed class PlayniteThemeServiceTests : IDisposable
     }
 
     [Fact]
+    public void Aniki_helper_probe_reads_only_a_bounded_extension_manifest_with_the_official_guid()
+    {
+        string extensions = Path.Combine(Data, "Extensions");
+        string extension = Path.Combine(extensions, "AnikiHelper_96a983a3-3f13-4dce-a474-4052b718bb52");
+        Directory.CreateDirectory(extension);
+        Assert.False(PlayniteThemeService.FindAnikiHelperOnDisk(Data).Found);
+
+        string manifest = Path.Combine(extension, "extension.yaml");
+        File.WriteAllText(manifest, "Name: Aniki Helper\nId: 00000000-0000-0000-0000-000000000001\nVersion: 0.0.1");
+        Assert.False(PlayniteThemeService.FindAnikiHelperOnDisk(Data).Found);
+
+        File.WriteAllText(manifest, "Name: Aniki Helper\nId: 96a983a3-3f13-4dce-a474-4052b718bb52\nVersion: 1.3.6");
+        var found = PlayniteThemeService.FindAnikiHelperOnDisk(Data);
+        Assert.True(found.Found);
+        Assert.Equal("1.3.6", found.Version);
+        Assert.True(Make(MakeTheme()).S.Detect().AnikiHelperFoundOnDisk);
+    }
+
+    [Fact]
     public async Task A_second_Playnite_profile_with_the_same_Aniki_id_is_never_mistaken_for_a_managed_theme()
     {
         byte[] pkg = MakeTheme();
