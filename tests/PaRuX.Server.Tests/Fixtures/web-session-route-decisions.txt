@@ -767,3 +767,7 @@ DENY GET /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/data-sources
 DENY POST /api/v1/agent-skills/sql/query
 DENY GET /openapi.json
+DENY GET /api/v1/embeddings/multilingual/engine
+DENY GET /api/v1/reranker/multilingual/engine
+DENY POST /api/v1/embeddings/multilingual/engine/install
+DENY POST /api/v1/reranker/multilingual/engine/install
