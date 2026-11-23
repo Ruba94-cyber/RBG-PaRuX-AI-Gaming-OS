@@ -302,8 +302,9 @@ namespace PaRuX.Services
                     + "exit /b %errorlevel%\r\n";
                 await File.WriteAllTextAsync(scriptPath, script, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
 
-                await GrantPathAccessAsync(scriptPath, sid, "(RX)", required: false, cancellationToken).ConfigureAwait(false);
-                await GrantPathAccessAsync(outputPath, sid, "(M)", required: false, cancellationToken).ConfigureAwait(false);
+                // Both files are required to execute and capture the command. Never ignore an ACL grant failure.
+                await GrantPathAccessAsync(scriptPath, sid, "(RX)", required: true, cancellationToken).ConfigureAwait(false);
+                await GrantPathAccessAsync(outputPath, sid, "(M)", required: true, cancellationToken).ConfigureAwait(false);
 
                 STARTUPINFOEX startup = new();
                 startup.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
