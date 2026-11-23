@@ -92,6 +92,8 @@ internal sealed class GamesToolsHome : StackPanel
         Children.Add(Description(T(
             "Your existing native library is still available under Library during this migration. Nothing is deleted or moved on disk.",
             "La vecchia libreria resta accessibile in Libreria durante la migrazione. Nessun file viene eliminato o spostato.")));
+        AutomationProperties.SetAutomationId(_message, "GamesTools_Message");
+        AutomationProperties.SetLiveSetting(_message, AutomationLiveSetting.Polite);
         Children.Add(_message);
 
         // Do not start the local Core or Playnite discovery merely because
