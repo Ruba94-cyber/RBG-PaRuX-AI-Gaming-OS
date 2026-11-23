@@ -1,3 +1,11 @@
+## 2026-11-23 - PLAYNITE-FIRST CONSOLE START AND RECOVERY
+
+- Main now starts Playnite Fullscreen **before** the legacy native Console presenter when an explicitly selected TV is connected and the Console Playnite preference is enabled. Only a Core-confirmed Fullscreen result is accepted; Desktop fallback never counts as successful console handoff. PaRuX does not open its native Gaming Home on an accepted handoff. The old UI remains only as fallback and has NOT been deleted.
+- The second automatic startup hook will not relaunch Playnite while a Console handoff is active; the sign-in-app policy receives the effective Console status. A PaRuX-owned Playnite exit returns to PaRuX only when its tracked game processes have finished and the return policy allows it. Real controller/TV acceptance is pending.
+- Aniki theme rollback is now journal-safe: failed persistence triggers reversible file moves and preserves original backups; failed atomic journal temporary files are cleaned. Synthetic regression cases cover failed journal writes for fresh and replacement installations. These tests are added to the local Windows gate but NOT executed in this connector-only session.
+- The AI tool-call-repair WIP is promising but modifies the central streaming tool loop. Without a real build/tests, do not import this branch or its Python AppContainer execution surface blindly. Keep isolated for the physical Windows verification cycle.
+- 0 GitHub Actions; no cloud CI or signed release. See `tools/validation-runs/verify-main-local.ps1`.
+
 ## 2026-11-23 - ANIKI HARDENING ADDENDUM (main)
 
 - Aniki Helper is now probed **read-only** from the exact Playnite data root's `Extensions/*/extension.yaml`: verify official extension GUID, bounded manifest size/entries; the UI distinguishes "found on disk" from "actually loaded". Do not claim compatibility/running state solely from manifest presence.
