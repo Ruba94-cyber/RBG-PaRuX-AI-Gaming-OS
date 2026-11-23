@@ -42,6 +42,8 @@ public interface IAgentLibraryBackend
         Task.FromException<GameModPreviewDto>(new InvalidOperationException("Temporary mod preview unavailable."));
     Task<GameModPreviewDto> ProposeSettingPatchAsync(GameModSettingPatchRequest request, CancellationToken ct) =>
         Task.FromException<GameModPreviewDto>(new InvalidOperationException("Setting patch preview unavailable."));
+    Task<GameModPreviewDto> ProposeBatchSettingPatchAsync(GameModBatchPatchRequest request, CancellationToken ct) =>
+        Task.FromException<GameModPreviewDto>(new InvalidOperationException("Gameplay batch preview unavailable."));
 }
 
 /// <summary>One pending or decided confirmation. The summary is the text the user sees.</summary>
@@ -187,6 +189,7 @@ public sealed class AgentLibraryTools
     public const string QuickResumeResumeTool = "quick_resume_resume";
     public const string GameModProposeTool = "game_mod_propose";
     public const string GameModPatchTool = "game_mod_patch";
+    public const string GameModBatchPatchTool = "game_mod_batch_patch";
 
     public const int MaxArgumentCharacters = 4096;
     public const int MaxQueryCharacters = 120;
@@ -203,7 +206,7 @@ public sealed class AgentLibraryTools
     private static readonly string[] Reversible = { SetFavoriteTool, SetTagsTool, SetCollectionTool };
     private static readonly string[] AlwaysConfirm =
         { LaunchTool, RemoveEntryTool, EnqueueDownloadTool, QuickResumePauseTool, QuickResumeResumeTool,
-          GameModProposeTool, GameModPatchTool };
+          GameModProposeTool, GameModPatchTool, GameModBatchPatchTool };
 
     private static readonly Regex AbsolutePath = new(
         @"(?:[A-Za-z]:[\\/][^\s""'<>|*?]*)|(?:\\\\[^\s""'<>|]+)|(?:/(?:Users|home|mnt|var|etc|opt)/[^\s""'<>|]*)",
@@ -456,6 +459,8 @@ public sealed class AgentLibraryTools
                     return ProposeGameMod(args, out outcome, out subject, out pending);
                 case GameModPatchTool:
                     return ProposeGameSettingPatch(args, out outcome, out subject, out pending);
+                case GameModBatchPatchTool:
+                    return ProposeGameSettingBatch(args, out outcome, out subject, out pending);
             }
 
             if (tool == EnqueueDownloadTool) return Enqueue(args, tool, out outcome, out subject, out pending);
@@ -920,6 +925,8 @@ public sealed class AgentLibraryTools
             "relative_path", "proposed_text", "offline_confirmed" }, new[] { "confirmation_id" }),
         [GameModPatchTool] = (new[] { "manual_game_id", "process_id", "started_utc",
             "relative_path", "key", "value", "offline_confirmed" }, new[] { "section", "confirmation_id" }),
+        [GameModBatchPatchTool] = (new[] { "manual_game_id", "process_id", "started_utc",
+            "relative_path", "edits", "offline_confirmed" }, new[] { "confirmation_id" }),
     };
 
     private static readonly Dictionary<string, int> TextLimits = new(StringComparer.Ordinal)
