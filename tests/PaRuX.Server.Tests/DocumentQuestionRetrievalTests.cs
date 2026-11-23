@@ -78,7 +78,7 @@ public sealed class DocumentQuestionRetrievalTests
     [Fact]
     public void A_question_naming_an_indexed_file_needs_only_one_real_word_in_common()
     {
-        var evidence = new[] { Hit("CAN-X.asc", "CAN trace file CAN-X.asc Frames read: 30875; distinct (channel, CAN ID) pairs: 221") };
+        var evidence = new[] { Hit("CAN-X.asc", "CAN trace file CAN-X.asc Frames read: 12345; distinct (channel, CAN ID) pairs: 87") };
         Assert.True(DocumentChatPlanner.IsSufficient("Quanti frame e quanti ID distinti ci sono in CAN-X.asc?", evidence));
         // the file name alone is not coverage: an unrelated question about the same file is still declined
         Assert.False(DocumentChatPlanner.IsSufficient("Qual e' la pressione dell'olio motore nel file CAN-X.asc?", evidence));

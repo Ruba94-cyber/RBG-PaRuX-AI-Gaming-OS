@@ -19,7 +19,7 @@ param(
     [string]$ResultsFile = "",
     [int]$IndexTimeoutMinutes = 30,
     [int]$ChatTimeoutMinutes = 8,
-    [string]$QuestionsFile = ""   # optional JSON list of { q, all } appended to the built-in CAN questions
+    [string[]]$QuestionsFile = @()   # one or more JSON files, each a list of { q, all }
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
@@ -59,17 +59,8 @@ try {
     while ($s.job.state -notin 'done', 'failed', 'cancelled' -and $sw.Elapsed.TotalMinutes -lt $IndexTimeoutMinutes)
     $R.index = [ordered]@{ seconds = [math]::Round($sw.Elapsed.TotalSeconds); state = $s.job.state; files = $s.files; chunks = $s.chunks; failed = $s.job.progress.failed; peakRamMb = $peak; problems = @($s.problems | ForEach-Object { "$($_.relativePath): $($_.reason)" }) }
 
-    $questions = @(
-        @{ q = "Nel file DTC DMS Can Recording.asc, quali codici DM1 (SPN e FMI) risultano attivi e da quali indirizzi sorgente?"; all = @("520662", "497662", "521454") }
-        @{ q = "Quanti frame ha l'ID 0x0CF00400x in CAN-20260730-123749.asc e a che riga compare per la prima volta?"; all = @("2344", "15") }
-        @{ q = "A che riga compare per la prima volta l'ID 0x0CF00400x in DTC DMS Can Recording.asc?"; all = @("16") }
-        @{ q = "Che segnali contiene il messaggio ETC7 nel DBC?"; all = @("TransmEngCrkEna", "TransmMode1Ind", "TransmMode5Ind") }
-        @{ q = "Qual e' il cycle time del messaggio ETC7?"; all = @("100") }
-        @{ q = "Quanti frame e quanti ID distinti ci sono in CAN-20260807-092922.asc?"; all = @("30875", "221") }
-        @{ q = "Quanti frame e quanti ID distinti ci sono in DTC DMS Can Recording.asc?"; all = @("281491", "266") }
-        @{ q = "Quale e' la durata della registrazione CAN-20260730-123749.asc?"; all = @("23.4") }
-    )
-    if ($QuestionsFile) { foreach ($x in (Get-Content -LiteralPath $QuestionsFile -Raw -Encoding UTF8 | ConvertFrom-Json)) { $questions += @{ q = [string]$x.q; all = @($x.all) } } }
+    $questions = @()      # questions come from -QuestionsFile (JSON list of { q, all }); none are built in, so no data of a real file lives in the repository
+    foreach ($qf in $QuestionsFile) { foreach ($x in (Get-Content -LiteralPath $qf -Raw -Encoding UTF8 | ConvertFrom-Json)) { $questions += @{ q = [string]$x.q; all = @($x.all) } } }
     function Ask([string]$q) {
         $req = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Post, "$ep/api/v1/chat/completions"); $req.Headers.Add("X-PaRuX-Token", $b.token)
         $body = @{ model = "local-default"; stream = $true; max_tokens = 260; messages = @(@{ role = "user"; content = $q }); documents = @{ enabled = $true; sourceIds = @($id) } } | ConvertTo-Json -Depth 6 -Compress
