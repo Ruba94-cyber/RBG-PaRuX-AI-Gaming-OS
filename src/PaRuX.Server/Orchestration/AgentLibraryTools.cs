@@ -359,7 +359,7 @@ public sealed class AgentLibraryTools
                 ["relative_path"] = Str("Existing INI, CFG or JSON file relative to managed game root.", 240),
                 ["section"] = Str("INI/CFG section, or for JSON an optional dot-separated path of existing nested objects.", 80),
                 ["key"] = Str("Existing setting name; for JSON a simple ASCII property name with letters/digits/dash/underscore.", 80),
-                ["value"] = Str("One-line value <=256 chars: INI plain text; JSON valid scalar literal, e.g. 60, true or \\"high\\".", 256),
+                ["value"] = Str("At most 256 characters: INI text or a JSON scalar literal such as 60, true, null or a quoted JSON string.", 256),
                 ["offline_confirmed"] = new JsonObject { ["type"] = "boolean",
                     ["description"] = "Owner confirms offline single-player ownership/permission." },
                 ["confirmation_id"] = Confirmation()
