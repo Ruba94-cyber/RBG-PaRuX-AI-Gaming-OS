@@ -411,10 +411,11 @@ public sealed partial class ManualGameLibraryView : UserControl
         AutomationProperties.SetAutomationId(openTools, "GameLibrary_OpenTools_Button");
         openTools.Click += (_, _) => OpenGamesSection("Tools");
         root.Children.Add(openTools);
+        var toolsHome = new GamesToolsHome(OpenGamesSection);
         var sections = new (string Id, string Title, List<UIElement> Items)[]
         {
             ("Library", T("Library", "Libreria"), new List<UIElement> { _universal }),
-            ("Tools", T("Playnite & tools", "Playnite e strumenti"), new List<UIElement> { new GamesToolsHome(OpenGamesSection) }),
+            ("Tools", T("Playnite & tools", "Playnite e strumenti"), new List<UIElement> { toolsHome }),
             ("Downloads", T("Downloads", "Download"), all.Skip(downloadsStart).Take(addStart - downloadsStart).ToList()),
             ("Add", T("Add & import", "Aggiungi e importa"),
                 new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(async () => { await LoadAsync(); if (_universal is not null) await _universal.ReloadTitlesNowAsync(); }), _universal.AddTools }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
@@ -441,6 +442,9 @@ public sealed partial class ManualGameLibraryView : UserControl
         {
             string? tag = (sender.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (var pair in panels) pair.Value.Visibility = pair.Key == tag ? Visibility.Visible : Visibility.Collapsed;
+            // No hidden detection or Core startup: inspect optional Playnite
+            // only when the user explicitly opens the Playnite-first hub.
+            if (tag == "Tools") _ = toolsHome.RefreshPlayniteAsync();
         };
         _universal.ImportGamesRequested += () =>
         {
