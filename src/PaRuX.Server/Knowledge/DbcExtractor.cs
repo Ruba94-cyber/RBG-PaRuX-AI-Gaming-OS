@@ -140,6 +140,8 @@ internal sealed class DbcExtractor : IDocumentExtractor
             var head = new StringBuilder();
             head.Append("CAN message ").Append(msg.Name).Append(" (").Append(msg.IdText).Append(", DLC ").Append(msg.Dlc).Append(") sent by ").AppendLine(sender);
             if (msg.Comment != null) head.Append("Comment: ").AppendLine(msg.Comment);
+            string? cycle = msg.Attributes.FirstOrDefault(a => a.StartsWith("GenMsgCycleTime = ", StringComparison.Ordinal));
+            if (cycle != null) head.Append("Cycle time (transmission period, periodo di invio, ciclo): ").AppendLine(cycle["GenMsgCycleTime = ".Length..]);
             foreach (string a in msg.Attributes) head.Append("Attribute: ").AppendLine(a);
             head.Append("Signals (").Append(msg.Signals.Count).Append("): ").Append(string.Join(", ", msg.Signals.Select(s => s.Name)));
             if (!sink.Add(head.ToString(), sender + " > " + msg.Name)) break;

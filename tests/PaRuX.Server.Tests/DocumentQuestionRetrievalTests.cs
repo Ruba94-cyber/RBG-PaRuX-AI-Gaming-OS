@@ -90,6 +90,41 @@ public sealed class DocumentQuestionRetrievalTests
     public void Grounding_asks_for_the_language_of_the_question() =>
         Assert.Contains("language of the question", DocumentChatPlanner.GroundingInstruction);
 
+    private static KnowledgeHit Scored(string file, string text, double relevance) =>
+        new(1, @"C:\x\" + file, file, text, new DocumentPosition(Heading: "h"), 1.0, "hybrid", relevance);
+
+    [Fact]
+    public void A_clearly_relevant_passage_supports_a_question_that_shares_no_word_with_it()
+    {
+        // Italian question, English evidence: no lexical overlap, but the cross-encoder judges the passage relevant.
+        var strong = new[] { Scored("m.msg", "Email message: test message From: Travis Ferguson", 4.2) };
+        var weak = new[] { Scored("m.msg", "Email message: test message From: Travis Ferguson", -6.0) };
+        Assert.True(DocumentChatPlanner.IsSufficient("Chi e' il mittente del messaggio con oggetto prova?", strong));
+        Assert.False(DocumentChatPlanner.IsSufficient("Chi e' il mittente del messaggio con oggetto prova?", weak));
+        // a named file needs only a non-negative score
+        var named = new[] { Scored("deck.ppt", "deck.ppt - slide 2: This is the title on page 2", 0.4) };
+        Assert.True(DocumentChatPlanner.IsSufficient("Qual e' il titolo della seconda pagina della presentazione deck.ppt?", named));
+        var namedWeak = new[] { Scored("deck.ppt", "deck.ppt - slide 2: This is the title on page 2", -7.0) };
+        Assert.False(DocumentChatPlanner.IsSufficient("Qual e' la pressione dell'olio nella presentazione deck.ppt?", namedWeak));
+    }
+
+    [Fact]
+    public void Grounding_never_shows_a_concrete_file_name_a_small_model_could_copy_as_a_citation() =>
+        Assert.DoesNotContain("Report.pdf", DocumentChatPlanner.GroundingInstruction);
+
+    [Fact]
+    public void Dbc_message_states_its_cycle_time_in_plain_words()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "parux-cycle-" + Guid.NewGuid().ToString("N") + ".dbc");
+        try
+        {
+            File.WriteAllText(path, "VERSION \"\"\n\nBU_: ECU\n\nBO_ 2566801923 ETC7: 8 ECU\n SG_ Sig1 : 0|8@1+ (1,0) [0|255] \"\" Vector__XXX\n\nBA_ \"GenMsgDelayTime\" BO_ 2566801923 50;\nBA_ \"GenMsgCycleTime\" BO_ 2566801923 100;\n");
+            string t = StructuredDocumentExtractor.Extract(path).FullText;
+            Assert.Contains("Cycle time (transmission period, periodo di invio, ciclo): 100 ms", t);
+        }
+        finally { try { File.Delete(path); } catch (IOException) { } }
+    }
+
     [Fact]
     public void Dbc_cycle_time_carries_its_unit_so_a_small_model_cannot_answer_seconds()
     {
