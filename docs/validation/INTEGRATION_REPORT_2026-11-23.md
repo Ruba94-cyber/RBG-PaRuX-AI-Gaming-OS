@@ -39,7 +39,7 @@ Solo i numeri della sezione B. Nessun benchmark comparativo.
 - File `.enc` non toccati. Nessun fork/pubblicazione con altro account.
 
 ## H. GitHub
-- Push **bloccato**: account attivo `teamdtsiveco-code` con permesso READ (403). Nessun tag/release. Branch e bundle locale pronti.
+- Branch `integration/20261123-b` pubblicato (account collaboratore con WRITE) e PR #17 verso `main` aperta, NON mergiata. Nessun tag/release.
 
 ## I. Limiti / prossimi passi
 1. Reranker multilingue (mmarco-mMiniLMv2 int8): INTEGRATO a fine sessione (provider con fallback sull'inglese, file pinnati con SHA-256, endpoint /api/v1/reranker/multilingual/engine, script di build, 2 test verdi con modello reale). NON ancora misurato end-to-end: serve ricostruire un pacchetto e rieseguire le 34 domande di accettazione.
