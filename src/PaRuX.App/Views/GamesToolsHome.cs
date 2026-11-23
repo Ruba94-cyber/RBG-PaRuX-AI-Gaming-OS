@@ -169,7 +169,7 @@ internal sealed class GamesToolsHome : StackPanel
         // same rule again at the process boundary; the UI gives early feedback.
         if (PlayniteLauncherForegroundPolicy.RequiresGamePreflight(action))
         {
-            if (GamingManager.Current.IsActive)
+            if (GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive())
             {
                 _message.Text = T("A game is active. Finish playing before opening another Playnite mode.",
                     "Un gioco è in esecuzione. Termina la partita prima di aprire un'altra modalità Playnite.");
@@ -177,7 +177,8 @@ internal sealed class GamesToolsHome : StackPanel
             }
             var status = await PlayniteClient.Current.GetStatusAsync();
             if (!status.Succeeded ||
-                !PlayniteLauncherForegroundPolicy.MayOpen(action, GamingManager.Current.IsActive, status.Value))
+                !PlayniteLauncherForegroundPolicy.MayOpen(action,
+                    GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive(), status.Value))
             {
                 _message.Text = T("Cannot safely open Playnite while a game is active or its status is unknown.",
                     "Impossibile aprire Playnite in sicurezza mentre un gioco è attivo o lo stato è sconosciuto.");
