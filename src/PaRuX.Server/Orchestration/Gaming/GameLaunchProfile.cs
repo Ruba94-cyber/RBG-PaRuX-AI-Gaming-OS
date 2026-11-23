@@ -113,9 +113,9 @@ public static class GameLaunchProfileValidator
         if (s.Width is { } sw && (sw < 320 || sw > 7680)) return "Streaming width must be 320-7680.";
         if (s.Height is { } sh && (sh < 240 || sh > 4320)) return "Streaming height must be 240-4320.";
         if (!In(Codecs, s.Codec)) return "Unknown streaming codec.";
-        GamePostLaunchSettings a = p.PostLaunch ?? new();
-        if (a.DelayMs is < 0 or > 8000) return "Post-launch delay must be 0-8000 ms.";
-        if ((a.RequestAltEnterFullscreen || a.ClickClientCenter) && !a.BringToForeground)
+        GamePostLaunchSettings post = p.PostLaunch ?? new();
+        if (post.DelayMs is < 0 or > 8000) return "Post-launch delay must be 0-8000 ms.";
+        if ((post.RequestAltEnterFullscreen || post.ClickClientCenter) && !post.BringToForeground)
             return "Fullscreen toggle and click require the opt-in foreground action.";
         return null;
     }
