@@ -1,3 +1,11 @@
+## 2026-11-23 - ANIKI HARDENING ADDENDUM (main)
+
+- Aniki Helper is now probed **read-only** from the exact Playnite data root's `Extensions/*/extension.yaml`: verify official extension GUID, bounded manifest size/entries; the UI distinguishes "found on disk" from "actually loaded". Do not claim compatibility/running state solely from manifest presence.
+- Managed Aniki folder ownership is tied to `ManagedDataFolder`, and Fullscreen config restore rights to `SelectionDataFolder`; cross-profile identical Aniki IDs do not authorize removal. Mutating operations share a semaphore with installer state, and the config writer rechecks the Playnite process before replacing files. The user still must confirm all install/select/restore/rollback actions.
+- New synthetic tests: `ConsoleModeReadinessTests`, `PlayniteThemeTests` profile/manifest cases, and forced return-watch safety tests. Added to the manual local Windows verification filter.
+- The Playnite/Aniki worktree is source-integrated and superseded, but the remaining AI/tooling worktrees are unreviewed. Physical Windows x64 build/tests, real Playnite + Helper and pad/TV game loops **NOT RUN** in this GitHub-only continuation. Do not advertise a production-ready installer.
+- Do not re-introduce GitHub Actions, new long-lived work branches, or the legacy Aniki-native UI redesign.
+
 ## 2026-11-23 - PLAYNITE / ANIKI CONSOLE MAINLINE INTEGRATION (source only)
 
 - `main` now contains the Console Playnite/Aniki ReMake setup integration (`f7ddd00a05a95b0df370f612b1126a8f9a53eac4`, plus later security/test/docs fixes). It includes Detect / Locate existing / owner-consented Install / Skip, consented Fullscreen theme selection and restoration, a Console readiness view, new desktop-owner-only endpoints, 600+ lines of synthetic test coverage, first-run/Settings integration and an optional default-on Console -> Playnite Fullscreen handoff.
