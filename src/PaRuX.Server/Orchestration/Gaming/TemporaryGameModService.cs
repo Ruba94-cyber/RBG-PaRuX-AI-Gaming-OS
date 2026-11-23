@@ -209,6 +209,11 @@ public sealed class TemporaryGameModService
         ArgumentNullException.ThrowIfNull(request);
         if (!request.OfflineSinglePlayerConfirmed)
             throw new ArgumentException("Confirm this is your offline single-player game.");
+        string ext = Path.GetExtension(request.RelativePath ?? "");
+        if (!(ext.Equals(".ini", StringComparison.OrdinalIgnoreCase) ||
+              ext.Equals(".cfg", StringComparison.OrdinalIgnoreCase) ||
+              ext.Equals(".json", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Gameplay presets require a pre-existing INI, CFG or JSON file.");
 
         string target = ResolveTarget(request.ManualGameId, request.RelativePath, out ManualGameDto game);
         RequirePause(game, request.ProcessId, request.StartedUtc);
