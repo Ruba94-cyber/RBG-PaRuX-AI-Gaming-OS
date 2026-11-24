@@ -64,7 +64,7 @@ internal sealed class GameShortcutsSection : StackPanel
     /// <summary>PaRuX.exe when a shortcut can safely point at it; otherwise null with the reason in <paramref name="problem"/>.</summary>
     private static string? PaRuXExecutable(out string? problem)
     {
-        problem = GameShortcuts.CheckExecutable(Environment.ProcessPath) switch
+        problem = GameShortcuts.CheckExecutable(PaRuX.Contracts.PaRuXDataRoot.LaunchTargetFor(Environment.ProcessPath)) switch
         {
             ShortcutExecutableProblem.None => null,
             ShortcutExecutableProblem.MicrosoftStore => T(
@@ -75,7 +75,7 @@ internal sealed class GameShortcutsSection : StackPanel
                 "I collegamenti possono puntare solo a PaRuX.exe, e questo non lo è."),
             _ => T("PaRuX could not find its own program file.", "PaRuX non ha trovato il proprio file di programma."),
         };
-        return problem is null ? Environment.ProcessPath : null;
+        return problem is null ? PaRuX.Contracts.PaRuXDataRoot.LaunchTargetFor(Environment.ProcessPath) : null;
     }
 
     private async Task CreateDesktopAsync()

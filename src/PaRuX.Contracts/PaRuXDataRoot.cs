@@ -110,6 +110,31 @@ public static class PaRuXDataRoot
             yield return System.IO.Path.Combine(packageRoot, DataFolderName);
     }
 
+    /// <summary>The program that startup entries, shortcuts and Jump Lists must start. In the layered portable
+    /// packages the running application is <c>app\PaRuX.exe</c> but the visible entry point is the launcher at the
+    /// package root (<c>PaRuX.exe</c>, beside <c>app\</c>): pointing at it keeps the Job Object, the working
+    /// directory and the root layout intact. Anywhere else (MSI, MSIX, development) it is the running program itself.</summary>
+    public static string? LaunchTargetFor(string? processPath)
+    {
+        if (string.IsNullOrWhiteSpace(processPath)) return processPath;
+        try
+        {
+            string full = System.IO.Path.GetFullPath(processPath);
+            string? appDirectory = System.IO.Path.GetDirectoryName(full);
+            if (appDirectory == null ||
+                !string.Equals(System.IO.Path.GetFileName(appDirectory), PackageAppFolderName, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(System.IO.Path.GetFileName(full), "PaRuX.exe", StringComparison.OrdinalIgnoreCase))
+                return processPath;
+            bool layered = System.IO.File.Exists(System.IO.Path.Combine(appDirectory, PortableMarkerFileName)) ||
+                           System.IO.File.Exists(System.IO.Path.Combine(appDirectory, CorporateMode.MarkerFileName));
+            string? packageRoot = System.IO.Path.GetDirectoryName(appDirectory);
+            if (!layered || packageRoot == null) return processPath;
+            string launcher = System.IO.Path.Combine(packageRoot, "PaRuX.exe");
+            return System.IO.File.Exists(launcher) ? launcher : processPath;
+        }
+        catch (Exception) { return processPath; }
+    }
+
     /// <summary>Pure directory boundary for tests and normal executable/server startup.
     /// The marker must sit adjacent to a real PaRuXData directory (or, in the layered package,
     /// in <c>app\</c> with PaRuXData beside <c>app\</c>). Environment-only

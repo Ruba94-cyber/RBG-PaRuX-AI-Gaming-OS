@@ -35,7 +35,7 @@ public sealed class PortableLauncherTests : IDisposable
     {
         string[] args = { "--exit", "--flag=value", "path with spaces", "" };
 
-        LaunchPlan plan = LauncherCore.Plan(_package, args);
+        PaRuX.Launcher.LaunchPlan plan = LauncherCore.Plan(_package, args);
 
         Assert.Equal(Path.Combine(_package, "app", "PaRuX.exe"), plan.AppExecutable);
         Assert.Equal(Path.Combine(_package, "app"), plan.WorkingDirectory);

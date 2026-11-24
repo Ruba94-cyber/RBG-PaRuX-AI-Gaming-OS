@@ -149,4 +149,23 @@ public sealed class LayeredPortableDataRootTests : IDisposable
 
         Assert.Equal(data, PaRuXDataRoot.FindPortableDataRoot(app + Path.DirectorySeparatorChar));
     }
+    [Fact]
+    public void Startup_entries_and_shortcuts_target_the_root_launcher_only_in_a_layered_package()
+    {
+        string app = Dir("pkg", "app");
+        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        File.WriteAllText(Path.Combine(_root, "pkg", "PaRuX.exe"), "launcher");
+        File.WriteAllText(Path.Combine(app, "PaRuX.exe"), "app");
+
+        Assert.Equal(Path.Combine(_root, "pkg", "PaRuX.exe"), PaRuXDataRoot.LaunchTargetFor(Path.Combine(app, "PaRuX.exe")));
+
+        // No marker (a folder that merely happens to be called app) or no launcher: the running program itself.
+        string plain = Dir("other", "app");
+        File.WriteAllText(Path.Combine(_root, "other", "PaRuX.exe"), "x");
+        File.WriteAllText(Path.Combine(plain, "PaRuX.exe"), "x");
+        Assert.Equal(Path.Combine(plain, "PaRuX.exe"), PaRuXDataRoot.LaunchTargetFor(Path.Combine(plain, "PaRuX.exe")));
+        string flat = Dir("flat");
+        Assert.Equal(Path.Combine(flat, "PaRuX.exe"), PaRuXDataRoot.LaunchTargetFor(Path.Combine(flat, "PaRuX.exe")));
+        Assert.Null(PaRuXDataRoot.LaunchTargetFor(null));
+    }
 }
