@@ -50,6 +50,14 @@ namespace PaRuX
         {
             // "PaRuX.exe --exit" closes the running instance that uses this data folder and returns.
             // Handled before anything else so it never starts a second UI, Core or model.
+            try { _ = AppPaths.PaRuXRoot; }
+            catch (PaRuX.Contracts.CorporateDataRootUnavailableException ex)
+            {
+                // Corporate must never fall back to %LOCALAPPDATA%: explain and stop.
+                ReportStartupFailure(ex);
+                Environment.Exit(1);
+                return;
+            }
             string exitSignalName = PaRuX.Contracts.AppExitSignal.NameFor(AppPaths.PaRuXRoot);
             if (PaRuX.Contracts.AppExitSignal.IsExitRequest(Environment.GetCommandLineArgs()))
             {
