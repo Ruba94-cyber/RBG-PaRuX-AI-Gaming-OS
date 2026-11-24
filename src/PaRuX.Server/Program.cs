@@ -1792,6 +1792,46 @@ app.MapPost("/api/v1/mcp/servers/{id}/enabled", async (string id, SetMcpServerEn
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+// Lifecycle of one server. Each call reports the real outcome (a probe against the live process or endpoint), never an
+// optimistic "started": a server that does not answer within its deadline comes back with connected=false and the reason.
+app.MapGet("/api/v1/mcp/servers/{id}", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.GetStatusAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/start", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StartServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/stop", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StopServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/reload", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.ReloadServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/timeout", async (string id, SetMcpServerTimeoutRequest request, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { await mcp.SetServerTimeoutAsync(id, request.TimeoutSeconds, ct); return Results.NoContent(); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 app.MapGet("/api/v1/orchestrator/tasks/{id}/mcp-tools", async (
     string id, TaskStore tasks, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
 {

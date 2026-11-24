@@ -253,10 +253,20 @@ internal static class ToolCallRepair
         error = null;
         try
         {
+            // A duplicate property name makes JsonNode throw lazily on first access (and different runtimes keep different
+            // values), so it is refused up front rather than guessed.
+            using (JsonDocument probe = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = 64 }))
+            {
+                if (McpToolCallAdmission.HasDuplicateKeys(probe.RootElement))
+                {
+                    error = "Duplicate argument keys are not allowed.";
+                    return null;
+                }
+            }
             return JsonNode.Parse(text, nodeOptions: null, new JsonDocumentOptions { MaxDepth = 64 })
                    ?? throw new JsonException("null");
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or ArgumentException) // ArgumentException: duplicate property names
         {
             error = Clip(ex.Message, 160);
             return null;

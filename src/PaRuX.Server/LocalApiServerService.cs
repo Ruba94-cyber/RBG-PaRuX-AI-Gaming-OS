@@ -554,6 +554,10 @@ public sealed class LocalApiServerService
             return (null, LocalApiCompletionResult.BadRequest("Request body must be a JSON object."));
         if (obj["messages"] is not JsonArray messages || messages.Count == 0)
             return (null, LocalApiCompletionResult.BadRequest("\"messages\" must be a non-empty array."));
+        // Constrained output (response_format / json_schema / grammar) is forwarded to llama-server untouched;
+        // a malformed or contradictory constraint is refused here instead of surfacing as an opaque engine error.
+        if (PaRuX.Server.Gateway.ConstrainedOutputGuard.Validate(obj) is { } constraintError)
+            return (null, LocalApiCompletionResult.BadRequest(constraintError));
 
         bool streaming = false;
         if (obj.TryGetPropertyValue("stream", out JsonNode? streamNode) && streamNode != null)

@@ -64,6 +64,7 @@ namespace PaRuX.Views
             // the content panel exists, so they never appeared. Each builder is idempotent; build them here, once the page exists.
             AddBinaryAnalysisSettingsSection();
             AddCodingPermissionSettingsSection();
+            AddChatCodeSettingsSection();
             AddExecutionProfileSettingsSection();
             AddPluginBundleSettingsSection();
             AddOwnerRecordsSections();

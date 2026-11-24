@@ -70,6 +70,17 @@ public sealed class McpClientRegistry : IAsyncDisposable
     /// and pressing retry works immediately rather than after a wait the user cannot see.</summary>
     private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(60);
 
+    /// <summary>Servers the owner stopped through the REST surface. In memory only: a restart connects lazily again.</summary>
+    private readonly HashSet<string> _manuallyStopped = new(StringComparer.Ordinal);
+    internal const int MinServerTimeoutSeconds = 5;
+    internal const int MaxServerTimeoutSeconds = 300;
+
+    private static TimeSpan ConnectTimeoutFor(McpServerConfig config) =>
+        config.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(config.TimeoutSeconds) : ConnectTimeout;
+
+    private static TimeSpan CallTimeoutFor(McpServerConfig config) =>
+        config.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(config.TimeoutSeconds) : CodingAgentToolCallTimeout;
+
     private readonly Dictionary<string, (DateTime UntilUtc, string Error)> _recentFailures = new(StringComparer.Ordinal);
     private readonly McpCredentialStore _credentials;
     private readonly McpOAuthCoordinator _oauth = new();
@@ -150,7 +161,8 @@ public sealed class McpClientRegistry : IAsyncDisposable
             Name = request.Name.Trim(),
             Transport = transport,
             AllowedTools = NormalizeToolNames(request.AllowedTools),
-            Enabled = true
+            Enabled = true,
+            TimeoutSeconds = ValidateTimeout(request.TimeoutSeconds)
         };
 
         if (transport == McpTransports.Stdio)
@@ -248,6 +260,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
         {
             EnsureLoaded();
             _configCache!.RemoveAll(c => c.Id == id);
+            _manuallyStopped.Remove(id);
             Save();
         }
     }
@@ -282,53 +295,126 @@ public sealed class McpClientRegistry : IAsyncDisposable
         var probes = new List<Task>();
         foreach (McpServerConfig config in GetConfigs())
         {
-            var status = new McpServerStatus
-            {
-                Id = config.Id,
-                Name = config.Name,
-                Transport = config.Transport,
-                Command = config.Command,
-                Args = config.Args,
-                Url = config.Url,
-                AuthMode = config.AuthMode,
-                AllowedTools = new List<string>(config.AllowedTools),
-                IsRemote = config.Transport == McpTransports.Http && McpServerEndpointPolicy.IsRemote(config.Url),
-                HasCredential = HasCredential(config),
-                PendingAuthorizationUrl = _oauth.PendingAuthorizationUrl(config.Id),
-                Enabled = config.Enabled
-            };
+            McpServerStatus status = BuildStatus(config);
             results.Add(status);
-            if (!config.Enabled) continue;
-
-            McpServerConfig probed = config;
-            McpServerStatus probedStatus = status;
-            probes.Add(Task.Run(async () =>
-            {
-                try
-                {
-                    McpClient client = await GetOrConnectAsync(probed, ct);
-                    IList<McpClientTool> tools = await client.ListToolsAsync(cancellationToken: ct);
-                    probedStatus.Connected = true;
-                    // Reported as the model sees it: what is actually offered, and what the allowlist
-                    // is holding back. A gated tool that simply vanished from the list would look like
-                    // the server had stopped offering it.
-                    List<string> offered = tools.Where(t => ServerAllowsTool(probed, t.Name)).Select(t => t.Name).ToList();
-                    probedStatus.ToolCount = offered.Count;
-                    probedStatus.ToolNames = offered;
-                    probedStatus.WithheldToolNames = tools.Select(t => t.Name).Except(offered, StringComparer.Ordinal).ToList();
-                    probedStatus.PendingAuthorizationUrl = _oauth.PendingAuthorizationUrl(probed.Id);
-                }
-                catch (Exception ex)
-                {
-                    probedStatus.Connected = false;
-                    probedStatus.LastError = ex.Message;
-                }
-            }, ct));
+            if (!config.Enabled || status.Stopped) continue;
+            probes.Add(Task.Run(() => ProbeAsync(config, status, ct), ct));
         }
         // Never rethrows: each probe already turned its own failure into that server's LastError,
         // and one unreachable server must not deny the caller the report on the rest.
         try { await Task.WhenAll(probes); } catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } catch { }
         return results;
+    }
+
+    private McpServerStatus BuildStatus(McpServerConfig config)
+    {
+        bool stopped;
+        lock (_gate) stopped = _manuallyStopped.Contains(config.Id);
+        return new McpServerStatus
+        {
+            Id = config.Id,
+            Name = config.Name,
+            Transport = config.Transport,
+            Command = config.Command,
+            Args = config.Args,
+            Url = config.Url,
+            AuthMode = config.AuthMode,
+            AllowedTools = new List<string>(config.AllowedTools),
+            IsRemote = config.Transport == McpTransports.Http && McpServerEndpointPolicy.IsRemote(config.Url),
+            HasCredential = HasCredential(config),
+            PendingAuthorizationUrl = _oauth.PendingAuthorizationUrl(config.Id),
+            Enabled = config.Enabled,
+            Stopped = stopped,
+            TimeoutSeconds = (int)ConnectTimeoutFor(config).TotalSeconds,
+            LastError = stopped ? "Stopped by the owner; start or reload it to connect again." : null
+        };
+    }
+
+    private async Task ProbeAsync(McpServerConfig probed, McpServerStatus probedStatus, CancellationToken ct)
+    {
+        try
+        {
+            McpClient client = await GetOrConnectAsync(probed, ct);
+            IList<McpClientTool> tools = await client.ListToolsAsync(cancellationToken: ct);
+            probedStatus.Connected = true;
+            // Reported as the model sees it: what is actually offered, and what the allowlist
+            // is holding back. A gated tool that simply vanished from the list would look like
+            // the server had stopped offering it.
+            List<string> offered = tools.Where(t => ServerAllowsTool(probed, t.Name)).Select(t => t.Name).ToList();
+            probedStatus.ToolCount = offered.Count;
+            probedStatus.ToolNames = offered;
+            probedStatus.WithheldToolNames = tools.Select(t => t.Name).Except(offered, StringComparer.Ordinal).ToList();
+            probedStatus.PendingAuthorizationUrl = _oauth.PendingAuthorizationUrl(probed.Id);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            probedStatus.Connected = false;
+            probedStatus.LastError = ex.Message;
+        }
+    }
+
+    internal static int ValidateTimeout(int seconds)
+    {
+        if (seconds == 0) return 0;
+        if (seconds < MinServerTimeoutSeconds || seconds > MaxServerTimeoutSeconds)
+            throw new InvalidDataException("timeoutSeconds must be 0 (default) or between "
+                + MinServerTimeoutSeconds + " and " + MaxServerTimeoutSeconds + ".");
+        return seconds;
+    }
+
+    private McpServerConfig RequireConfig(string id) =>
+        GetConfigs().FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal))
+            ?? throw new FileNotFoundException("No MCP server with that id.");
+
+    /// <summary>Status of one server, probing it for real when it is enabled and not stopped.</summary>
+    public async Task<McpServerStatus> GetStatusAsync(string id, CancellationToken ct)
+    {
+        McpServerConfig config = RequireConfig(id);
+        McpServerStatus status = BuildStatus(config);
+        if (config.Enabled && !status.Stopped) await ProbeAsync(config, status, ct);
+        return status;
+    }
+
+    /// <summary>Connects a server now (clearing a manual stop and the failure back-off) and reports the real outcome.</summary>
+    public async Task<McpServerStatus> StartServerAsync(string id, CancellationToken ct)
+    {
+        McpServerConfig config = RequireConfig(id);
+        if (!config.Enabled) throw new InvalidOperationException("The server is disabled; enable it first.");
+        lock (_gate) { _manuallyStopped.Remove(id); _recentFailures.Remove(id); }
+        return await GetStatusAsync(id, ct);
+    }
+
+    /// <summary>Disconnects a server and keeps it disconnected until it is started or reloaded. The saved configuration is unchanged.</summary>
+    public async Task<McpServerStatus> StopServerAsync(string id, CancellationToken ct)
+    {
+        McpServerConfig config = RequireConfig(id);
+        lock (_gate) { _manuallyStopped.Add(id); }
+        await DisconnectAsync(id);
+        return BuildStatus(config);
+    }
+
+    /// <summary>Drops the live connection (and any cached tool list) and connects again from the saved configuration.</summary>
+    public async Task<McpServerStatus> ReloadServerAsync(string id, CancellationToken ct)
+    {
+        RequireConfig(id);
+        lock (_gate) { _manuallyStopped.Remove(id); }
+        await DisconnectAsync(id);
+        return await StartServerAsync(id, ct);
+    }
+
+    public Task SetServerTimeoutAsync(string id, int seconds, CancellationToken ct)
+    {
+        int validated = ValidateTimeout(seconds);
+        lock (_gate)
+        {
+            EnsureLoaded();
+            McpServerConfig config = _configCache!.FirstOrDefault(c => c.Id == id)
+                ?? throw new FileNotFoundException("No MCP server with that id.");
+            config.TimeoutSeconds = validated;
+            Save();
+        }
+        return DisconnectAsync(id); // the next connection uses the new deadline
     }
 
     /// <summary>OpenAI-format tool definitions for native knowledge tools plus every allowed tool
@@ -542,7 +628,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 arguments[property.Name] = JsonSerializer.Deserialize<object?>(property.Value.GetRawText());
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(CodingAgentToolCallTimeout);
+            timeout.CancelAfter(CallTimeoutFor(config));
             McpClient client = await GetOrConnectAsync(config, timeout.Token).ConfigureAwait(false);
             IList<McpClientTool> tools = await client.ListToolsAsync(cancellationToken: timeout.Token).ConfigureAwait(false);
             List<McpClientTool> matches = tools.Where(candidate =>
@@ -687,13 +773,13 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 if (!ServerAllowsTool(config, toolName)) continue;
 
                 using var callTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                callTimeout.CancelAfter(CodingAgentToolCallTimeout);
+                callTimeout.CancelAfter(CallTimeoutFor(config));
                 CallToolResult result;
                 try { result = await client.CallToolAsync(toolName, arguments, cancellationToken: callTimeout.Token); }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested && callTimeout.IsCancellationRequested)
                 {
                     outcome = "timeout";
-                    throw new TimeoutException("The MCP tool \"" + toolName + "\" did not answer within " + (int)CodingAgentToolCallTimeout.TotalSeconds + " seconds.");
+                    throw new TimeoutException("The MCP tool \"" + toolName + "\" did not answer within " + (int)CallTimeoutFor(config).TotalSeconds + " seconds.");
                 }
                 string text = CapToolResultText(string.Join("\n", result.Content.OfType<TextContentBlock>().Select(b => b.Text)));
                 if (result.IsError == true)
@@ -757,7 +843,12 @@ public sealed class McpClientRegistry : IAsyncDisposable
     private async Task<McpClient> GetOrConnectAsync(McpServerConfig config, CancellationToken ct)
     {
         McpClient? existing;
-        lock (_gate) { _liveClients.TryGetValue(config.Id, out existing); }
+        lock (_gate)
+        {
+            if (_manuallyStopped.Contains(config.Id))
+                throw new InvalidOperationException("\"" + config.Name + "\" was stopped by the owner; start or reload it to connect again.");
+            _liveClients.TryGetValue(config.Id, out existing);
+        }
         if (existing != null) return existing;
 
         lock (_gate)
@@ -774,7 +865,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
             : BuildStdioTransport(config);
 
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        attempt.CancelAfter(ConnectTimeout);
+        attempt.CancelAfter(ConnectTimeoutFor(config));
         McpClient client;
         try
         {
@@ -785,7 +876,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
             // Our own deadline, not the caller's cancellation - those must stay distinguishable so
             // a user who navigated away is never reported as a broken server.
             string message = "\"" + config.Name + "\" did not respond within "
-                + ConnectTimeout.TotalSeconds.ToString("0") + " seconds.";
+                + ConnectTimeoutFor(config).TotalSeconds.ToString("0") + " seconds.";
             RememberFailure(config.Id, message);
             throw new TimeoutException(message);
         }

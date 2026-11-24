@@ -26,6 +26,8 @@ public sealed class McpServerConfig
     public List<string> Scopes { get; set; } = new();
     public List<string> AllowedTools { get; set; } = new();
     public bool Enabled { get; set; } = true;
+    /// <summary>Per-server connect and tool-call deadline in seconds; 0 keeps the built-in default.</summary>
+    public int TimeoutSeconds { get; set; }
 }
 
 public sealed class McpServerStatus
@@ -47,6 +49,10 @@ public sealed class McpServerStatus
     public List<string> WithheldToolNames { get; set; } = new();
     public string? PendingAuthorizationUrl { get; set; }
     public string? LastError { get; set; }
+    /// <summary>True while the owner has stopped this server for the session: it is not reconnected until started or reloaded.</summary>
+    public bool Stopped { get; set; }
+    /// <summary>Effective connect/tool-call deadline in seconds (the configured value, or the built-in default).</summary>
+    public int TimeoutSeconds { get; set; }
 }
 
 public sealed class AddMcpServerRequest
@@ -67,6 +73,13 @@ public sealed class AddMcpServerRequest
     /// review.
     /// </summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>Optional per-server deadline in seconds (5-300); omit or 0 for the default.</summary>
+    public int TimeoutSeconds { get; set; }
+}
+
+public sealed class SetMcpServerTimeoutRequest
+{
+    public int TimeoutSeconds { get; set; }
 }
 
 public sealed class SetMcpAllowedToolsRequest

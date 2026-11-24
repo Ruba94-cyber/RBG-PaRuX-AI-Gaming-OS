@@ -237,8 +237,8 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
     {
         _turns.Add(() => new[]
         {
-            new Step(0, ToolDelta(0, "a", "lookup", "{}")), new Step(0, ToolDelta(1, "b", "lookup", "{}")),
-            new Step(0, ToolDelta(2, "c", "lookup", "{}")), new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+            new Step(0, ToolDelta(0, "a", "lookup", "{\"n\":0}")), new Step(0, ToolDelta(1, "b", "lookup", "{\"n\":1}")),
+            new Step(0, ToolDelta(2, "c", "lookup", "{\"n\":2}")), new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
         });
         _turns.Add(() => new[] { new Step(0, Delta("ok")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
         Harness h = NewHarness(maxPerRound: 2);
@@ -256,7 +256,7 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
         for (int i = 0; i < StreamingMcpToolLoop.MaxToolRounds; i++)
         {
             int n = i;
-            _turns.Add(() => new[] { new Step(0, ToolDelta(0, "id" + n, "lookup", "{}")), new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]") });
+            _turns.Add(() => new[] { new Step(0, ToolDelta(0, "id" + n, "lookup", "{\"n\":" + n + "}")), new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]") });
         }
         _turns.Add(() => new[] { new Step(0, Delta("final")), new Step(0, Finish("stop")), new Step(0, "data: [DONE]") });
         Harness h = NewHarness(maxPerRound: 4, maxPerTurn: 99);

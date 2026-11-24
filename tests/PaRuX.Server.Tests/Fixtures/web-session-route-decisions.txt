@@ -792,3 +792,8 @@ DENY GET /api/v1/chat/code/approvals
 DENY POST /api/v1/chat/code/approvals/{id}/approve
 DENY POST /api/v1/chat/code/approvals/{id}/deny
 DENY GET /api/v1/chat/code/runs/{id}
+DENY GET /api/v1/mcp/servers/{id}
+DENY POST /api/v1/mcp/servers/{id}/start
+DENY POST /api/v1/mcp/servers/{id}/stop
+DENY POST /api/v1/mcp/servers/{id}/reload
+DENY POST /api/v1/mcp/servers/{id}/timeout

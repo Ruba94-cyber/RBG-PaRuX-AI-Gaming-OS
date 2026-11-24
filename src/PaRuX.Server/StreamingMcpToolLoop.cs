@@ -29,6 +29,13 @@ internal sealed class StreamingMcpToolLoop
     /// <summary>A tool that already failed this many times in one turn is not executed again.</summary>
     internal const int MaxExecutionFailuresPerTool = 2;
 
+    /// <summary>
+    /// Agent loop guard: the exact same call (tool name and arguments) is never executed twice in one turn - the result is
+    /// already in the conversation, so a repeat only burns the tool budget. After this many rounds that tried to repeat,
+    /// the loop stops offering tools and tells the model to answer with what it has.
+    /// </summary>
+    internal const int MaxLoopStrikes = 2;
+
     /// <summary>Sends one provider request (after any prompt-growth check) and returns the response with headers read.</summary>
     internal delegate Task<HttpResponseMessage> OpenRound(JsonObject payload, CancellationToken cancellationToken);
 
@@ -49,6 +56,8 @@ internal sealed class StreamingMcpToolLoop
     private readonly Dictionary<string, int> _executionFailures = new(StringComparer.Ordinal);
     private int _repairRoundsUsed;
     private bool _forceNoTools;
+    private readonly HashSet<string> _executedSignatures = new(StringComparer.Ordinal);
+    private int _loopStrikes;
 
     public StreamingMcpToolLoop(
         JsonObject payload,
@@ -208,6 +217,7 @@ internal sealed class StreamingMcpToolLoop
         var admittedCalls = new JsonArray();
         int roundAllowance = Math.Min(_maxCallsPerRound, Math.Max(0, _maxCallsPerTurn - _toolCallsUsed));
         int slot = 0;
+        int loopBlocked = 0;
         var repairEvents = new List<object>();
         foreach (PreparedCall p in prepared)
         {
@@ -239,8 +249,34 @@ internal sealed class StreamingMcpToolLoop
                     + " times in this turn. Do not retry it; tell the user it failed.";
                 continue;
             }
-            if (slot++ < roundAllowance) admittedCalls.Add(CallJson(p));
+            string signature = p.Name + "\u0001" + CanonicalArguments(p.Outcome.ArgumentsJson);
+            if (_executedSignatures.Contains(signature))
+            {
+                loopBlocked++;
+                McpToolUseTelemetry.RecordRepair("loop-blocked");
+                messageById[p.Id] = "Tool call not executed: this exact call (same tool, same arguments) already ran in this turn and its result is above. Do not repeat it.";
+                continue;
+            }
+            if (slot++ < roundAllowance)
+            {
+                _executedSignatures.Add(signature);
+                admittedCalls.Add(CallJson(p));
+            }
             else messageById[p.Id] = "Tool call skipped: the per-turn tool-call limit was reached.";
+        }
+
+        if (loopBlocked > 0)
+        {
+            _loopStrikes++;
+            bool stop = _loopStrikes >= MaxLoopStrikes;
+            if (stop) _forceNoTools = true;
+            string guardNote = stop
+                ? " The tool-call loop was stopped: answer the user now with the information you already have, and say plainly what could not be done."
+                : " Use the earlier result, or call a different tool or different arguments.";
+            foreach (PreparedCall p in prepared)
+                if (messageById.TryGetValue(p.Id, out string? m) && m.StartsWith("Tool call not executed: this exact call", StringComparison.Ordinal))
+                    messageById[p.Id] = m + guardNote;
+            repairEvents.Add(new { id = "*", tool = "*", status = stop ? "loop-stopped" : "loop-blocked", error = loopBlocked + " repeated call(s) were not executed." });
         }
 
         string[] names = prepared.Select(p => p.Name).ToArray();
@@ -289,6 +325,12 @@ internal sealed class StreamingMcpToolLoop
                 ["content"] = messageById.GetValueOrDefault(p.Id) ?? "Tool call NOT executed: no result was returned."
             });
         }
+    }
+
+    private static string CanonicalArguments(string argumentsJson)
+    {
+        try { return JsonNode.Parse(argumentsJson)?.ToJsonString() ?? argumentsJson; }
+        catch (JsonException) { return argumentsJson; }
     }
 
     private static JsonObject CallJson(PreparedCall p) => new()
