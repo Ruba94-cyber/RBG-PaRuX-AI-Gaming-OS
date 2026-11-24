@@ -797,3 +797,11 @@ DENY GET /api/v1/ai/openai-compatible/presets
 DENY POST /api/v1/datasets/document-recipe
 DENY POST /api/v1/lifecycle/imatrix
 DENY POST /api/v1/training/export/verify
+DENY GET /api/v1/gaming/mods/changesets/backups
+DENY GET /api/v1/gaming/mods/changesets/candidates
+DENY GET /api/v1/gaming/mods/changesets/pending
+DENY POST /api/v1/gaming/mods/changesets/apply
+DENY POST /api/v1/gaming/mods/changesets/prompt
+DENY POST /api/v1/gaming/mods/changesets/restore
+DENY POST /api/v1/knowledge/connectors
+DENY POST /api/v1/runtime/components/{id}/remove-managed
