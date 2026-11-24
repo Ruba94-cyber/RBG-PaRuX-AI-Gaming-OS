@@ -198,7 +198,11 @@ public sealed class DocumentQuestionRetrievalTests
         new object[] { "Quanti frame e quanti ID distinti ci sono in TR-A.asc?", true },
         new object[] { "Quanti frame ci sono in TR-A.asc?", true },
         new object[] { "Quale e' la durata della registrazione TR-A.asc?", true },
+        new object[] { "Qual e' la durata complessiva della registrazione in TR-A.asc?", true },
+        new object[] { "What is the duration of the recording TR-A.asc?", true },
+        new object[] { "Su quali canali e' stata acquisita la traccia TR-A.asc?", true },
         new object[] { "Qual e' la pressione dell'olio motore nel file TR-A.asc?", false },
+        new object[] { "Qual e' la pressione dell'olio durante la registrazione TR-A.asc?", false },
     };
 
     [Theory]
@@ -213,7 +217,7 @@ public sealed class DocumentQuestionRetrievalTests
             var index = new KnowledgeIndex(Path.Combine(root, "k.db"), null, new BagEmbedder(), new NegativeReranker());
             index.IndexFolderAsync("s", docs).GetAwaiter().GetResult();
             IReadOnlyList<KnowledgeHit> pool = index.Search(question, KnowledgeSearchMode.Auto, 30, null);
-            IReadOnlyList<KnowledgeHit> hits = DocumentChatPlanner.KeepNamedFiles(question, pool).Take(6).ToList();
+            IReadOnlyList<KnowledgeHit> hits = DocumentChatPlanner.WithFileOverview(question, DocumentChatPlanner.KeepNamedFiles(question, pool).Take(6).ToList(), index, null);
             DocumentChatPlan plan = DocumentChatPlanner.Plan(question, hits);
             Assert.True(hits.Count > 0, "search found nothing");
             Assert.All(hits, h => Assert.Equal("TR-A.asc", h.FileName));
