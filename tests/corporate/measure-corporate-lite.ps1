@@ -7,7 +7,7 @@
     (PARUX_CORPORATE=1, PARUX_DATA_ROOT inside the package), generates synthetic documents (neutral invented content), registers
     the folder through the Core API, indexes it and measures: index time, working set + CPU per process (PaRuX.exe, PaRuX.Server.exe,
     llama-server), exact-id and semantic/hybrid search latency, pause/resume, a chat question through the Core with the bundled
-    Qwen3-1.7B (time-to-first-token, tokens/s), non-loopback connections and clean shutdown. Also: non-writable folder,
+    Qwen3-4B Q4_K_M (time-to-first-token, tokens/s), non-loopback connections and clean shutdown. Also: non-writable folder,
     corrupt/empty files and files deleted while indexing.
 
     Synthetic data only (public repo). The results file goes under .ai/artifacts/overnight/ (not committed).
@@ -26,7 +26,12 @@ param(
     # Optional large-document stage: a synthetic PDF with this many pages (0 = skipped) is written to
     # disk page by page, indexed as its own source and searched for facts planted on known pages.
     [int]$LargePdfPages = 0,
-    [int]$LargePdfIndexTimeoutSeconds = 14400
+    [int]$LargePdfIndexTimeoutSeconds = 14400,
+    # Optional portable-path stages, run after the main measurement. UnicodeSpacesPath extracts the package into a
+    # folder with spaces, accents and CJK characters and repeats the start smoke. ReadOnlyDataRoot denies write access
+    # to PaRuXData for this test profile only (removed in finally) and records what the first start does.
+    [switch]$UnicodeSpacesPath,
+    [switch]$ReadOnlyDataRoot
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem, System.Net.Http
@@ -76,6 +81,14 @@ function Get-AcceptanceEvidenceFailures($Result) {
     if ([int]$Result.network_sample_errors -gt 0) { $failures.Add('A network sampling query failed.') }
     if (($Result.tray_exit -notlike 'clicked Exit (*' -and $Result.tray_exit -notlike 'exit requested (*') -or $Result.processes_left_after_tray_exit -ne 'none') {
         $failures.Add('Tray exit was not confirmed or package processes remained after exit.')
+    }
+    # Window close (by design PaRuX stays in the tray): the observation must exist and PaRuX itself must still run.
+    if ($Result.processes_after_window_close -notmatch '\bPaRuX\b') {
+        $failures.Add('Window-close case not satisfied: PaRuX was not observed running in the tray after the window was closed.')
+    }
+    # Hard kill of PaRuX.exe: no PaRuX.Server or llama-server may remain within 5 s. "not exercised" is not a pass.
+    if ($Result.processes_5s_after_app_killed -ne 'none') {
+        $failures.Add("App-killed case not satisfied within 5 s: $($Result.processes_5s_after_app_killed)")
     }
     return $failures.ToArray()
 }
@@ -400,11 +413,94 @@ function Invoke-AppExitRequest([string]$appDirectory) {
     return 'exit requested (PaRuX.exe --exit, delivered)'
 }
 
+# Per-user places a portable package must not write to: files named parux* (depth-limited) and HKCU keys named *PaRuX*.
+# Taken before and after the run; any new or changed entry is a write outside the portable folder.
+function Get-OutsideFootprint {
+    $files = @{}; $bytes = [long]0
+    foreach ($root in @($env:LOCALAPPDATA, $env:APPDATA, $env:TEMP) | Where-Object { $_ } | Select-Object -Unique) {
+        foreach ($f in @(Get-ChildItem -LiteralPath $root -Recurse -Depth 4 -File -Force -Filter "parux*" -ErrorAction SilentlyContinue)) {
+            $files[$f.FullName] = "$($f.Length)|$($f.LastWriteTimeUtc.Ticks)"; $bytes += $f.Length
+        }
+    }
+    $regs = @{}
+    foreach ($k in @(Get-ChildItem -Path "HKCU:\Software" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "PaRuX" })) {
+        $regs[$k.Name] = "$($k.SubKeyCount)|$($k.GetValueNames().Count)"
+    }
+    [pscustomobject]@{ Files = $files; Regs = $regs; FileCount = $files.Count; Bytes = $bytes; RegCount = $regs.Count }
+}
+function Compare-OutsideFootprint($before, $after) {
+    $changed = New-Object System.Collections.Generic.List[string]
+    foreach ($k in $after.Files.Keys) { if (-not $before.Files.ContainsKey($k) -or $before.Files[$k] -ne $after.Files[$k]) { $changed.Add($k) } }
+    foreach ($k in $after.Regs.Keys) { if (-not $before.Regs.ContainsKey($k) -or $before.Regs[$k] -ne $after.Regs[$k]) { $changed.Add("registry: $k") } }
+    return $changed.ToArray()
+}
+
+# Extracts the package into another folder and starts it like the launcher. Read-only mode denies write access to that
+# copy's PaRuXData for this test profile only; the deny ACE is removed in finally. Every started process is stopped
+# (exit request first, then a forced stop of processes under that folder) and the leftovers are recorded before any kill.
+function Invoke-PortableStage([string]$label, [string]$stageRoot, [bool]$readOnlyData) {
+    $stage = [ordered]@{ label = $label; folder = $stageRoot; read_only_data_root = $readOnlyData }
+    $stageApp = Join-Path $stageRoot "PaRuX-Corporate-Lite"
+    $stageData = Join-Path $stageApp "PaRuXData"
+    $me = "$env:USERDOMAIN\$env:USERNAME"
+    $savedEnv = @{ PARUX_CORPORATE = $env:PARUX_CORPORATE; PARUX_DATA_ROOT = $env:PARUX_DATA_ROOT; PARUX_LOCALAI_STATE_DIR = $env:PARUX_LOCALAI_STATE_DIR }
+    $savedEndpoint = $script:endpoint; $savedToken = $script:token
+    $stageProc = $null; $denied = $false
+    try {
+        New-Item -ItemType Directory -Force $stageRoot | Out-Null
+        [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $stageRoot)
+        New-Item -ItemType Directory -Force $stageData | Out-Null
+        if ($readOnlyData) {
+            & icacls $stageData /deny "${me}:(OI)(CI)(WD,AD,DC)" | Out-Null
+            $denied = $true
+            try { [IO.File]::WriteAllText((Join-Path $stageData "probe.txt"), "x"); $stage.data_root_writable = $true; Remove-Item (Join-Path $stageData "probe.txt") -Force -ErrorAction SilentlyContinue }
+            catch { $stage.data_root_writable = $false }
+        }
+        $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $stageData; $env:PARUX_LOCALAI_STATE_DIR = $stageData
+        $stageProc = Start-Process (Join-Path $stageApp "PaRuX.exe") -PassThru -WorkingDirectory $stageApp
+        $boot = Join-Path $stageData "server\bootstrap.json"
+        $deadline = (Get-Date).AddSeconds($(if ($readOnlyData) { 60 } else { $StartTimeoutSeconds }))
+        while ((Get-Date) -lt $deadline -and -not (Test-Path $boot) -and -not $stageProc.HasExited) { Start-Sleep -Milliseconds 300 }
+        $stage.core_bootstrap = Test-Path $boot
+        $stage.exited_on_its_own = $stageProc.HasExited
+        if ($stage.exited_on_its_own) { $stage.exit_code = $stageProc.ExitCode }
+        # The exit code and message of a non-writable data root are not documented in the repository: observed values only.
+        if ($readOnlyData) { $stage.documented_exit_code = "none found in repo (observed only)" }
+        if ($stage.core_bootstrap -and -not $stageProc.HasExited) {
+            $b = Get-Content $boot -Raw | ConvertFrom-Json
+            $script:endpoint = $b.endpoint.TrimEnd('/'); $script:token = $b.token
+            $stage.search_http_status = (Api GET "/api/v1/knowledge/search?q=ping").Status
+        }
+    } catch { $stage.error = $_.Exception.Message }
+    finally {
+        try {
+            if ($stageProc -and -not $stageProc.HasExited) {
+                $stage.exit_request = Invoke-AppExitRequest $stageApp
+                $dl = (Get-Date).AddSeconds(40)
+                while ((Get-Date) -lt $dl -and @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) { Start-Sleep 1 }
+            }
+            $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) })
+            $stage.processes_before_harness_kill = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+            if ($left.Count) { $left | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
+        } catch { $stage.exit_error = $_.Exception.Message }
+        $script:endpoint = $savedEndpoint; $script:token = $savedToken
+        $env:PARUX_CORPORATE = $savedEnv.PARUX_CORPORATE; $env:PARUX_DATA_ROOT = $savedEnv.PARUX_DATA_ROOT; $env:PARUX_LOCALAI_STATE_DIR = $savedEnv.PARUX_LOCALAI_STATE_DIR
+        if ($denied) { & icacls $stageData /remove:d $me | Out-Null }
+    }
+    $stage.pass = if ($readOnlyData) {
+        [bool]($stage.data_root_writable -eq $false -and $stage.processes_before_harness_kill -eq "none" -and -not $stage.error)
+    } else {
+        [bool]($stage.core_bootstrap -and $stage.search_http_status -eq 200 -and $stage.processes_before_harness_kill -eq "none" -and -not $stage.error)
+    }
+    return $stage
+}
+
 # ---------------------------------------------------------------------------------------------------------------------------
 # 1. Extract + start like the launcher
 # ---------------------------------------------------------------------------------------------------------------------------
 $sampler = $null; $appProc = $null; $stopFile = Join-Path $work "stop.flag"
 $script:sampOut = Join-Path $work "samples.csv"; $connOut = Join-Path $work "conns.csv"; $netChecks = Join-Path $work "net-checks.csv"
+$outsideBefore = Get-OutsideFootprint
 try {
     Say "Machine: $cpuName, $cores logical cores, $totalRamGb GB RAM. Work dir $work"
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -703,11 +799,38 @@ try {
     $R.chat = $chat
     Say "Chat: grounded $($chat.grounded_passed)/$($chat.grounded_cases), abstention=$($chat.abstention_passed), first ttft $($chat.ttft_s)s, tps $($chat.tokens_per_s_by_chunks)"
     Say "Chat resources: $($chat.stats)"
+    # Which VC++ runtime DLLs the packaged processes loaded, from the extracted folder or not (evidence only, not a gate).
+    $modRows = New-Object System.Collections.Generic.List[string]
+    $crt = [ordered]@{ vcruntime140 = "not determinable"; msvcp140 = "not determinable" }
+    foreach ($mp in @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase) -and $_.ProcessName -in @("llama-server", "PaRuX.Server", "PaRuX") })) {
+        try { $mods = @($mp.Modules) } catch { $modRows.Add("$($mp.ProcessName)#$($mp.Id): modules not readable ($($_.Exception.Message))"); continue }
+        $modRows.Add("$($mp.ProcessName)#$($mp.Id): $($mods.Count) modules")
+        foreach ($m in $mods) {
+            $fn = [IO.Path]::GetFileName($m.FileName)
+            foreach ($key in @("vcruntime140", "msvcp140")) {
+                if ($fn -like "$key*.dll") {
+                    $crt[$key] = if ($m.FileName.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase)) { "package: $($m.FileName)" } else { "outside package: $($m.FileName)" }
+                }
+            }
+        }
+    }
+    $R.loaded_modules = [ordered]@{ processes = @($modRows.ToArray()); vcruntime140 = $crt["vcruntime140"]; msvcp140 = $crt["msvcp140"] }
+    Say "Loaded modules: vcruntime140 = $($crt['vcruntime140']); msvcp140 = $($crt['msvcp140'])"
 
     # memory/CPU steady state after chat (model loaded) and after a pause
     Start-Sleep 10
     $R.steady_after_chat = Fmt-Stats (Get-SampleStats (Get-Date).AddSeconds(-8) (Get-Date))
     Say "Steady after chat: $($R.steady_after_chat)"
+    # Optional portable-path stages: each has its own extracted copy and data root; the main Core keeps running.
+    if ($UnicodeSpacesPath) {
+        $uniName = "PaRuX " + [char]0x00E8 + "s " + [char]0x00E0 + " " + [char]0x4E2D + [char]0x6587 + " " + [char]0x00DC + "nic" + [char]0x00F6 + "d" + [char]0x00E9
+        $R.portable_stage_unicode = Invoke-PortableStage "unicode-spaces" (Join-Path $work $uniName) $false
+        Say "Unicode-path stage: $($R.portable_stage_unicode | ConvertTo-Json -Compress)"
+    }
+    if ($ReadOnlyDataRoot) {
+        $R.portable_stage_readonly = Invoke-PortableStage "readonly-data-root" (Join-Path $work "readonly-data-stage") $true
+        Say "Read-only data root stage: $($R.portable_stage_readonly | ConvertTo-Json -Compress)"
+    }
 }
 catch {
     $R.FATAL = $_.Exception.Message + " @ " + $_.ScriptStackTrace
@@ -723,6 +846,7 @@ finally {
         $names = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { "$($_.ProcessName)#$($_.Id)" })
         $R.processes_before_shutdown = $names -join ", "
         function Get-Ours { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase) }) }
+        $R.processes_after_window_close = "not observed"
         # (a) window close: by design PaRuX hides to the tray, so the processes are expected to stay.
         if ($appProc -and -not $appProc.HasExited) { $null = $appProc.CloseMainWindow(); Start-Sleep 4; $R.processes_after_window_close = (Get-Ours | ForEach-Object { $_.ProcessName }) -join ", " }
         # (b) the real exit: the same clean shutdown as the tray menu "Exit", requested for this
@@ -732,15 +856,24 @@ finally {
         $dl = (Get-Date).AddSeconds(40); while ((Get-Date) -lt $dl -and (Get-Ours).Count -gt 0) { Start-Sleep 1 }
         $left = Get-Ours
         $R.processes_left_after_tray_exit = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+        # App-killed case (binding, 5 s budget): only a hard kill of PaRuX.exe itself. It stays "not exercised" after a clean exit.
+        $R.processes_5s_after_app_killed = "not exercised (clean exit left no package processes)"
         if ($left.Count -gt 0 -and $appProc -and -not $appProc.HasExited) {
-            # Tray automation unavailable: at least learn whether the Core and llama-server follow the app when it dies.
+            # Tray automation unavailable: learn whether the Core and llama-server follow the app when it dies.
             Stop-Process -Id $appProc.Id -Force -ErrorAction SilentlyContinue
-            $dl = (Get-Date).AddSeconds(30); while ((Get-Date) -lt $dl -and (Get-Ours).Count -gt 0) { Start-Sleep 1 }
+            $dl = (Get-Date).AddSeconds(5); while ((Get-Date) -lt $dl -and (Get-Ours).Count -gt 0) { Start-Sleep -Milliseconds 250 }
             $left = Get-Ours
-            $R.processes_left_30s_after_app_killed = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+            $R.processes_5s_after_app_killed = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
         }
         $left | Stop-Process -Force -ErrorAction SilentlyContinue
     } catch { $R.shutdown_error = $_.Exception.Message }
+    try {
+        if ($null -ne $outsideBefore) {
+            $outsideAfter = Get-OutsideFootprint
+            $changedOutside = @(Compare-OutsideFootprint $outsideBefore $outsideAfter)
+            $R.outside_portable_writes = [ordered]@{ files_before = $outsideBefore.FileCount; files_after = $outsideAfter.FileCount; bytes_before = $outsideBefore.Bytes; bytes_after = $outsideAfter.Bytes; registry_keys_before = $outsideBefore.RegCount; registry_keys_after = $outsideAfter.RegCount; new_or_changed = $changedOutside.Count; sample = @($changedOutside | Select-Object -First 20) }
+        }
+    } catch { $R.outside_footprint_error = $_.Exception.Message }
     "stop" | Set-Content $stopFile
     $R.sampler_completed = $false
     try {
@@ -789,6 +922,17 @@ finally {
         }
         if ($R.nonloopback_outbound_connections -gt 0 -or @($R.listeners_on_non_loopback).Count -gt 0) {
             $acceptanceFailures.Add("Corporate package had observed non-loopback traffic or listeners.")
+        }
+        if ($null -eq $R.outside_portable_writes) {
+            $acceptanceFailures.Add("Writes outside the portable folder were not measured.")
+        } elseif ([int]$R.outside_portable_writes.new_or_changed -gt 0) {
+            $acceptanceFailures.Add("PaRuX wrote outside the portable folder ($($R.outside_portable_writes.new_or_changed) entries): " + (@($R.outside_portable_writes.sample) -join " | "))
+        }
+        if ($R.portable_stage_unicode -and -not $R.portable_stage_unicode.pass) {
+            $acceptanceFailures.Add("Unicode-path package stage failed: $($R.portable_stage_unicode | ConvertTo-Json -Compress)")
+        }
+        if ($R.portable_stage_readonly -and -not $R.portable_stage_readonly.pass) {
+            $acceptanceFailures.Add("Read-only PaRuXData stage failed: $($R.portable_stage_readonly | ConvertTo-Json -Compress)")
         }
         if ($LargePdfPages -gt 0) {
             $lpr = $R.large_pdf
