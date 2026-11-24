@@ -4,7 +4,9 @@
 
 .DESCRIPTION
     Output: artifacts\corporate-lite\PaRuX-Corporate-Lite-Offline-win-x64.zip (+ SHA-256 and manifest).
-    Contents: the app and Core (from build-portable.ps1's stage or a fresh publish), a CPU llama.cpp runtime, ONE small
+    Contents: the app and Core (from build-portable.ps1's stage or a fresh publish), a CPU llama.cpp runtime, the hash-pinned
+    Vulkan llama.cpp runtime (same lock entry 'llama.cpp-vulkan' as the Standard builder; optional GPU offload with automatic
+    CPU fallback, switched off with PARUX_CORPORATE_GPU=0), ONE small
     quantised model with a redistribution-friendly licence, the light embedding model, offline configuration
     (`parux.corporate` marker, launcher that sets PARUX_CORPORATE=1 and keeps all data in .\PaRuXData), licences and a manifest.
     Never included: documents, indexes, history, tokens, anything from the developer PC. Weights are NOT stored in Git: they are
@@ -39,6 +41,9 @@ param(
     [switch]$RequireReranker,
     [string]$RuntimeDir = "",
     [string]$RuntimeTag = "",
+    # Directory holding (or receiving) the locked Vulkan runtime archive. Default: artifacts\cache\runtime, the same cache
+    # the Standard builder uses. The archive is verified against packaging\windows-baseline-runtime.lock.json (size + SHA-256).
+    [string]$VulkanCacheDir = "",
     [switch]$Fetch,
     [switch]$AllowUnpinnedLlamaCpuRuntime,
     [switch]$SkipPublish,
@@ -325,11 +330,58 @@ if (-not $NoModel) { Set-Content (Join-Path (Join-Path $data "models") ".corpora
 if (-not (Test-Path (Join-Path $runtimeDest "llama-server.exe"))) { throw "Bundled CPU runtime was not staged." }
 # llama.cpp is MIT: ship its license text beside the engine.
 Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $runtimeDest "LICENSE-llama.cpp.txt") -Force
+# --- 3b. The pinned Vulkan runtime (same lock entry, archive hash and staging code as the Standard Portable) --------------------------
+# No download at run time and no unpinned asset: stage-msi-runtime.ps1 verifies the archive size and SHA-256 from the lock, expands it
+# into a throw-away publish folder and writes a per-file SHA-256 inventory; the verified payload is then copied into the data root
+# where LocalAiPaths.RuntimeVulkanPath looks for it. The CPU runtime above stays the validated default and the automatic fallback.
+$vulkanLockPath = Join-Path $repoRoot "packaging\windows-baseline-runtime.lock.json"
+$vulkanLock = Get-Content -LiteralPath $vulkanLockPath -Raw | ConvertFrom-Json
+$vulkanArtifact = @($vulkanLock.artifacts | Where-Object { [string]$_.id -ceq "llama.cpp-vulkan" })
+if ($vulkanArtifact.Count -ne 1) { throw "The runtime lock must contain exactly one llama.cpp-vulkan entry." }
+$vulkanArtifact = $vulkanArtifact[0]
+$vulkanFolder = [IO.Path]::GetFileName(([string]$vulkanArtifact.destination).TrimEnd('/', '\'))
+if ($vulkanFolder -cne "llama.cpp-$($vulkanArtifact.version)-vulkan" -or $vulkanFolder -cne "llama.cpp-b10549-vulkan") {
+    throw "Unexpected Vulkan runtime folder '$vulkanFolder'. The Core resolves llama.cpp-b10549-vulkan (LocalAiPaths.DefaultVulkanBuildTag)."
+}
+$vulkanTemp = Join-Path $outRoot "vulkan-stage"
+if (Test-Path -LiteralPath $vulkanTemp) { Remove-Item -LiteralPath $vulkanTemp -Recurse -Force }
+New-Item -ItemType Directory -Force $vulkanTemp | Out-Null
+$vulkanStageArgs = @{ PublishDir = $vulkanTemp; ArtifactIds = @("llama.cpp-vulkan") }
+if (-not [string]::IsNullOrWhiteSpace($VulkanCacheDir)) { $vulkanStageArgs["CacheDir"] = $VulkanCacheDir }
+& (Join-Path $PSScriptRoot "stage-msi-runtime.ps1") @vulkanStageArgs
+if (-not $?) { throw "Locked Vulkan runtime staging failed." }
+$vulkanSource = Join-Path $vulkanTemp "PaRuX.Server\runtime-baseline\$vulkanFolder"
+$vulkanDest = Join-Path $data "LocalAI\runtime\$vulkanFolder"
+if (-not (Test-Path -LiteralPath (Join-Path $vulkanSource "llama-server.exe") -PathType Leaf) -or
+    -not (Test-Path -LiteralPath (Join-Path $vulkanSource "ggml-vulkan.dll") -PathType Leaf)) {
+    throw "The locked Vulkan runtime is missing llama-server.exe or ggml-vulkan.dll."
+}
+New-Item -ItemType Directory -Force $vulkanDest | Out-Null
+Copy-Item (Join-Path $vulkanSource "*") $vulkanDest -Recurse -Force
+# Re-verify every copied file against the inventory the locked staging wrote.
+$vulkanInventory = Get-Content -LiteralPath (Join-Path $vulkanTemp "PaRuX.Server\runtime-baseline\staging-manifest.json") -Raw | ConvertFrom-Json
+$vulkanPrefix = "runtime-baseline/$vulkanFolder/"
+$vulkanEntries = @($vulkanInventory.files | Where-Object { ([string]$_.path).StartsWith($vulkanPrefix, [StringComparison]::Ordinal) })
+if ($vulkanEntries.Count -lt 2) { throw "Vulkan staging inventory is incomplete." }
+foreach ($entry in $vulkanEntries) {
+    $copied = Join-Path $vulkanDest (([string]$entry.path).Substring($vulkanPrefix.Length).Replace('/', '\'))
+    if (-not (Test-Path -LiteralPath $copied -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $copied -Algorithm SHA256).Hash.ToLowerInvariant() -ne ([string]$entry.sha256).ToLowerInvariant()) {
+        throw "Vulkan runtime file differs from the locked inventory: $($entry.path)"
+    }
+}
+# Truthful, auditable provenance beside the engine (IT can compare it with the published lock).
+[ordered]@{ schemaVersion = 1; platform = "win-x64"; artifacts = @($vulkanArtifact) } | ConvertTo-Json -Depth 6 |
+    Set-Content (Join-Path $vulkanDest "parux-runtime-lock.json") -Encoding UTF8
+$vulkanSizeBytes = (Get-ChildItem -LiteralPath $vulkanDest -Recurse -File | Measure-Object Length -Sum).Sum
+$vulkanSizeMb = [math]::Round($vulkanSizeBytes / 1MB, 1)
+$vulkanNativeSha = (Get-FileHash (Join-Path $vulkanDest "llama-server.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+Remove-Item -LiteralPath $vulkanTemp -Recurse -Force -ErrorAction SilentlyContinue
 # No prerequisites on the target PC: llama.cpp and ONNX Runtime import the Visual C++ runtime,
 # so it travels app-local next to every native engine and next to the Core.
 . (Join-Path $PSScriptRoot "portable-offline-assets.ps1")
-$vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($runtimeDest, (Join-Path $stage "PaRuX.Server"), $stage)
-foreach ($vcDir in @($runtimeDest, (Join-Path $stage "PaRuX.Server"))) {
+$vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($runtimeDest, $vulkanDest, (Join-Path $stage "PaRuX.Server"), $stage)
+foreach ($vcDir in @($runtimeDest, $vulkanDest, (Join-Path $stage "PaRuX.Server"))) {
     foreach ($vcFile in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll") {
         if (-not (Test-Path -LiteralPath (Join-Path $vcDir $vcFile) -PathType Leaf)) { throw "Visual C++ runtime not staged: $vcDir\$vcFile" }
     }
@@ -373,6 +425,17 @@ set "PARUX_DATA_ROOT=%~dp0PaRuXData"
 set "PARUX_LOCALAI_STATE_DIR=%~dp0PaRuXData"
 start "" "%~dp0PaRuX.exe"
 '@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Model Downloads.cmd") -Encoding ASCII
+@'
+@echo off
+rem IT option: force the CPU engine only. The bundled Vulkan (GPU) engine is never started.
+setlocal
+set "PARUX_CORPORATE=1"
+set "PARUX_CORPORATE_MODEL_DOWNLOADS=0"
+set "PARUX_CORPORATE_GPU=0"
+set "PARUX_DATA_ROOT=%~dp0PaRuXData"
+set "PARUX_LOCALAI_STATE_DIR=%~dp0PaRuXData"
+start "" "%~dp0PaRuX.exe"
+'@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Lite (CPU only).cmd") -Encoding ASCII
 $modelGuide = if ($NoModel) { "This NoModel edition has NO chat model: import a compatible GGUF before expecting local chat answers." } else { "Local GGUF included: $([IO.Path]::GetFileName($ModelPath)). The model is not guaranteed to fit every 8-16 GB PC; verify memory headroom before running." }
 $modelLicenceGuide = "Bundled model origin: $modelOriginLabel. Licence: $modelLicenseLabel. The package checksum proves included bytes, not model origin or redistribution rights."
 if ($LowMemoryStarter) {
@@ -382,7 +445,11 @@ $ragGuide = if ([string]::IsNullOrWhiteSpace($RerankerDir)) { "Local embeddings 
 @"
 PaRuX Corporate Lite Offline $Version
 Start with "Start PaRuX Corporate Lite.cmd". No installation and no administrator rights are needed by the application.
-CPU runtime and embedding model are included. No runtime setup or Internet needed.
+CPU runtime, Vulkan (GPU) runtime and embedding model are included. No runtime setup or Internet needed.
+GPU: if a usable graphics adapter is found, the bundled Vulkan engine ($vulkanSizeMb MB, llama.cpp $($vulkanArtifact.version), SHA-256 pinned in
+PaRuXData/LocalAI/runtime/$vulkanFolder/parux-runtime-lock.json) is tried first. Integrated-GPU shared memory counts against the same RAM limit.
+If Vulkan does not start in time or fails (no driver, VM, allocation error) PaRuX falls back automatically to the CPU engine. Nothing is
+installed or downloaded. IT can force CPU only with "Start PaRuX Corporate Lite (CPU only).cmd" or the variable PARUX_CORPORATE_GPU=0.
 $modelGuide
 $modelLicenceGuide
 $ragGuide
@@ -393,7 +460,8 @@ IT network rules still apply; downloads require network permission. Documents re
 Licences: see LICENSE.txt and THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: multilingual-e5-small (MIT, default for Italian/English document search) and all-MiniLM-L6-v2 (Apache-2.0, fallback);
 llama.cpp: MIT; optional cross-encoder reranker: Xenova/ms-marco-MiniLM-L-6-v2, review source licence before redistribution).
 
-Avvio offline con motore CPU gia' incluso: "Start PaRuX Corporate Lite.cmd".
+Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: "Start PaRuX Corporate Lite.cmd". Se la GPU non e' utilizzabile
+o Vulkan non parte, PaRuX torna da solo al motore CPU. Solo CPU (IT): "Start PaRuX Corporate Lite (CPU only).cmd" oppure PARUX_CORPORATE_GPU=0.
 Importa nuovi GGUF e scegli il modello da Chat. Solo con consenso IT usa "Start PaRuX Corporate Model Downloads.cmd".
 "@ | Set-Content (Join-Path $stage "README-corporate-lite.txt") -Encoding UTF8
 
@@ -409,6 +477,12 @@ $manifest = [ordered]@{
     starterProfile = $(if ($NoModel) { "none" } elseif ($LowMemoryStarter) { "low-memory-0.6b" } else { "standard-or-user-supplied" })
     runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; multilingualEmbeddingIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)); multilingualRerankerIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)); rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
     nativeRuntimeSha256 = (Get-FileHash (Join-Path $runtimeDest "llama-server.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+    vulkanRuntimeIncluded = $true; vulkanRuntimeTag = [string]$vulkanArtifact.version; vulkanRuntimeFolder = $vulkanFolder
+    vulkanArchiveName = [string]$vulkanArtifact.archiveName; vulkanArchiveSha256 = ([string]$vulkanArtifact.sha256).ToLowerInvariant()
+    vulkanArchiveSizeBytes = [int64]$vulkanArtifact.sizeBytes; vulkanRuntimeSizeBytes = [int64]$vulkanSizeBytes
+    vulkanRuntimeFileCount = @(Get-ChildItem -LiteralPath $vulkanDest -Recurse -File).Count
+    vulkanNativeRuntimeSha256 = $vulkanNativeSha
+    corporateGpuDisableVariable = "PARUX_CORPORATE_GPU"
     fileCount = $files.Count; files = $files
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "MANIFEST.json") -Encoding UTF8
@@ -439,7 +513,7 @@ try {
     if (@($names | Where-Object { $_.Contains('\') }).Count -gt 0) { throw "ZIP has backslash entries." }
     $rel = @($names | ForEach-Object { $_.Substring("PaRuX-Corporate-Lite/".Length) })
     foreach ($req in "PaRuX.exe", "PaRuX.Server/PaRuX.Server.exe", "parux.corporate", "Start PaRuX Corporate Lite.cmd", "MANIFEST.json", "LICENSE.txt",
-        "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "README-corporate-lite.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
+        "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "Start PaRuX Corporate Lite (CPU only).cmd", "README-corporate-lite.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/(parux\.db|history|attachments|server/)' -or $_ -match '(?i)(^|/)(rag\.db|knowledge\.db|bootstrap\.json)$' }).Count -gt 0) { throw "ZIP contains user data/indexes/tokens." }
     $expectedModels = if ($NoModel) { 0 } else { 1 }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' }).Count -ne $expectedModels) { throw "Expected $expectedModels bundled model(s)." }
@@ -459,6 +533,25 @@ try {
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/LocalAI/runtime/llama\.cpp-[^/]+-cpu/llama-server\.exe$' }).Count -ne 1) {
         throw "Bundled CPU runtime executable missing from ZIP."
     }
+    # The pinned Vulkan runtime must be in the finished archive, complete and matching the repo lock.
+    $vulkanRel = "PaRuXData/LocalAI/runtime/$vulkanFolder"
+    foreach ($needed in "llama-server.exe", "ggml-vulkan.dll", "LICENSE-llama.cpp.txt", "parux-runtime-lock.json") {
+        if ($rel -notcontains "$vulkanRel/$needed") { throw "Bundled Vulkan runtime incomplete in ZIP: $needed" }
+    }
+    if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/LocalAI/runtime/llama\.cpp-[^/]+-vulkan/llama-server\.exe$' }).Count -ne 1) {
+        throw "Expected exactly one bundled Vulkan llama-server.exe."
+    }
+    if (-not $manifest.vulkanRuntimeIncluded -or $manifest.vulkanRuntimeTag -cne [string]$vulkanArtifact.version) { throw "MANIFEST.json does not describe the Vulkan runtime." }
+    $lockEntry = $z.GetEntry("PaRuX-Corporate-Lite/$vulkanRel/parux-runtime-lock.json")
+    $lockReader = [IO.StreamReader]::new($lockEntry.Open())
+    try { $shippedLock = $lockReader.ReadToEnd() | ConvertFrom-Json } finally { $lockReader.Dispose() }
+    if (@($shippedLock.artifacts).Count -ne 1 -or ([string]@($shippedLock.artifacts)[0].sha256).ToLowerInvariant() -ne ([string]$vulkanArtifact.sha256).ToLowerInvariant()) {
+        throw "Shipped Vulkan lock does not match packaging/windows-baseline-runtime.lock.json."
+    }
+    $cpuOnlyEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Lite (CPU only).cmd")
+    $cpuOnlyReader = [IO.StreamReader]::new($cpuOnlyEntry.Open())
+    try { $cpuOnlyText = $cpuOnlyReader.ReadToEnd() } finally { $cpuOnlyReader.Dispose() }
+    if ($cpuOnlyText -notmatch 'PARUX_CORPORATE_GPU=0') { throw "CPU-only launcher does not set PARUX_CORPORATE_GPU=0." }
     $offlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Lite.cmd")
     $onlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Model Downloads.cmd")
     if ($null -eq $offlineEntry -or $null -eq $onlineEntry) { throw "Missing Corporate launchers." }
@@ -466,6 +559,7 @@ try {
     try { $offlineText = $reader.ReadToEnd() } finally { $reader.Dispose() }
     $reader = [IO.StreamReader]::new($onlineEntry.Open())
     try { $onlineText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    if ($offlineText -match 'PARUX_CORPORATE_GPU=0') { throw "The default launcher must not disable the GPU path." }
     if ($offlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=0' -or $onlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=1') {
         throw "Corporate model-download consent was not staged correctly."
     }
@@ -474,7 +568,8 @@ try {
     $modelPathInZip = if ($NoModel) { $null } else { @($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' })[0] }
     $shaTool = [Security.Cryptography.SHA256]::Create()
     try {
-        $checks = @(@{ entry = $nativePath; expected = $manifest.nativeRuntimeSha256; title = "CPU runtime" })
+        $checks = @(@{ entry = $nativePath; expected = $manifest.nativeRuntimeSha256; title = "CPU runtime" },
+            @{ entry = "$vulkanRel/llama-server.exe"; expected = $manifest.vulkanNativeRuntimeSha256; title = "Vulkan runtime" })
         if (-not $NoModel) { $checks += @{ entry = $modelPathInZip; expected = $manifest.modelSha256; title = "Starter GGUF" } }
         foreach ($check in $checks) {
             $zipEntry = $z.GetEntry("PaRuX-Corporate-Lite/" + $check.entry)
@@ -501,7 +596,7 @@ try {
         } finally { $stream.Dispose() }
         if ($actual -ne $item.sha256) { throw "Corporate archive SHA-256 mismatch: $($item.path)" }
     }
-    Write-Host "ZIP check OK: $($names.Count) entries, complete file SHA-256 inventory; modelIncluded=$(-not $NoModel); rerankerIncluded=$(-not [string]::IsNullOrWhiteSpace($RerankerDir))."
+    Write-Host "ZIP check OK: $($names.Count) entries, complete file SHA-256 inventory; vulkanRuntime=$($manifest.vulkanRuntimeTag) ($vulkanSizeMb MB); modelIncluded=$(-not $NoModel); rerankerIncluded=$(-not [string]::IsNullOrWhiteSpace($RerankerDir))."
 } finally { $z.Dispose() }
 
 # --- 7. Smoke: extracted package starts offline, Core is up, downloads are refused, document search answers -------------------
@@ -512,7 +607,7 @@ if ($Smoke) {
     $env:PARUX_CORPORATE = "1"; $env:PARUX_CORPORATE_MODEL_DOWNLOADS = "0"
     $env:PARUX_DATA_ROOT = Join-Path $app "PaRuXData"; $env:PARUX_LOCALAI_STATE_DIR = $env:PARUX_DATA_ROOT
     # A staged file is not enough: exercise the executable's Windows native DLL loader.
-    $nativeExe = @(Get-ChildItem (Join-Path $app "PaRuXData/LocalAI/runtime") -Filter "llama-server.exe" -Recurse -File)
+    $nativeExe = @(Get-ChildItem (Join-Path $app "PaRuXData/LocalAI/runtime") -Filter "llama-server.exe" -Recurse -File | Where-Object { $_.DirectoryName -match '-cpu$' })
     if ($nativeExe.Count -ne 1) { throw "Offline smoke: expected one bundled CPU llama-server.exe." }
     $stdout = Join-Path $tmp "cpu-help-out.txt"; $stderr = Join-Path $tmp "cpu-help-err.txt"
     $nativeProc = Start-Process $nativeExe[0].FullName -WorkingDirectory $nativeExe[0].DirectoryName -ArgumentList "--help" -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
@@ -523,6 +618,13 @@ if ($Smoke) {
         throw "Offline smoke: native CPU loader timed out."
     }
     if ($nativeProc.ExitCode -ne 0) { throw "Offline smoke: native CPU loader failed (exit $($nativeProc.ExitCode))." }
+    # The bundled Vulkan engine must at least load. A host without a Vulkan loader/ICD is only a warning: the app then runs on the CPU engine.
+    $vulkanSmokeExe = Join-Path $app "PaRuXData/LocalAI/runtime/$vulkanFolder/llama-server.exe"
+    $vOut = Join-Path $tmp "vulkan-help-out.txt"; $vErr = Join-Path $tmp "vulkan-help-err.txt"
+    $vProc = Start-Process $vulkanSmokeExe -WorkingDirectory (Split-Path -Parent $vulkanSmokeExe) -ArgumentList "--help" -PassThru -NoNewWindow -RedirectStandardOutput $vOut -RedirectStandardError $vErr
+    $null = $vProc.Handle
+    if (-not $vProc.WaitForExit(15000)) { $vProc.Kill(); throw "Offline smoke: native Vulkan loader timed out." }
+    if ($vProc.ExitCode -ne 0) { Write-Warning "Vulkan native loader unavailable on this host (exit $($vProc.ExitCode)); Corporate would use the CPU engine here." }
     $proc = Start-Process (Join-Path $app "PaRuX.exe") -PassThru
     try {
         $boot = Join-Path $env:PARUX_DATA_ROOT "server\bootstrap.json"

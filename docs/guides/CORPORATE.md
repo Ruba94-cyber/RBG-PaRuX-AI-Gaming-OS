@@ -1,6 +1,6 @@
 # Corporate Edition (Corporate Lite)
 
-Corporate Lite is a restricted, CPU-only, offline edition of RBG – PaRuX for local chat and document search.
+Corporate Lite is a restricted, offline edition of RBG – PaRuX for local chat and document search.
 **Status: PARTIAL.** It is not enterprise-certified.
 
 ## What it is
@@ -9,15 +9,22 @@ Corporate Lite is a restricted, CPU-only, offline edition of RBG – PaRuX for l
   and internet features are not available.
 - Packaged as a ZIP with a `parux.corporate` marker. All data stays in `PaRuXData` beside the executable. No installation and no
   administrator rights are needed by the application.
-- Inference runs locally on the CPU through the bundled llama.cpp runtime. Network features are off; the model-download
-  and runtime-installer endpoints answer 403.
+- Inference runs locally through the bundled llama.cpp runtimes. The validated **CPU** engine is the default and the
+  fallback. The package also carries the hash-pinned **Vulkan** engine (llama.cpp b10549, the same lock entry as the
+  Standard Portable): when a usable GPU adapter exists, PaRuX tries it first and, if it does not become healthy in time
+  or fails (no driver, VM without GPU, allocation error, implausible output), it falls back to the CPU engine on its own
+  and records why (Runtime Manager launch trace). Nothing is downloaded or installed and no other process is stopped.
+  GPU memory shared with system RAM counts against the same profile RAM limit; the Vulkan start is skipped when it
+  would not fit. Network features are off; the model-download and runtime-installer endpoints answer 403.
+- **IT switch:** `PARUX_CORPORATE_GPU=0` (also `false`, `off`, `no`, `cpu`) forces CPU only. The package includes
+  `Start PaRuX Corporate Lite (CPU only).cmd`, which sets it.
 
 ## Packages
 
 | Variant | Contains | Note |
 |---|---|---|
-| Corporate Lite with model | CPU runtime, Qwen3-4B Q4_K_M, ONNX embedding and reranker | Complete offline chat. The 4.2.0 test package was 2,668 MB. |
-| NoModel | CPU runtime, no chat model | Not a complete chat setup on its own. |
+| Corporate Lite with model | CPU and Vulkan runtimes, Qwen3-4B Q4_K_M, ONNX embedding and reranker | Complete offline chat. The 4.2.0 test package was 2,668 MB (CPU only); the Vulkan runtime adds its unpacked size, printed in the package README and `MANIFEST.json`. |
+| NoModel | CPU and Vulkan runtimes, no chat model | Not a complete chat setup on its own. |
 
 The 4.1.0 release record lists the NoModel ZIP only (280,483,402 bytes). Review runtime and model licences before distribution.
 
