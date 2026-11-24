@@ -51,6 +51,28 @@ public sealed class CoreSingleInstanceTests
         Assert.Contains("ServerState.TryWriteStartFailure(message)", program, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void App_mutex_name_is_scoped_to_the_data_root_so_editions_do_not_block_each_other()
+    {
+        string corporate = SingleInstanceGuard.AppMutexNameFor(Path.Combine(Path.GetTempPath(), "Corp", "PaRuXData"));
+        string installed = SingleInstanceGuard.AppMutexNameFor(Path.Combine(Path.GetTempPath(), "Installed", "PaRuX"));
+        Assert.NotEqual(corporate, installed);
+        Assert.Equal(corporate, SingleInstanceGuard.AppMutexNameFor(
+            Path.Combine(Path.GetTempPath(), "corp", "paruxdata") + Path.DirectorySeparatorChar));
+        Assert.StartsWith("Local", corporate, StringComparison.Ordinal);
+        Assert.Contains("PaRuX.App.SingleInstance.", corporate, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Desktop_no_longer_uses_a_fixed_single_instance_mutex_name_in_release()
+    {
+        string app = Read("src", "PaRuX.App", "App.xaml.cs");
+        Assert.DoesNotContain("SingleInstanceMutexName", app, StringComparison.Ordinal);
+        int name = app.IndexOf("string mutexName = PaRuX.Contracts.SingleInstanceGuard.AppMutexNameFor(AppPaths.PaRuXRoot);", StringComparison.Ordinal);
+        int debug = app.IndexOf("#if DEBUG", StringComparison.Ordinal);
+        Assert.True(name > 0 && (debug < 0 || name < debug), "The data-root scoped name must be set outside the DEBUG-only block.");
+    }
+
     private static string Read(params string[] path)
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

@@ -20,7 +20,8 @@ namespace PaRuX
         /// <summary>Set only by the tray "Exit" path, so window close can mean "hide".</summary>
         public static bool IsShuttingDown { get; private set; }
 
-        private const string SingleInstanceMutexName = "Local\\PaRuX.App.SingleInstance";
+        // Per data root (also in Release): a Corporate folder, a portable copy and an installed PaRuX each own their
+        // own instance, so one edition no longer makes another exit silently. Computed in OnLaunched.
         private static Mutex? _singleInstanceMutex;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -58,7 +59,7 @@ namespace PaRuX
             }
 
             bool createdNew;
-            string mutexName = SingleInstanceMutexName;
+            string mutexName = PaRuX.Contracts.SingleInstanceGuard.AppMutexNameFor(AppPaths.PaRuXRoot);
 #if DEBUG
             string? uiTestDataRoot = Environment.GetEnvironmentVariable("PARUX_DATA_ROOT");
             // PARUX_UI_TEST_ISOLATED is set for every FlaUI-launched instance (PARUX_UI_TESTS only marks
