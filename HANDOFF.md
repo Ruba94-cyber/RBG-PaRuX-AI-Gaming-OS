@@ -1,3 +1,13 @@
+## 2026-11-24 — MAINLINE CONTINUATION: ANIKI TRANSACTION AND TOOL-STREAM COMMIT GATES
+
+Direct main commits (no branch/PR/Actions): `d9e9fc9`, `c9d70ff`, `9e31527`, `2d20136`.
+
+- **Theme journal-failure recovery**: when the folder swap succeeded but the theme ownership journal cannot be saved, restore the previous folder (fresh install -> no theme; replacement -> original user theme; managed update -> previous managed theme). Preserve backup/retired copies if recovery fails. Synthetic I/O fault-injection tests cover the three transitions.
+- **MCP execution authorization**: a model-generated tool batch runs only after a valid `finish_reason: "tool_calls"`, not a bare `[DONE]` or a `stop`/`length` finish. Invalid/negative tool-call indices fail closed. Regression SSE fixtures assert no tool execution on incomplete turns.
+- **Bounded SSE ingestion**: a 4 KiB chunked reader checks each line BEFORE accumulating more than 512 Ki characters, supporting LF, CRLF and CR. Existing oversized fixture plus mixed-terminator and multi-buffer tests cover correctness. This replaces the previous post-allocation size check.
+- **Truthful local Windows gate**: `tools/validation-runs/verify-main-local.ps1` lists the compiled xUnit tests and fails if expected Playnite/AI or optional AppContainer smoke methods cannot be discovered. A filter matching zero tests must not be mistaken for passing coverage.
+- **NOT run here**: .NET SDK 10 x64 native build, tests or UI, physical Playnite/Aniki Helper/controller/TV, eGPU/FPS/VRAM, installer/Corporate portable. Do not ship/release on source inspection; on an interactive Windows PC run `tools/validation-runs/verify-main-local.ps1 -FullSuite -SandboxSmoke -UiSmoke` and verify the hardware workflow manually. No GitHub Actions.
+
 ## 2026-11-24 — VERIFICATION FOLLOW-UP: USER DATA AND MCP INPUT HARDENING
 
 Integrated on `main` since the prior checkpoint:
