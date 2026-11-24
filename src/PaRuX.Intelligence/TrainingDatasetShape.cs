@@ -35,6 +35,8 @@ public static class TrainingDatasetShape
         public int ValidVisionRecords { get; init; }
         public int ValidTtsRecords { get; init; }
         public int MissingMediaFiles { get; init; }
+        public bool SupportsEmbedding { get; init; }
+        public int ValidEmbeddingRecords { get; init; }
     }
 
     public static readonly Shape Empty = new(
@@ -60,7 +62,7 @@ public static class TrainingDatasetShape
         if (lines == null) return Empty;
 
         int read = 0, chat = 0, preference = 0, kto = 0, desirable = 0, undesirable = 0;
-        int text = 0, grpo = 0, vision = 0, tts = 0;
+        int text = 0, grpo = 0, vision = 0, tts = 0, embedding = 0;
         int unparseable = 0, missingMedia = 0;
         var problems = new List<int>();
         bool truncated = false;
@@ -91,6 +93,8 @@ public static class TrainingDatasetShape
             bool isGrpo = IsGrpoRecord(root);
             bool isVision = IsVisionRecord(root);
             bool isTts = IsTtsRecord(root);
+            bool isEmbedding = IsEmbeddingRecord(root);
+            if (isEmbedding) embedding++;
             if (isChat) chat++;
             if (isPreference) preference++;
             if (isKto)
@@ -111,7 +115,7 @@ public static class TrainingDatasetShape
                 tts++;
                 if (!MediaExists(root, "audio", mediaBaseDirectory)) missingMedia++;
             }
-            if (!isChat && !isPreference && !isKto && !isText && !isGrpo && !isVision && !isTts && problems.Count < 10)
+            if (!isChat && !isPreference && !isKto && !isText && !isGrpo && !isVision && !isTts && !isEmbedding && problems.Count < 10)
                 problems.Add(read);
         }
 
@@ -126,10 +130,11 @@ public static class TrainingDatasetShape
         bool grpoSupported = grpo > 0 && grpo >= required;
         bool visionSupported = vision > 0 && vision >= required && missingMedia == 0;
         bool ttsSupported = tts > 0 && tts >= required && missingMedia == 0;
+        bool embeddingSupported = embedding >= 2 && embedding >= required;
 
         string summary = Describe(read, chat, preference, kto, desirable, undesirable,
             text, grpo, vision, tts, unparseable,
-            missingMedia, sft, dpo, cpt, grpoSupported, visionSupported, ttsSupported, truncated);
+            missingMedia, sft, dpo, cpt, grpoSupported, visionSupported, ttsSupported, truncated, embeddingSupported);
         return new Shape(sft, dpo, read, chat, preference, unparseable, problems, truncated, summary)
         {
             SupportsKto = ktoSupported,
@@ -144,6 +149,8 @@ public static class TrainingDatasetShape
             ValidGrpoRecords = grpo,
             ValidVisionRecords = vision,
             ValidTtsRecords = tts,
+            SupportsEmbedding = embeddingSupported,
+            ValidEmbeddingRecords = embedding,
             MissingMediaFiles = missingMedia
         };
     }
@@ -191,6 +198,9 @@ public static class TrainingDatasetShape
         HasNonEmptyString(root, "image") && (IsChatRecord(root)
             || (HasNonEmptyString(root, "prompt") && HasNonEmptyString(root, "response")));
 
+    internal static bool IsEmbeddingRecord(JsonElement root) =>
+        HasNonEmptyString(root, "query") && HasNonEmptyString(root, "positive");
+
     private static bool IsTtsRecord(JsonElement root) =>
         HasNonEmptyString(root, "audio") && HasNonEmptyString(root, "text");
 
@@ -218,7 +228,7 @@ public static class TrainingDatasetShape
         int read, int chat, int preference, int kto, int desirable, int undesirable,
         int text, int grpo, int vision, int tts, int unparseable,
         int missingMedia, bool sft, bool dpo, bool cpt, bool supportsGrpo, bool supportsVision,
-        bool supportsTts, bool truncated)
+        bool supportsTts, bool truncated, bool supportsEmbedding = false)
     {
         string scope = truncated ? $"the first {read:N0} records" : $"all {read:N0} records";
         var supported = new List<string>();
@@ -231,6 +241,7 @@ public static class TrainingDatasetShape
         if (supportsGrpo) supported.Add("GRPO");
         if (supportsVision) supported.Add("vision fine-tuning");
         if (supportsTts) supported.Add("TTS fine-tuning");
+        if (supportsEmbedding) supported.Add("embedding fine-tuning");
         if (supported.Count > 0)
         {
             string mediaWarning = missingMedia > 0 ? $" {missingMedia:N0} referenced media file(s) are missing." : string.Empty;

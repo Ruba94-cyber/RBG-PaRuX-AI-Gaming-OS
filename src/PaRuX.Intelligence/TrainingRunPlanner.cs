@@ -36,7 +36,8 @@ public static class TrainingRunPlanner
         double availableGib,
         string precision = "qlora-4bit",
         string targetPreset = "attention",
-        int maxSequenceLength = 2048)
+        int maxSequenceLength = 2048,
+        bool useDora = false)
     {
         var findings = new List<Finding>();
         string normalizedMethod = NormalizeMethod(method);
@@ -113,6 +114,7 @@ public static class TrainingRunPlanner
         // 16-bit LoRA holds a much larger base model in memory than 4-bit QLoRA.
         // This is an estimate and MUST be followed by actual device admission/measurement.
         bool sixteenBit = string.Equals(precision, "lora-16bit", StringComparison.Ordinal);
+        bool fullFineTune = string.Equals(precision, "full-16bit", StringComparison.Ordinal);
         if (targetPreset is not ("attention" or "all-linear"))
             findings.Add(new Finding(Severity.Blocking, "targetPreset",
                 "Choose a supported LoRA target preset: attention or all-linear."));
@@ -121,17 +123,20 @@ public static class TrainingRunPlanner
                 "Vision/TTS use fixed target modules; all-linear is currently supported only for text methods."));
 
 
-        if (precision is not ("qlora-4bit" or "lora-16bit"))
+        if (precision is not ("qlora-4bit" or "lora-16bit" or "full-16bit"))
             findings.Add(new Finding(Severity.Blocking, "precision",
-                "Select a supported precision: QLoRA 4-bit or LoRA 16-bit."));
+                "Select a supported precision: QLoRA 4-bit, LoRA 16-bit or full 16-bit fine-tuning."));
+        string? admission = TrainingPrecisionAdmission.Refusal(normalizedMethod, precision, baseModelId, useDora);
+        if (admission != null)
+            findings.Add(new Finding(Severity.Blocking, "precision", admission));
         if (sixteenBit && (normalizedMethod is "vision-sft" or "tts-sft"))
             findings.Add(new Finding(Severity.Blocking, "precision",
                 "16-bit LoRA is available only for text SFT, DPO, GRPO and continued pretraining in this runtime."));
 
-        if (sixteenBit && (baseModelId?.Contains("bnb-4bit", StringComparison.OrdinalIgnoreCase) == true
+        if ((sixteenBit || fullFineTune) && (baseModelId?.Contains("bnb-4bit", StringComparison.OrdinalIgnoreCase) == true
             || baseModelId?.Contains("4bit", StringComparison.OrdinalIgnoreCase) == true))
             findings.Add(new Finding(Severity.Blocking, "baseModel",
-                "16-bit LoRA must use an unquantized Hugging Face base model. A repository named 4bit/bnb-4bit cannot be assumed to contain full-precision weights."));
+                "16-bit LoRA and full fine-tuning must use an unquantized Hugging Face base model. A repository named 4bit/bnb-4bit cannot be assumed to contain full-precision weights."));
 
         double? parameters = ParameterBillionsFrom(baseModelId);
         double methodMultiplier = normalizedMethod switch
@@ -146,9 +151,13 @@ public static class TrainingRunPlanner
             _ => 1.0
         };
         double estimatedGib = parameters.HasValue
-            ? Math.Max(MinimumRunGib, parameters.Value * GibPerBillionParameters4Bit
-                * methodMultiplier * (sixteenBit ? 2.8 : 1.0))
+            ? fullFineTune
+                ? Math.Max(MinimumRunGib, TrainingPrecisionAdmission.FullFineTuneGib(parameters.Value) * methodMultiplier)
+                : Math.Max(MinimumRunGib, parameters.Value * GibPerBillionParameters4Bit
+                    * methodMultiplier * (sixteenBit ? 2.8 : 1.0))
             : 0;
+        if (useDora && !fullFineTune)
+            estimatedGib *= 1.1; // DoRA keeps a per-layer magnitude vector and an extra weight-norm pass.
 
         if (parameters.HasValue && availableGib > 0 && estimatedGib > availableGib)
         {
@@ -162,7 +171,7 @@ public static class TrainingRunPlanner
                 "PaRuX could not establish parameter count from the model id, so it has not checked whether this model fits; memory fit is unproven rather than assumed."));
         }
 
-        if (!sixteenBit && normalizedMethod is not "tts-sft" && !string.IsNullOrWhiteSpace(baseModelId)
+        if (!sixteenBit && !fullFineTune && normalizedMethod is not "tts-sft" and not "embedding-ft" && !string.IsNullOrWhiteSpace(baseModelId)
             && !baseModelId.Contains("bnb-4bit", StringComparison.OrdinalIgnoreCase)
             && !baseModelId.Contains("4bit", StringComparison.OrdinalIgnoreCase))
         {
@@ -218,6 +227,7 @@ public static class TrainingRunPlanner
             "continued-pretraining" => examples < 2_000 ? 5e-5 : 2e-5,
             "vision-sft" => examples < 2_000 ? 1e-4 : 5e-5,
             "tts-sft" => examples < 2_000 ? 2e-5 : 1e-5,
+            "embedding-ft" => examples < 2_000 ? 1e-4 : 5e-5,
             _ => examples < 2_000 ? 2e-4 : 1e-4
         };
         string rationale = examples == 0
@@ -234,6 +244,7 @@ public static class TrainingRunPlanner
         "grpo" => dataset.SupportsGrpo,
         "vision-sft" => dataset.SupportsVisionFineTuning,
         "tts-sft" => dataset.SupportsTtsFineTuning,
+        "embedding-ft" => dataset.SupportsEmbedding,
         _ => dataset.SupportsSupervisedFineTuning
     };
 
@@ -273,6 +284,7 @@ public static class TrainingRunPlanner
         "grpo" => "JSONL objects with prompt and, for reference rewards, reference strings.",
         "vision-sft" => "JSONL objects with image plus messages, or image + prompt + response.",
         "tts-sft" => "JSONL objects with audio and text; referenced audio files must exist.",
+        "embedding-ft" => "JSONL objects with query and positive strings (optional negative string).",
         _ => "JSONL objects with a messages array of role/content pairs."
     };
 
@@ -285,13 +297,14 @@ public static class TrainingRunPlanner
         "grpo" => "GRPO",
         "vision-sft" => "Vision SFT",
         "tts-sft" => "TTS SFT",
+        "embedding-ft" => "embedding fine-tuning",
         _ => "supervised fine-tuning"
     };
 
     private static string NormalizeMethod(string? method)
     {
         string value = string.IsNullOrWhiteSpace(method) ? "sft" : method.Trim().ToLowerInvariant();
-        return value is "sft" or "dpo" or "orpo" or "kto" or "continued-pretraining" or "grpo" or "vision-sft" or "tts-sft" ? value : "sft";
+        return value is "sft" or "dpo" or "orpo" or "kto" or "continued-pretraining" or "grpo" or "vision-sft" or "tts-sft" or "embedding-ft" ? value : "sft";
     }
 
     public static double? ParameterBillionsFrom(string? modelId)
