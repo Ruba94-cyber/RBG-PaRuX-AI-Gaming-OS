@@ -79,6 +79,11 @@ namespace PaRuX.Models
         /// Console/TV mode on that screen (the Gaming library), so the owner can play from the couch. Off by default.</summary>
         public bool ConsoleStartOnTvWhenPresent { get; set; } = false;
 
+        /// <summary>Opt-in, no TV needed: every time PaRuX starts, hand the screen to Playnite Fullscreen (with the theme selected in Playnite,
+        /// Aniki ReMake when the owner chose it) and keep PaRuX minimized for the AI. Works with any controller. When Playnite is missing,
+        /// skipped or refuses, PaRuX simply opens normally. Off by default.</summary>
+        public bool StartInConsoleMode { get; set; } = false;
+
         /// <summary>What a launch does when <see cref="ConsoleStartOnTvWhenPresent"/> is on but the TV is NOT connected:
         /// "normal" (the usual AI window in desktop mode, the default) or "minimized".</summary>
         public string StartupWithoutTv { get; set; } = "normal";
