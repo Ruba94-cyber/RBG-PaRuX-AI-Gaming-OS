@@ -433,7 +433,9 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Border x:Name="WorkbookEditPanel" Grid.Row="0" Visibility="Collapsed"
+            <StackPanel Grid.Row="0" Spacing="8">
+                <loc:ChatCodeApprovalCard x:Name="ChatCodeApproval" />
+            <Border x:Name="WorkbookEditPanel" Visibility="Collapsed"
                     AutomationProperties.AutomationId="Chat_WorkbookEdit_Preview"
                     Background="{ThemeResource PaRuXSurfaceCardBrush}" BorderBrush="{ThemeResource PaRuXStrokeBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="12">
@@ -451,6 +453,7 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+            </StackPanel>
 
             <!-- Transient status: never a bare "loading…" string, always paired
                  with a live ring so a five-minute cold model load looks alive. -->

@@ -51,7 +51,32 @@ public static class McpToolUseTelemetry
         double ArgumentParseFallbackRate,
         double AverageAdvertisedToolsAtExecution,
         IReadOnlyList<RoutingEvent> RecentRouting,
-        IReadOnlyList<ExecutionEvent> RecentExecutions);
+        IReadOnlyList<ExecutionEvent> RecentExecutions,
+        RepairCounters? Repairs = null);
+
+    /// <summary>Self-healing tool-call counters (no arguments or results are retained).</summary>
+    public sealed record RepairCounters(
+        int Detected, int FixedLocally, int Reprompted, int Exhausted, int ExecutionFailuresFedBack, int TextualCallsRecovered);
+
+    private static int _repairDetected, _repairFixedLocally, _repairReprompted, _repairExhausted, _executionFailuresFedBack, _textualRecovered;
+
+    /// <summary>kind: detected | fixed-locally | reprompted | exhausted | execution-failure | textual-recovered.</summary>
+    public static void RecordRepair(string kind)
+    {
+        switch (kind)
+        {
+            case "detected": Interlocked.Increment(ref _repairDetected); break;
+            case "fixed-locally": Interlocked.Increment(ref _repairFixedLocally); break;
+            case "reprompted": Interlocked.Increment(ref _repairReprompted); break;
+            case "exhausted": Interlocked.Increment(ref _repairExhausted); break;
+            case "execution-failure": Interlocked.Increment(ref _executionFailuresFedBack); break;
+            case "textual-recovered": Interlocked.Increment(ref _textualRecovered); break;
+        }
+    }
+
+    public static RepairCounters GetRepairCounters() => new(
+        Volatile.Read(ref _repairDetected), Volatile.Read(ref _repairFixedLocally), Volatile.Read(ref _repairReprompted),
+        Volatile.Read(ref _repairExhausted), Volatile.Read(ref _executionFailuresFedBack), Volatile.Read(ref _textualRecovered));
 
     public static void RecordRouting(
         bool routed,
@@ -135,7 +160,8 @@ public static class McpToolUseTelemetry
                 executions.Length == 0 ? 0d : fallbackCount / (double)executions.Length,
                 executions.Length == 0 ? 0d : executions.Average(item => item.AdvertisedToolCount),
                 routing.TakeLast(recentLimit).ToArray(),
-                executions.TakeLast(recentLimit).ToArray());
+                executions.TakeLast(recentLimit).ToArray(),
+                GetRepairCounters());
         }
     }
 
@@ -146,6 +172,7 @@ public static class McpToolUseTelemetry
             RoutingEvents.Clear();
             ExecutionEvents.Clear();
         }
+        _repairDetected = _repairFixedLocally = _repairReprompted = _repairExhausted = _executionFailuresFedBack = _textualRecovered = 0;
     }
 
     private static double ReductionRatio(long original, long selected)

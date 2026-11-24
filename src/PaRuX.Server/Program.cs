@@ -173,6 +173,7 @@ builder.Services.AddSingleton<SkillRegistryService>();
 builder.Services.AddSingleton<SkillRouter>();
 builder.Services.AddSingleton<PersonaService>();
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.AgentLibraryConsentStore>();
+PaRuX.Server.ChatCode.ChatCodeEndpoints.AddChatCodeExecution(builder.Services);
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.IAgentLibraryBackend, PaRuX.Server.Orchestration.AgentLibraryBackend>();
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.AgentLibraryTools>();
 builder.Services.AddSingleton<McpClientRegistry>();
@@ -1799,6 +1800,46 @@ app.MapPost("/api/v1/mcp/servers/{id}/enabled", async (string id, SetMcpServerEn
 {
     if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     try { await mcp.SetEnabledAsync(id, request.Enabled, ct); return Results.NoContent(); }
+    catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// Lifecycle of one server. Each call reports the real outcome (a probe against the live process or endpoint), never an
+// optimistic "started": a server that does not answer within its deadline comes back with connected=false and the reason.
+app.MapGet("/api/v1/mcp/servers/{id}", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.GetStatusAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/start", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StartServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/stop", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StopServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/reload", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.ReloadServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/timeout", async (string id, SetMcpServerTimeoutRequest request, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { await mcp.SetServerTimeoutAsync(id, request.TimeoutSeconds, ct); return Results.NoContent(); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -4312,6 +4353,7 @@ app.MapGgufQuantizeEndpoints();
 app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();
 PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
+PaRuX.Server.ChatCode.ChatCodeEndpoints.MapChatCodeEndpoints(app);
 app.MapGameSaveBackupEndpoints();
 app.MapGameExtensionEndpoints();
 app.MapOpenAiCompatibleProviderEndpoints();

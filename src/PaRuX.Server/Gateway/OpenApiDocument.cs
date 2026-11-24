@@ -14,7 +14,7 @@ internal sealed record OpenApiRoute(string Pattern, string Method, bool OwnerOnl
 /// <summary>
 /// OpenAPI 3.0 description of the routes this build actually registers. It is generated from the route table, so it cannot
 /// drift from the code: every path, method and path parameter is real. Request and response bodies are not described (the
-/// document says so), and a route is flagged owner-only when it carries the desktop-owner gate or is on the known inline-gated list.
+/// document says so, except where OpenApiBodySchemas has a schema), and a route is flagged owner-only when it carries the desktop-owner gate or is on the known inline-gated list.
 /// </summary>
 internal static class OpenApiDocument
 {
@@ -79,7 +79,25 @@ internal static class OpenApiDocument
                     ["responses"] = new JsonObject { ["default"] = new JsonObject { ["description"] = "See the PaRuX documentation; the body is not described here." } }
                 };
                 if (parameters.Count > 0) op["parameters"] = parameters;
-                if (r.OwnerOnly) op["description"] = "Desktop owner only: a browser session, paired device or API key is refused with 403.";
+                if (OpenApiBodySchemas.Find(r.Method, r.Pattern) is { } body)
+                {
+                    op["x-parux-body-described"] = true;
+                    string desc = body.Note ?? string.Empty;
+                    if (body.Request != null)
+                        op["requestBody"] = new JsonObject
+                        {
+                            ["required"] = true,
+                            ["content"] = new JsonObject { ["application/json"] = new JsonObject { ["schema"] = body.Request.DeepClone() } }
+                        };
+                    if (body.Response != null)
+                        ((JsonObject)op["responses"]!)["200"] = new JsonObject
+                        {
+                            ["description"] = "Success.",
+                            ["content"] = new JsonObject { ["application/json"] = new JsonObject { ["schema"] = body.Response.DeepClone() } }
+                        };
+                    if (desc.Length > 0) op["description"] = desc;
+                }
+                if (r.OwnerOnly && op["description"] == null) op["description"] = "Desktop owner only: a browser session, paired device or API key is refused with 403.";
                 item[r.Method.ToLowerInvariant()] = op;
             }
             paths[group.Key] = item;
@@ -91,7 +109,7 @@ internal static class OpenApiDocument
             {
                 ["title"] = "PaRuX local API",
                 ["version"] = version,
-                ["description"] = "Generated from this build's registered routes. Paths, methods and path parameters are exact; request and response bodies are not described. Served locally; nothing leaves the machine."
+                ["description"] = "Generated from this build's registered routes. Paths, methods and path parameters are exact; request and response bodies are described only on operations that carry x-parux-body-described (derived from the DTOs the routes bind, or hand-written for the OpenAI-compatible bodies that are forwarded to llama-server); on every other operation the body is not described. Served locally; nothing leaves the machine."
             },
             ["servers"] = new JsonArray(new JsonObject { ["url"] = "http://127.0.0.1" }),
             ["components"] = new JsonObject
