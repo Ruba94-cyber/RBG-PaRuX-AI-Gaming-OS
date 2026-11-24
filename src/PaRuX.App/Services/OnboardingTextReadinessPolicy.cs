@@ -28,7 +28,7 @@ public static class OnboardingTextReadinessPolicy
     {
         ArgumentNullException.ThrowIfNull(backends);
         return backends.Any(b => b.Running && b.Healthy && (corporateMode
-            ? b.Backend == "text-cpu"
+            ? b.Backend is "text-cpu" or "text-vulkan" // Vulkan = the bundled, pinned GPU offload; CPU remains the fallback
             : (b.Backend is "text-cuda" or "text-vulkan")
                 || (standardPortableMode && b.Backend == "text-cpu")));
     }

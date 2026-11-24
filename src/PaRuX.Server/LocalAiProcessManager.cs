@@ -1714,6 +1714,98 @@ public sealed class LocalAiProcessManager
         "--no-webui"
     ];
 
+    /// <summary>The Corporate Vulkan launch: the CPU argument list plus full GPU offload on the chosen device. Pure, so it is unit-tested.</summary>
+    internal static List<string> BuildCorporateVulkanArguments(string model, int port, int logicalCores, int contextTokens,
+        int idleUnloadSeconds, string device)
+    {
+        List<string> args = BuildCorporateCpuArguments(model, port, logicalCores, contextTokens, idleUnloadSeconds);
+        args.AddRange(["--device", device, "--gpu-layers", "all"]);
+        return args;
+    }
+
+    /// <summary>
+    /// Corporate GPU attempt. Returns (null, note) when Vulkan was not attempted (disabled, absent, no adapter, no memory
+    /// headroom, no usable device) and (result, note) when it was; the caller runs the CPU engine unless the result is a
+    /// success. Never downloads, installs or terminates anything that PaRuX does not own.
+    /// </summary>
+    private async Task<(RuntimeResult? Result, string Note)> TryStartCorporateVulkanAsync(
+        string model, SystemRamSnapshot? ram, double memoryCeiling, string cpuProfile, List<string> trace, CancellationToken ct)
+    {
+        string vulkanDir = LocalAiPaths.RuntimeVulkanPath;
+        string vulkanExe = Path.Combine(vulkanDir, LocalAiPaths.LlamaServerExecutable);
+        bool present = File.Exists(vulkanExe);
+        GpuInventoryStatus? inventory = null;
+        string? disable = Environment.GetEnvironmentVariable(CorporateGpuBackendPolicy.DisableEnvironmentVariable);
+        if (present && !CorporateGpuBackendPolicy.IsDisabledByEnvironment(disable))
+        {
+            try { inventory = await Task.Run(InventoryProbe, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { inventory = null; }
+        }
+        CorporateGpuBackendPolicy.Decision decision = CorporateGpuBackendPolicy.Decide(
+            corporate: true, disable, present, inventory, CorporateGpuBackendPolicy.RecentlyFailed(model));
+        if (!decision.UseVulkan || decision.Adapter is null)
+        {
+            trace.Add("Corporate GPU: not used (" + decision.Reason + ")");
+            _lastLaunchPlanExplanation = decision.Reason;
+            return (null, string.Empty);
+        }
+
+        // Fail closed: the Vulkan footprint (shared memory included) must fit the same profile RAM ceiling.
+        CorporateCpuMemoryPlanner.Plan plan;
+        try
+        {
+            plan = CorporateGpuBackendPolicy.PlanVulkan(ram, memoryCeiling, 0,
+                CpuFallbackAdmission.CreateContextEstimator(model), decision.Adapter);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+            or ArgumentException or NotSupportedException)
+        {
+            trace.Add("Corporate GPU: not used (model footprint could not be measured)");
+            return (null, string.Empty);
+        }
+        if (!plan.Fits)
+        {
+            string why = "the GPU offload (shared memory included) does not fit the permitted RAM budget or the adapter";
+            trace.Add("Corporate GPU: not used (" + why + ")");
+            _lastLaunchPlanExplanation = "GPU skipped: " + why + "; running on the CPU.";
+            return (null, string.Empty);
+        }
+
+        VulkanDeviceSelector.DeviceChoice device = await VulkanDeviceSelector.ChooseAsync(
+            inventory, (long)Math.Ceiling(plan.NeededMib), null, ct).ConfigureAwait(false);
+        if (device.Device is null || device.CpuFallback || device.UsedFallback)
+        {
+            trace.Add("Corporate GPU: not used (" + device.Reason + ")");
+            _lastLaunchPlanExplanation = "GPU skipped: " + device.Reason;
+            return (null, string.Empty);
+        }
+
+        int idle = CorporateCpuMemoryPlanner.IdleUnloadSeconds(plan);
+        List<string> args = BuildCorporateVulkanArguments(model, TextPort, Environment.ProcessorCount,
+            plan.ContextTokens, idle, device.Device);
+        string profile = cpuProfile.Replace(" CPU (", " Vulkan (", StringComparison.Ordinal);
+        RuntimeResult attempt = await LaunchAndWaitAsync(vulkanExe, args, vulkanDir, profile, LocalAiPaths.TextPidFile, null,
+            () => IsTextHealthyAsync(ct), () => StopText(), CorporateGpuBackendPolicy.StartupTimeout, ct,
+            ProbeTextOutputSanityAsync).ConfigureAwait(false);
+        trace.Add("Corporate Vulkan " + device.Device + ": " + (attempt.Success ? "ready" : "failed (" + FirstLine(attempt.Message) + ")"));
+        if (attempt.Success)
+        {
+            _lastTextLaunch = new TextLaunchSnapshot(model, vulkanExe, vulkanDir, args, profile, null);
+            GamingTextMemory.Clear();
+            _lastLaunchPlanExplanation = "GPU offload: " + decision.Reason + " Device " + device.Device + ".";
+            string ctxNote = plan.Reduced ? " The context was reduced to " + plan.ContextTokens + " tokens to stay within the RAM limit." : string.Empty;
+            return (attempt, " GPU offload active (Vulkan, " + decision.Adapter.Name + "; shared memory counted in the RAM limit)." + ctxNote);
+        }
+        if (!ct.IsCancellationRequested)
+        {
+            // Remember the failure so every following message does not wait for another GPU timeout.
+            CorporateGpuBackendPolicy.MarkFailed(model);
+            _lastLaunchPlanExplanation = "GPU launch failed; fell back to the CPU engine.";
+        }
+        return (attempt, " GPU start failed (" + FirstLine(attempt.Message) + "); running on the CPU engine instead.");
+    }
+
     private async Task<RuntimeResult> StartCorporateCpuTextAsync(CancellationToken ct, string? modelPathOverride)
     {
         string? runtime = LocalAiPaths.FindBundledCpuRuntime();
@@ -1790,12 +1882,42 @@ public sealed class LocalAiProcessManager
         string? portRefusal = ChooseTextPortForLaunch();
         if (portRefusal != null) return new RuntimeResult(false, portRefusal);
         int idleUnloadSeconds = CorporateCpuMemoryPlanner.IdleUnloadSeconds(memory);
+        // Corporate only: try the bundled, hash-pinned Vulkan engine first when an adapter is usable and IT has not disabled
+        // it. Any failure (no driver, VM without GPU, allocation error, timeout, implausible output) stops that process and
+        // continues below with the validated CPU launch, which was already admitted by the CPU memory plan above.
+        string gpuNotice = string.Empty;
+        var launchTrace = new List<string>();
+        if (corporate)
+        {
+            (RuntimeResult? gpuResult, string gpuNote) = await TryStartCorporateVulkanAsync(
+                model, ram, memoryCeiling, profile, launchTrace, ct).ConfigureAwait(false);
+            gpuNotice = gpuNote;
+            if (gpuResult is not null)
+            {
+                if (gpuResult.Success)
+                {
+                    _lastTextLaunchTrace = launchTrace.ToArray();
+                    return new RuntimeResult(true, gpuResult.Message + gpuNotice + fallbackNotice);
+                }
+                // Cancellation (or a runtime that would not stop) is not a GPU fault: no CPU launch behind the caller's back.
+                if (ct.IsCancellationRequested) return gpuResult;
+                if (ManagedRuntimeMayBeRunning(LocalAiPaths.TextPidFile, "llama-server") && !StopText())
+                    return new RuntimeResult(false, gpuResult.Message
+                        + " The Vulkan runtime did not stop, so the CPU fallback was not started.");
+            }
+        }
         List<string> args = BuildCorporateCpuArguments(model, TextPort, Environment.ProcessorCount,
             memory.ContextTokens, idleUnloadSeconds);
         string exe = Path.Combine(runtime, LocalAiPaths.LlamaServerExecutable);
         RuntimeResult result = await LaunchAndWaitAsync(exe, args, runtime, profile, LocalAiPaths.TextPidFile, null,
             () => IsTextHealthyAsync(ct), () => StopText(), TimeSpan.FromMinutes(5), ct).ConfigureAwait(false);
+        if (corporate)
+        {
+            launchTrace.Add("Corporate CPU: " + (result.Success ? "ready" : "failed (" + FirstLine(result.Message) + ")"));
+            _lastTextLaunchTrace = launchTrace.ToArray();
+        }
         if (result.Success) { _lastTextLaunch = new TextLaunchSnapshot(model, exe, runtime, args, profile, null); GamingTextMemory.Clear(); }
+        if (result.Success && gpuNotice.Length > 0) result = new RuntimeResult(true, result.Message + gpuNotice);
         // Tell the user what changed, rather than claiming a 4096-token context
         // while a memory-constrained 2048/3072-token instance is running.
         string contextNotice = result.Success && memory.Reduced

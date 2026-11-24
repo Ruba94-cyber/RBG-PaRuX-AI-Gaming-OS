@@ -38,7 +38,12 @@ public sealed class OnboardingTextReadinessPolicyTests
         var gpu = new[] { new RuntimeBackendStatus
             { Backend = "text-vulkan", Installed = true, Running = true, Healthy = true } };
         Assert.True(OnboardingTextReadinessPolicy.HasHealthyTextBackend(gpu, corporateMode: false));
-        Assert.False(OnboardingTextReadinessPolicy.HasHealthyTextBackend(gpu, corporateMode: true));
+        // Corporate Lite now bundles the pinned Vulkan engine (GPU offload with automatic CPU fallback), so a healthy
+        // text-vulkan engine is a ready Corporate chat backend. CUDA is still never part of the Corporate package.
+        Assert.True(OnboardingTextReadinessPolicy.HasHealthyTextBackend(gpu, corporateMode: true));
+        var cuda = new[] { new RuntimeBackendStatus
+            { Backend = "text-cuda", Installed = true, Running = true, Healthy = true } };
+        Assert.False(OnboardingTextReadinessPolicy.HasHealthyTextBackend(cuda, corporateMode: true));
     }
 
     [Fact]
