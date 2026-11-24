@@ -19,7 +19,7 @@ namespace PaRuX.Views
     /// global coding path. Coding mutates only its isolated worktree; specialist roles receive the
     /// same Project repository only as a read-only evidence authority.
     /// </summary>
-    public sealed class ProjectsWorkspaceView : UserControl
+    public sealed partial class ProjectsWorkspaceView : UserControl
     {
         private static string T(string en, string it) => PaRuX.Services.UiText.Pick(en, it);
         private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap };
@@ -155,7 +155,11 @@ namespace PaRuX.Views
                 var select = new Button { Content = project.Id == activeId ? T("Active", "Attivo") : T("Select", "Seleziona") };
                 select.IsEnabled = project.Id != activeId;
                 select.Click += (_, _) => ProjectWorkspaceSession.Current.Select(project.Id, project.Goal);
-                Grid.SetColumn(select, 1); row.Children.Add(select);
+                var chatSettings = new Button { Content = T("Chat settings…", "Impostazioni di chat…") };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(chatSettings, "Projects_ChatSettings_Button");
+                chatSettings.Click += async (_, _) => await ShowChatSettingsAsync(project);
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { select, chatSettings } };
+                Grid.SetColumn(actions, 1); row.Children.Add(actions);
                 _projects.Children.Add(row);
             }
             if (projects.Count == 0) _projects.Children.Add(new TextBlock { Text = T("No durable Projects yet.", "Nessun progetto duraturo per ora.") });

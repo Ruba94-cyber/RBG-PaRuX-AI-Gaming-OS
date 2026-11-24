@@ -87,6 +87,7 @@ builder.Services.AddSingleton<RuntimeManagerService>(services => new RuntimeMana
 builder.Services.AddSingleton<RuntimeInstallService>();
 builder.Services.AddSingleton<MediaSetupService>();
 builder.Services.AddSingleton<ComponentInventoryService>();
+builder.Services.AddSingleton<ManagedComponentRemover>();
 builder.Services.AddSingleton<SmartRouterService>(services => new SmartRouterService(
     services.GetRequiredService<RuntimeManagerService>(),
     services.GetRequiredService<ModelBenchmarkService>(),
@@ -172,6 +173,7 @@ builder.Services.AddSingleton<SkillRegistryService>();
 builder.Services.AddSingleton<SkillRouter>();
 builder.Services.AddSingleton<PersonaService>();
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.AgentLibraryConsentStore>();
+PaRuX.Server.ChatCode.ChatCodeEndpoints.AddChatCodeExecution(builder.Services);
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.IAgentLibraryBackend, PaRuX.Server.Orchestration.AgentLibraryBackend>();
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.AgentLibraryTools>();
 builder.Services.AddSingleton<McpClientRegistry>();
@@ -348,6 +350,7 @@ builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AgentSkillTools>(sp => ne
 builder.Services.AddSingleton<MobileArtifactService>();
 builder.Services.AddSingleton<UnifiedRegistryService>();
 builder.Services.AddSingleton<ProjectManagerService>();
+builder.Services.AddProjectChatServices();
 builder.Services.AddHostedService<ProjectProvisioningRecoveryHostedService>();
 builder.Services.AddSingleton<AutopilotStore>();
 builder.Services.AddSingleton<AutopilotService>();
@@ -390,6 +393,7 @@ builder.Services.AddSingleton<PaRuX.Server.Orchestration.Gaming.QuickResumeServi
 builder.Services.AddSingleton<TemporaryGameModService>();
 builder.Services.AddSingleton<GameSkinStudioService>();
 builder.Services.AddSingleton<GameAssetModService>();
+builder.Services.AddSingleton<GameModChangeSetService>();
 builder.Services.AddSingleton<GameModDropInService>();
 builder.Services.AddSingleton<ManualGameSessionService>();
 builder.Services.AddSingleton<SteamGameDiscoveryProvider>();
@@ -411,6 +415,12 @@ builder.Services.AddSingleton(sp => new DisplayChangeJournal(
 builder.Services.AddSingleton(sp => new StreamingModeService(
     sp.GetRequiredService<IStreamingHost>(), sp.GetRequiredService<IStreamingDisplayController>(),
     sp.GetRequiredService<DisplayChangeJournal>(), TimeSpan.FromSeconds(20)));
+builder.Services.AddSingleton<IPowerPlanApi, WindowsPowerPlanApi>();
+builder.Services.AddSingleton(sp => new PowerProfileService(sp.GetRequiredService<IPowerPlanApi>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "power-profile-journal.json")));
+builder.Services.AddSingleton<IGameBarRegistry, WindowsGameBarRegistry>();
+builder.Services.AddSingleton(sp => new GameBarSuppressionService(sp.GetRequiredService<IGameBarRegistry>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "game-bar-journal.json")));
 builder.Services.AddSingleton<GgufQuantizeService>();
 builder.Services.AddSingleton<GameTitleStore>();
 builder.Services.AddSingleton<GameLaunchProfileStore>();
@@ -810,6 +820,7 @@ app.Use((context, next) => PrincipalRoleStore.EnforceAsync(context, context.Requ
 // middleware as every other API route. The module exposes durable Project/task operations and
 // sanitized Artifact transfer only; it never exposes raw Windows filesystem/input primitives.
 app.MapMobileControlEndpoints();
+app.MapProjectChatEndpoints();
 app.MapCandidateUtilityEndpoints();
 app.MapModelArenaEndpoints();
 app.MapCandidateRecommendationEndpoints();
@@ -1819,6 +1830,46 @@ app.MapPost("/api/v1/mcp/servers/{id}/enabled", async (string id, SetMcpServerEn
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+// Lifecycle of one server. Each call reports the real outcome (a probe against the live process or endpoint), never an
+// optimistic "started": a server that does not answer within its deadline comes back with connected=false and the reason.
+app.MapGet("/api/v1/mcp/servers/{id}", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.GetStatusAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/start", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StartServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/stop", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.StopServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/reload", async (string id, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { return Results.Ok(await mcp.ReloadServerAsync(id, ct)); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/v1/mcp/servers/{id}/timeout", async (string id, SetMcpServerTimeoutRequest request, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
+{
+    if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    try { await mcp.SetServerTimeoutAsync(id, request.TimeoutSeconds, ct); return Results.NoContent(); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No MCP server with that id." }); }
+    catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 app.MapGet("/api/v1/orchestrator/tasks/{id}/mcp-tools", async (
     string id, TaskStore tasks, McpClientRegistry mcp, HttpContext context, CancellationToken ct) =>
 {
@@ -2559,7 +2610,7 @@ app.MapPost("/api/v1/training/plan", async (
 
     TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
         shape, request.Method, request.BaseModel,
-        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
     QuickTrainingDatasetValidator.VerifiedDataset? verified = null;
     if (request.ValidateEntireDataset && plan.CanStart)
@@ -2591,7 +2642,7 @@ app.MapPost("/api/v1/training/plan", async (
             };
             plan = TrainingRunPlanner.Plan(shape, request.Method, request.BaseModel,
                 request.LoraRank, request.MaxSteps, request.LearningRate,
-                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2653,7 +2704,7 @@ app.MapPost("/api/v1/training/jobs", async (
 
         TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
             shape, request.Method, request.BaseModel,
-            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
         if (!plan.CanStart)
         {
@@ -3780,6 +3831,14 @@ app.MapPost("/api/v1/runtime/components/{id}/unskip", async (string id, Componen
     return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
 }).RequireDesktopOwner();
 
+app.MapPost("/api/v1/runtime/components/{id}/remove-managed", async (string id, ManagedComponentRemover remover,
+    ComponentInventoryService inventory, CancellationToken ct) =>
+{
+    ManagedComponentRemover.Result result = await remover.RemoveAsync(id, ct);
+    if (!result.Removed) return Results.BadRequest(new { error = result.Message });
+    return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
+}).RequireDesktopOwner();
+
 app.MapPost("/api/v1/models/library/{fileName}/load", async (string fileName, LoadManagedModelRequest request,
     RuntimeManagerService runtimeManager, CancellationToken ct) =>
 {
@@ -4211,6 +4270,15 @@ app.MapPost("/api/v1/group-chat", (GroupChatRequest request, GroupChatService gr
 app.MapGet("/api/v1/group-chat/{id}", (string id, GroupChatService groupChat) =>
     groupChat.Get(id) is { } status ? Results.Ok(status) : Results.NotFound(new { error = "Group chat run not found" }));
 
+app.MapPost("/api/v1/group-chat/{id}/regenerate/{index}", (string id, int index, GroupChatService groupChat, LocalRuntimeService runtime) =>
+{
+    if (runtime.GamingMode) return Results.Conflict(new { error = "AI paused by Gaming — Return to AI." });
+    try { return Results.Accepted("/api/v1/group-chat/" + id, groupChat.Regenerate(id, index)); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireDesktopOwner();
+
 app.MapPost("/api/v1/group-chat/{id}/cancel", (string id, GroupChatService groupChat) =>
     groupChat.Cancel(id) ? Results.Accepted() : Results.NotFound(new { error = "Active group chat run not found" })).RequireDesktopOwner();
 
@@ -4314,15 +4382,18 @@ PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.MapPlayniteEndpoint
 app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
+app.MapGameModChangeSetEndpoints();
 app.MapLocalWishlistEndpoints();
 app.MapSignInAppListEndpoints();
 app.MapGgufQuantizeEndpoints();
 app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();
 PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
+PaRuX.Server.ChatCode.ChatCodeEndpoints.MapChatCodeEndpoints(app);
 app.MapGameSaveBackupEndpoints();
 app.MapGameExtensionEndpoints();
 app.MapOpenAiCompatibleProviderEndpoints();
+app.MapTrainingToolsEndpoints();
 app.MapEmulatorEndpoints();
 PaRuX.Server.Orchestration.Gaming.QuickResumeEndpoints.MapQuickResumeEndpoints(app);
 PaRuX.Server.Orchestration.Gaming.Downloads.GameDownloadEndpoints.MapGameDownloadEndpoints(app);
@@ -4353,6 +4424,19 @@ if (!app.Environment.IsEnvironment("Testing"))
     // Display changes a crashed streaming session journaled are restored off the startup path, bounded and logged.
     // StreamingStartupRecovery never throws; a timeout or failure leaves the journal for the next start.
     _ = StreamingStartupRecovery.RunAsync(app.Services.GetRequiredService<StreamingModeService>(), app.Logger, StreamingStartupRecovery.DefaultTimeout);
+    // A Console power plan a crash left behind is put back (never overriding a plan the owner chose meanwhile).
+    PowerProfileStartupRecovery.Run(app.Services.GetRequiredService<PowerProfileService>(), app.Logger);
+    GameBarStartupRecovery.Run(app.Services.GetRequiredService<GameBarSuppressionService>(), app.Logger);
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<GameBarSuppressionService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Xbox Game Bar settings could not be restored at shutdown; the restore point stays recorded."); }
+    });
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<PowerProfileService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Console power plan could not be restored at shutdown; the restore point stays recorded."); }
+    });
     // On a normal shutdown, undo what an active streaming session changed (display values, a Sunshine PaRuX started).
     app.Lifetime.ApplicationStopping.Register(() =>
     {

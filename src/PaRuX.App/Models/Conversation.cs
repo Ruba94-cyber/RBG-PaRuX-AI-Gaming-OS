@@ -17,6 +17,9 @@ namespace PaRuX.Models
         public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
         public bool IsFavorite { get; set; }
 
+        /// <summary>Optional per-chat background, #RRGGBB only (validated by ChatAppearancePolicy before use). Additive: absent in older documents.</summary>
+        public string? BackgroundColor { get; set; }
+
         /// <summary>Permission preset for coding tasks started from this conversation. A NEW conversation
         /// defaults to ask; a stored document that lacks the field was created under the old contract and
         /// resolves to bypass (see the JSON constructor).</summary>

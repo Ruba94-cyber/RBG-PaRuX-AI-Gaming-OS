@@ -244,19 +244,45 @@ namespace PaRuX.Services
             return grid;
         }
 
+        /// <summary>Set by the chat view: opens the sandboxed Canvas preview for (language, code). Null in hosts without Canvas.</summary>
+        public static Action<string, string>? CodePreviewHandler { get; set; }
+
         private static UIElement BuildCodeBlock(string code, string language)
         {
             var stack = new StackPanel();
 
-            if (!string.IsNullOrWhiteSpace(language))
+            bool previewable = CodePreviewHandler != null
+                && PaRuX.Intelligence.CanvasPreviewPolicy.Classify(language) != PaRuX.Intelligence.CanvasPreviewKind.None;
+            if (!string.IsNullOrWhiteSpace(language) || previewable)
             {
-                stack.Children.Add(new TextBlock
+                var header = new Grid { Margin = new Thickness(2, 0, 0, 4) };
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                header.Children.Add(new TextBlock
                 {
-                    Text = language,
+                    Text = language ?? string.Empty,
                     FontSize = 11,
                     Opacity = 0.6,
-                    Margin = new Thickness(2, 0, 0, 4)
+                    VerticalAlignment = VerticalAlignment.Center
                 });
+                if (previewable)
+                {
+                    bool italian = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it";
+                    var preview = new Button
+                    {
+                        Content = italian ? "Anteprima" : "Preview",
+                        FontSize = 11,
+                        Padding = new Thickness(8, 2, 8, 2)
+                    };
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(preview, "Chat_CodeBlock_Preview_Button");
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(preview,
+                        italian ? "Anteprima isolata del blocco di codice" : "Sandboxed preview of this code block");
+                    string lang = language ?? string.Empty;
+                    preview.Click += (_, _) => CodePreviewHandler?.Invoke(lang, code);
+                    Grid.SetColumn(preview, 1);
+                    header.Children.Add(preview);
+                }
+                stack.Children.Add(header);
             }
 
             var text = new TextBlock

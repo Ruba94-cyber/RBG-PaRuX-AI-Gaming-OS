@@ -15,7 +15,7 @@ namespace PaRuX.Server.Orchestration.Gaming;
 public sealed class XInputShimInstaller
 {
     public static readonly string[] ShimNames = { "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" };
-    private static readonly string[] AntiCheatMarkers =
+    internal static readonly string[] AntiCheatMarkers =
     {
         "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService.exe", "BEService_x64.exe", "BattlEye", "vgk.sys", "EAAntiCheat.GameService.exe",
         "PnkBstrA.exe", "PnkBstrB.exe", "XIGNCODE", "nProtect", "GameGuard",

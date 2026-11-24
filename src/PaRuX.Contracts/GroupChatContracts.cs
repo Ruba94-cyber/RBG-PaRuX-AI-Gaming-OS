@@ -22,6 +22,8 @@ public sealed class GroupChatTurn
 {
     public string Label { get; set; } = string.Empty;
     public string Response { get; set; } = string.Empty;
+    /// <summary>True when an EARLIER speaker was regenerated after this reply was written: it answered the old reply.</summary>
+    public bool Stale { get; set; }
 }
 
 public sealed class GroupChatStatus

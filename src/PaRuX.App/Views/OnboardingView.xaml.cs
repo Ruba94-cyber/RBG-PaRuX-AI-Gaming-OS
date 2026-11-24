@@ -401,79 +401,35 @@ namespace PaRuX.Views
 
         private void RenderComponents(IReadOnlyList<ComponentStatus> components)
         {
-            ComponentsList.Children.Clear();
-            foreach (ComponentStatus component in components)
-            {
-                var card = new StackPanel { Spacing = 6 };
-                var header = new Grid { ColumnSpacing = 8 };
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var title = new TextBlock
+            bool italian = string.Equals(T("en", "it"), "it", StringComparison.Ordinal);
+            IReadOnlyList<OptionalComponentRow> rows = OptionalComponentPolicy.BuildRows(
+                components, new OptionalComponentsContext(StoreEditionPolicy.AllowsExecutableDownloads, italian));
+            OptionalComponentCards.Render(ComponentsList, rows, "Onboarding_OptionalComponent_", italian, _componentsBusy,
+                async (row, button) =>
                 {
-                    Text = component.DisplayName,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    TextWrapping = TextWrapping.Wrap
-                };
-                Grid.SetColumn(title, 0);
-                header.Children.Add(title);
-
-                var ownership = new TextBlock
+                    if (_componentsBusy) return;
+                    ComponentStatus? component = components.FirstOrDefault(c => string.Equals(c.Id, row.Id, StringComparison.OrdinalIgnoreCase));
+                    if (component == null) return;
+                    string id = component.Id;
+                    switch (button)
+                    {
+                        case OptionalComponentButton.DownloadNow: await InstallManagedComponentAsync(component); break;
+                        case OptionalComponentButton.LocateExisting: await LocateComponentAsync(component); break;
+                        case OptionalComponentButton.ForgetLocation:
+                            await RunComponentActionAsync("Forgetting user-managed location…", token => RuntimeManagerClient.Current.RemoveLocationAsync(id, token)); break;
+                        case OptionalComponentButton.Skip:
+                            await RunComponentActionAsync("Skipping " + component.DisplayName + "…", token => RuntimeManagerClient.Current.SkipAsync(id, token)); break;
+                        case OptionalComponentButton.UndoSkip:
+                            await RunComponentActionAsync("Re-enabling setup for " + component.DisplayName + "…", token => RuntimeManagerClient.Current.UnskipAsync(id, token)); break;
+                    }
+                },
+                ex =>
                 {
-                    Text = OwnershipLabel(component.Ownership),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    FontSize = 11,
-                    Opacity = 0.75
-                };
-                Grid.SetColumn(ownership, 1);
-                header.Children.Add(ownership);
-                card.Children.Add(header);
-
-                string state = component.Detected ? component.Health : component.Skipped ? "skipped for now" : "not configured";
-                var detail = new TextBlock
-                {
-                    Text = state + (string.IsNullOrWhiteSpace(component.Version) ? string.Empty : " · " + component.Version),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontSize = 12,
-                    Opacity = 0.82
-                };
-                card.Children.Add(detail);
-
-                if (!string.IsNullOrWhiteSpace(component.Path))
-                    card.Children.Add(new TextBlock { Text = component.Path, TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.68 });
-                if (!string.IsNullOrWhiteSpace(component.ValidationMessage))
-                    card.Children.Add(new TextBlock { Text = component.ValidationMessage, TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.68 });
-
-                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                string id = component.Id;
-
-                if (component.Actions.Contains("install"))
-                    actions.Children.Add(ActionButton("Install with PaRuX", async () => await InstallManagedComponentAsync(component)));
-                if (component.Actions.Contains("locate") || component.Actions.Contains("relocate"))
-                    actions.Children.Add(ActionButton(component.Actions.Contains("relocate") ? "Change location…" : "Locate existing…",
-                        async () => await LocateComponentAsync(component)));
-                if (component.Actions.Contains("remove"))
-                    actions.Children.Add(ActionButton("Forget location", async () =>
-                    {
-                        await RunComponentActionAsync("Forgetting user-managed location…",
-                            token => RuntimeManagerClient.Current.RemoveLocationAsync(id, token));
-                    }));
-                if (component.Actions.Contains("skip"))
-                    actions.Children.Add(ActionButton("Skip for now", async () =>
-                    {
-                        await RunComponentActionAsync("Skipping " + component.DisplayName + "…",
-                            token => RuntimeManagerClient.Current.SkipAsync(id, token));
-                    }));
-                if (component.Actions.Contains("unskip"))
-                    actions.Children.Add(ActionButton("Configure now", async () =>
-                    {
-                        await RunComponentActionAsync("Re-enabling setup for " + component.DisplayName + "…",
-                            token => RuntimeManagerClient.Current.UnskipAsync(id, token));
-                    }));
-
-                if (actions.Children.Count > 0) card.Children.Add(actions);
-                ComponentsList.Children.Add(card);
-            }
+                    Log.Write("Onboarding component action failed: " + ex.Message);
+                    ComponentsStatusText.Text = UserFailureRecoveryMapper.Map(ex, T("Component action failed", "Azione sul componente non riuscita")).FormatStatusLine();
+                    SetComponentsBusy(false, ComponentsStatusText.Text);
+                },
+                allowRemove: false);
         }
 
         private Button ActionButton(string text, Func<Task> action)

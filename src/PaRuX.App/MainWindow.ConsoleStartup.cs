@@ -23,7 +23,8 @@ public sealed partial class MainWindow
         try
         {
             var data = SettingsStore.Current.Data;
-            if (!data.ConsoleStartOnTvWhenPresent) return;   // default: the app starts exactly as before
+            if (data.StartInConsoleMode && await ApplyAlwaysConsoleStartupAsync()) return;   // simple option: no TV, any pad
+            if (!data.ConsoleStartOnTvWhenPresent) return;  // default: the app starts exactly as before
             string targetId = data.ConsoleTargetDisplayId ?? string.Empty;
             bool tvPresent = false;
             if (!string.IsNullOrWhiteSpace(targetId))
@@ -57,14 +58,14 @@ public sealed partial class MainWindow
                         // Preferred Console UI is Playnite Fullscreen + the owner's Aniki theme:
                         // avoid creating the heavy legacy Gaming Home just to cover it immediately.
                         ConsolePlayniteStartResult handoff = await TryStartPlayniteConsoleAsync();
-                        if (handoff == ConsolePlayniteStartResult.Fullscreen)
+                        ConsoleStartFollowUp follow = ConsoleModeReadiness.FollowUp(handoff, alwaysConsole: false);
+                        if (follow == ConsoleStartFollowUp.MinimizePaRuX)
                         {
-                            if (AppWindow.Presenter is OverlappedPresenter overlappedConsole)
-                                overlappedConsole.Minimize();
+                            MinimizeForPlayniteConsole();
                             Log.Write("Console startup: Playnite Fullscreen accepted; PaRuX remains available for AI.");
                             break;
                         }
-                        if (handoff == ConsolePlayniteStartResult.DesktopFallback)
+                        if (follow == ConsoleStartFollowUp.StayOpen)
                         {
                             Log.Write("Console startup: Playnite started Desktop due to display fallback; no native Console takeover.");
                             break;

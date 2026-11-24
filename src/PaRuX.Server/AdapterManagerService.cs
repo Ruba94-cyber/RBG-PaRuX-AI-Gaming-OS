@@ -60,6 +60,8 @@ public sealed class AdapterManagerService
             ? "LoRA"
             : TrainingPrecision.Normalize(request.Precision) == TrainingPrecision.Lora16Bit
                 ? "LoRA-16bit" : "QLoRA";
+        if (request.UseDora && request.Method != TrainingMethod.TtsSft)
+            baseType = baseType.Replace("LoRA", "DoRA", StringComparison.Ordinal);
         return request.Method == TrainingMethod.Sft
             ? baseType
             : baseType + "-" + TrainingMethod.Normalize(request.Method).ToUpperInvariant();

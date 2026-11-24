@@ -433,7 +433,9 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Border x:Name="WorkbookEditPanel" Grid.Row="0" Visibility="Collapsed"
+            <StackPanel Grid.Row="0" Spacing="8">
+                <loc:ChatCodeApprovalCard x:Name="ChatCodeApproval" />
+            <Border x:Name="WorkbookEditPanel" Visibility="Collapsed"
                     AutomationProperties.AutomationId="Chat_WorkbookEdit_Preview"
                     Background="{ThemeResource PaRuXSurfaceCardBrush}" BorderBrush="{ThemeResource PaRuXStrokeBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="12">
@@ -451,6 +453,7 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+            </StackPanel>
 
             <!-- Transient status: never a bare "loading…" string, always paired
                  with a live ring so a five-minute cold model load looks alive. -->
@@ -620,6 +623,23 @@
                             Padding="0"
                             ToolTipService.ToolTip="Generation settings: creativity, reply length and a repeatable seed (default: chosen by PaRuX)" loc:Loc.ItToolTip="Impostazioni di generazione: creatività, lunghezza della risposta e seed ripetibile (predefinito: scelto da PaRuX)">
                             <FontIcon Glyph="&#xE9E9;" FontSize="15" />
+                        </Button>
+                        <Button
+                            x:Name="AppearanceButton"
+                            AutomationProperties.AutomationId="Chat_Appearance_Button"
+                            AutomationProperties.Name="Chat appearance" loc:Loc.ItName="Aspetto della chat"
+                            Click="AppearanceButton_Click"
+                            Visibility="Collapsed"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="{StaticResource PaRuXRadiusMedium}"
+                            Foreground="{ThemeResource PaRuXTextTertiaryBrush}"
+                            VerticalAlignment="Bottom"
+                            Height="36"
+                            Width="36"
+                            Padding="0"
+                            ToolTipService.ToolTip="Chat appearance: colours, font and background (Advanced)" loc:Loc.ItToolTip="Aspetto della chat: colori, carattere e sfondo (Avanzata)">
+                            <FontIcon Glyph="&#xE790;" FontSize="15" />
                         </Button>
                     </StackPanel>
 

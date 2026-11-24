@@ -65,6 +65,10 @@ namespace PaRuX.Models
         /// Null for user turns, for replies that never reached a model, and for conversations saved before this field.</summary>
         public string? ModelId { get; set; }
 
+        /// <summary>Token usage of this reply exactly as the model server reported it. Null when the server reported none
+        /// (external provider, tool-using turn, older chats). Never estimated. Additive to saved conversations.</summary>
+        public PaRuX.Intelligence.ChatTokenUsage? Usage { get; set; }
+
         /// <summary>True when the model was chosen via a manual lock rather than auto routing.</summary>
         public bool ManualLock { get; set; }
 

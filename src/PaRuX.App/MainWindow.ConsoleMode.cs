@@ -290,6 +290,8 @@ public sealed partial class MainWindow
             UpdateConsoleModeButton();
             GameLibraryPage.FocusConsoleHome();
             StartConsoleRawPad();
+            _ = ApplyConsolePowerProfileAsync();
+            _ = ApplyConsoleGameBarBlockAsync();
         }
         catch
         {
@@ -327,6 +329,8 @@ public sealed partial class MainWindow
     private void ExitConsoleMode()
     {
         StopConsoleRawPad();
+        _ = RestoreConsolePowerProfileAsync();
+        _ = RestoreConsoleGameBarBlockAsync();
         AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         _consoleModeActive = false;
         GameLibraryPageIfCreated?.ApplyConsoleMode(false);

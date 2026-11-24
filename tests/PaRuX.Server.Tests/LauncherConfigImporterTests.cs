@@ -154,4 +154,42 @@ public sealed class LauncherConfigImporterTests
         }
         finally { System.IO.File.Delete(path); }
     }
+
+    [Fact]
+    public void Long_press_time_in_range_becomes_the_hold_time()
+    {
+        var r = LauncherConfigImporter.Parse(Sample);
+        Assert.Equal(1000, r.HoldMs);
+        Assert.Contains(r.Imported, s => s.StartsWith("longPressMs"));
+        Assert.DoesNotContain(r.NotImported, s => s.StartsWith("longPressMs"));
+    }
+
+    [Theory]
+    [InlineData("50")]
+    [InlineData("99999")]
+    [InlineData("\"slow\"")]
+    [InlineData("1.5")]
+    public void Out_of_range_or_wrong_type_long_press_is_reported_and_not_applied(string value)
+    {
+        var r = LauncherConfigImporter.Parse("{\"longPressMs\": " + value + "}");
+        Assert.True(r.Parsed);
+        Assert.Null(r.HoldMs);
+        Assert.Contains(r.NotImported, s => s.StartsWith("longPressMs"));
+    }
+
+    [Fact]
+    public void Every_unsupported_legacy_key_is_listed_with_a_reason_and_none_is_dropped_silently()
+    {
+        var r = LauncherConfigImporter.Parse("""
+        { "noFreezeGames": ["a.exe"], "streaming": {"width": 1280}, "desktopMode": {"x": "win"},
+          "buttons": { "capture_assistant": {"action": "desktop_mode"}, "assistant": {"action": "run"} } }
+        """);
+        Assert.True(r.Parsed);
+        Assert.Contains(r.NotImported, s => s.StartsWith("noFreezeGames"));
+        Assert.Contains(r.NotImported, s => s.StartsWith("streaming"));
+        Assert.Contains(r.NotImported, s => s.StartsWith("desktopMode"));
+        Assert.Contains(r.NotImported, s => s.StartsWith("buttons.capture_assistant") && s.Contains("chord"));
+        Assert.Contains(r.NotImported, s => s.StartsWith("buttons.assistant") && s.Contains("never sends keystrokes"));
+        Assert.Empty(r.Bindings);
+    }
 }

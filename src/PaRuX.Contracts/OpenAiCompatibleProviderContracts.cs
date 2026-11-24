@@ -9,6 +9,10 @@ public sealed class OpenAiCompatibleProviderRequest
 {
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>Optional preset id (<c>vllm</c>, <c>ollama</c>, <c>lmstudio</c>) that fills a blank address and name.
+    /// An address typed by the user always wins.</summary>
+    public string? PresetId { get; set; }
+
     /// <summary>Server address such as <c>http://127.0.0.1:8000</c>. A trailing <c>/v1</c> is accepted and stripped.</summary>
     public string BaseUrl { get; set; } = string.Empty;
 

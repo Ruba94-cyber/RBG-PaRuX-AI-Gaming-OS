@@ -8,6 +8,17 @@ namespace PaRuX.Services
 
     public enum ConsolePlayniteStartResult { Unavailable, Fullscreen, DesktopFallback }
 
+    /// <summary>What PaRuX's own window does after a Console-mode start attempt.</summary>
+    public enum ConsoleStartFollowUp
+    {
+        /// <summary>Playnite Fullscreen owns the screen: minimize PaRuX (the AI keeps running, a pad action or Playnite's exit brings it back).</summary>
+        MinimizePaRuX,
+        /// <summary>Leave the PaRuX window as it is (Playnite opened Desktop, or an always-Console start could not start Playnite).</summary>
+        StayOpen,
+        /// <summary>Playnite was not started and the TV start preference is on: use the legacy native Console fallback.</summary>
+        LegacyConsoleFallback
+    }
+
     public sealed record ConsoleReadinessRow(string Id, string Label, ConsoleReadinessState State, string Detail);
 
     /// <summary>
@@ -17,8 +28,38 @@ namespace PaRuX.Services
     public static class ConsoleModeReadiness
     {
         /// <summary>True when starting Console mode should also start Playnite Fullscreen (found, not skipped, has the Fullscreen executable, switch on).</summary>
-        public static bool ShouldStartWithConsole(PlayniteSettingsDto settings, PlayniteComponentDto component) =>
-            settings.ConsoleStartsPlaynite && !settings.Skipped && !component.Skipped && component.Detected && component.FullscreenExe is not null;
+        /// <param name="explicitRequest">The owner asked for Console right now (argument, shortcut, pad action, "always start in Console mode"): the
+        /// "start Playnite with the TV preference" switch is then not consulted, only whether Playnite can actually start.</param>
+        public static bool ShouldStartWithConsole(PlayniteSettingsDto settings, PlayniteComponentDto component, bool explicitRequest = false) =>
+            (explicitRequest || settings.ConsoleStartsPlaynite) && !settings.Skipped && !component.Skipped && component.Detected && component.FullscreenExe is not null;
+
+        /// <summary>
+        /// What PaRuX's own window does once the Console start attempt is classified. Only a confirmed Fullscreen hides PaRuX. A Desktop
+        /// fallback is left alone. When Playnite was not started, the "always start in Console mode" owner stays on the normal AI window
+        /// (never a native TV takeover on a PC monitor); only the TV start preference may use the legacy native Console fallback.
+        /// </summary>
+        public static ConsoleStartFollowUp FollowUp(ConsolePlayniteStartResult result, bool alwaysConsole) => result switch
+        {
+            ConsolePlayniteStartResult.Fullscreen => ConsoleStartFollowUp.MinimizePaRuX,
+            ConsolePlayniteStartResult.DesktopFallback => ConsoleStartFollowUp.StayOpen,
+            _ => alwaysConsole ? ConsoleStartFollowUp.StayOpen : ConsoleStartFollowUp.LegacyConsoleFallback
+        };
+
+        /// <summary>
+        /// A short, honest line when Console mode will start Playnite Fullscreen WITHOUT the Aniki ReMake look (theme missing or not selected),
+        /// or null when nothing needs saying (theme fine, skipped by the owner, or unknown). It never claims the theme loaded.
+        /// </summary>
+        public static string? ThemeAdvice(PlayniteThemeComponentDto? theme, Func<string, string, string> t)
+        {
+            if (theme is null || theme.Skipped) return null;
+            if (!theme.Detected)
+                return t("Aniki ReMake is not installed: Playnite Fullscreen uses its current theme. You can install it in Settings > Console mode.",
+                         "Aniki ReMake non è installato: Playnite Fullscreen usa il suo tema attuale. Puoi installarlo in Impostazioni > Modalità Console.");
+            if (theme.ConfigReadable && !theme.Selected)
+                return t("Aniki ReMake is installed but Playnite Fullscreen uses " + (theme.SelectedTheme ?? "another theme") + ". Select it in Settings > Console mode.",
+                         "Aniki ReMake è installato ma Playnite Fullscreen usa " + (theme.SelectedTheme ?? "un altro tema") + ". Selezionalo in Impostazioni > Modalità Console.");
+            return null;
+        }
 
         /// <summary>
         /// A Console-first handoff is complete only when the Core confirms an actual Fullscreen

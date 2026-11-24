@@ -105,13 +105,15 @@ namespace PaRuX.Services
             // Per-request, explicit approval for Computer Use. Never persisted; the caller sets it only after the user confirmed.
             bool computerUseConsent = false,
             // Core answered a computer-use turn with a handoff: the task text to run in the local Computer Use agent.
-            Action<string>? onComputerUseHandoff = null)
+            Action<string>? onComputerUseHandoff = null,
+            // Real token usage reported by the model server for this reply (never estimated).
+            Action<PaRuX.Intelligence.ChatTokenUsage>? onUsage = null)
         {
             string? interactiveConversationId = TryResolveInteractiveConversationId(history);
             return StreamAsync(history, systemPrompt, onDelta, onSwitchedToUncensored, onRagSources,
                 onSkillSelected, forcedSkillId, onReasoningDelta, interactiveConversationId,
                 preferLowLatency, continueFinalMessage: false, structuredOutput: null, ct,
-                onContextCompacted, forcedModelRoute, onProvenance, computerUseConsent, onComputerUseHandoff);
+                onContextCompacted, forcedModelRoute, onProvenance, computerUseConsent, onComputerUseHandoff, onUsage);
         }
 
         /// <summary>
@@ -154,7 +156,8 @@ namespace PaRuX.Services
             // Per-request, explicit approval for Computer Use. Never persisted; the caller sets it only after the user confirmed.
             bool computerUseConsent = false,
             // Core answered a computer-use turn with a handoff: the task text to run in the local Computer Use agent.
-            Action<string>? onComputerUseHandoff = null)
+            Action<string>? onComputerUseHandoff = null,
+            Action<PaRuX.Intelligence.ChatTokenUsage>? onUsage = null)
         {
             // Capture the exact opaque Project id from the same marker that is about to be
             // stripped/resolved. This is cache-partition metadata only; Project Knowledge itself
@@ -354,6 +357,10 @@ namespace PaRuX.Services
                     if (onSkillSelected != null) onSkillSelected(skillSelected.displayName ?? "General", skillSelected.mode ?? "auto");
                     continue;
                 }
+
+                // Terminal usage/timings frames from the model server. Not consumed: a final content frame may carry both.
+                if (onUsage != null && PaRuX.Intelligence.ChatTokenUsageParser.TryParse(data) is { } usageFrame)
+                    onUsage(usageFrame);
 
                 string? reasoningFragment = ExtractReasoning(data);
                 if (!string.IsNullOrEmpty(reasoningFragment) && onReasoningDelta != null)

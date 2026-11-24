@@ -88,7 +88,7 @@ internal static class McpToolCallAdmission
         }
     }
 
-    private static bool HasDuplicateKeys(JsonElement root)
+    internal static bool HasDuplicateKeys(JsonElement root)
     {
         var pending = new Stack<JsonElement>();
         pending.Push(root);
