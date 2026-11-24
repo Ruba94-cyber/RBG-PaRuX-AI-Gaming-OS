@@ -11,9 +11,11 @@ PaRuX Corporate Lite - COME TESTARLO E DOVE PRENDERE I LOG
    - Solo CPU (se la scheda grafica da' problemi): "Start PaRuX Corporate Lite (CPU only).cmd".
 
 2) COSA ASPETTARSI
-   - Modello principale: Qwen3-4B. Se la RAM libera non basta (Teams, Outlook, browser aperti), PaRuX risponde col
-     modello molto piccolo Qwen3-0.6B invece di rifiutare. Se nemmeno quello entra, il messaggio dice quanta RAM serve e
-     quanta liberarne.
+   - Modello principale: Qwen3-4B. Nel pacchetto c'e' anche un modello molto piccolo, Qwen3-0.6B (piu' veloce, meno
+     preciso sui documenti complessi). ATTENZIONE: il passaggio AUTOMATICO al modello piccolo quando la RAM non basta
+     NON e' ancora attivo in questa versione. Se la RAM libera non basta per il 4B (Teams, Outlook, browser aperti) il
+     messaggio dice quanta RAM serve, quanta ne puo' usare PaRuX e quanta liberarne: in quel caso SELEZIONA a mano
+     "Qwen3-0.6B-Q8_0" dall'elenco dei modelli in Chat e riprova.
    - Ricerca nei documenti: motore semantico multilingue incluso (italiano/inglese), nessun download.
    - Il primo messaggio puo' richiedere 20-60 secondi (carica il modello); poi e' piu' veloce.
 
