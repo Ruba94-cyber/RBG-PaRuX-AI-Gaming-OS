@@ -2536,7 +2536,7 @@ app.MapPost("/api/v1/training/plan", async (
 
     TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
         shape, request.Method, request.BaseModel,
-        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
     QuickTrainingDatasetValidator.VerifiedDataset? verified = null;
     if (request.ValidateEntireDataset && plan.CanStart)
@@ -2568,7 +2568,7 @@ app.MapPost("/api/v1/training/plan", async (
             };
             plan = TrainingRunPlanner.Plan(shape, request.Method, request.BaseModel,
                 request.LoraRank, request.MaxSteps, request.LearningRate,
-                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2630,7 +2630,7 @@ app.MapPost("/api/v1/training/jobs", async (
 
         TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
             shape, request.Method, request.BaseModel,
-            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
         if (!plan.CanStart)
         {

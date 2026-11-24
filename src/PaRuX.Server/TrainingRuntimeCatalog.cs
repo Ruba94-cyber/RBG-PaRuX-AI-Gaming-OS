@@ -54,7 +54,8 @@ internal static class TrainingRuntimeCatalog
         TrainingMethod.ContinuedPretraining,
         TrainingMethod.Grpo,
         TrainingMethod.VisionSft,
-        TrainingMethod.TtsSft
+        TrainingMethod.TtsSft,
+        TrainingMethod.EmbeddingFt
     };
 
     private static readonly string[] CpuMethods = { TrainingMethod.TtsSft };
