@@ -611,8 +611,20 @@ internal sealed class PlayniteThemeService
             string target = c.ThemeFolder;
             string removed = Path.Combine(themes, BackupPrefix + "removed-" + Guid.NewGuid().ToString("N")[..8]);
             string retired = Path.Combine(removed, c.ThemeFolderName);
-            string? backed = st.BackupFolder is not null && IsPaRuXBackup(st.BackupFolder, themes)
-                ? Path.Combine(st.BackupFolder, c.ThemeFolderName) : null;
+            string? backed = null;
+            if (st.BackupFolder is not null)
+            {
+                // A replacement install promises a reversible original. If the journal
+                // points to an untrusted/missing backup, fail closed rather than silently
+                // deleting the managed theme and losing the owner's restore route.
+                if (!IsPaRuXBackup(st.BackupFolder, themes))
+                    return Refused("The recorded backup is outside this Playnite profile; nothing was removed.");
+                backed = Path.Combine(st.BackupFolder, c.ThemeFolderName);
+                if (!Directory.Exists(backed))
+                    return Refused("The original theme backup is missing. Nothing was removed; recover the backup before retrying.");
+            }
+            if (PlayniteRunning())
+                return Refused("Playnite was started during rollback preparation; close it and retry.");
             bool movedManaged = false;
             bool restoredOriginal = false;
             try
@@ -661,6 +673,14 @@ internal sealed class PlayniteThemeService
                 {
                     recovered = false;
                 }
+                // Do not confuse a completed recovery attempt with a verified recovery:
+                // a user or Playnite process can recreate the target while we are
+                // restoring the managed folder. In that case keep the retired copy,
+                // never recursively delete the only surviving managed theme.
+                recovered = recovered &&
+                    (!movedManaged || Directory.Exists(target)) &&
+                    (!restoredOriginal || (backed is not null && Directory.Exists(backed))) &&
+                    !Directory.Exists(retired);
                 if (recovered) TryDelete(removed);
                 return Refused("The theme rollback failed (" + ex.GetType().Name + "). " +
                     (recovered ? "The previous state was restored; nothing was removed." :

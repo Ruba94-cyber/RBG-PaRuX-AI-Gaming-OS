@@ -434,6 +434,47 @@ public sealed class PlayniteThemeServiceTests : IDisposable
         Assert.Equal(ComponentOwnership.USER_MANAGED, svc.Detect().Ownership);
     }
 
+    [Fact]
+    public async Task Rollback_refuses_when_the_original_backup_is_missing_instead_of_deleting_the_replacement()
+    {
+        MakeUserTheme("irreplaceable-user-data");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        string backup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        string rescued = Path.Combine(_root, "backup-rescued-outside-themes");
+        Directory.Move(backup, rescued);
+
+        PlayniteThemeActionResultDto refused = svc.Rollback(consent: true);
+        Assert.False(refused.Ok);
+        Assert.Contains("backup", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Directory.Exists(Path.Combine(Themes, Folder)));
+        Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+        Assert.Equal("irreplaceable-user-data", File.ReadAllText(Path.Combine(rescued, Folder, "mine.txt")));
+
+        // When the backup is returned, the ordinary reversible path still works.
+        Directory.Move(rescued, backup);
+        Assert.Equal("rolled-back", svc.Rollback(consent: true).Outcome);
+        Assert.Equal("irreplaceable-user-data", File.ReadAllText(Path.Combine(Themes, Folder, "mine.txt")));
+    }
+
+    [Fact]
+    public async Task Rollback_never_removes_a_theme_when_backup_journal_points_outside_its_profile()
+    {
+        MakeUserTheme("owner-file");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        string backup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        Assert.True(_store.Update(s => s.BackupFolder = Path.Combine(_root, "untrusted-backup")));
+
+        PlayniteThemeActionResultDto refused = svc.Rollback(consent: true);
+        Assert.False(refused.Ok);
+        Assert.True(Directory.Exists(Path.Combine(Themes, Folder)));
+        Assert.Equal("owner-file", File.ReadAllText(Path.Combine(backup, Folder, "mine.txt")));
+        Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
