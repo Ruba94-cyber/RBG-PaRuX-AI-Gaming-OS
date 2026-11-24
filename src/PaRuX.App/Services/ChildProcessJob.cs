@@ -87,12 +87,28 @@ namespace PaRuX.Services
         }
 
         /// <summary>Best-effort: a failure here means PaRuX Core just isn't tied to this
-        /// process's lifetime, not that starting it should be treated as having failed.</summary>
-        public static void Assign(Process process)
+        /// process's lifetime, not that starting it should be treated as having failed.
+        /// The outcome is returned and traced, never silently dropped; callers do not fail the launch on it.</summary>
+        /// <returns>True only when the process is bound to the kill-on-close job.</returns>
+        public static bool Assign(Process process)
         {
-            if (Handle == IntPtr.Zero) return;
-            try { AssignProcessToJobObject(Handle, process.Handle); }
-            catch { }
+            if (Handle == IntPtr.Zero)
+            {
+                Trace.TraceWarning("PaRuX child-process job object is unavailable; child processes are not bound to this app's lifetime.");
+                return false;
+            }
+            try
+            {
+                if (AssignProcessToJobObject(Handle, process.Handle)) return true;
+                Trace.TraceWarning("PaRuX could not assign pid " + process.Id + " to the child-process job (Win32 error "
+                    + Marshal.GetLastWin32Error() + ").");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning("PaRuX child-process job assignment failed: " + ex.Message);
+                return false;
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using PaRuX.Contracts;
 
 namespace PaRuX.Server;
 
@@ -24,6 +25,10 @@ internal static class ValidatedRemoteConnector
         Func<string, IPAddress, bool> isAllowed, HostResolver? resolver = null)
     {
         HostResolver effectiveResolver = resolver ?? SystemResolver;
+        // UseProxy = false below bypasses the Corporate dead-proxy guard (CorporateNetworkGuard), so Corporate must
+        // refuse non-loopback addresses here, at connect time, whatever the caller's own rule says.
+        Func<string, IPAddress, bool> callerRule = isAllowed;
+        isAllowed = (host, address) => CorporateAllows(CorporateMode.IsActive, address) && callerRule(host, address);
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -34,6 +39,9 @@ internal static class ValidatedRemoteConnector
                 ConnectAsync(context.DnsEndPoint, effectiveResolver, isAllowed, cancellationToken))
         };
     }
+
+    /// <summary>Corporate Lite makes no outbound connection: only loopback may be dialled. Other editions are unaffected.</summary>
+    internal static bool CorporateAllows(bool corporate, IPAddress address) => !corporate || IPAddress.IsLoopback(address);
 
     internal static async Task<Stream> ConnectAsync(
         DnsEndPoint endpoint, HostResolver resolver, Func<string, IPAddress, bool> isAllowed,

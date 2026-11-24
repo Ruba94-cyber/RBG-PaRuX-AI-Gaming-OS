@@ -280,6 +280,66 @@ public sealed class RuntimeProcessIdentityTests : IDisposable
         Assert.True(launched!.WaitForExit(10_000));
     }
 
+    private async Task<(LocalAiProcessManager.RuntimeResult Result, Process? Launched, string PidFile)> LaunchWithRefusedWriteAsync(
+        Func<string, bool> refuses, string? profileToRecord)
+    {
+        string exe = CopyNamedBinary("fake-runtime.exe");
+        string pidFile = Path.Combine(_work, "state", "fake-runtime.pid");
+        Process? launched = null;
+        using IDisposable denied = LocalAiProcessManager.OverrideStateWriteForTests((path, content) =>
+        {
+            if (refuses(path)) throw new UnauthorizedAccessException("Access to the path '" + path + "' is denied.");
+            File.WriteAllText(path, content);
+        });
+        using IDisposable kill = LocalAiProcessManager.OverrideTerminateForTests(process =>
+        {
+            launched = process;
+            process.Kill(entireProcessTree: true);
+            return process.WaitForExit(10_000);
+        });
+        LocalAiProcessManager.RuntimeResult result = await new LocalAiProcessManager(0).LaunchAndWaitAsync(
+            exe, new List<string> { "-n", "120", "127.0.0.1" }, Path.GetDirectoryName(exe)!, profileToRecord, pidFile, null,
+            () => Task.FromResult(true),
+            () => { },
+            TimeSpan.FromSeconds(30),
+            CancellationToken.None);
+        return (result, launched, pidFile);
+    }
+
+    [Fact]
+    public async Task A_launch_whose_pid_record_cannot_be_written_is_stopped_and_reported_clearly()
+    {
+        using IDisposable root = LocalAiPaths.UseRootForTests(Path.Combine(_work, "localai"));
+        using IDisposable state = LocalAiPaths.UseStateDirForTests(Path.Combine(_work, "state"));
+
+        var (result, launched, pidFile) = await LaunchWithRefusedWriteAsync(path => path.EndsWith(".pid", StringComparison.OrdinalIgnoreCase), null);
+
+        Assert.False(result.Success);
+        Assert.Contains("process record", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("stopped", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(launched);
+        Assert.True(launched!.HasExited);
+        Assert.False(File.Exists(pidFile));
+    }
+
+    [Fact]
+    public async Task A_launch_whose_profile_record_cannot_be_written_is_stopped_and_untracked()
+    {
+        using IDisposable root = LocalAiPaths.UseRootForTests(Path.Combine(_work, "localai"));
+        using IDisposable state = LocalAiPaths.UseStateDirForTests(Path.Combine(_work, "state"));
+
+        var (result, launched, pidFile) = await LaunchWithRefusedWriteAsync(
+            path => string.Equals(path, LocalAiPaths.ActiveProfileFile, StringComparison.OrdinalIgnoreCase), "standard");
+
+        Assert.False(result.Success);
+        Assert.Contains("active profile", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(launched);
+        Assert.True(launched!.HasExited);
+        // The runtime is gone, so no PID record may keep claiming it.
+        Assert.False(File.Exists(pidFile));
+        Assert.False(File.Exists(LocalAiPaths.ActiveProfileFile));
+    }
+
     [Fact]
     public void Unload_keeps_the_role_recorded_and_reports_failure_while_the_text_runtime_survives()
     {
