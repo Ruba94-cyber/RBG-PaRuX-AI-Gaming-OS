@@ -190,7 +190,19 @@ function Stage-ZipArtifactGroup([object[]]$Artifacts) {
             $oldMoved = $true
         }
 
-        [System.IO.Directory]::Move($staged, $destination)
+        # A freshly populated directory full of executables is often held open for a moment by the real-time
+        # antivirus scanner (Directory.Move then fails with "access denied"). Retry a bounded number of times
+        # instead of failing the whole package build; never alter the scanner configuration.
+        for ($attempt = 1; $true; $attempt++) {
+            try { [System.IO.Directory]::Move($staged, $destination); break }
+            catch {
+                # PowerShell wraps .NET method failures in MethodInvocationException, so match the inner exception.
+                $inner = if ($_.Exception.InnerException) { $_.Exception.InnerException } else { $_.Exception }
+                if ($attempt -ge 8 -or -not ($inner -is [System.UnauthorizedAccessException] -or $inner -is [System.IO.IOException])) { throw }
+                Write-Host "Staged runtime directory is temporarily locked (attempt $attempt/8): $($_.Exception.Message) Retrying in $($attempt * 3) s..."
+                Start-Sleep -Seconds ($attempt * 3)
+            }
+        }
         if ($oldMoved) {
             Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction Stop
             $oldMoved = $false
