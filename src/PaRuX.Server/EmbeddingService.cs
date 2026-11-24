@@ -60,6 +60,8 @@ public sealed class EmbeddingService : IDisposable, PaRuX.Server.Knowledge.IUnlo
     private InferenceSession? _session;
     private BertTokenizer? _tokenizer;
     private bool _loadAttempted;
+    private int _loadFailures;
+    private long _loadFailedTicks;
 
     public EmbeddingService() : this(DefaultRuntimeRoot)
     {
@@ -82,14 +84,15 @@ public sealed class EmbeddingService : IDisposable, PaRuX.Server.Knowledge.IUnlo
     public EmbeddingEngineStatus GetStatus()
     {
         bool installed = IsInstalled;
+        bool loaded = installed && (CorporateMode.IsActive ? IsLoaded : TryEnsureLoaded());
         return new EmbeddingEngineStatus
         {
             Installed = installed,
             // Corporate status must be observational: checking a UI badge cannot
             // rehydrate an idle ONNX session after low-RAM reclamation.
-            Loaded = installed && (CorporateMode.IsActive ? IsLoaded : TryEnsureLoaded()),
+            Loaded = loaded,
             Dimensions = installed ? Dimensions : null,
-            LastError = installed ? null : SafeRead(LastErrorPath)
+            LastError = loaded ? null : SafeRead(LastErrorPath)  // an installed engine that cannot load must say why
         };
     }
 
@@ -239,7 +242,7 @@ public sealed class EmbeddingService : IDisposable, PaRuX.Server.Knowledge.IUnlo
         lock (_loadGate)
         {
             if (_session != null && _tokenizer != null) return true;
-            if (_loadAttempted) return false; // a corrupt/incompatible download shouldn't be retried on every call
+            if (_loadAttempted && !OnnxLoadRetryPolicy.MayRetry(_loadFailures, _loadFailedTicks, DateTime.UtcNow)) return false; // bounded retry after a cool-down
             _loadAttempted = true;
             try
             {
@@ -247,11 +250,14 @@ public sealed class EmbeddingService : IDisposable, PaRuX.Server.Knowledge.IUnlo
                 var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
                 if (ThreadLimit > 0) { options.IntraOpNumThreads = ThreadLimit; options.InterOpNumThreads = 1; }
                 _session = new InferenceSession(ModelPath, options);
+                _loadFailures = 0;
+                try { File.Delete(LastErrorPath); } catch { /* best effort */ }
                 return true;
             }
             catch (Exception ex)
             {
-                try { File.WriteAllText(LastErrorPath, "Failed to load embedding engine: " + ex.Message); } catch { }
+                _loadFailures++; _loadFailedTicks = DateTime.UtcNow.Ticks;
+                try { File.WriteAllText(LastErrorPath, "Failed to load embedding engine: " + ex.GetType().Name + ": " + ex.Message + (ex.InnerException is null ? "" : " | " + ex.InnerException.Message)); } catch { }
                 _session?.Dispose();
                 _session = null;
                 _tokenizer = null;

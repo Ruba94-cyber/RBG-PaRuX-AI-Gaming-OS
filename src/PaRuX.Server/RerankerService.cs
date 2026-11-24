@@ -54,6 +54,8 @@ public sealed class RerankerService : IDisposable, PaRuX.Server.Knowledge.IUnloa
     private BertTokenizer? _tokenizer;
     private string? _outputName;
     private bool _loadAttempted;
+    private int _loadFailures;
+    private long _loadFailedTicks;
     private long _lastUsedTicks = DateTime.UtcNow.Ticks;
     private int _inFlight;
 
@@ -102,12 +104,13 @@ public sealed class RerankerService : IDisposable, PaRuX.Server.Knowledge.IUnloa
     public RerankerEngineStatus GetStatus()
     {
         bool installed = IsInstalled;
+        bool loaded = installed && (CorporateMode.IsActive ? IsLoaded : TryEnsureLoaded());
         return new RerankerEngineStatus
         {
             Installed = installed,
             // Corporate status must not reload a reclaimed reranker into RAM.
-            Loaded = installed && (CorporateMode.IsActive ? IsLoaded : TryEnsureLoaded()),
-            LastError = installed ? null : SafeRead(LastErrorPath)
+            Loaded = loaded,
+            LastError = loaded ? null : SafeRead(LastErrorPath)  // an installed engine that cannot load must say why
         };
     }
 
@@ -218,7 +221,7 @@ public sealed class RerankerService : IDisposable, PaRuX.Server.Knowledge.IUnloa
         lock (_loadGate)
         {
             if (_session != null && _tokenizer != null) return true;
-            if (_loadAttempted) return false; // a corrupt/incompatible download shouldn't be retried on every call
+            if (_loadAttempted && !OnnxLoadRetryPolicy.MayRetry(_loadFailures, _loadFailedTicks, DateTime.UtcNow)) return false; // bounded retry after a cool-down
             _loadAttempted = true;
             try
             {
@@ -230,7 +233,8 @@ public sealed class RerankerService : IDisposable, PaRuX.Server.Knowledge.IUnloa
             }
             catch (Exception ex)
             {
-                try { File.WriteAllText(LastErrorPath, "Failed to load reranker engine: " + ex.Message); } catch { /* best effort */ }
+                _loadFailures++; _loadFailedTicks = DateTime.UtcNow.Ticks;
+                try { File.WriteAllText(LastErrorPath, "Failed to load reranker engine: " + ex.GetType().Name + ": " + ex.Message + (ex.InnerException is null ? "" : " | " + ex.InnerException.Message)); } catch { /* best effort */ }
                 _session?.Dispose();
                 _session = null;
                 _tokenizer = null;

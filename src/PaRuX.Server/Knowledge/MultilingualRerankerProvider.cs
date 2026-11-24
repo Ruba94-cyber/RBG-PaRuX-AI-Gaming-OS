@@ -25,6 +25,8 @@ public sealed class MultilingualRerankerProvider : IRetrievalRerankerProvider, I
     private UnigramTokenizer? _tokenizer;
     private string[] _inputNames = Array.Empty<string>();
     private bool _loadAttempted;
+    private int _loadFailures;
+    private long _loadFailedTicks;
     private int _inFlight;
     private long _lastUsedTicks = DateTime.UtcNow.Ticks;
 
@@ -133,7 +135,7 @@ public sealed class MultilingualRerankerProvider : IRetrievalRerankerProvider, I
         lock (_gate)
         {
             if (_session != null && _tokenizer != null) return true;
-            if (_loadAttempted) return false;
+            if (_loadAttempted && !OnnxLoadRetryPolicy.MayRetry(_loadFailures, _loadFailedTicks, DateTime.UtcNow)) return false; // bounded retry after a cool-down
             _loadAttempted = true;
             try
             {
@@ -141,11 +143,14 @@ public sealed class MultilingualRerankerProvider : IRetrievalRerankerProvider, I
                 var options = new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2), InterOpNumThreads = 1 };
                 _session = new InferenceSession(ModelPath, options);
                 _inputNames = _session.InputMetadata.Keys.ToArray();
+                _loadFailures = 0;
+                try { File.Delete(LastErrorPath); } catch (IOException) { }
                 return true;
             }
             catch (Exception ex)
             {
-                try { File.WriteAllText(LastErrorPath, "Failed to load the multilingual reranker: " + ex.Message); } catch (IOException) { }
+                _loadFailures++; _loadFailedTicks = DateTime.UtcNow.Ticks;
+                try { File.WriteAllText(LastErrorPath, "Failed to load the multilingual reranker: " + ex.GetType().Name + ": " + ex.Message + (ex.InnerException is null ? "" : " | " + ex.InnerException.Message)); } catch (IOException) { }
                 ReleaseLocked();
                 return false;
             }
