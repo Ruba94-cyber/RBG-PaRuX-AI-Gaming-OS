@@ -218,6 +218,34 @@ public sealed class SmartRouterService : IRoleRouter
                 }
             }
         }
+        // Other editions: the same bounded recovery, only when NOTHING fits (never on a normal prompt). On a busy 16 GB PC
+        // the retrieval ONNX sessions that document search keeps resident can be exactly what makes the only candidate
+        // "not fit", so the first document chat after an indexing run was refused with 503 while the same chat later worked.
+        if (!corporateAuto && includeManagedLibrary && results.Count > 0 &&
+            results.All(c => c.HardwareCompatible != true))
+        {
+            int releasedIdle = 0;
+            try
+            {
+                releasedIdle = Knowledge.KnowledgeContextProvider.Current
+                    ?.ReleaseIdleRetrievalModelsForMemoryPressure() ?? 0;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                System.Diagnostics.Trace.TraceWarning("AUTO retrieval memory reclaim skipped: " + ex.GetType().Name);
+            }
+            if (releasedIdle > 0)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(150), ct).ConfigureAwait(false);
+                foreach (CandidateEvidenceDto c in results)
+                {
+                    HardwareFitEstimate? again = await _runtimeManager.EstimateHardwareFitAsync(c.FilePath, ct).ConfigureAwait(false);
+                    c.HardwareCompatible = ResolveCandidateCompatibility(c.IsCurrentlyLoaded, again?.Compatible);
+                    c.EstimatedNeededMib = again?.NeededMib;
+                    c.AvailableMib = again?.AvailableMib;
+                }
+            }
+        }
         return results;
     }
 
