@@ -4961,7 +4961,7 @@ namespace PaRuX.Views
 
         private async Task PollGroupChatAsync(string id)
         {
-            int renderedTurns = 0;
+            _groupChatLastId = id;
             StatusPollResult<GroupChatStatus> outcome = await BoundedStatusPoller.RunAsync<GroupChatStatus>(
                 async ct => await GroupChatClient.Current.GetStatusAsync(id, ct),
                 status => status.Status is "completed" or "failed" or "cancelled",
@@ -4969,22 +4969,14 @@ namespace PaRuX.Views
                 status =>
                 {
                     GroupChatStageText.Text = status.Stage;
-                    for (; renderedTurns < status.Turns.Count; renderedTurns++)
-                    {
-                        GroupChatTurn turn = status.Turns[renderedTurns];
-                        var block = new StackPanel { Spacing = 4 };
-                        var label = new TextBlock { Text = turn.Label, Style = (Style)Application.Current.Resources["PaRuXBodyStrongTextStyle"] };
-                        var text = new TextBlock { Text = turn.Response, TextWrapping = TextWrapping.Wrap, Style = (Style)Application.Current.Resources["PaRuXBodyTextStyle"] };
-                        block.Children.Add(label);
-                        block.Children.Add(text);
-                        GroupChatResultsList.Children.Add(block);
-                    }
+                    RenderGroupChatTurns(status);
                 },
                 onFailure: null,
                 delay: null,
                 CancellationToken.None);
 
             GroupChatStatus? final = outcome.Last;
+            if (final != null) RenderGroupChatTurns(final);
             GroupChatStageText.Text = outcome.End switch
             {
                 StatusPollEnd.Terminal when final is { Status: "completed" } => T("Done.", "Fatto."),

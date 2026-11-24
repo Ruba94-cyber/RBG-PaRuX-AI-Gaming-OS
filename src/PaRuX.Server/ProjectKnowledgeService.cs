@@ -28,20 +28,26 @@ public sealed class ProjectKnowledgeService
     private readonly ContextGraphStore _graph;
     private readonly TaskStore _tasks;
     private readonly ArtifactStore _artifacts;
+    private readonly ProjectChatSettingsStore? _chatSettings;
+    private readonly IPinnedDocumentSource? _pinnedDocuments;
 
     public ProjectKnowledgeService(
         ProjectManagerService projects,
         ContextGraphStore graph,
         TaskStore tasks,
-        ArtifactStore artifacts)
+        ArtifactStore artifacts,
+        ProjectChatSettingsStore? chatSettings = null,
+        IPinnedDocumentSource? pinnedDocuments = null)
     {
+        _chatSettings = chatSettings;
+        _pinnedDocuments = pinnedDocuments;
         _projects = projects;
         _graph = graph;
         _tasks = tasks;
         _artifacts = artifacts;
     }
 
-    public ProjectKnowledgePackDto Build(string projectId, int maxCharacters = DefaultMaxCharacters)
+    public ProjectKnowledgePackDto Build(string projectId, int maxCharacters = DefaultMaxCharacters, string language = "en")
     {
         if (string.IsNullOrWhiteSpace(projectId))
             throw new InvalidDataException("A Project id is required.");
@@ -85,6 +91,27 @@ public sealed class ProjectKnowledgeService
             .ToList();
 
         (string prompt, bool truncated) = BuildPrompt(project, items, budget);
+
+        // Owner-authored workspace system prompt (safe variables only) and pinned documents (token-budgeted)
+        // come first; they are additional to the character budget of the project evidence below.
+        string systemPromptText = string.Empty;
+        ProjectChatSettingsPreviewDto? chatPreview = null;
+        if (_chatSettings != null)
+        {
+            ProjectChatSettingsDto settings = _chatSettings.Get(project.Id);
+            if (settings.SystemPromptTemplate.Length > 0 || settings.PinnedDocuments.Count > 0)
+            {
+                ProjectChatContext.Result chat = ProjectChatContext.Compose(project, settings, _pinnedDocuments, DateTimeOffset.Now, language);
+                systemPromptText = chat.SystemPromptText;
+                chatPreview = chat.Preview;
+                var head = new StringBuilder();
+                if (chat.SystemPromptText.Length > 0)
+                    head.Append("[WORKSPACE INSTRUCTIONS]\n").Append(chat.SystemPromptText).Append("\n\n");
+                if (chat.PinnedText.Length > 0)
+                    head.Append(chat.PinnedText).Append("\n\n");
+                prompt = head + prompt;
+            }
+        }
         return new ProjectKnowledgePackDto
         {
             ProjectId = project.Id,
@@ -94,7 +121,9 @@ public sealed class ProjectKnowledgeService
             PromptText = prompt,
             UsedCharacters = prompt.Length,
             MaxCharacters = budget,
-            Truncated = truncated
+            Truncated = truncated,
+            SystemPromptText = systemPromptText,
+            ChatSettings = chatPreview
         };
     }
 

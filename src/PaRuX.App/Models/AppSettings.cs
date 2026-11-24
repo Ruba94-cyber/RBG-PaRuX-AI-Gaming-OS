@@ -98,6 +98,8 @@ namespace PaRuX.Models
         public int CapabilityRoutingMirrorVersion { get; set; }
         public List<ScopedRoutingOverrideDto> CapabilityRoutingOverrides { get; set; } = new List<ScopedRoutingOverrideDto>();
         public string ChatModelSelection { get; set; } = "parux-auto:balanced";
+        /// <summary>Validated chat appearance theme JSON (ChatAppearancePolicy.Export); null = PaRuX's own look. Re-validated on every load.</summary>
+        public string? ChatAppearanceThemeJson { get; set; }
         /// <summary>Model files the user starred in the Chat picker (installed file names, never aliases).</summary>
         public List<string> ChatModelFavourites { get; set; } = new List<string>();
         /// <summary>Most recent manual Chat model choices, newest first.</summary>

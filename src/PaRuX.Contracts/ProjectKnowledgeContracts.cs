@@ -30,4 +30,8 @@ public sealed class ProjectKnowledgePackDto
     public int UsedCharacters { get; set; }
     public int MaxCharacters { get; set; }
     public bool Truncated { get; set; }
+    /// <summary>Owner's per-workspace system prompt after safe-variable expansion (already included in <see cref="PromptText"/>). Empty when none.</summary>
+    public string SystemPromptText { get; set; } = string.Empty;
+    /// <summary>Pinned-document plan applied to <see cref="PromptText"/>; null when nothing is pinned.</summary>
+    public ProjectChatSettingsPreviewDto? ChatSettings { get; set; }
 }

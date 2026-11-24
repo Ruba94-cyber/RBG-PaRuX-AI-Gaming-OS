@@ -442,6 +442,7 @@ namespace PaRuX.Views
                 CodeFolderClearButton.Visibility = Visibility.Collapsed;
                 ProfileSelectorScrollViewer.Visibility = Visibility.Collapsed;
             }
+            AppearanceButton.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
             ProfileSelectorPanel.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
             ModelSelector.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
             ModelRouteExplanationButton.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;

@@ -1303,6 +1303,10 @@ public sealed class ChatProxyService
         request.Stream = true;
         using var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, _runtime.ProviderEndpoint + "/v1/chat/completions");
         JsonObject streamPayload = await PrepareProviderPayloadAsync(request, stream: true, cancellationToken).ConfigureAwait(false);
+        // Real per-reply token usage for the chat indicator and /usage: ask the managed local server for
+        // its terminal usage frame. Relayed untouched; the desktop parses it (ChatTokenUsageParser).
+        if (!_runtime.UsesExternalProvider)
+            streamPayload["stream_options"] = new JsonObject { ["include_usage"] = true };
         upstreamRequest.Content = new StringContent(
             streamPayload.ToJsonString(JsonOptions), Encoding.UTF8, "application/json");
         ExternalTextProviderService.ApplyRemoteAuthorization(upstreamRequest, _runtime.ProviderEndpoint);

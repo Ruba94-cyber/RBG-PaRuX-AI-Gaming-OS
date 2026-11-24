@@ -1223,7 +1223,13 @@ namespace PaRuX.Services
                             if (upd != null) upd(reply);
                         },
                         computerUseConsent: computerUseConsent,
-                        onComputerUseHandoff: task => computerUseHandoffTask = string.IsNullOrWhiteSpace(task) ? modalityTask : task).ConfigureAwait(false);
+                        onComputerUseHandoff: task => computerUseHandoffTask = string.IsNullOrWhiteSpace(task) ? modalityTask : task,
+                        onUsage: usage =>
+                        {
+                            reply.Usage = PaRuX.Intelligence.ChatTokenUsageParser.Merge(reply.Usage, usage);
+                            Action<ChatMessage>? upd = MessageUpdated;
+                            if (upd != null) upd(reply);
+                        }).ConfigureAwait(false);
                     break;
                     }
                     catch (ModalityRefusalException refused)

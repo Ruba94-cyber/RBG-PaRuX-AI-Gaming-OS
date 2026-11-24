@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading;
@@ -16,6 +17,38 @@ namespace PaRuX.Services
         private static readonly HttpClient Http = PaRuXServerController.CreateControlPlaneClient(TimeSpan.FromSeconds(30));
         private ProjectKnowledgeClient() { }
 
+        private static string UiLang() =>
+            UiLanguage.Normalize(System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName);
+
+        /// <summary>Per-workspace system prompt template + pinned documents, with the server's own preview (variables expanded, pin budget plan).</summary>
+        public Task<ProjectChatSettingsResponse> GetChatSettingsAsync(string projectId, CancellationToken ct) =>
+            SendAsync<ProjectChatSettingsResponse>(HttpMethod.Get, ChatSettingsPath(projectId) + "?lang=" + UiLang(), null, ct);
+
+        public Task<ProjectChatSettingsResponse> SaveChatSettingsAsync(string projectId, ProjectChatSettingsDto settings, CancellationToken ct) =>
+            SendAsync<ProjectChatSettingsResponse>(HttpMethod.Put, ChatSettingsPath(projectId) + "?lang=" + UiLang(), settings, ct);
+
+        public Task<List<PinnableDocumentDto>> SearchPinnableDocumentsAsync(string projectId, string query, CancellationToken ct) =>
+            SendAsync<List<PinnableDocumentDto>>(HttpMethod.Get, ChatSettingsPath(projectId) + "/documents?q=" + Uri.EscapeDataString(query ?? string.Empty), null, ct);
+
+        private static string ChatSettingsPath(string projectId) =>
+            "/api/v1/projects/" + Uri.EscapeDataString(projectId) + "/chat-settings";
+
+        private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
+        {
+            ServerBootstrap bootstrap = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(method, bootstrap.Endpoint.TrimEnd('/') + path);
+            request.Headers.Add("X-PaRuX-Token", bootstrap.Token);
+            if (body != null) request.Content = JsonContent.Create(body);
+            using HttpResponseMessage response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                throw new LocalAiException("Workspace chat settings request failed (HTTP " + (int)response.StatusCode + "). " + detail);
+            }
+            T? value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false);
+            return value ?? throw new LocalAiException("PaRuX Core returned an empty response.");
+        }
+
         public async Task<ProjectKnowledgePackDto> GetAsync(string projectId, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(projectId))
@@ -24,7 +57,7 @@ namespace PaRuX.Services
             ServerBootstrap bootstrap = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                bootstrap.Endpoint.TrimEnd('/') + "/api/v1/projects/" + Uri.EscapeDataString(projectId) + "/knowledge");
+                bootstrap.Endpoint.TrimEnd('/') + "/api/v1/projects/" + Uri.EscapeDataString(projectId) + "/knowledge?lang=" + UiLang());
             request.Headers.Add("X-PaRuX-Token", bootstrap.Token);
             using HttpResponseMessage response = await Http.SendAsync(request, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)

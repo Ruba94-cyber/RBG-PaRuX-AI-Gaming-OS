@@ -29,6 +29,11 @@ namespace PaRuX.Services
         public Task<GroupChatStatus> GetStatusAsync(string id, CancellationToken ct) =>
             SendAsync<GroupChatStatus>(HttpMethod.Get, "/api/v1/group-chat/" + Uri.EscapeDataString(id), null, ct);
 
+        /// <summary>Regenerates one speaker (0-based) of a finished run; later replies are flagged outdated and the verdict is dropped by Core.</summary>
+        public Task<GroupChatStatus> RegenerateSpeakerAsync(string id, int index, CancellationToken ct) =>
+            SendAsync<GroupChatStatus>(HttpMethod.Post,
+                "/api/v1/group-chat/" + Uri.EscapeDataString(id) + "/regenerate/" + index.ToString(System.Globalization.CultureInfo.InvariantCulture), null, ct);
+
         public Task CancelAsync(string id, CancellationToken ct) =>
             SendNoContentAsync(HttpMethod.Post, "/api/v1/group-chat/" + Uri.EscapeDataString(id) + "/cancel", null, ct);
 
