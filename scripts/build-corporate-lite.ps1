@@ -550,7 +550,7 @@ try {
     foreach ($req in "PaRuX.exe", "PaRuX.Server/PaRuX.Server.exe", "parux.corporate", "Start PaRuX Corporate Lite.cmd", "MANIFEST.json", "LICENSE.txt",
         "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "Start PaRuX Corporate Lite (CPU only).cmd", "README-corporate-lite.txt", "LEGGIMI-LOG.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/(parux\.db|history|attachments|server/)' -or $_ -match '(?i)(^|/)(rag\.db|knowledge\.db|bootstrap\.json)$' }).Count -gt 0) { throw "ZIP contains user data/indexes/tokens." }
-    $expectedModels = if ($NoModel) { 0 } else { 1 }
+    $expectedModels = if ($NoModel) { 0 } elseif ($includeSmallAlternate) { 2 } else { 1 }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' }).Count -ne $expectedModels) { throw "Expected $expectedModels bundled model(s)." }
     if (-not $NoModel -and $rel -notcontains "PaRuXData/models/.corporate-default-model") { throw "Bundled default-model marker missing." }
     foreach ($needed in "model.onnx", "vocab.txt", "tokenizer_config.json", "config.json") {
@@ -608,7 +608,7 @@ try {
     }
     # Verify native CPU engine and starter model bytes from the FINISHED archive, not just the stage.
     $nativePath = @($rel | Where-Object { $_ -match '(?i)^PaRuXData/LocalAI/runtime/llama\.cpp-[^/]+-cpu/llama-server\.exe$' })[0]
-    $modelPathInZip = if ($NoModel) { $null } else { @($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' })[0] }
+    $modelPathInZip = if ($NoModel) { $null } else { @($rel | Where-Object { $_ -ieq ("PaRuXData/models/" + [IO.Path]::GetFileName($ModelPath)) })[0] }
     $shaTool = [Security.Cryptography.SHA256]::Create()
     try {
         $checks = @(@{ entry = $nativePath; expected = $manifest.nativeRuntimeSha256; title = "CPU runtime" },
