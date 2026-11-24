@@ -548,8 +548,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 .ConfigureAwait(false);
             string text = string.Join("\n", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
             if (text.Length == 0) text = "(tool returned no text content)";
-            if (text.Length > MaxCodingAgentResultCharacters)
-                text = text[..MaxCodingAgentResultCharacters] + "\n[external tool result truncated]";
+            text = CapToolResultText(text);
 
             if (result.IsError == true)
             {
@@ -640,20 +639,12 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 return knowledgeResult;
             }
 
-            Dictionary<string, object?> arguments = new();
-            try
+            if (!TryParseToolArguments(argumentsJson, out Dictionary<string, object?> arguments))
             {
-                if (!string.IsNullOrWhiteSpace(argumentsJson))
-                {
-                    using JsonDocument doc = JsonDocument.Parse(argumentsJson);
-                    foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
-                        arguments[prop.Name] = JsonSerializer.Deserialize<object?>(prop.Value.GetRawText());
-                }
-            }
-            catch (JsonException)
-            {
-                // Keep the historical fail-soft behavior, but make the repair burden visible.
+                // No silent fallback to empty arguments: a tool must never run with input the model did not send.
                 argumentParseFallback = true;
+                outcome = "invalid-arguments";
+                throw new ArgumentException("The tool arguments are not a valid JSON object; the call was rejected and the tool was not run.");
             }
 
             foreach (McpServerConfig config in GetConfigs())
@@ -674,8 +665,16 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 // through a call that was resolved by name.
                 if (!ServerAllowsTool(config, toolName)) continue;
 
-                CallToolResult result = await client.CallToolAsync(toolName, arguments, cancellationToken: ct);
-                string text = string.Join("\n", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+                using var callTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                callTimeout.CancelAfter(CodingAgentToolCallTimeout);
+                CallToolResult result;
+                try { result = await client.CallToolAsync(toolName, arguments, cancellationToken: callTimeout.Token); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && callTimeout.IsCancellationRequested)
+                {
+                    outcome = "timeout";
+                    throw new TimeoutException("The MCP tool \"" + toolName + "\" did not answer within " + (int)CodingAgentToolCallTimeout.TotalSeconds + " seconds.");
+                }
+                string text = CapToolResultText(string.Join("\n", result.Content.OfType<TextContentBlock>().Select(b => b.Text)));
                 if (result.IsError == true)
                 {
                     outcome = "tool-error";
@@ -683,7 +682,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 }
 
                 success = true;
-                outcome = argumentParseFallback ? "success-with-argument-fallback" : "success";
+                outcome = "success";
                 return text.Length > 0 ? text : "(tool returned no text content)";
             }
 
@@ -706,6 +705,33 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 (long)Math.Max(0d, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
         }
     }
+
+    /// <summary>Parses model-supplied tool arguments. Empty input means no arguments; anything that
+    /// is not one valid JSON object is rejected instead of being replaced by an empty argument set.</summary>
+    internal static bool TryParseToolArguments(string? argumentsJson, out Dictionary<string, object?> arguments)
+    {
+        arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(argumentsJson)) return true;
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(argumentsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
+            foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
+                arguments[prop.Name] = JsonSerializer.Deserialize<object?>(prop.Value.GetRawText());
+            return true;
+        }
+        catch (JsonException)
+        {
+            arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
+            return false;
+        }
+    }
+
+    /// <summary>Same cap the coding-agent path applies to external tool output.</summary>
+    internal static string CapToolResultText(string text) =>
+        text.Length > MaxCodingAgentResultCharacters
+            ? text[..MaxCodingAgentResultCharacters] + "\n[external tool result truncated]"
+            : text;
 
     private async Task<McpClient> GetOrConnectAsync(McpServerConfig config, CancellationToken ct)
     {
