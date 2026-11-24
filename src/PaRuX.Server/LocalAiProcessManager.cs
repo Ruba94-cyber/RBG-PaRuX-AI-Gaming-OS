@@ -934,12 +934,27 @@ public sealed class LocalAiProcessManager
     /// stop refuses to report it gone.
     /// </summary>
     /// <returns>True when the identity is recorded and the process is tracked.</returns>
-    internal static bool RecordManagedProcess(string pidFile, Process process)
+    internal static bool RecordManagedProcess(string pidFile, Process process) =>
+        RecordManagedProcess(pidFile, process, out _);
+
+    /// <param name="failure">Set when the PID record itself could not be written (read-only or locked state folder).
+    /// The process was then stopped here rather than left running with nothing on disk that names it.</param>
+    internal static bool RecordManagedProcess(string pidFile, Process process, out string? failure)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(pidFile)!);
-        // A record left by an earlier process must never describe this one.
-        TryDelete(IdentityPathFor(pidFile));
-        File.WriteAllText(pidFile, process.Id.ToString());
+        failure = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(pidFile)!);
+            // A record left by an earlier process must never describe this one.
+            TryDelete(IdentityPathFor(pidFile));
+            WriteStateFile(pidFile, process.Id.ToString());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            failure = ex.Message;
+            if (TryTerminate(process, TimeSpan.FromSeconds(15))) ForgetManagedProcess(pidFile);
+            return false;
+        }
         long startTicks = 0;
         try { startTicks = ReadStartTimeUtc(process).Ticks; }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
@@ -956,8 +971,8 @@ public sealed class LocalAiProcessManager
 
     private static bool TryWriteIdentity(string pidFile, ManagedProcessRecord record)
     {
-        try { File.WriteAllText(IdentityPathFor(pidFile), JsonSerializer.Serialize(record)); return true; }
-        catch (IOException) { return false; }
+        try { WriteStateFile(IdentityPathFor(pidFile), JsonSerializer.Serialize(record)); return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
         catch (UnauthorizedAccessException) { return false; }
     }
 
@@ -1078,6 +1093,38 @@ public sealed class LocalAiProcessManager
             Trace.TraceWarning("PaRuX could not read a process identity record: " + ex.GetType().Name);
             return null;
         }
+    }
+
+    /// <summary>Test seam: replaces the PID and profile record writes for the current call context only, so a state
+    /// folder that refuses writes can be shown. Production code never sets it.</summary>
+    private static readonly AsyncLocal<Action<string, string>?> ScopedStateWriteOverride = new();
+
+    internal static IDisposable OverrideStateWriteForTests(Action<string, string> write)
+    {
+        Action<string, string>? previous = ScopedStateWriteOverride.Value;
+        ScopedStateWriteOverride.Value = write;
+        return new StateWriteOverrideScope(previous);
+    }
+
+    private sealed class StateWriteOverrideScope : IDisposable
+    {
+        private readonly Action<string, string>? _previous;
+        private bool _disposed;
+
+        internal StateWriteOverrideScope(Action<string, string>? previous) => _previous = previous;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            ScopedStateWriteOverride.Value = _previous;
+        }
+    }
+
+    private static void WriteStateFile(string path, string content)
+    {
+        if (ScopedStateWriteOverride.Value is { } write) write(path, content);
+        else File.WriteAllText(path, content);
     }
 
     private static string IdentityPathFor(string pidFile) => pidFile + ".identity.json";
@@ -2605,16 +2652,34 @@ public sealed class LocalAiProcessManager
             return new RuntimeResult(false, "Failed to start " + Path.GetFileName(exe) + ": " + ex.Message);
         }
 
-        if (!RecordManagedProcess(pidFile, process))
+        if (!RecordManagedProcess(pidFile, process, out string? recordFailure))
         {
             if (pidFile == LocalAiPaths.TextPidFile) ClearTextLaunchIdentity();
+            if (recordFailure is not null)
+                return new RuntimeResult(false, Path.GetFileName(exe) + " started, but PaRuX could not write its process record (" + recordFailure + ")"
+                    + (process.HasExited
+                        ? ", so it was stopped rather than left running untracked."
+                        : ", and it did not stop. Close it from Task Manager (PID " + process.Id + ") and check that the PaRuX data folder is writable."));
             return new RuntimeResult(false, Path.GetFileName(exe) + (process.HasExited
                 ? " started, but Windows did not report its start time, so it was stopped rather than tracked unverified."
                 : " started, but Windows did not report its start time, and it did not stop. It stays recorded so no runtime starts beside it."));
         }
         // Bound to the verified PID record above, so the launch fence never describes a process PaRuX did not track.
         if (pidFile == LocalAiPaths.TextPidFile) RecordTextLaunchIdentity(process.Id, launchDescriptor);
-        if (profileToRecord != null) File.WriteAllText(LocalAiPaths.ActiveProfileFile, profileToRecord);
+        if (profileToRecord != null)
+        {
+            try { WriteStateFile(LocalAiPaths.ActiveProfileFile, profileToRecord); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The runtime is tracked but its profile cannot be recorded: stop it instead of leaving a runtime the
+                // rest of PaRuX cannot describe. If it will not stop, its PID record stays so a later stop can retry.
+                bool stopped = TryTerminate(process, TimeSpan.FromSeconds(15));
+                if (stopped) ForgetManagedProcess(pidFile);
+                if (pidFile == LocalAiPaths.TextPidFile) ClearTextLaunchIdentity();
+                return new RuntimeResult(false, Path.GetFileName(exe) + " started, but PaRuX could not record its active profile (" + ex.Message + ")"
+                    + (stopped ? ", so it was stopped. Check that the PaRuX data folder is writable." : ", and it did not stop. It stays recorded so no runtime starts beside it."));
+            }
+        }
         if (pidFile == LocalAiPaths.TextPidFile)
         {
             RecordActiveTextRuntime(args);
