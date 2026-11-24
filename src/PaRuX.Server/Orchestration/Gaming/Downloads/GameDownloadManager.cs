@@ -603,10 +603,16 @@ public sealed class GameDownloadManager : IGamingResumable, IDisposable
             e.VerifiedSha256 = sha;
             e.PublishedPath = finalPath;
             e.State = GameDownloadStates.Completed;
-            e.Reason = e.ExpectedSha256 is null ? "Completed. No expected checksum was given, so the file is not verified." : "Completed and verified.";
+            e.Reason = CompletionReason(e.Kind, e.ExpectedSha256);
             e.FinishedUtc = DateTime.UtcNow;
         }
     }
+
+    internal static string CompletionReason(string kind, string? expectedSha256) =>
+        expectedSha256 is not null ? "Completed and verified."
+        : kind is GameDownloadKinds.Magnet or GameDownloadKinds.TorrentFile
+            ? "Completed, but the file is not verified and not installable: a torrent download needs an independently obtained SHA-256, supplied before downloading, to be staged or installed."
+            : "Completed. No expected checksum was given, so the file is not verified.";
 
     // ------------------------------------------------------------------ validation and helpers
 

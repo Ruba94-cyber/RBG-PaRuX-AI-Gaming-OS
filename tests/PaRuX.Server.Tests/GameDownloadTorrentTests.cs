@@ -472,6 +472,28 @@ public sealed class GameDownloadTorrentTests : IDisposable
     }
 
     [Fact]
+    public async Task Torrent_without_expected_hash_is_explicitly_not_installable_and_cannot_be_staged()
+    {
+        _client.Content = Bytes(1_000);
+        var (manager, _) = await MakeEnabled();
+        var job = manager.Enqueue(new(Magnet, _dir, FileName: "game.bin", Kind: GameDownloadKinds.Magnet));
+        var done = await WaitFor(manager, job.Id, GameDownloadStates.Completed);
+        Assert.Contains("not installable", done.Reason);
+        Assert.Contains("SHA-256", done.Reason);
+        string stagedFolder = Path.Combine(_dir, "managed-staging");
+        var stage = new PaRuX.Server.Orchestration.Gaming.GamePackageStageService(
+            () => false, () => CancellationToken.None, stagedFolder);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            manager.StageCompletedAsync(job.Id, stage, CancellationToken.None));
+        Assert.False(Directory.Exists(stagedFolder));
+
+        Assert.Equal("Completed and verified.",
+            GameDownloadManager.CompletionReason(GameDownloadKinds.Magnet, new string('a', 64)));
+        Assert.DoesNotContain("not installable",
+            GameDownloadManager.CompletionReason(GameDownloadKinds.Http, null));
+    }
+
+    [Fact]
     public async Task Client_error_state_fails_the_job_and_removes_it_from_the_client()
     {
         _client.Content = Bytes(1_000);
