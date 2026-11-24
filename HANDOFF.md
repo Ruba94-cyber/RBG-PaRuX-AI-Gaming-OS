@@ -1,3 +1,12 @@
+## 2026-11-24 — VERIFICATION FOLLOW-UP: USER DATA AND MCP INPUT HARDENING
+
+Integrated on `main` since the prior checkpoint:
+- The Playnite return watcher now remains live while **any** detected Playnite frontend or tracked game is active, including a Playnite launched by the owner outside PaRuX. It cannot bring PaRuX forward if another Playnite instance is still running. Tests cover foreground and idle-watcher policy.
+- The streamed MCP loop now rewrites **refused** JSON arguments in the *model transcript* to a valid empty object (`{}`) while giving the model the real rejection reason via its corresponding tool response. Limits on SSE message size and model-generated tool names avoid unbounded buffering; nested duplicate object keys are refused too. Synthetic tests cover unknown/malformed/oversized calls, output ordering and bounded ingestion. This is not a claim of measured reliability against a live model.
+- Critical Aniki recovery fix: **repeated owner-consented updates of an already managed theme preserve the original USER theme backup**, not merely the last PaRuX-managed version. A missing or untrusted backup now refuses both rollback and managed updates; recovery keeps retired data unless reverse moves are verified. Regression tests cover consecutive updates and missing/untrusted originals.
+- Read-only Aniki Helper manifest detection now shows `Attention` rather than `OK` until Playnite itself verifies the extension loaded and is compatible.
+- Windows x64 build, full server xUnit, FlaUI, real Playnite + Aniki Helper + TV/pad, clean Corporate portable, VRAM and local-model tool tests remain **NOT EXECUTED** in this GitHub-only session. Run `tools/validation-runs/verify-main-local.ps1 -FullSuite -SandboxSmoke` locally. Do not create GitHub Actions or publish a release based solely on source inspection.
+
 ## 2026-11-24 — MAINLINE CONTINUATION: SAFE AI TOOLS + PLAYNITE CONSOLE LIFECYCLE
 
 **Integrated directly on `main`, with no new development branch and NO GitHub Actions:**
