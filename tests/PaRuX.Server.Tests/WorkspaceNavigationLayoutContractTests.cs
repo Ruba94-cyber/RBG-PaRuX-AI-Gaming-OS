@@ -23,7 +23,18 @@ public sealed class WorkspaceNavigationLayoutContractTests
         Assert.Equal("Button", footerButton.Name.LocalName);
         Assert.Equal("ConsoleModeButton", (string?)footerButton.Attribute(x + "Name"));
         Assert.Equal("MainWindow_ConsoleMode_Button", (string?)footerButton.Attribute("AutomationProperties.AutomationId"));
-        Assert.Empty(document.Descendants(ui + "NavigationView.FooterMenuItems"));
+        // Settings and Help are pinned in FooterMenuItems so they stay reachable in Advanced at 720 px height,
+        // where the scrolling MenuItems list (workspaces + recent chats) would otherwise push them out of view.
+        XElement footerMenu = Assert.Single(document.Descendants(ui + "NavigationView.FooterMenuItems"));
+        Assert.Equal(new[] { "SettingsNavItem", "HelpNavItem" },
+            footerMenu.Elements(ui + "NavigationViewItem").Select(e => (string?)e.Attribute(x + "Name")).ToArray());
+        Assert.Equal(new[] { "Navigation_Settings_Item", "Navigation_Help_Item" },
+            footerMenu.Elements(ui + "NavigationViewItem").Select(e => (string?)e.Attribute("AutomationProperties.AutomationId")).ToArray());
+        Assert.All(footerMenu.Elements(ui + "NavigationViewItem"), item =>
+        {
+            Assert.Equal("True", (string?)item.Attribute("SelectsOnInvoked"));
+            Assert.NotNull((string?)item.Attribute("Tag"));
+        });
         XElement menuItems = Assert.Single(document.Descendants(ui + "NavigationView.MenuItems"));
         XElement workspaceHeader = Assert.Single(menuItems.Elements(ui + "NavigationViewItemHeader"));
         Assert.Equal("WorkspaceSectionHeader", (string?)workspaceHeader.Attribute(x + "Name"));
@@ -31,7 +42,7 @@ public sealed class WorkspaceNavigationLayoutContractTests
         {
             "ChatNavItem", "CreateNavItem", "ProjectsNavItem", "GameLibraryNavItem", "DocumentSearchNavItem", "ModelHubNavItem", "ModelRoutingNavItem",
             "LifecycleNavItem", "WorkflowNavItem", "ToolsNavItem", "ObservabilityNavItem",
-            "UpdatesNavItem", "RuntimeNavItem", "SettingsNavItem", "HelpNavItem"
+            "UpdatesNavItem", "RuntimeNavItem"
         };
         string[] actualNames = menuItems.Elements(ui + "NavigationViewItem")
             .Select(element => (string?)element.Attribute(x + "Name"))
@@ -51,6 +62,7 @@ public sealed class WorkspaceNavigationLayoutContractTests
         Assert.Contains("NavView.MenuItems.Add(WorkspaceSectionHeader)", shell, StringComparison.Ordinal);
         Assert.Contains("foreach (NavigationViewItem workspaceItem in WorkspaceNavigationItems())", shell, StringComparison.Ordinal);
         Assert.Contains("NavView.MenuItems.Add(workspaceItem)", shell, StringComparison.Ordinal);
+        Assert.Contains("!ReferenceEquals(workspaceItem, SettingsNavItem) && !ReferenceEquals(workspaceItem, HelpNavItem)", shell, StringComparison.Ordinal);
         Assert.Contains("new NavigationViewItemHeader { Content = T(\"Recent\", \"Recenti\") }", shell, StringComparison.Ordinal);
         Assert.Contains("previousSelection ?? (liveConversationItem ?? ChatNavItem)", shell, StringComparison.Ordinal);
     }

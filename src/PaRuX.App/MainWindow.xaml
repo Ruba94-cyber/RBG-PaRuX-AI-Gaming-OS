@@ -142,13 +142,17 @@
                 <NavigationViewItem x:Name="RuntimeNavItem" AutomationProperties.AutomationId="Navigation_Runtime_Item" Content="Runtime" Tag="__runtime__" Visibility="Collapsed" SelectsOnInvoked="True">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE950;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <!-- Settings and Help stay pinned at the bottom of the pane: the workspace/recent list above them scrolls instead, so they never leave the viewport (Advanced at 1280x720). -->
+            <NavigationView.FooterMenuItems>
                 <NavigationViewItem x:Name="SettingsNavItem" AutomationProperties.AutomationId="Navigation_Settings_Item" Content="Settings" loc:Loc.ItContent="Impostazioni" Tag="__settings__" SelectsOnInvoked="True">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="HelpNavItem" AutomationProperties.AutomationId="Navigation_Help_Item" Content="Help" loc:Loc.ItContent="Aiuto" Tag="__help__" SelectsOnInvoked="True">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE897;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-            </NavigationView.MenuItems>
+            </NavigationView.FooterMenuItems>
 
             <NavigationView.PaneHeader>
                 <StackPanel Margin="0,0,12,4" Spacing="{StaticResource PaRuXSpaceXS}">

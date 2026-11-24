@@ -109,9 +109,15 @@ public sealed class FullUiAuditUiTests
                     return true;
                 }
 
+                string[]? onlyPages = Environment.GetEnvironmentVariable("PARUX_AUDIT_PAGES")?
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 foreach (string id in NavIds)
                 {
                     string page = id.Replace("Navigation_", "").Replace("_Item", "");
+                    var navEl = app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId(id));
+                    if (navEl != null)
+                        report.Add($"{tag} {page}: NAV_RECT offscreen={navEl.Properties.IsOffscreen.ValueOrDefault} {navEl.BoundingRectangle} window {app.MainWindow.BoundingRectangle}");
+                    if (onlyPages != null && !onlyPages.Contains(page, StringComparer.OrdinalIgnoreCase)) continue;
                     if (!Select(id)) { report.Add($"{tag} {page}: nav item not visible in {mode} mode"); continue; }
                     Snap(page);
                     if (page == "Help")
@@ -134,13 +140,13 @@ public sealed class FullUiAuditUiTests
                         }
                     }
                 }
-                if (Select("MainWindow_ModeTab_Gaming"))
+                if (onlyPages == null && Select("MainWindow_ModeTab_Gaming"))
                 {
                     Snap("Gaming-Games");
                     if (Select("Navigation_Settings_Item")) Snap("Gaming-Settings");
                     Select("MainWindow_ModeTab_AI");
                 }
-                if (w == geoms[^1].W)
+                if (onlyPages == null && w == geoms[^1].W)
                 {
             // Console mode (full-screen TV surface) last: it takes over the window. No game or Playnite is launched.
             var consoleButton = app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("MainWindow_ConsoleMode_Button"));
