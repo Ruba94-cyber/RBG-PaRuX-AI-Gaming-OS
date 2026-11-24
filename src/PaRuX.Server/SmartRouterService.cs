@@ -164,6 +164,8 @@ public sealed class SmartRouterService : IRoleRouter
                     ? await fitTasks[pathIndex].ConfigureAwait(false)
                     : await _runtimeManager.EstimateHardwareFitAsync(path, ct);
 
+            bool isCurrentlyLoaded = status.ActiveModelPath != null && PathsEqual(status.ActiveModelPath, path)
+                && string.Equals(status.ActiveRole, normalizedRole, StringComparison.OrdinalIgnoreCase);
             results.Add(new CandidateEvidenceDto
             {
                 FilePath = path,
@@ -171,8 +173,7 @@ public sealed class SmartRouterService : IRoleRouter
                 ModelCategory = capability.ModelCategory,
                 ModelCapabilities = intelligence.ModelCapabilities.ToList(),
                 IsCurrentAssignment = currentAssignment != null && PathsEqual(currentAssignment, path),
-                IsCurrentlyLoaded = status.ActiveModelPath != null && PathsEqual(status.ActiveModelPath, path)
-                    && string.Equals(status.ActiveRole, normalizedRole, StringComparison.OrdinalIgnoreCase),
+                IsCurrentlyLoaded = isCurrentlyLoaded,
                 BenchmarkTokensPerSecond = benchmarkByPath.TryGetValue(path, out double tps) ? tps : null,
                 CapabilityScore = capability.OverallEmpiricalScore,
                 RoleCapabilityScore = capability.RoleEmpiricalScore,
@@ -180,7 +181,7 @@ public sealed class SmartRouterService : IRoleRouter
                 ParameterBillions = intelligence.ParameterBillions,
                 IntelligenceEvidence = intelligence.Evidence,
                 SizeBytes = sizeBytes,
-                HardwareCompatible = fit?.Compatible,
+                HardwareCompatible = ResolveCandidateCompatibility(isCurrentlyLoaded, fit?.Compatible),
                 EstimatedNeededMib = fit?.NeededMib,
                 AvailableMib = fit?.AvailableMib
             });
@@ -219,6 +220,15 @@ public sealed class SmartRouterService : IRoleRouter
         }
         return results;
     }
+
+    /// <summary>
+    /// A model that is already resident needs no additional memory to be used. The fit estimate counts memory that
+    /// other applications currently hold against the execution-profile budget, so on a busy PC it can call the
+    /// loaded model "incompatible" and make the router refuse a chat that the running model could answer.
+    /// A resident candidate is therefore compatible; every other candidate keeps the estimate.
+    /// </summary>
+    internal static bool? ResolveCandidateCompatibility(bool isCurrentlyLoaded, bool? estimatedCompatible) =>
+        isCurrentlyLoaded ? true : estimatedCompatible;
 
     private CandidateEvidenceDto GetExactManagedModelEvidence(string role, string path)
     {
