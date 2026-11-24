@@ -391,6 +391,7 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
         Assert.Equal("broken", messages[3]!["tool_call_id"]!.GetValue<string>());
         Assert.Contains("NOT executed", messages[2]!["content"]!.GetValue<string>());
         Assert.Contains("NOT executed", messages[3]!["content"]!.GetValue<string>());
+        Assert.Equal("{}", messages[1]!["tool_calls"]![1]!["function"]!["arguments"]!.GetValue<string>());
         Assert.Equal("I need to retry.", Text(h));
     }
 
@@ -432,6 +433,37 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
         Assert.Contains("NOT executed", response);
         Assert.Contains("64 KiB", response);
         Assert.Equal("Size rejected.", Text(h));
+    }
+
+    [Fact]
+    public async Task Tool_name_streamed_without_bound_causes_failure_before_tool_execution()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "tool-id", new string('a', 129), "{}")),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Single(_requests);
+        Assert.Contains(h.Frames, f => f.Text.Contains("oversized tool name"));
+    }
+
+    [Fact]
+    public async Task Oversized_sse_line_never_reaches_the_tool_executor()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "tool-id", "lookup",
+                JsonSerializer.Serialize(new { payload = new string('a', 530_000) }))),
+            new Step(0, Finish("tool_calls")), new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Single(_requests);
+        Assert.Contains(h.Frames, f => f.Text.Contains("oversized SSE"));
     }
 
     [Fact]

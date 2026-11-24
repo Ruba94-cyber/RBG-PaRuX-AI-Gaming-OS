@@ -670,6 +670,45 @@ public sealed class PlayniteReturnWatchPolicyTests
     }
 
     [Fact]
+    public void User_opened_playnite_stays_observed_beyond_the_idle_budget()
+    {
+        var status = new PlayniteStatusDto();
+        Assert.False(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(null));
+        Assert.False(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(status));
+        status.Session.PlayniteRunning = true;
+        Assert.True(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(status));
+        status.Session.PlayniteRunning = false;
+        status.Component.Running = true;
+        Assert.True(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(status));
+        Assert.False(PlayniteReturnWatchPolicy.ExternalCloseSettled(status, observedRunning: true));
+        status.Component.Running = false;
+        status.Session.TrackedProcessCount = 1;
+        Assert.True(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(status));
+        status.Session.TrackedProcessCount = 0;
+        Assert.False(PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(status));
+        Assert.True(PlayniteReturnWatchPolicy.ExternalCloseSettled(status, observedRunning: true));
+    }
+
+    [Fact]
+    public void A_different_running_playnite_prevents_foreground_return_even_after_owned_close()
+    {
+        var status = new PlayniteStatusDto
+        {
+            Settings = new PlayniteSettingsDto { ReturnToPaRuXOnClose = true },
+            Session = new PlayniteSessionDto { PaRuXLaunchedClosedCounter = 4, PlayniteRunning = true }
+        };
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.OwnedCloseSettled(3, status));
+        status.Session.PlayniteRunning = false;
+        status.Component.Running = true;
+        Assert.False(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.False(PlayniteReturnWatchPolicy.OwnedCloseSettled(3, status));
+        status.Component.Running = false;
+        Assert.True(PlayniteReturnWatchPolicy.ShouldBringForward(3, status));
+        Assert.True(PlayniteReturnWatchPolicy.OwnedCloseSettled(3, status));
+    }
+
+    [Fact]
     public void Return_is_refused_when_disabled_or_counter_unknown_or_unchanged()
     {
         var status = new PlayniteStatusDto

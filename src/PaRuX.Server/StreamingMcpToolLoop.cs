@@ -33,6 +33,8 @@ internal sealed class StreamingMcpToolLoop
     private readonly Func<string, string, CancellationToken, Task<string>> _invokeTool;
     private readonly Func<string, CancellationToken, Task> _writeFrame;
     private const int MaxPendingCallsPerRound = 64;
+    private const int MaxToolNameCharacters = 128;
+    private const int MaxSseLineCharacters = 512 * 1024;
     private readonly int _maxCallsPerRound;
     private readonly int _maxCallsPerTurn;
     private int _toolCallsUsed;
@@ -172,11 +174,13 @@ internal sealed class StreamingMcpToolLoop
             if (i >= roundAllowance)
             {
                 refused[id] = "Tool call skipped: the per-turn tool-call limit was reached.";
+                call["function"]!["arguments"] = "{}"; // tool-call transcript must stay valid JSON
                 continue;
             }
             if (oversizedIds.Contains(id))
             {
                 refused[id] = "Tool call NOT executed: arguments exceeded the 64 KiB model-output limit.";
+                call["function"]!["arguments"] = "{}";
                 continue;
             }
             JsonObject fn = call["function"]!.AsObject();
@@ -186,6 +190,10 @@ internal sealed class StreamingMcpToolLoop
             {
                 refused[id] = "Tool call NOT executed: " + admission.Error +
                     " Retry with an advertised tool name and complete JSON arguments.";
+                // Preserve the explanation in the tool message, not invalid/oversized
+                // arguments in the following provider request. This avoids a second
+                // malformed-tool-request failure before the model can correct itself.
+                fn["arguments"] = "{}";
                 continue;
             }
             fn["arguments"] = admission.ArgumentsJson;
@@ -248,6 +256,12 @@ internal sealed class StreamingMcpToolLoop
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (line.Length > MaxSseLineCharacters)
+                {
+                    turn.Failed = true;
+                    turn.FailureMessage = "The model emitted an oversized SSE message; no tools were executed.";
+                    return turn;
+                }
                 if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
                 string data = line[5..].Trim();
                 if (data.Length == 0) continue;
@@ -292,7 +306,15 @@ internal sealed class StreamingMcpToolLoop
                         if (td["function"] is JsonObject fn)
                         {
                             if (fn["name"] is JsonValue nv && nv.TryGetValue(out string? nm) && !string.IsNullOrEmpty(nm))
+                            {
+                                if (nm.Length > MaxToolNameCharacters - pending.Name.Length)
+                                {
+                                    turn.Failed = true;
+                                    turn.FailureMessage = "The model emitted an oversized tool name; no tools were executed.";
+                                    return turn;
+                                }
                                 pending.Name += nm;
+                            }
                             if (fn["arguments"] is JsonValue av && av.TryGetValue(out string? args) && args is not null &&
                                 !pending.ArgumentsTooLarge)
                             {

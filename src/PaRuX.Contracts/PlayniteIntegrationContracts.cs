@@ -77,6 +77,8 @@ public static class PlayniteReturnWatchPolicy
         current is not null &&
         (current.Settings.ReturnToPaRuXOnClose || forceReturn) &&
         !current.Session.PaRuXLaunchedPlaynite &&
+        !current.Session.PlayniteRunning &&
+        !current.Component.Running &&
         current.Session.TrackedProcessCount == 0 &&
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
 
@@ -89,6 +91,8 @@ public static class PlayniteReturnWatchPolicy
         beforeLaunchCounter.HasValue &&
         current is not null &&
         !current.Session.PaRuXLaunchedPlaynite &&
+        !current.Session.PlayniteRunning &&
+        !current.Component.Running &&
         current.Session.TrackedProcessCount == 0 &&
         current.Session.PaRuXLaunchedClosedCounter > beforeLaunchCounter.Value;
 
@@ -99,7 +103,14 @@ public static class PlayniteReturnWatchPolicy
     public static bool ExternalCloseSettled(PlayniteStatusDto? current, bool observedRunning) =>
         observedRunning && current is not null &&
         !current.Session.PlayniteRunning &&
+        !current.Component.Running &&
         current.Session.TrackedProcessCount == 0;
+
+    /// <summary>Keep watching a long-running user-launched Playnite, not only PaRuX-owned processes.</summary>
+    public static bool HasActiveFrontendOrGames(PlayniteStatusDto? current) =>
+        current is not null &&
+        (current.Session.PaRuXLaunchedPlaynite || current.Session.PlayniteRunning ||
+         current.Component.Running || current.Session.TrackedProcessCount > 0);
 
     /// <summary>
     /// A game can outlive Playnite itself. Do not steal focus while it is running;

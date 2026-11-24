@@ -148,7 +148,9 @@ public sealed partial class MainWindow
                         // instead of stealing focus or timing out after two minutes.
                         if (!PlayniteReturnWatchPolicy.KeepPendingClose(baseline, s, forceReturn))
                             baseline = counter;
-                        idle = s.Session.PaRuXLaunchedPlaynite || s.Session.TrackedProcessCount > 0 ? 0 : idle + 1;
+                        // Keep observing user-owned Playnite too. It must not silently
+                        // time out after two minutes while the player's library is open.
+                        idle = PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(s) ? 0 : idle + 1;
                     }
                     else idle++;
                     await Task.Delay(TimeSpan.FromSeconds(3));
