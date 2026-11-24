@@ -77,7 +77,7 @@ internal sealed class EmailExtractor : StreamExtractor
         if (data.Length == 0 || data.Length > MaxAttachmentBytes) return;
         string safe = new string(Path.GetFileName(name).Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
         if (safe.Length == 0) return;
-        string dir = Path.Combine(Path.GetTempPath(), "parux-att-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(CorporateTempFiles.Root, "parux-att-" + Guid.NewGuid().ToString("N"));
         try
         {
             Directory.CreateDirectory(dir);

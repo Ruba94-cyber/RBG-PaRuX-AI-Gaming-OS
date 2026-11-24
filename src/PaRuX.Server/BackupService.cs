@@ -178,7 +178,7 @@ public sealed class BackupService
             catch (Exception) { unsnapshottable.Add(label); return false; }
         }
 
-        string workDir = Path.Combine(Path.GetTempPath(), "parux-backup-" + Guid.NewGuid().ToString("N"));
+        string workDir = Path.Combine(CorporateTempFiles.Root, "parux-backup-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workDir);
         try
         {
@@ -581,7 +581,7 @@ public sealed class BackupService
         Stream zipContent, CancellationToken ct, bool takeSnapshot, bool allowIncompleteRollbackSnapshot,
         Action<string, IReadOnlyList<string>>? snapshotCreated)
     {
-        string workDir = Path.Combine(Path.GetTempPath(), "parux-restore-" + Guid.NewGuid().ToString("N"));
+        string workDir = Path.Combine(CorporateTempFiles.Root, "parux-restore-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workDir);
         try
         {
