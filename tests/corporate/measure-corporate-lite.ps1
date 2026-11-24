@@ -596,7 +596,7 @@ function Invoke-LowMemoryFallbackStage([string]$stageRoot) {
 while (`$true) {
     `$free = [int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024
     if (`$free -le `$target) { break }
-    `$chunk = [math]::Min(256MB, `$free - `$target)
+    `$chunk = [math]::Min([int64]256MB, [int64](`$free - `$target))
     if (`$chunk -lt 16MB) { break }
     `$a = New-Object byte[] ([int]`$chunk); for (`$i = 0; `$i -lt `$a.Length; `$i += 4096) { `$a[`$i] = 1 }; `$keep.Add(`$a)
 }
@@ -606,6 +606,7 @@ while (-not (Test-Path '$hogStop')) { Start-Sleep -Milliseconds 500 }
         $hog = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", $hogScript) -PassThru -WindowStyle Hidden
         $dl = (Get-Date).AddSeconds(120); while ((Get-Date) -lt $dl -and -not (Test-Path $hogReady)) { Start-Sleep -Milliseconds 500 }
         $stage.available_gib_during_test = [math]::Round(([int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024) / 1GB, 2)
+        if ($stage.available_gib_during_test -gt ($stage.target_available_gib + 1.0)) { throw "The memory-holding helper did not reduce available RAM to the target ($($stage.available_gib_during_test) GB available, target $($stage.target_available_gib) GB): the test is invalid, not a product result." }
 
         $body = @{ model = "local-default"; stream = $false; max_tokens = 24; messages = @(@{ role = "user"; content = "Reply with the single word: ready" }) }
         $r = Api POST "/api/v1/chat/completions" $body 600
