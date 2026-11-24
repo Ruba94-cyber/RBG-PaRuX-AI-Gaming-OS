@@ -11,7 +11,8 @@ using PaRuX.Contracts;
 namespace PaRuX.Services
 {
     public sealed record WebSourceView(string Id, string Url, string Mode, int MaxPages, int MaxDepth, string State, int Pages, string? Error,
-        string? StoppedBecause, int Written, int Unchanged, int Skipped, int Failed, int KeptEdited, int Removed);
+        string? StoppedBecause, int Written, int Unchanged, int Skipped, int Failed, int KeptEdited, int Removed,
+        string Connector = "", string? Notice = null);
 
     public sealed record SearchChoiceView(string Id, string Label, string Description, bool Selected);
 
@@ -38,6 +39,12 @@ namespace PaRuX.Services
 
         public Task<WebSourceView?> AddWebSourceAsync(string url, bool crawl, CancellationToken ct) =>
             SendAsync<WebSourceView>(HttpMethod.Post, "/api/v1/knowledge/web-sources", new { url, mode = crawl ? "crawl" : "page" }, ct);
+
+        /// <summary>Adds a GitHub / YouTube / Confluence source. The token travels only in this request body to the local Core, which stores it encrypted.</summary>
+        public Task<WebSourceView?> AddConnectorSourceAsync(string kind, string target, string? gitRef, string? path, string? language,
+            string? email, string? token, bool includeChildren, CancellationToken ct) =>
+            SendAsync<WebSourceView>(HttpMethod.Post, "/api/v1/knowledge/connectors",
+                new { kind, target, @ref = gitRef, path, language, email, token, includeChildren }, ct);
 
         public Task<WebSourceView?> ResyncAsync(string id, CancellationToken ct) =>
             SendAsync<WebSourceView>(HttpMethod.Post, "/api/v1/knowledge/web-sources/" + Uri.EscapeDataString(id) + "/resync", null, ct);

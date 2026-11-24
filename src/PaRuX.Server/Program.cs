@@ -157,7 +157,10 @@ builder.Services.AddSingleton<PaRuX.Server.Knowledge.WebKnowledgeSources>(sp =>
         folder => ragStore.AddSource(folder).Id,
         id => { ragStore.RemoveSource(id); knowledgeJobs.Remove(id); },
         id => knowledgeJobs.Start(id),
-        offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings));
+        offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings),
+        secrets: new PaRuX.Server.Knowledge.ConnectorSecretStore(ServerState.StateDirectory),
+        internetEnabled: () => sp.GetRequiredService<InternetSettingsService>().GetEnabled(),
+        internetOffToken: () => sp.GetRequiredService<InternetSettingsService>().SwitchOffToken);
 });
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<WebSearchSettingsService>();

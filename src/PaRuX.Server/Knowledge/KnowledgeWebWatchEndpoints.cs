@@ -9,6 +9,19 @@ public sealed class WebSourceRequest
     public int? MaxDepth { get; set; }
 }
 
+/// <summary>An "Add source" request for GitHub / YouTube / Confluence. The token is accepted here only and is stored encrypted; it is never returned.</summary>
+public sealed class ConnectorSourceRequest
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Target { get; set; } = string.Empty;
+    public string? Ref { get; set; }
+    public string? Path { get; set; }
+    public string? Language { get; set; }
+    public string? Email { get; set; }
+    public string? Token { get; set; }
+    public bool IncludeChildren { get; set; }
+}
+
 public sealed class WatchFolderRequest
 {
     public bool Enabled { get; set; }
@@ -35,9 +48,23 @@ public static class KnowledgeWebWatchEndpoints
             { return Results.Problem("The web page folder could not be prepared."); }
         }).RequireDesktopOwner();
 
+        app.MapPost("/api/v1/knowledge/connectors", (ConnectorSourceRequest request, WebKnowledgeSources web) =>
+        {
+            if (request is null) return Results.BadRequest(new { error = "A request body is required." });
+            try { return Results.Accepted(value: web.BeginConnector(request.Kind, request.Target, request.Ref, request.Path, request.Language, request.Email, request.Token, request.IncludeChildren)); }
+            catch (InternetDisabledException ex) { return Results.Json(new { error = ex.Message, code = "internet_off" }, statusCode: StatusCodes.Status403Forbidden); }
+            catch (OfflineBlockedException ex) { return Results.Json(new { error = ex.Message, code = "offline_blocked" }, statusCode: StatusCodes.Status403Forbidden); }
+            catch (UnavailableDuringGamingException ex) { return GamingHardOff.Conflict(ex); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message, code = "invalid_target" }); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return Results.Problem("The source folder could not be prepared."); }
+        }).RequireDesktopOwner();
+
         app.MapPost("/api/v1/knowledge/web-sources/{id}/resync", (string id, WebKnowledgeSources web) =>
         {
             try { return web.Resync(id) is { } info ? Results.Accepted(value: info) : Results.NotFound(new { error = "Web source not found." }); }
+            catch (InternetDisabledException ex) { return Results.Json(new { error = ex.Message, code = "internet_off" }, statusCode: StatusCodes.Status403Forbidden); }
             catch (OfflineBlockedException ex) { return Results.Json(new { error = ex.Message, code = "offline_blocked" }, statusCode: StatusCodes.Status403Forbidden); }
             catch (UnavailableDuringGamingException ex) { return GamingHardOff.Conflict(ex); }
         }).RequireDesktopOwner();
