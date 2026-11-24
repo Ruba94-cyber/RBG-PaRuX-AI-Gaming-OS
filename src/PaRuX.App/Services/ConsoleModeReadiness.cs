@@ -91,7 +91,7 @@ namespace PaRuX.Services
             bool helperFound = theme?.AnikiHelperFoundOnDisk == true;
             rows.Add(new("AnikiHelper", t("Aniki Helper extension", "Estensione Aniki Helper"),
                 theme?.Skipped == true ? ConsoleReadinessState.Skipped :
-                    helperFound ? ConsoleReadinessState.Ok : ConsoleReadinessState.Attention,
+                    ConsoleReadinessState.Attention, // an on-disk manifest does not prove the helper loaded successfully
                 theme?.Skipped == true
                     ? t("theme skipped", "tema saltato")
                     : helperFound

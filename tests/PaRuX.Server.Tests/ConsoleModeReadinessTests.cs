@@ -116,7 +116,7 @@ public sealed class ConsoleModeReadinessTests
 
         Assert.Contains(rows, r => r.Id == "ThemeInstalled" && r.State == ConsoleReadinessState.Ok);
         Assert.Contains(rows, r => r.Id == "ThemeSelected" && r.State == ConsoleReadinessState.Ok);
-        Assert.Contains(rows, r => r.Id == "AnikiHelper" && r.State == ConsoleReadinessState.Ok);
+        Assert.Contains(rows, r => r.Id == "AnikiHelper" && r.State == ConsoleReadinessState.Attention && r.Detail.Contains("manifest found"));
         Assert.Contains(rows, r => r.Id == "Controller" && r.State == ConsoleReadinessState.Ok && r.Detail.Contains("Wireless Controller"));
     }
 }
