@@ -384,6 +384,10 @@ public sealed class LocalRuntimeService
         string normalized = action.Trim().ToLowerInvariant();
         if (normalized == "warmup")
         {
+            // Corporate loads the model lazily on the first chat request (Ensure); the automatic
+            // startup warm-up must not map a multi-GB GGUF on every launch.
+            if (ShouldDeferAutomaticWarmup(CorporateProbeForTests()))
+                return new RuntimeResult(true, "Automatic warm-up skipped: Corporate loads the model on first use.");
             // Unlike an explicit Ensure, startup may quietly skip an unconfigured install.
             // Check before resource admission or stopping another inference engine.
             if (ShouldPreflightAutomaticWarmup(_process.GetMode(), _process.GamingActive)
@@ -450,6 +454,12 @@ public sealed class LocalRuntimeService
         if (result.Success && normalized == "gamestop") ScheduleEagerRestoreAfterGaming();
         return new RuntimeResult(result.Success, result.Message);
     }
+
+    /// <summary>Test seam for the Corporate probe (defaults to the real mode detection).</summary>
+    internal Func<bool> CorporateProbeForTests { get; set; } = () => PaRuX.Contracts.CorporateMode.IsActive;
+
+    /// <summary>Corporate defers model loading to the first chat request; other editions keep warm-up.</summary>
+    internal static bool ShouldDeferAutomaticWarmup(bool corporate) => corporate;
 
     internal static bool ShouldPreflightAutomaticWarmup(string mode, bool gamingActive) =>
         mode != "OFF" && !gamingActive;

@@ -92,12 +92,26 @@ public static class PaRuXDataRoot
             foreach (string root in new[] { current, System.IO.Path.GetDirectoryName(current.TrimEnd(
                 System.IO.Path.DirectorySeparatorChar)) ?? current })
             {
+                string corporateData = System.IO.Path.Combine(root, "PaRuXData");
+                if (!System.IO.Directory.Exists(corporateData) &&
+                    System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)))
+                {
+                    // Corporate invariant: data never leaves the package folder. A fresh ZIP has no
+                    // PaRuXData yet; create it beside the marker, and refuse to start (no %LOCALAPPDATA%
+                    // fallback) if that is impossible.
+                    try { System.IO.Directory.CreateDirectory(corporateData); }
+                    catch (Exception ex)
+                    {
+                        throw new CorporateDataRootUnavailableException(corporateData, ex);
+                    }
+                }
                 if (System.IO.Directory.Exists(System.IO.Path.Combine(root, "PaRuXData")) &&
                     (System.IO.File.Exists(System.IO.Path.Combine(root, PortableMarkerFileName)) ||
                      System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName))))
                     return System.IO.Path.Combine(root, "PaRuXData");
             }
         }
+        catch (CorporateDataRootUnavailableException) { throw; }
         catch (Exception) { /* standard MSI/profile fallback */ }
         return null;
     }
@@ -120,4 +134,13 @@ public static class PaRuXDataRoot
         catch (Exception) { /* ordinary local profile fallback */ }
         return null;
     }
+}
+
+/// <summary>Corporate package whose own PaRuXData folder cannot be created: startup is refused rather
+/// than silently storing data in the user profile.</summary>
+public sealed class CorporateDataRootUnavailableException(string folder, Exception inner)
+    : IOException("The Corporate data folder \"" + folder + "\" cannot be created: " + inner.Message
+        + " Corporate data must stay beside PaRuX; move the folder to a location you can write to.", inner)
+{
+    public string Folder { get; } = folder;
 }

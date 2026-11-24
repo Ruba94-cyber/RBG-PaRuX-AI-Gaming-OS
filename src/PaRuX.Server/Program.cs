@@ -24,6 +24,20 @@ StartupTrace.Mark("main-entered");
 PaRuX.Server.BundledBaselineRuntimeBootstrap.Initialize();
 PaRuX.Contracts.CorporateNetworkGuard.ApplyIfCorporate();   // Corporate Lite: fail closed on any stray outbound HTTP
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+// One Core per data root: a second Core would open the same SQLite files and pid/bootstrap state.
+// Held for the process lifetime (the OS frees it on exit). Nothing else is stopped or killed.
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    IDisposable? coreInstance = SingleInstanceGuard.TryAcquire(SingleInstanceGuard.CoreMutexNameFor(PaRuXDataRoot.Path));
+    if (coreInstance == null)
+    {
+        const string message = "Another PaRuX Core is already running for this data folder; this one will not start.";
+        Console.Error.WriteLine(message);
+        ServerState.TryWriteStartFailure(message);
+        Environment.Exit(1);
+    }
+    AppDomain.CurrentDomain.ProcessExit += (_, _) => coreInstance?.Dispose();
+}
 PaRuX.Server.Gateway.GatewaySettings gatewaySettings = PaRuX.Server.Gateway.GatewaySettings.Load(ServerState.StateDirectory);
 LocalApiServerService.VendorModelDefault = gatewaySettings.VendorModelDefault;
 // The gateway port is bound only when free: another program owning it must not stop PaRuX Core.

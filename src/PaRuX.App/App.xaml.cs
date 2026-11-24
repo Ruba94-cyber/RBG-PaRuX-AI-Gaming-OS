@@ -20,7 +20,8 @@ namespace PaRuX
         /// <summary>Set only by the tray "Exit" path, so window close can mean "hide".</summary>
         public static bool IsShuttingDown { get; private set; }
 
-        private const string SingleInstanceMutexName = "Local\\PaRuX.App.SingleInstance";
+        // Per data root (also in Release): a Corporate folder, a portable copy and an installed PaRuX each own their
+        // own instance, so one edition no longer makes another exit silently. Computed in OnLaunched.
         private static Mutex? _singleInstanceMutex;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -49,6 +50,14 @@ namespace PaRuX
         {
             // "PaRuX.exe --exit" closes the running instance that uses this data folder and returns.
             // Handled before anything else so it never starts a second UI, Core or model.
+            try { _ = AppPaths.PaRuXRoot; }
+            catch (PaRuX.Contracts.CorporateDataRootUnavailableException ex)
+            {
+                // Corporate must never fall back to %LOCALAPPDATA%: explain and stop.
+                ReportStartupFailure(ex);
+                Environment.Exit(1);
+                return;
+            }
             string exitSignalName = PaRuX.Contracts.AppExitSignal.NameFor(AppPaths.PaRuXRoot);
             if (PaRuX.Contracts.AppExitSignal.IsExitRequest(Environment.GetCommandLineArgs()))
             {
@@ -58,7 +67,7 @@ namespace PaRuX
             }
 
             bool createdNew;
-            string mutexName = SingleInstanceMutexName;
+            string mutexName = PaRuX.Contracts.SingleInstanceGuard.AppMutexNameFor(AppPaths.PaRuXRoot);
 #if DEBUG
             string? uiTestDataRoot = Environment.GetEnvironmentVariable("PARUX_DATA_ROOT");
             // PARUX_UI_TEST_ISOLATED is set for every FlaUI-launched instance (PARUX_UI_TESTS only marks
@@ -164,10 +173,26 @@ namespace PaRuX
             catch (Exception ex)
             {
                 Log.Write("FATAL STARTUP: " + ex.GetType().Name + ": " + ex.Message + "\n" + ex);
+                ReportStartupFailure(ex);
                 try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
                 try { _singleInstanceMutex?.Dispose(); } catch { }
                 Environment.Exit(1);
             }
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
+        private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+        /// <summary>The data folder (and therefore Log) may be exactly what failed: write a fallback log to %TEMP% and
+        /// show the reason before exiting, so a startup refusal is never silent.</summary>
+        private static void ReportStartupFailure(Exception ex)
+        {
+            string? root = null;
+            try { root = AppPaths.PaRuXRoot; } catch { }
+            string message = PaRuX.Contracts.StartupFailureReport.BuildMessage(root, ex);
+            PaRuX.Contracts.StartupFailureReport.TryWriteFallbackLog(Path.GetTempPath(), message, ex);
+            try { MessageBox(IntPtr.Zero, message, "PaRuX", 0x00000010 /* MB_ICONERROR */ | 0x00010000 /* MB_SETFOREGROUND */); }
+            catch { }
         }
 
         private static IDisposable? _playSignal;
