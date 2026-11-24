@@ -107,6 +107,17 @@ namespace PaRuX.Services
         public Task<GamingCallResult<JsonElement>> RestorePowerProfileAsync(CancellationToken ct = default) =>
             SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/power-profile/restore", null, ct);
 
+        // ---- Xbox Game Bar block (owner-only Core endpoints; HKCU only, the Core keeps the restore point) ----
+
+        public Task<GamingCallResult<JsonElement>> GetGameBarAsync(CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Get, "/api/v1/gaming/game-bar", null, ct);
+
+        public Task<GamingCallResult<JsonElement>> ApplyGameBarBlockAsync(bool permanent, CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/game-bar/apply", new { allowGameBarChange = true, permanent }, ct);
+
+        public Task<GamingCallResult<JsonElement>> RestoreGameBarAsync(bool includePermanent = false, CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/game-bar/restore", new { includePermanent }, ct);
+
         private static async Task<GamingCallResult<T>> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
         {
             try

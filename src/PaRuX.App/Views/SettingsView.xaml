@@ -1306,6 +1306,13 @@
                         <TextBlock x:Name="ConsolePowerExplanation" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
                             Text="PaRuX only selects a plan that already exists in Windows and puts your previous plan back when Console ends or after a crash. If you change the plan yourself meanwhile, PaRuX leaves your choice alone."
                             loc:Loc.ItText="PaRuX seleziona solo un piano già presente in Windows e rimette il tuo piano precedente quando la Console termina o dopo un arresto anomalo. Se nel frattempo cambi tu il piano, PaRuX rispetta la tua scelta." />
+                        <ToggleSwitch x:Name="GameBarBlockSwitch" Header="Block the Xbox Game Bar" loc:Loc.ItHeader="Blocca la Xbox Game Bar"
+                            IsOn="True" AutomationProperties.AutomationId="Settings_GameBarBlock_Toggle" Toggled="GameBarBlockSwitch_Toggled" />
+                        <ToggleSwitch x:Name="GameBarPermanentSwitch" Header="Keep the block after Console ends (permanent)" loc:Loc.ItHeader="Mantieni il blocco anche dopo la Console (permanente)"
+                            IsOn="False" AutomationProperties.AutomationId="Settings_GameBarBlock_Permanent_Toggle" Toggled="GameBarPermanentSwitch_Toggled" />
+                        <TextBlock x:Name="GameBarBlockExplanation" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="While Console or Playnite Fullscreen is in use, the controller Guide/Xbox button no longer opens the Xbox Game Bar. PaRuX changes only four per-user Windows settings (no administrator rights), saves their previous values and puts them back when Console ends, on exit or after a crash; a value you change yourself meanwhile is left alone. The Win+G shortcut is not covered."
+                            loc:Loc.ItText="Mentre Console o Playnite a schermo intero è in uso, il pulsante Guide/Xbox del controller non apre più la Xbox Game Bar. PaRuX modifica solo quattro impostazioni di Windows per il tuo utente (nessun permesso di amministratore), salva i valori precedenti e li ripristina quando la Console termina, alla chiusura o dopo un arresto anomalo; un valore che cambi tu nel frattempo viene rispettato. La scorciatoia Win+G non è coperta." />
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
                     </StackPanel>
                 </Border>

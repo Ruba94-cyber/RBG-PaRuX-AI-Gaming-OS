@@ -54,6 +54,28 @@ public sealed partial class SettingsView
         if (!ConsolePowerSwitch.IsOn) _ = PlayniteClient.Current.RestorePowerProfileAsync();
     }
 
+    private void GameBarBlockSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        var data = SettingsStore.Current.Data;
+        data.BlockXboxGameBar = GameBarBlockSwitch.IsOn;
+        // The explanation is shown right under this switch, so turning it on here is the owner's explicit consent.
+        if (GameBarBlockSwitch.IsOn) data.GameBarBlockConsentAsked = true;
+        SettingsStore.Current.Save();
+        GameBarPermanentSwitch.IsEnabled = GameBarBlockSwitch.IsOn;
+        // Turning it off puts the previous values back right away, including a permanent block.
+        if (!GameBarBlockSwitch.IsOn) _ = PlayniteClient.Current.RestoreGameBarAsync(includePermanent: true);
+    }
+
+    private void GameBarPermanentSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        SettingsStore.Current.Data.GameBarBlockPermanent = GameBarPermanentSwitch.IsOn;
+        SettingsStore.Current.Save();
+        // Back to temporary: release a permanent block now (it is re-applied for the next Console session).
+        if (!GameBarPermanentSwitch.IsOn) _ = PlayniteClient.Current.RestoreGameBarAsync(includePermanent: true);
+    }
+
     private void ConsolePowerPlanCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
@@ -153,6 +175,15 @@ public sealed partial class SettingsView
             ConsoleAutoReturnHomeSwitch.IsOn =
                 SettingsStore.Current.Data.AutoShowConsoleAfterVerifiedGameExit;
             ConsoleStartOnTvSwitch.IsOn = SettingsStore.Current.Data.ConsoleStartOnTvWhenPresent;
+            var gb = SettingsStore.Current.Data;
+            GameBarBlockSwitch.IsOn = gb.BlockXboxGameBar;
+            GameBarPermanentSwitch.IsOn = gb.GameBarBlockPermanent;
+            GameBarPermanentSwitch.IsEnabled = gb.BlockXboxGameBar;
+            GameBarBlockSwitch.Header = TvT("Block the Xbox Game Bar", "Blocca la Xbox Game Bar");
+            GameBarPermanentSwitch.Header = TvT("Keep the block after Console ends (permanent)", "Mantieni il blocco anche dopo la Console (permanente)");
+            GameBarBlockExplanation.Text = TvT(
+                "While Console or Playnite Fullscreen is in use, the controller Guide/Xbox button no longer opens the Xbox Game Bar. PaRuX changes only four per-user Windows settings (no administrator rights), saves their previous values and puts them back when Console ends, on exit or after a crash; a value you change yourself meanwhile is left alone. The Win+G shortcut is not covered.",
+                "Mentre Console o Playnite a schermo intero è in uso, il pulsante Guide/Xbox del controller non apre più la Xbox Game Bar. PaRuX modifica solo quattro impostazioni di Windows per il tuo utente (nessun permesso di amministratore), salva i valori precedenti e li ripristina quando la Console termina, alla chiusura o dopo un arresto anomalo; un valore che cambi tu nel frattempo viene rispettato. La scorciatoia Win+G non è coperta.");
             ConsoleStartWithoutTvCombo.SelectedIndex =
                 string.Equals(SettingsStore.Current.Data.StartupWithoutTv, "minimized", StringComparison.Ordinal) ? 1 : 0;
         }
