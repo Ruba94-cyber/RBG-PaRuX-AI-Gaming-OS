@@ -24,7 +24,7 @@ namespace PaRuX.Services
         /// <summary>The PaRuX.exe a shortcut can point at, or null with an English reason.</summary>
         public static string? ExecutableOrReason(out string? reason)
         {
-            string? exe = Environment.ProcessPath;
+            string? exe = PaRuX.Contracts.PaRuXDataRoot.LaunchTargetFor(Environment.ProcessPath);
             reason = GameShortcuts.ExecutableProblem(exe);
             return reason is null ? Path.GetFullPath(exe!) : null;
         }

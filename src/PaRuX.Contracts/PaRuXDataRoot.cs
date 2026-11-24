@@ -78,37 +78,96 @@ public static class PaRuXDataRoot
         return System.IO.Path.Combine(localAppData, FolderName);
     }
 
+    /// <summary>Folder name of the application payload inside the layered portable packages
+    /// (PaRuX.exe launcher and PaRuXData sit one level above it).</summary>
+    public const string PackageAppFolderName = "app";
+    private const string DataFolderName = "PaRuXData";
+    /// <summary>The Desktop runs from app\, the Core from app\PaRuX.Server\: the package root is
+    /// at most this many levels above the running program.</summary>
+    internal const int MaxPackageDepth = 3;
+
+    /// <summary>The program folder followed by up to <see cref="MaxPackageDepth"/> ancestors, nearest first.</summary>
+    internal static IEnumerable<string> PackageSearchDirectories(string baseDirectory)
+    {
+        string? current = System.IO.Path.GetFullPath(baseDirectory);
+        for (int level = 0; level <= MaxPackageDepth && !string.IsNullOrEmpty(current); level++)
+        {
+            yield return current;
+            string trimmed = current.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+            current = System.IO.Path.GetDirectoryName(trimmed);
+        }
+    }
+
+    /// <summary>Where the portable data folder sits relative to a directory that carries a marker.
+    /// Legacy ZIPs and the MSI keep PaRuXData beside the marker; the layered package keeps the
+    /// marker in <c>app\</c> and PaRuXData beside <c>app\</c> (the package root).</summary>
+    private static IEnumerable<string> DataFolderCandidates(string markerDirectory)
+    {
+        yield return System.IO.Path.Combine(markerDirectory, DataFolderName);
+        string trimmed = markerDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+        if (string.Equals(System.IO.Path.GetFileName(trimmed), PackageAppFolderName, StringComparison.OrdinalIgnoreCase) &&
+            System.IO.Path.GetDirectoryName(trimmed) is { Length: > 0 } packageRoot)
+            yield return System.IO.Path.Combine(packageRoot, DataFolderName);
+    }
+
+    /// <summary>The program that startup entries, shortcuts and Jump Lists must start. In the layered portable
+    /// packages the running application is <c>app\PaRuX.exe</c> but the visible entry point is the launcher at the
+    /// package root (<c>PaRuX.exe</c>, beside <c>app\</c>): pointing at it keeps the Job Object, the working
+    /// directory and the root layout intact. Anywhere else (MSI, MSIX, development) it is the running program itself.</summary>
+    public static string? LaunchTargetFor(string? processPath)
+    {
+        if (string.IsNullOrWhiteSpace(processPath)) return processPath;
+        try
+        {
+            string full = System.IO.Path.GetFullPath(processPath);
+            string? appDirectory = System.IO.Path.GetDirectoryName(full);
+            if (appDirectory == null ||
+                !string.Equals(System.IO.Path.GetFileName(appDirectory), PackageAppFolderName, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(System.IO.Path.GetFileName(full), "PaRuX.exe", StringComparison.OrdinalIgnoreCase))
+                return processPath;
+            bool layered = System.IO.File.Exists(System.IO.Path.Combine(appDirectory, PortableMarkerFileName)) ||
+                           System.IO.File.Exists(System.IO.Path.Combine(appDirectory, CorporateMode.MarkerFileName));
+            string? packageRoot = System.IO.Path.GetDirectoryName(appDirectory);
+            if (!layered || packageRoot == null) return processPath;
+            string launcher = System.IO.Path.Combine(packageRoot, "PaRuX.exe");
+            return System.IO.File.Exists(launcher) ? launcher : processPath;
+        }
+        catch (Exception) { return processPath; }
+    }
+
     /// <summary>Pure directory boundary for tests and normal executable/server startup.
-    /// The marker must sit adjacent to a real PaRuXData directory. Environment-only
+    /// The marker must sit adjacent to a real PaRuXData directory (or, in the layered package,
+    /// in <c>app\</c> with PaRuXData beside <c>app\</c>). Environment-only
     /// corporate UI tests do not accidentally inherit a sibling directory.</summary>
     /// <summary>Recognizes a physically extracted Standard/Corporate ZIP, from
-    /// the Desktop exe folder or the nested PaRuX.Server Core directory. A marker
-    /// alone is insufficient: PaRuXData must also exist beside it.</summary>
+    /// the Desktop exe folder or the nested PaRuX.Server Core directory, searching up to three
+    /// levels (Core in app\PaRuX.Server\ reaches the package root). A marker
+    /// alone is insufficient: PaRuXData must also exist (Corporate creates it, see below).</summary>
     public static string? FindPortableDataRoot(string baseDirectory)
     {
         try
         {
-            string current = System.IO.Path.GetFullPath(baseDirectory);
-            foreach (string root in new[] { current, System.IO.Path.GetDirectoryName(current.TrimEnd(
-                System.IO.Path.DirectorySeparatorChar)) ?? current })
+            foreach (string root in PackageSearchDirectories(baseDirectory))
             {
-                string corporateData = System.IO.Path.Combine(root, "PaRuXData");
-                if (!System.IO.Directory.Exists(corporateData) &&
-                    System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)))
+                if (System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)) &&
+                    !DataFolderCandidates(root).Any(System.IO.Directory.Exists))
                 {
                     // Corporate invariant: data never leaves the package folder. A fresh ZIP has no
-                    // PaRuXData yet; create it beside the marker, and refuse to start (no %LOCALAPPDATA%
-                    // fallback) if that is impossible.
+                    // PaRuXData yet; create it where the marker says it belongs, and refuse to start
+                    // (no %LOCALAPPDATA% fallback) if that is impossible.
+                    string corporateData = DataFolderCandidates(root).Last();
                     try { System.IO.Directory.CreateDirectory(corporateData); }
                     catch (Exception ex)
                     {
                         throw new CorporateDataRootUnavailableException(corporateData, ex);
                     }
                 }
-                if (System.IO.Directory.Exists(System.IO.Path.Combine(root, "PaRuXData")) &&
-                    (System.IO.File.Exists(System.IO.Path.Combine(root, PortableMarkerFileName)) ||
-                     System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName))))
-                    return System.IO.Path.Combine(root, "PaRuXData");
+                if (System.IO.File.Exists(System.IO.Path.Combine(root, PortableMarkerFileName)) ||
+                    System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)))
+                {
+                    foreach (string data in DataFolderCandidates(root))
+                        if (System.IO.Directory.Exists(data)) return data;
+                }
             }
         }
         catch (CorporateDataRootUnavailableException) { throw; }
@@ -120,15 +179,11 @@ public static class PaRuXDataRoot
     {
         try
         {
-            string current = System.IO.Path.GetFullPath(baseDirectory);
-            foreach (string root in new[] { current, System.IO.Path.GetDirectoryName(current.TrimEnd(
-                System.IO.Path.DirectorySeparatorChar)) ?? current })
+            foreach (string root in PackageSearchDirectories(baseDirectory))
             {
-                if (System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)))
-                {
-                    string data = System.IO.Path.Combine(root, "PaRuXData");
+                if (!System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName))) continue;
+                foreach (string data in DataFolderCandidates(root))
                     if (System.IO.Directory.Exists(data)) return data;
-                }
             }
         }
         catch (Exception) { /* ordinary local profile fallback */ }

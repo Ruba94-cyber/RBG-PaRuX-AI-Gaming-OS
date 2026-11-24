@@ -42,7 +42,7 @@ Then see [model setup in the README](../../README.md#set-up-a-model).
 ## Where your data lives
 
 - MSI: `%LOCALAPPDATA%\PaRuX` (override with the `PARUX_DATA_ROOT` environment variable, which must be an absolute path).
-- Portable and Corporate packages: `PaRuXData` next to the executable.
+- Portable and Corporate packages: `PaRuXData` next to the launcher `PaRuX.exe` (the application itself is in `app`).
 - Microsoft Store (MSIX) edition: the per-package `LocalState` folder.
 
 Back up before uninstalling or changing machines. See [PRIVACY.md](PRIVACY.md).

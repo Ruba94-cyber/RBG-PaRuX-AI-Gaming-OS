@@ -5,9 +5,26 @@ The Portable ZIP runs RBG – PaRuX without installing it. Short name: RBG – P
 ## Use it
 
 1. Extract the ZIP to a writable **NTFS** folder (any drive). Removable FAT/exFAT drives are not certified.
-2. Double-click `PaRuX.exe`. The optional `PaRuX (portable data).cmd` starts the same app with the same data location.
-3. A `parux.portable` marker next to the executable, plus an adjacent `PaRuXData` folder, switches the app into portable mode.
+2. Double-click `PaRuX.exe`. The optional `launchers\PaRuX (portable data).cmd` starts the same app with the same data location.
+3. A `parux.portable` marker in `app\`, plus the `PaRuXData` folder next to `PaRuX.exe`, switches the app into portable mode.
    Chats, settings, models and indexes stay in `PaRuXData`, not in your Windows profile.
+
+### Folder layout
+
+The ZIP root folder holds **one** file, `PaRuX.exe`, and four folders:
+
+```text
+PaRuX\
+  PaRuX.exe                       small launcher, the only visible file (starts app\PaRuX.exe, waits, returns its exit code)
+  app\                            the application: PaRuX.exe, PaRuX.Server\, .NET/WinUI runtime, languages, parux.portable
+  PaRuXData\                      all your data (settings, models, history, indexes)
+  docs\                           README-portable.txt, LICENSE.txt, third-party notices, MANIFEST-portable.json
+  launchers\                      PaRuX (portable data).cmd
+```
+
+The build verifies this and fails if anything else is at the root. `PaRuX.exe --exit` goes through the launcher to the running
+application. Killing the launcher also stops the application. Flat portable folders extracted from older ZIPs keep working;
+for those, update by extracting the new ZIP into a new folder and moving `PaRuXData` into it. MSI and MSIX are not affected.
 
 You can move the extracted folder to another path or drive; the 4.1.0 record shows the app starting healthy after a move with
 `settings.json` byte-identical.
@@ -64,7 +81,7 @@ has no CUDA or media pack, no terminal CLI and no in-app updater.
 
 ## Update
 
-Download the new ZIP, replace the application files, keep `PaRuXData`.
+Download the new ZIP, replace `PaRuX.exe`, `app\`, `docs\` and `launchers\`, keep `PaRuXData`.
 
 ## Limits
 

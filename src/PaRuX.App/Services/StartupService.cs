@@ -16,7 +16,7 @@ namespace PaRuX.Services
         {
             get
             {
-                string? path = Environment.ProcessPath;
+                string? path = PaRuX.Contracts.PaRuXDataRoot.LaunchTargetFor(Environment.ProcessPath);
                 return string.IsNullOrEmpty(path) ? null : path;
             }
         }

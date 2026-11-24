@@ -34,6 +34,7 @@ public sealed class ReleaseSigningAndSplitContractTests
 
     [Theory]
     [InlineData("PaRuX.UpdateHelper")]
+    [InlineData("PaRuX.Launcher")]
     [InlineData("PaRuX.WinMlWorker")]
     public void Helper_executables_carry_company_and_product_metadata(string project)
     {

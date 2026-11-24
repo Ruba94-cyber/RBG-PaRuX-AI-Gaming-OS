@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The visible PaRuX.exe of the layered portable packages (Standard Portable, Corporate Lite):
+        PaRuX.exe  <- this launcher, the only file at the package root
+        app\       <- the real application (app\PaRuX.exe, Core in app\PaRuX.Server\, runtimes, languages)
+    It starts app\PaRuX.exe with the same arguments, waits for it and returns its exit code, and ties the
+    child to a kill-on-close Job Object. No network, no elevation, no console window.
+    Published self-contained, single file, trimmed (NativeAOT needs the C++ toolchain, which is not required here).
+    MSI and MSIX do NOT ship this project: their layout is unchanged.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>PaRuX.Launcher</RootNamespace>
+    <AssemblyName>PaRuX</AssemblyName>
+    <AssemblyTitle>PaRuX</AssemblyTitle>
+    <Product>RBG – PaRuX AI &amp; Gaming OS</Product>
+    <Company>RBG</Company>
+    <Copyright>Copyright © RBG</Copyright>
+    <Description>PaRuX portable launcher</Description>
+    <Version>$(PaRuXProductVersion)</Version>
+    <FileVersion>$(PaRuXProductVersion).0</FileVersion>
+    <AssemblyVersion>$(PaRuXProductVersion).0</AssemblyVersion>
+    <InformationalVersion>$(PaRuXProductVersion)</InformationalVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\PaRuX.App\Assets\parux.ico</ApplicationIcon>
+  </PropertyGroup>
+</Project>
