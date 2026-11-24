@@ -83,12 +83,40 @@ public static class TrainingPrecision
     /// complete model directory, not a LoRA adapter.</summary>
     public const string Full16Bit = "full-16bit";
     public static readonly string[] All = { Qlora4Bit, Lora16Bit, Full16Bit };
+    /// <summary>Recognised only so it can be refused with a reason. It is NOT in <see cref="All"/>.</summary>
+    public const string Fp8 = "fp8";
+
+    public const string Fp8RefusalReason =
+        "FP8 training is not available in PaRuX: it needs an Ada/Hopper/Blackwell GPU (compute capability 8.9 or newer) "
+        + "plus a validated FP8 training runner, and PaRuX has neither verified that runner nor benchmarked it. "
+        + "Use QLoRA 4-bit, LoRA 16-bit or full 16-bit fine-tuning.";
+
     public static string Normalize(string? value)
     {
         string precision = string.IsNullOrWhiteSpace(value) ? Qlora4Bit : value.Trim().ToLowerInvariant();
+        if (string.Equals(precision, Fp8, StringComparison.Ordinal))
+            throw new InvalidDataException(Fp8RefusalReason);
         if (!All.Contains(precision, StringComparer.Ordinal))
             throw new InvalidDataException("Unsupported training precision: " + precision + ".");
         return precision;
+    }
+}
+
+/// <summary>GRPO importance-sampling granularity. <c>sequence</c> is GSPO (Group Sequence Policy Optimization):
+/// the importance ratio is computed per sequence instead of per token. It is available only when the installed
+/// TRL exposes <c>importance_sampling_level</c>; the runner fails with a clear error otherwise.</summary>
+public static class GrpoImportanceSampling
+{
+    public const string Token = "token";
+    public const string Sequence = "sequence";
+    public static readonly string[] All = { Token, Sequence };
+
+    public static string Normalize(string? value)
+    {
+        string normalized = string.IsNullOrWhiteSpace(value) ? Token : value.Trim().ToLowerInvariant();
+        if (!All.Contains(normalized, StringComparer.Ordinal))
+            throw new InvalidDataException("Unknown GRPO importance sampling level. Known levels: " + string.Join(", ", All) + ".");
+        return normalized;
     }
 }
 
@@ -160,6 +188,8 @@ public sealed class TrainingJobRequest
     // not inject Python/code into the managed runner.
     public string GrpoRewardMode { get; set; } = Contracts.GrpoRewardMode.ExactReference;
     public int GrpoGenerations { get; set; } = 4;
+    /// <summary>"token" (default GRPO) or "sequence" (GSPO).</summary>
+    public string GrpoImportanceSampling { get; set; } = Contracts.GrpoImportanceSampling.Token;
 
     // Generic field names are configurable only as JSON property names, never expressions/scripts.
     public string TextField { get; set; } = "text";

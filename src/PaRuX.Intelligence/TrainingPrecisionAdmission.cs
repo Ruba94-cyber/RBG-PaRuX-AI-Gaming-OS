@@ -20,6 +20,12 @@ public static class TrainingPrecisionAdmission
     public static double FullFineTuneGib(double billionParameters) =>
         Math.Max(0, billionParameters) * 6.0 * 1e9 / (1024d * 1024 * 1024) + 1.5;
 
+    /// <summary>Kept identical to <c>TrainingPrecision.Fp8RefusalReason</c> in Contracts (a test pins both).</summary>
+    public const string Fp8RefusalReason =
+        "FP8 training is not available in PaRuX: it needs an Ada/Hopper/Blackwell GPU (compute capability 8.9 or newer) "
+        + "plus a validated FP8 training runner, and PaRuX has neither verified that runner nor benchmarked it. "
+        + "Use QLoRA 4-bit, LoRA 16-bit or full 16-bit fine-tuning.";
+
     public static bool LooksPrequantized(string? baseModelId) =>
         !string.IsNullOrWhiteSpace(baseModelId)
         && baseModelId.Contains("4bit", StringComparison.OrdinalIgnoreCase);
@@ -27,6 +33,8 @@ public static class TrainingPrecisionAdmission
     /// <summary>A blocking reason, or null when the combination is admitted.</summary>
     public static string? Refusal(string method, string precision, string? baseModelId, bool useDora)
     {
+        if (string.Equals(precision, "fp8", StringComparison.Ordinal))
+            return Fp8RefusalReason;
         if (precision == "full-16bit")
         {
             if (!FullFineTuneMethods.Contains(method, StringComparer.Ordinal))

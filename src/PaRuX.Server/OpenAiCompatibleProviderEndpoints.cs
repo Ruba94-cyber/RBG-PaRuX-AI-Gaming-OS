@@ -16,6 +16,8 @@ public static class OpenAiCompatibleProviderEndpoints
         app.MapPut("/api/v1/ai/openai-compatible", (OpenAiCompatibleProviderRequest request, OpenAiCompatibleProviderService provider) =>
         {
             if (request is null) return Results.BadRequest(new { error = "A request body is required." });
+            if (!OpenAiCompatibleProviderPresets.TryApply(request, out string? presetError))
+                return Results.BadRequest(new { error = presetError });
             try { return Results.Ok(provider.Save(request)); }
             catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
@@ -31,6 +33,8 @@ public static class OpenAiCompatibleProviderEndpoints
         app.MapPost("/api/v1/ai/openai-compatible/test", async (
             OpenAiCompatibleProviderRequest? request, OpenAiCompatibleProviderService provider, CancellationToken ct) =>
         {
+            if (request != null && !OpenAiCompatibleProviderPresets.TryApply(request, out string? presetError))
+                return Results.BadRequest(new { error = presetError });
             try { return Results.Ok(await provider.TestAsync(request, ct)); }
             catch (OperationCanceledException) { return Results.StatusCode(499); }
         }).RequireDesktopOwner();

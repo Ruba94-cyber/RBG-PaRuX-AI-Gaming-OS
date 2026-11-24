@@ -788,3 +788,7 @@ DENY POST /api/v1/gaming/power-profile/restore
 DENY GET /api/v1/gaming/game-bar
 DENY POST /api/v1/gaming/game-bar/apply
 DENY POST /api/v1/gaming/game-bar/restore
+DENY GET /api/v1/ai/openai-compatible/presets
+DENY POST /api/v1/datasets/document-recipe
+DENY POST /api/v1/lifecycle/imatrix
+DENY POST /api/v1/training/export/verify
