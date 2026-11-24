@@ -785,3 +785,6 @@ DENY POST /api/v1/reranker/multilingual/engine/install
 DENY GET /api/v1/gaming/power-profile
 DENY POST /api/v1/gaming/power-profile/apply
 DENY POST /api/v1/gaming/power-profile/restore
+DENY GET /api/v1/gaming/game-bar
+DENY POST /api/v1/gaming/game-bar/apply
+DENY POST /api/v1/gaming/game-bar/restore

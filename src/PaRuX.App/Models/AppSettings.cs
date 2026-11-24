@@ -100,6 +100,14 @@ namespace PaRuX.Models
         public bool ConsolePowerProfileEnabled { get; set; } = false;
         public string ConsolePowerPlanId { get; set; } = string.Empty;
 
+        /// <summary>Block the Xbox Game Bar (controller Guide button, startup panel, Game DVR capture) for this Windows user while Console
+        /// or a PaRuX-started Playnite Fullscreen is in use. On by default but only applied after <see cref="GameBarBlockConsentAsked"/>
+        /// (one consent dialog, or turning the Settings switch on). The Core keeps the restore point.</summary>
+        public bool BlockXboxGameBar { get; set; } = true;
+        public bool GameBarBlockConsentAsked { get; set; } = false;
+        /// <summary>Keep the block after Console ends (until the owner turns it off). Off by default.</summary>
+        public bool GameBarBlockPermanent { get; set; } = false;
+
         public int ChatRoutingMirrorVersion { get; set; }
         public int CapabilityRoutingMirrorVersion { get; set; }
         public List<ScopedRoutingOverrideDto> CapabilityRoutingOverrides { get; set; } = new List<ScopedRoutingOverrideDto>();

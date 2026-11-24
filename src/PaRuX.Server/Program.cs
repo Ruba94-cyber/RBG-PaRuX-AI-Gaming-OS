@@ -389,6 +389,9 @@ builder.Services.AddSingleton(sp => new StreamingModeService(
 builder.Services.AddSingleton<IPowerPlanApi, WindowsPowerPlanApi>();
 builder.Services.AddSingleton(sp => new PowerProfileService(sp.GetRequiredService<IPowerPlanApi>(),
     Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "power-profile-journal.json")));
+builder.Services.AddSingleton<IGameBarRegistry, WindowsGameBarRegistry>();
+builder.Services.AddSingleton(sp => new GameBarSuppressionService(sp.GetRequiredService<IGameBarRegistry>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "game-bar-journal.json")));
 builder.Services.AddSingleton<GgufQuantizeService>();
 builder.Services.AddSingleton<GameTitleStore>();
 builder.Services.AddSingleton<GameLaunchProfileStore>();
@@ -4330,6 +4333,12 @@ if (!app.Environment.IsEnvironment("Testing"))
     _ = StreamingStartupRecovery.RunAsync(app.Services.GetRequiredService<StreamingModeService>(), app.Logger, StreamingStartupRecovery.DefaultTimeout);
     // A Console power plan a crash left behind is put back (never overriding a plan the owner chose meanwhile).
     PowerProfileStartupRecovery.Run(app.Services.GetRequiredService<PowerProfileService>(), app.Logger);
+    GameBarStartupRecovery.Run(app.Services.GetRequiredService<GameBarSuppressionService>(), app.Logger);
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<GameBarSuppressionService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Xbox Game Bar settings could not be restored at shutdown; the restore point stays recorded."); }
+    });
     app.Lifetime.ApplicationStopping.Register(() =>
     {
         try { app.Services.GetRequiredService<PowerProfileService>().Restore(); }

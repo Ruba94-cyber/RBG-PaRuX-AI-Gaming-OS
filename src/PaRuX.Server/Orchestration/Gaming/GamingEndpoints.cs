@@ -74,6 +74,7 @@ public static class GamingEndpoints
     public static void MapGamingEndpoints(this WebApplication app)
     {
         PowerProfileEndpoints.Map(app);
+        GameBarEndpoints.Map(app);
         StreamingEndpoints.Map(app,
             () => app.Services.GetRequiredService<LocalRuntimeService>().GamingMode,
             () => app.Services.GetRequiredService<GamingDisplayModeService>().Status().Pending);
