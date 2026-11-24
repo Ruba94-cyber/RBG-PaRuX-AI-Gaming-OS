@@ -249,6 +249,7 @@ internal sealed class StreamingMcpToolLoop
         var turn = new TurnResult();
         var calls = new SortedDictionary<int, PendingToolCall>();
         bool sawDone = false, sawFinish = false;
+        string? finalFinishReason = null;
         try
         {
             await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -281,7 +282,8 @@ internal sealed class StreamingMcpToolLoop
 
                 JsonNode? choice = (chunk?["choices"] as JsonArray) is { Count: > 0 } choices ? choices[0] : null;
                 JsonObject? delta = choice?["delta"] as JsonObject;
-                bool hasFinish = choice?["finish_reason"] is JsonValue fr && fr.GetValueKind() == JsonValueKind.String;
+                string? finishReason = StringOf(choice?["finish_reason"]);
+                bool hasFinish = finishReason is not null;
                 bool hasToolDelta = false;
 
                 if (delta?["tool_calls"] is JsonArray toolDeltas)
@@ -290,7 +292,12 @@ internal sealed class StreamingMcpToolLoop
                     foreach (JsonNode? tdNode in toolDeltas)
                     {
                         if (tdNode is not JsonObject td) continue;
-                        int idx = td["index"] is JsonValue iv && iv.TryGetValue(out int parsedIndex) ? parsedIndex : 0;
+                        if (td["index"] is not JsonValue iv || !iv.TryGetValue(out int idx) || idx < 0)
+                        {
+                            turn.Failed = true;
+                            turn.FailureMessage = "The model emitted a tool call without a valid index; no tools were executed.";
+                            return turn;
+                        }
                         if (!calls.TryGetValue(idx, out PendingToolCall? pending))
                         {
                             if (calls.Count >= MaxPendingCallsPerRound)
@@ -335,7 +342,11 @@ internal sealed class StreamingMcpToolLoop
                 string? reasoning = StringOf(delta?["reasoning_content"]);
                 if (!string.IsNullOrEmpty(content)) turn.Content.Append(content);
                 if (!string.IsNullOrEmpty(reasoning)) turn.Reasoning.Append(reasoning);
-                if (hasFinish) sawFinish = true;
+                if (hasFinish)
+                {
+                    sawFinish = true;
+                    finalFinishReason = finishReason;
+                }
 
                 bool turnHasTools = calls.Count > 0;
                 if (hasToolDelta && string.IsNullOrEmpty(content) && string.IsNullOrEmpty(reasoning) && !hasFinish)
@@ -367,6 +378,21 @@ internal sealed class StreamingMcpToolLoop
             return turn;
         }
 
+        // A bare [DONE] or a text/length finish marker does not commit pending
+        // side-effecting calls. Only the provider's explicit "tool_calls"
+        // finish_reason authorizes this turn's tool batch.
+        if (toolsAllowed && calls.Count > 0 && finalFinishReason != "tool_calls")
+        {
+            turn.Failed = true;
+            turn.FailureMessage = "The provider ended a tool turn without a tool_calls finish marker; no tools were executed.";
+            return turn;
+        }
+        if (toolsAllowed && calls.Count == 0 && finalFinishReason == "tool_calls")
+        {
+            turn.Failed = true;
+            turn.FailureMessage = "The provider declared tool_calls but sent no tool calls; no tools were executed.";
+            return turn;
+        }
         if (toolsAllowed) foreach (PendingToolCall call in calls.Values) turn.ToolCalls.Add(call);
         return turn;
     }

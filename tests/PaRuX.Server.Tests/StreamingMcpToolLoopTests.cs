@@ -480,6 +480,69 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Bare_done_after_pending_tool_call_does_not_execute_incomplete_turn()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "incomplete", "lookup", "{}")),
+            new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Single(_requests);
+        Assert.Contains(h.Frames, f => f.Text.Contains("without a tool_calls finish marker"));
+        Assert.Equal("data: [DONE]\n\n", h.Frames[^1].Text);
+    }
+
+    [Theory]
+    [InlineData("stop")]
+    [InlineData("length")]
+    public async Task Wrong_finish_reason_does_not_execute_pending_tools(string reason)
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(0, "uncommitted", "lookup", "{}")),
+            new Step(0, Finish(reason)),
+            new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Single(_requests);
+        Assert.Contains(h.Frames, f => f.Text.Contains("without a tool_calls finish marker"));
+    }
+
+    [Fact]
+    public async Task Tool_call_finish_without_any_call_is_not_a_silent_success()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, Finish("tool_calls")),
+            new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Contains(h.Frames, f => f.Text.Contains("declared tool_calls but sent no tool calls"));
+    }
+
+    [Fact]
+    public async Task Invalid_negative_tool_call_index_is_refused_before_execution()
+    {
+        _turns.Add(() => new[]
+        {
+            new Step(0, ToolDelta(-1, "negative-index", "lookup", "{}")),
+            new Step(0, Finish("tool_calls")),
+            new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Empty(h.ToolInvocations);
+        Assert.Contains(h.Frames, f => f.Text.Contains("without a valid index"));
+    }
+
+    [Fact]
     public async Task Fenced_json_is_normalized_and_repeated_tool_ids_are_made_unique()
     {
         _turns.Add(() => new[]
