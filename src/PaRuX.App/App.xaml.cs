@@ -165,10 +165,26 @@ namespace PaRuX
             catch (Exception ex)
             {
                 Log.Write("FATAL STARTUP: " + ex.GetType().Name + ": " + ex.Message + "\n" + ex);
+                ReportStartupFailure(ex);
                 try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
                 try { _singleInstanceMutex?.Dispose(); } catch { }
                 Environment.Exit(1);
             }
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
+        private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+        /// <summary>The data folder (and therefore Log) may be exactly what failed: write a fallback log to %TEMP% and
+        /// show the reason before exiting, so a startup refusal is never silent.</summary>
+        private static void ReportStartupFailure(Exception ex)
+        {
+            string? root = null;
+            try { root = AppPaths.PaRuXRoot; } catch { }
+            string message = PaRuX.Contracts.StartupFailureReport.BuildMessage(root, ex);
+            PaRuX.Contracts.StartupFailureReport.TryWriteFallbackLog(Path.GetTempPath(), message, ex);
+            try { MessageBox(IntPtr.Zero, message, "PaRuX", 0x00000010 /* MB_ICONERROR */ | 0x00010000 /* MB_SETFOREGROUND */); }
+            catch { }
         }
 
         private static IDisposable? _playSignal;
