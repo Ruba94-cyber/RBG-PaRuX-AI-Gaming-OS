@@ -509,18 +509,18 @@ public static class GamingEndpoints
         app.MapGet("/api/v1/gaming/xinput-shim", (XInputShimInstaller shim) =>
             Results.Ok(new XInputShimStatus(shim.Available, shim.List()))).RequireDesktopOwner();
 
-        app.MapPost("/api/v1/gaming/xinput-shim/install", (XInputShimFolderRequest request, XInputShimInstaller shim, LocalRuntimeService runtime) =>
+        app.MapPost("/api/v1/gaming/xinput-shim/install", (XInputShimFolderRequest request, XInputShimInstaller shim, LocalRuntimeService runtime, PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteSessionService playnite) =>
         {
             // Never change a game's files while Gaming owns the machine.
-            if (runtime.GamingMode) return Results.Conflict(new XInputShimResult(false, "Return to AI before changing a game's files."));
+            if (GameFileMutationPolicy.Refusal(runtime.GamingMode, playnite.GameRunning) is { } refused) return Results.Conflict(new XInputShimResult(false, refused));
             XInputShimResult result = shim.Install(request.Folder);
             AuditLogService.TryRecord("xinput-shim.install", result.Ok ? "installed" : "refused", result.Ok ? result.Install?.Architecture : null);
             return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
         }).RequireDesktopOwner();
 
-        app.MapPost("/api/v1/gaming/xinput-shim/uninstall", (XInputShimFolderRequest request, XInputShimInstaller shim, LocalRuntimeService runtime) =>
+        app.MapPost("/api/v1/gaming/xinput-shim/uninstall", (XInputShimFolderRequest request, XInputShimInstaller shim, LocalRuntimeService runtime, PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteSessionService playnite) =>
         {
-            if (runtime.GamingMode) return Results.Conflict(new XInputShimResult(false, "Return to AI before changing a game's files."));
+            if (GameFileMutationPolicy.Refusal(runtime.GamingMode, playnite.GameRunning) is { } refused) return Results.Conflict(new XInputShimResult(false, refused));
             XInputShimResult result = shim.Uninstall(request.Folder);
             AuditLogService.TryRecord("xinput-shim.uninstall", result.Ok ? "removed" : "refused");
             return result.Ok ? Results.Ok(result) : Results.BadRequest(result);

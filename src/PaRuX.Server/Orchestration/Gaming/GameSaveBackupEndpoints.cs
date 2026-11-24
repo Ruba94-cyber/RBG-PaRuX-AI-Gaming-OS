@@ -104,9 +104,12 @@ public static class GameSaveBackupEndpoints
 
         // Confirmed restore: automatic pre-restore backup, SHA-256 verified staging, post-restore verification.
         app.MapPost("/api/v1/gaming/save-backups/{id}/restore", async (
-            string id, GameSaveRestoreRequest request, GameSaveBackupService backup, CancellationToken ct) =>
+            string id, GameSaveRestoreRequest request, GameSaveBackupService backup,
+            PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteSessionService playnite, CancellationToken ct) =>
         {
             if (request is null) return Results.BadRequest();
+            if (GameFileMutationPolicy.Refusal(false, playnite.GameRunning) is { } refused)
+                return Results.Conflict(new GameSaveRestoreResultDto(id, false, refused + " Nothing was changed.", 0, null));
             try { return Results.Ok(await backup.RestoreAsync(id, request, ct)); }
             catch (OperationCanceledException) { return Results.StatusCode(499); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
