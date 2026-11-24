@@ -44,6 +44,15 @@ function Invoke-Checked([string]$Name, [string[]]$Arguments) {
     }
 }
 
+function Assert-DiscoveredTests([string]$Stage, [string[]]$Required, [string]$Listing) {
+    foreach ($test in $Required) {
+        if ($Listing.IndexOf($test, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "$Stage cannot be certified: required test '$test' was not discovered in the compiled assembly. Do not treat a zero-tests-matched exit as success."
+        }
+    }
+    Write-Host "[PaRuX local validation] ${Stage}: required test methods discovered." -ForegroundColor DarkGreen
+}
+
 Push-Location $root
 try {
     Invoke-Checked 'Check pinned .NET SDK' @('--version')
@@ -55,6 +64,18 @@ try {
     Invoke-Checked 'Build server test graph (Release x64)' @('build', $serverTests, '-c', 'Release', '-p:Platform=x64', '--no-restore', '--nologo')
     Invoke-Checked 'Build WinUI desktop (Release x64)' @('build', $appProject, '-c', 'Release', '-p:Platform=x64', '--nologo')
 
+    # dotnet test may exit 0 even if a --filter matches zero methods. Verify the
+    # actual compiled xUnit discovery list BEFORE claiming a successful local gate.
+    Write-Host '[PaRuX local validation] Discover compiled server tests' -ForegroundColor Cyan
+    $testLines = @(& $dotnet test $serverTests -c Release -p:Platform=x64 --no-build --no-restore --list-tests --nologo 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Server test discovery failed (exit code $LASTEXITCODE)." }
+    $discovered = [string]::Join("`n", [string[]]$testLines)
+    Assert-DiscoveredTests 'Focused integration regressions' @(
+        'McpToolCallAdmissionTests', 'StreamingMcpToolLoopTests',
+        'PlayniteThemeServiceTests', 'PlayniteReturnWatchPolicyTests',
+        'ConsoleModeReadinessTests'
+    ) $discovered
+
     $filter = 'FullyQualifiedName~CanTraceExtractorTests|FullyQualifiedName~MediaCapabilityRoutingTests|FullyQualifiedName~ModelDownloadServiceTests|FullyQualifiedName~GameModDropInServiceTests|FullyQualifiedName~WebSessionRouteDecisionTests|FullyQualifiedName~PlayniteComponentTests|FullyQualifiedName~ConsoleModeReadinessTests|FullyQualifiedName~PlayniteTheme|FullyQualifiedName~McpToolCallAdmissionTests|FullyQualifiedName~StreamingMcpToolLoopTests|FullyQualifiedName~TemporaryGameModServiceTests|FullyQualifiedName~MultilingualEmbeddingTests|FullyQualifiedName~CorporateCpuMemoryPlannerTests'
     Invoke-Checked 'Focused integration regressions' @(
         'test', $serverTests, '-c', 'Release', '-p:Platform=x64', '--no-build', '--no-restore',
@@ -63,6 +84,11 @@ try {
     )
 
     if ($SandboxSmoke) {
+        Assert-DiscoveredTests 'Real Windows AppContainer smoke' @(
+            'RunAsync_InDirectory_CanRunEchoInsideAppContainer',
+            'Real_no_network_appcontainer_executes_in_workspace_and_scrubs_parent_secret',
+            'Npm_test_runs_the_package_script_inside_the_offline_sandbox'
+        ) $discovered
         $sandboxFilter = 'FullyQualifiedName~WindowsCodingSandboxAclTests.RunAsync_InDirectory_CanRunEchoInsideAppContainer|FullyQualifiedName~WindowsCodingSandboxIntegrationTests.Real_no_network_appcontainer_executes_in_workspace_and_scrubs_parent_secret|FullyQualifiedName~WindowsCodingSandboxIntegrationTests.Npm_test_runs_the_package_script_inside_the_offline_sandbox'
         Invoke-Checked 'Real Windows AppContainer smoke (security tests are not skipped)' @(
             'test', $serverTests, '-c', 'Release', '-p:Platform=x64', '--no-build', '--no-restore',
