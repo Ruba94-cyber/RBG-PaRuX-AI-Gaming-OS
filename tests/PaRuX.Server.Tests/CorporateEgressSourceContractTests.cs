@@ -34,7 +34,7 @@ public sealed class CorporateEgressSourceContractTests
         var offenders = new List<string>();
         foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
         {
-            string relative = Path.GetRelativePath(root, file).Replace('\', '/');
+            string relative = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
             if (relative.Contains("/obj/") || relative.Contains("/bin/")) continue;
             if (UseProxyOff.IsMatch(File.ReadAllText(file)) && !Allowlist.ContainsKey(relative))
                 offenders.Add(relative);
