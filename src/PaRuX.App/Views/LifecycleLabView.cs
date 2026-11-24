@@ -1222,12 +1222,27 @@ namespace PaRuX.Views
             return row;
         }
 
-        private static TextBlock Label(string text) => new() { Text = text, FontSize = 12, Opacity = 0.7 };
+        private static TextBlock Label(string text) => new() { Text = Heading(text), FontSize = 12, Opacity = 0.7 };
+
+        /// <summary>Section captions follow the UI language; unknown text passes through unchanged.</summary>
+        private static string Heading(string text) => !PaRuX.Services.UiText.IsItalian ? text : text switch
+        {
+            "DOWNLOADS" => "DOWNLOAD",
+            "CURATE / MAP" => "CURA / MAPPA",
+            "CREATE TRAINING JSONL · EXPLICIT COLUMN MAPPING" => "CREA JSONL DI TRAINING · MAPPATURA ESPLICITA DELLE COLONNE",
+            "JOBS" => "JOB",
+            "1 · DATASET HUB & CURATION" => "1 · HUB DATASET E CURATELA",
+            "2 · EVAL DATASET & REGRESSION LAB" => "2 · DATASET DI VALUTAZIONE E LAB REGRESSIONI",
+            "3 · TRAINING LAB" => "3 · LAB DI TRAINING",
+            "4 · ADAPTER MANAGER" => "4 · GESTORE ADAPTER",
+            "5 · AUTOLAB · COMPARE · PROMOTE" => "5 · AUTOLAB · CONFRONTA · PROMUOVI",
+            _ => text
+        };
 
         private static Border Section(string title, UIElement content)
         {
             var body = new StackPanel { Spacing = 10 };
-            body.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
+            body.Children.Add(new TextBlock { Text = Heading(title), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
             body.Children.Add(content);
             return new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Child = body };
         }

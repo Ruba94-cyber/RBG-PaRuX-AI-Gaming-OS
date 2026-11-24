@@ -47,11 +47,12 @@ namespace PaRuX.Services
     /// <summary>What the Create "Set up image generation" card shows for one server state. Pure, so tests can pin it.</summary>
     public static class MediaSetupPresenter
     {
-        public static MediaSetupCardModel Present(MediaSetupStatus status, string label = "image generation")
+        public static MediaSetupCardModel Present(MediaSetupStatus status, string label = "image generation", bool italian = false)
         {
             if (status == null) throw new ArgumentNullException(nameof(status));
             if (status.Ready)
                 return new MediaSetupCardModel(false, string.Empty, string.Empty, string.Empty, false, false, 0, false);
+            if (italian) return PresentItalian(status, ItalianLabel(label));
 
             switch (status.State)
             {
@@ -82,6 +83,53 @@ namespace PaRuX.Services
                           + string.Join(", ", pending.Select(s => s.Title)) + " (about " + FormatSize(bytes) + "). Licences: "
                           + string.Join(", ", pending.Where(s => !string.IsNullOrWhiteSpace(s.License)).Select(s => s.License + " (" + s.Title + ")")) + ".";
                     return new MediaSetupCardModel(true, "Set up " + label, what, "Set up " + label, true, false, 0, false);
+            }
+        }
+
+        /// <summary>Italian names of the Create tools whose setup card uses this presenter; unknown labels (engine titles) pass through.</summary>
+        private static string ItalianLabel(string label) => label switch
+        {
+            "image generation" => "generazione di immagini",
+            "video generation" => "generazione video",
+            "music" => "musica",
+            "speech" => "voce",
+            "image editing" => "modifica immagini",
+            "image to 3D" => "da immagine a 3D",
+            "background removal" => "rimozione sfondo",
+            _ => label
+        };
+
+        private static MediaSetupCardModel PresentItalian(MediaSetupStatus status, string label)
+        {
+            switch (status.State)
+            {
+                case "running":
+                    bool known = status.TotalBytes > 0;
+                    double fraction = known ? Math.Min(1.0, (double)status.BytesDownloaded / status.TotalBytes) : 0;
+                    return new MediaSetupCardModel(true, "Configurazione in corso: " + label, status.Message, "Annulla configurazione", true,
+                        true, fraction, !known);
+                case "waiting":
+                    return new MediaSetupCardModel(true, "In attesa che finisca un'altra configurazione", status.Message,
+                        "Configura: " + label, false, false, 0, false);
+                case "failed":
+                    return new MediaSetupCardModel(true, "Configurazione interrotta: " + label,
+                        string.IsNullOrWhiteSpace(status.Error) ? status.Message : status.Message + " " + status.Error,
+                        "Riprova", true, false, 0, false);
+                case "cancelled":
+                    return new MediaSetupCardModel(true, "Configurazione annullata: " + label,
+                        status.Message + " I download riprendono da dove si erano fermati.", "Riprendi la configurazione", true, false, 0, false);
+                case "blocked":
+                    return new MediaSetupCardModel(true, Cap(label) + ": non disponibile su questo PC",
+                        status.Message, "Configura: " + label, false, false, 0, false);
+                default:
+                    var pending = status.Steps.Where(s => s.State == "pending").ToList();
+                    long bytes = pending.Sum(s => s.SizeBytes);
+                    string licenses = string.Join(", ", pending.Where(s => !string.IsNullOrWhiteSpace(s.License)).Select(s => s.License + " (" + s.Title + ")"));
+                    string what = pending.Count == 0
+                        ? status.Message
+                        : "PaRuX scaricherà e installerà, un passaggio verificato alla volta: "
+                          + string.Join(", ", pending.Select(s => s.Title)) + " (circa " + FormatSize(bytes) + "). Licenze: " + licenses + ".";
+                    return new MediaSetupCardModel(true, "Configura: " + label, what, "Configura: " + label, true, false, 0, false);
             }
         }
 

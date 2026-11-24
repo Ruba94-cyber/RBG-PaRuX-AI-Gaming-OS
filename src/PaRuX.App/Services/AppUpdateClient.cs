@@ -98,12 +98,12 @@ namespace PaRuX.Services
                     UpdateAvailable = updateAvailable,
                     Message = updateAvailable
                         ? "A newer published PaRuX release is available."
-                        : "The authenticated/public release metadata confirms this PaRuX build is not older than the latest published release."
+                        : UiText.Pick("The authenticated/public release metadata confirms this PaRuX build is not older than the latest published release.", "I metadati di rilascio confermano che questa versione di PaRuX non è più vecchia dell'ultima pubblicata.")
                 };
 
                 if (!updateAvailable)
                 {
-                    status.SecureInstallerMessage = "No application upgrade is required.";
+                    status.SecureInstallerMessage = UiText.Pick("No application upgrade is required.", "Nessun aggiornamento dell'applicazione necessario.");
                     return status;
                 }
 

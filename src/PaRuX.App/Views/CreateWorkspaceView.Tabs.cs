@@ -26,7 +26,7 @@ namespace PaRuX.Views
             var host = new Grid();
             foreach ((string name, UIElement panel) in modes)
             {
-                var item = new SelectorBarItem { Text = name };
+                var item = new SelectorBarItem { Text = ModeLabel(name), Tag = name };
                 AutomationProperties.SetAutomationId(item, "Create_Mode_" + name);
                 _modeBar.Items.Add(item);
                 _modeItems[name] = item;
@@ -41,6 +41,19 @@ namespace PaRuX.Views
             return root;
         }
 
+        /// <summary>Visible tab label; the English name stays the key and the AutomationId so tests and persisted choices are language-independent.</summary>
+        private static string ModeLabel(string name) => !SetupLineItalian ? name : name switch
+        {
+            "Image" => "Immagine",
+            "Video" => "Video",
+            "Music" => "Musica",
+            "Edit" => "Modifica",
+            "Speech" => "Voce",
+            "Workflows" => "Workflow",
+            "Gallery" => "Galleria",
+            _ => name
+        };
+
         private void SelectMode(string name)
         {
             if (_modeBar != null && _modeItems.TryGetValue(name, out SelectorBarItem? item)) _modeBar.SelectedItem = item;
@@ -49,7 +62,7 @@ namespace PaRuX.Views
 
         private void ShowSelectedMode()
         {
-            string? selected = (_modeBar?.SelectedItem as SelectorBarItem)?.Text;
+            string? selected = (_modeBar?.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (KeyValuePair<string, UIElement> pair in _modePanels)
                 pair.Value.Visibility = pair.Key == selected ? Visibility.Visible : Visibility.Collapsed;
             _selectedMode = selected;

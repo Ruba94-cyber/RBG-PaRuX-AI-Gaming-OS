@@ -94,7 +94,7 @@ namespace PaRuX.Views
         private void Apply(MediaSetupStatus status)
         {
             _status = status;
-            MediaSetupCardModel card = MediaSetupPresenter.Present(status, _label);
+            MediaSetupCardModel card = MediaSetupPresenter.Present(status, _label, PaRuX.Services.UiText.IsItalian);
             Visibility = card.Visible ? Visibility.Visible : Visibility.Collapsed;
             _headline.Text = card.Headline;
             _detail.Text = card.Detail;

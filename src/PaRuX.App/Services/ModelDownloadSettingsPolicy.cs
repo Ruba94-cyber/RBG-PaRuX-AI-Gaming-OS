@@ -26,18 +26,18 @@ namespace PaRuX.Services
 
         public static string DescribeBandwidthLimit(double megabytesPerSecond) =>
             !double.IsFinite(megabytesPerSecond) || megabytesPerSecond <= 0
-                ? "Unlimited"
+                ? UiText.Pick("Unlimited", "Illimitato")
                 : megabytesPerSecond.ToString("0.##", CultureInfo.CurrentCulture) + " MB/s";
 
         public static string DescribeCredentialStatus(ModelDownloadCredentialStatus? status)
         {
-            if (status == null) return "Hugging Face credential status is unavailable.";
-            if (!status.TokenConfigured) return "No token is saved. A token is only needed for gated or private repositories.";
+            if (status == null) return UiText.Pick("Hugging Face credential status is unavailable.", "Lo stato delle credenziali Hugging Face non è disponibile.");
+            if (!status.TokenConfigured) return UiText.Pick("No token is saved. A token is only needed for gated or private repositories.", "Nessun token salvato. Il token serve solo per repository protetti o privati.");
 
             string protection = string.IsNullOrWhiteSpace(status.Protection)
                 ? string.Empty
-                : " Protected with " + status.Protection.Trim() + ".";
-            return "A token is saved; its value is never displayed here." + protection;
+                : UiText.Pick(" Protected with ", " Protetto con ") + status.Protection.Trim() + ".";
+            return UiText.Pick("A token is saved; its value is never displayed here.", "Un token è salvato; il suo valore non viene mai mostrato qui.") + protection;
         }
     }
 }

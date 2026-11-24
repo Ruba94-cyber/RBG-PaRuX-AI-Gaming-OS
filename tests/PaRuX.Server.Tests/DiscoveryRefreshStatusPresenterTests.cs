@@ -6,6 +6,7 @@ using Xunit;
 
 namespace PaRuX.Server.Tests
 {
+    [EnglishUi]
     public sealed class DiscoveryRefreshStatusPresenterTests
     {
         private static readonly DateTime BaseTimeUtc = new(2026, 10, 21, 14, 0, 0, DateTimeKind.Utc);

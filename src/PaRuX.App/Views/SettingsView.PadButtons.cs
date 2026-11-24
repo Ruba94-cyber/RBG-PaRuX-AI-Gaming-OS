@@ -492,7 +492,7 @@ public sealed partial class SettingsView
         // Leaving this section (or Settings) must never leave actions suppressed.
         if (!_pbLearning || PadButtonsCard.ActualHeight <= 0) { PbStopLearning(); return; }
         if (deviceKey != _pbSelectedKey && !(_pbSelectedKey == PadControlId.Any && deviceKey == PadControlId.Any)) return;
-        Brush hit = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 124, 108, 240));
+        Brush hit = BrandTint(PadButtonsCard, 70);
         foreach (var (id, border) in _pbRows) border.Background = pressed.Contains(id) ? hit : null;
         PadButtonsLive.Text = pressed.Count == 0
             ? PbT("Press a control on the pad.", "Premi un controllo sul pad.")

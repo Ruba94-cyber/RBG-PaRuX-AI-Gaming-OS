@@ -73,7 +73,7 @@ namespace PaRuX.Services
 
         public static string FreshnessLabel(DateTime? finishedUtc, DateTime nowUtc, string? discoveryOutcome, out bool stale)
         {
-            if (finishedUtc is null) { stale = true; return "Never refreshed: suggestions are not available yet."; }
+            if (finishedUtc is null) { stale = true; return UiText.Pick("Never refreshed: suggestions are not available yet.", "Mai aggiornato: i suggerimenti non sono ancora disponibili."); }
             TimeSpan age = nowUtc - finishedUtc.Value;
             if (age < TimeSpan.Zero) age = TimeSpan.Zero;
             string ageText = Age(age);

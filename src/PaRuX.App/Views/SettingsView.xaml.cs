@@ -306,6 +306,12 @@ namespace PaRuX.Views
             _ => T("How PaRuX looks, when it appears, and what it runs on.", "Aspetto di PaRuX, quando compare e su cosa viene eseguito."),
         };
 
+        /// <summary>The PRX Orbit brand colour at a low alpha, resolved for the owner's actual theme (the owner must be in the visual tree).</summary>
+        internal static Brush BrandTint(FrameworkElement owner, byte alpha) =>
+            GameUi.ThemeBrush(owner, "PaRuXBrandBrush") is SolidColorBrush brand
+                ? new SolidColorBrush(Windows.UI.Color.FromArgb(alpha, brand.Color.R, brand.Color.G, brand.Color.B))
+                : new SolidColorBrush(Windows.UI.Color.FromArgb(alpha, 128, 128, 128));
+
         private void SelectSettingsCategory(string category)
         {
             if (!_categoryButtons.ContainsKey(category)) return;
@@ -326,7 +332,7 @@ namespace PaRuX.Views
             {
                 bool selected = kvp.Key == category;
                 kvp.Value.Background = selected
-                    ? new SolidColorBrush(Windows.UI.Color.FromArgb(40, 124, 108, 240))
+                    ? BrandTint(kvp.Value, 48) // PRX Orbit accent tint resolved for the control's own theme, not a fixed purple
                     : new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
                 kvp.Value.FontWeight = selected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
             }
@@ -2987,8 +2993,8 @@ namespace PaRuX.Views
             if (GamingStatusText == null) return;
             bool active = GamingManager.Current.IsActive;
             string state = active
-                ? "ACTIVE — AI jobs, coding agents, Computer Use, and the bubble are suspended."
-                : "Ready — heavy AI stays unloaded until requested. Game exit never reloads a model.";
+                ? UiText.Pick("ACTIVE — AI jobs, coding agents, Computer Use, and the bubble are suspended.", "ATTIVA — attività IA, agenti di codice, uso del computer e bolla sono sospesi.")
+                : UiText.Pick("Ready — heavy AI stays unloaded until requested. Game exit never reloads a model.", "Pronto — l'IA pesante resta scaricata finché non serve. All'uscita da un gioco nessun modello viene ricaricato.");
             GamingStatusText.Text = notice == null ? state : notice + "\n" + state;
             EnterGamingButton.IsEnabled = !active;
             ExitGamingButton.IsEnabled = active;

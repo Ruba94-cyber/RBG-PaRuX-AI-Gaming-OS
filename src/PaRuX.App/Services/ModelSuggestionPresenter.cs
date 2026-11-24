@@ -87,7 +87,7 @@ namespace PaRuX.Services
 
         public static string FormatHardware(SuggestionFeedFingerprintDto? fingerprint)
         {
-            if (fingerprint == null) return "Hardware profile not available yet.";
+            if (fingerprint == null) return UiText.Pick("Hardware profile not available yet.", "Profilo hardware non ancora disponibile.");
             var parts = new List<string>();
             foreach (SuggestionFeedAdapterDto gpu in fingerprint.Adapters.Take(2))
             {
@@ -113,8 +113,8 @@ namespace PaRuX.Services
             if (report == null)
                 return new ModelSuggestionSection(title, disclaimer, hardware, Array.Empty<ModelSuggestionCard>(),
                     status == null
-                        ? "Suggestions are unavailable: PaRuX Core did not return a maintenance report. Nothing was assumed."
-                        : "No suggestions yet. PaRuX has not completed a hardware check; none is shown until it does.");
+                        ? UiText.Pick("Suggestions are unavailable: PaRuX Core did not return a maintenance report. Nothing was assumed.", "Suggerimenti non disponibili: PaRuX Core non ha restituito un report di manutenzione. Non è stato ipotizzato nulla.")
+                        : UiText.Pick("No suggestions yet. PaRuX has not completed a hardware check; none is shown until it does.", "Ancora nessun suggerimento. PaRuX non ha completato il controllo dell'hardware; non ne verranno mostrati finché non lo fa."));
 
             string provenance = "Maintenance check " + report.FinishedUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
                 + " UTC (" + (string.IsNullOrWhiteSpace(report.Trigger) ? "unknown trigger" : report.Trigger) + ")";
@@ -134,13 +134,13 @@ namespace PaRuX.Services
 
         private static string EmptyText(SuggestionFeedReportDto report, bool someDeferred) => report.Outcome switch
         {
-            "skipped_gaming" => "No suggestions yet: the last check was skipped because Gaming mode was active.",
-            "skipped_disabled" => "No suggestions yet: automatic maintenance is turned off.",
-            "busy" => "No suggestions yet: the last check was busy and will be retried.",
-            "error" => "No suggestions yet: the last check failed. Nothing was assumed.",
+            "skipped_gaming" => UiText.Pick("No suggestions yet: the last check was skipped because Gaming mode was active.", "Ancora nessun suggerimento: l'ultimo controllo è stato saltato perché la modalità Gaming era attiva."),
+            "skipped_disabled" => UiText.Pick("No suggestions yet: automatic maintenance is turned off.", "Ancora nessun suggerimento: la manutenzione automatica è disattivata."),
+            "busy" => UiText.Pick("No suggestions yet: the last check was busy and will be retried.", "Ancora nessun suggerimento: l'ultimo controllo era occupato e verrà ritentato."),
+            "error" => UiText.Pick("No suggestions yet: the last check failed. Nothing was assumed.", "Ancora nessun suggerimento: l'ultimo controllo non è riuscito. Non è stato ipotizzato nulla."),
             _ => someDeferred
-                ? "No more suggestions right now. Deferred ones return after PaRuX restarts."
-                : "No suggestions yet. The last check found no public model that beats what is installed on this PC."
+                ? UiText.Pick("No more suggestions right now. Deferred ones return after PaRuX restarts.", "Nessun altro suggerimento al momento. Quelli rimandati tornano al riavvio di PaRuX.")
+                : UiText.Pick("No suggestions yet. The last check found no public model that beats what is installed on this PC.", "Ancora nessun suggerimento. L'ultimo controllo non ha trovato modelli pubblici migliori di quelli installati su questo PC.")
         };
 
         private static ModelSuggestionCard BuildCard(SuggestionFeedProposalDto p, string provenance)

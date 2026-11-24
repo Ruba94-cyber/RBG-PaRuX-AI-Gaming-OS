@@ -858,10 +858,23 @@ namespace PaRuX.Views
             return file?.Path;
         }
 
+        private static string SectionTitle(string title) => !SetupLineItalian ? title : title switch
+        {
+            "IMAGE" => "IMMAGINE",
+            "VIDEO" => "VIDEO",
+            "MUSIC" => "MUSICA",
+            "IMAGE EDIT" => "MODIFICA IMMAGINE",
+            "IMAGE → 3D" => "IMMAGINE → 3D",
+            "TEXT TO SPEECH" => "DA TESTO A VOCE",
+            "SPEECH TO TEXT" => "DA VOCE A TESTO",
+            "COMFYUI WORKFLOWS AND LORAS" => "WORKFLOW COMFYUI E LORA",
+            _ => title
+        };
+
         private static Border Section(string title, UIElement content)
         {
             var body = new StackPanel { Spacing = 10 };
-            body.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
+            body.Children.Add(new TextBlock { Text = SectionTitle(title), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
             body.Children.Add(content);
             return new Border { Padding = new Thickness(14), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Child = body };
         }
