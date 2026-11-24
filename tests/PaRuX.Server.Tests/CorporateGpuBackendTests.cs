@@ -104,12 +104,39 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [InlineData(" Integrated ", true)]
     [InlineData("always", true)]
     [InlineData("0", false)]        // the kill switch still wins
-    public void An_integrated_gpu_only_runs_the_model_when_forced(string? value, bool vulkan)
+    public void An_entry_level_integrated_gpu_only_runs_the_model_when_forced(string? value, bool vulkan)
     {
-        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd());
+        var uhd = new GpuAdapterStatus
+        {
+            Index = 0, Name = "Intel(R) UHD Graphics", VendorId = 0x8086, DeviceId = 0x9B41,
+            DedicatedVideoMemoryBytes = 128L * 1024 * 1024, SharedSystemMemoryBytes = 8L * 1024 * 1024 * 1024
+        };
+        var inventory = GpuInventoryFixtures.Inventory(uhd);
         var decision = CorporateGpuBackendPolicy.Decide(true, value, true, inventory, false);
         Assert.Equal(vulkan ? CorporateGpuBackendPolicy.Backend.Vulkan : CorporateGpuBackendPolicy.Backend.Cpu, decision.Backend);
         if (!vulkan && value is not "0") Assert.Contains("integrated GPU", decision.Reason);
+    }
+
+    [Theory]
+    [InlineData("AMD Radeon(TM) 760M Graphics", 0x1002u, true)]   // Ryzen 5 PRO 230 / 7000-series laptops
+    [InlineData("AMD Radeon 780M Graphics", 0x1002u, true)]
+    [InlineData("AMD Radeon(TM) 890M Graphics", 0x1002u, true)]
+    [InlineData("AMD Radeon(TM) 680M", 0x1002u, true)]
+    [InlineData("AMD Radeon(TM) Graphics", 0x1002u, false)]       // unnamed Vega-era / generic string: not classified fast
+    [InlineData("AMD Radeon(TM) Vega 8 Graphics", 0x1002u, false)]
+    [InlineData("Intel(R) UHD Graphics", 0x8086u, false)]
+    [InlineData("Intel(R) Iris(R) Xe Graphics", 0x8086u, false)]
+    [InlineData("Radeon 760M", 0x10DEu, false)]                    // vendor must be AMD
+    public void Only_capable_integrated_gpus_use_vulkan_by_default(string name, uint vendor, bool capable)
+    {
+        var adapter = new GpuAdapterStatus
+        {
+            Index = 0, Name = name, VendorId = vendor, DedicatedVideoMemoryBytes = 512L * 1024 * 1024,
+            SharedSystemMemoryBytes = 8L * 1024 * 1024 * 1024
+        };
+        Assert.Equal(capable, CorporateGpuBackendPolicy.IsCapableIntegrated(adapter));
+        var decision = CorporateGpuBackendPolicy.Decide(true, null, true, GpuInventoryFixtures.Inventory(adapter), false);
+        Assert.Equal(capable ? CorporateGpuBackendPolicy.Backend.Vulkan : CorporateGpuBackendPolicy.Backend.Cpu, decision.Backend);
     }
 
     [Fact]

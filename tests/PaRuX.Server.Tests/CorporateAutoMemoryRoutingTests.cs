@@ -25,7 +25,7 @@ public sealed class CorporateAutoMemoryRoutingTests
         Assert.True(capacity.Compatible);
         Assert.NotNull(live);
         Assert.False(live.Compatible);
-        Assert.Equal((16 * .86 - 12) * 1024, live.AvailableMib, 3);
+        Assert.Equal((4 * 1024) - (16 * 1024 * 0.08), live.AvailableMib, 1); // available minus the 8% Corporate reserve
     }
 
     [Fact]
@@ -73,18 +73,19 @@ public sealed class CorporateAutoMemoryRoutingTests
         Assert.False(withoutResident.Compatible);
         Assert.NotNull(withResident);
         Assert.True(withResident.Compatible);
-        Assert.True(withResident.AvailableMib < 2 * 1024);
+        Assert.True(withResident.AvailableMib > 2 * 1024);
+        Assert.True(withResident.AvailableMib < 3 * 1024);
     }
 
     [Fact]
     public void Capacity_hint_remains_deterministic_and_profile_cap_is_never_widened()
     {
         var busy = new SystemRamSnapshot(16 * GiB, 2 * GiB);
-        HardwareFitEstimate? live = CorporateFitPolicy.EstimateLive(512, busy, 80);
+        HardwareFitEstimate? live = CorporateFitPolicy.EstimateLive(512, busy, 75); // a ceiling stricter than 80% is an explicit choice and stays honored
         Assert.NotNull(live);
         Assert.False(live.Compatible);
         Assert.Equal(0, live.AvailableMib, 3);
-        Assert.True(CorporateFitPolicy.Estimate(512, 16L * (long)GiB, 80).Compatible);
+        Assert.True(CorporateFitPolicy.Estimate(512, 16L * (long)GiB, 75).Compatible);
     }
 
     [Fact]

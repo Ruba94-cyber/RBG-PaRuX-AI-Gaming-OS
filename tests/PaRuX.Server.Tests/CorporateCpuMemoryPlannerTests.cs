@@ -30,8 +30,8 @@ public sealed class CorporateCpuMemoryPlannerTests
     [Fact]
     public void Increasing_pressure_reduces_context_only_as_much_as_needed()
     {
-        var moderate = new SystemRamSnapshot(16 * GiB, 5 * GiB);
-        var constrained = new SystemRamSnapshot(16 * GiB, 4 * GiB);
+        var moderate = new SystemRamSnapshot(16 * GiB, (ulong)(4.1 * GiB));      // Corporate keeps ~1.28 GiB free for Windows/Teams/Outlook
+        var constrained = new SystemRamSnapshot(16 * GiB, 3 * GiB);
 
         var middle = CorporateCpuMemoryPlanner.Select(moderate, 86, 0, Estimate);
         Assert.True(middle.Fits);
@@ -51,12 +51,12 @@ public sealed class CorporateCpuMemoryPlannerTests
         var plan = CorporateCpuMemoryPlanner.Select(ram, 86, 0, Estimate);
         Assert.False(plan.Fits);
         Assert.Equal(2048, plan.ContextTokens);
-        Assert.Equal(0, plan.AvailableMib);
+        Assert.InRange(plan.AvailableMib, 700, 760); // 2 GiB available minus the 1.28 GiB Corporate reserve
         string message = CorporateCpuMemoryPlanner.Shortfall(plan, ram, 86);
         Assert.Contains("2048-token context", message);
         Assert.Contains("No", message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("did not expand the profile limit", message);
-        Assert.Contains("did not expand", message);
+        Assert.Contains("did not close any program", message);
+        Assert.Contains("Free about", message);
     }
 
     [Fact]
@@ -68,10 +68,10 @@ public sealed class CorporateCpuMemoryPlannerTests
 
         Assert.False(without.Fits);
         Assert.True(with.Fits);
-        Assert.Equal(3072, with.ContextTokens);
-        Assert.True(with.AvailableMib > 2750);
-        Assert.True(with.AvailableMib < 3100);
-        Assert.Equal(0, without.AvailableMib);
+        Assert.Equal(4096, with.ContextTokens);          // (2 + 3) GiB minus the reserve is about 3.7 GiB
+        Assert.True(with.AvailableMib > 3100);
+        Assert.True(with.AvailableMib < 4000);
+        Assert.InRange(without.AvailableMib, 700, 760);
     }
 
     [Fact]

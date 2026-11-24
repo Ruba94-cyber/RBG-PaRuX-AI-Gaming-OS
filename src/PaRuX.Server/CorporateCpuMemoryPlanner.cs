@@ -37,7 +37,7 @@ internal static class CorporateCpuMemoryPlanner
             maxSystemRamPercent is <= 0 or > 100)
             return new Plan(NormalContextTokens, 0, 0, false);
 
-        double availableMib = RuntimeMemoryBudget.CalculateAvailableSystemRamBytes(
+        double availableMib = RuntimeMemoryBudget.CalculateCorporateAvailableBytes(
             ram, maxSystemRamPercent, reclaimableOwnedTextBytes) / 1048576d;
         double lastNeededMib = 0;
         foreach (int contextTokens in CandidateContexts)
@@ -72,15 +72,28 @@ internal static class CorporateCpuMemoryPlanner
         if (ram?.IsValid != true || plan.NeededMib <= 0)
             return "Corporate CPU memory availability could not be measured safely, or the model footprint is unknown. "
                 + "Retry in Runtime Manager; no other application was stopped.";
+        return DescribeShortfall(plan.NeededMib, plan.AvailableMib, ram, maxSystemRamPercent);
+    }
+
+    /// <summary>
+    /// The refusal in plain numbers: what the model needs, what PaRuX may use right now, what Windows reports free, what
+    /// stays reserved for Windows and the user's other programs, and how much more must be freed. Shared by every
+    /// Corporate memory refusal so the user always knows what to do.
+    /// </summary>
+    internal static string DescribeShortfall(double neededMib, double availableMib, SystemRamSnapshot ram, double maxSystemRamPercent)
+    {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        double availableWindowsGiB = ram.AvailableBytes / 1073741824d;
-        return "Not enough free memory for CPU mode: the selected model needs about "
-            + (plan.NeededMib / 1024d).ToString("0.0", inv)
-            + " GB even with a 2048-token context, but only "
-            + (plan.AvailableMib / 1024d).ToString("0.0", inv)
-            + " GB is permitted by the existing PaRuX profile (maximum total system RAM use "
-            + maxSystemRamPercent.ToString("0.#", inv)
-            + "%). Windows reports " + availableWindowsGiB.ToString("0.0", inv)
-            + " GB physically available. PaRuX did not expand the profile limit, close other programs or substitute the selected model.";
+        double windowsFreeGiB = ram.AvailableBytes / 1073741824d;
+        double reserveGiB = RuntimeMemoryBudget.CorporateReserveBytes(ram) / 1073741824d;
+        double missingGiB = Math.Max(0.1, Math.Ceiling(Math.Max(0, neededMib - availableMib) / 1024d * 10d) / 10d);
+        string limitNote = maxSystemRamPercent < RuntimeMemoryBudget.CorporateDynamicFromPercent
+            ? " The PaRuX profile also caps total system RAM use at " + maxSystemRamPercent.ToString("0.#", inv) + "%."
+            : string.Empty;
+        return "Not enough free memory to start the local model. It needs about " + (neededMib / 1024d).ToString("0.0", inv)
+            + " GB (at the smallest 2048-token context); PaRuX can use about " + (availableMib / 1024d).ToString("0.0", inv)
+            + " GB right now. Windows reports " + windowsFreeGiB.ToString("0.0", inv) + " GB free, and " + reserveGiB.ToString("0.0", inv)
+            + " GB is kept free for Windows and your other programs." + limitNote
+            + " Free about " + missingGiB.ToString("0.0", inv) + " GB more (for example close a heavy application or browser tabs you do not need) and try again."
+            + " PaRuX did not close any program and did not change the model.";
     }
 }

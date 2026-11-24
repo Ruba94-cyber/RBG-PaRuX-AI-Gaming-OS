@@ -191,7 +191,7 @@ public sealed class RuntimeManagerService
                     {
                         result.CorporateSystemRamLimitPercent = limit;
                         result.CorporateAdmissibleBytes =
-                            RuntimeMemoryBudget.CalculateAvailableSystemRamBytes(ramSnapshot, limit);
+                            RuntimeMemoryBudget.CalculateCorporateAvailableBytes(ramSnapshot, limit);
                     }
                 }
             }

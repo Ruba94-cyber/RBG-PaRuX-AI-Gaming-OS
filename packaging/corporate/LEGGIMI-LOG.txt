@@ -1,0 +1,55 @@
+PaRuX Corporate Lite - COME TESTARLO E DOVE PRENDERE I LOG
+===========================================================
+
+1) INSTALLAZIONE (nessun amministratore, nessuna installazione)
+   - Copia lo ZIP "PaRuX-Corporate-Lite-Offline-win-x64.zip" dalla penna USB in una cartella del DISCO LOCALE (NTFS),
+     per esempio C:\Tools\ oppure il Desktop. NON estrarre sulla penna USB (FAT32/exFAT): Corporate rifiuta di partire
+     su FAT/exFAT perche' non puo' proteggere il token locale del motore.
+   - Estrai TUTTO (clic destro > Estrai tutto). Evita percorsi molto lunghi e cartelle sincronizzate (OneDrive).
+   - Avvia "Start PaRuX Corporate Lite.cmd" (oppure PaRuX.exe). I dati restano nella cartella "PaRuXData" accanto al
+     programma: per cancellare tutto basta eliminare la cartella.
+   - Solo CPU (se la scheda grafica da' problemi): "Start PaRuX Corporate Lite (CPU only).cmd".
+
+2) COSA ASPETTARSI
+   - Modello principale: Qwen3-4B. Se la RAM libera non basta (Teams, Outlook, browser aperti), PaRuX risponde col
+     modello molto piccolo Qwen3-0.6B invece di rifiutare. Se nemmeno quello entra, il messaggio dice quanta RAM serve e
+     quanta liberarne.
+   - Ricerca nei documenti: motore semantico multilingue incluso (italiano/inglese), nessun download.
+   - Il primo messaggio puo' richiedere 20-60 secondi (carica il modello); poi e' piu' veloce.
+
+3) DOVE SONO I LOG (tutti relativi alla cartella che contiene "PaRuXData")
+   PaRuXData\parux.log                              log dell'applicazione (e parux.1.log ... parux.4.log precedenti)
+   PaRuXData\LocalAI\logs\llama-server.stderr.log   log del motore del modello (caricamento, memoria, errori)
+   PaRuXData\LocalAI\logs\llama-server.stdout.log
+   PaRuXData\LocalAI\logs\gpu-detect.log            rilevamento scheda grafica
+   %TEMP%\PaRuX-startup-error.log                   SOLO se PaRuX non e' riuscito ad avviarsi (cartella dati non scrivibile)
+   PaRuXData\logs\document-chat-trace.txt           traccia delle domande sui documenti (esiste solo se attivata)
+
+   NON inviare mai: PaRuXData\server\bootstrap.json (contiene il token locale), ne' i tuoi documenti o gli indici.
+   I log possono contenere i NOMI dei tuoi file: controllali prima di inviarli.
+
+4) RACCOLTA AUTOMATICA (copia e incolla in PowerShell, dalla cartella che contiene PaRuXData)
+   Crea sul Desktop il file PaRuX-log.zip con i soli log sopra e un riepilogo del PC (nessun documento, nessun token):
+
+   $d = (Get-Location).Path; $out = "$env:TEMP\parux-logs"; Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory $out | Out-Null
+   Copy-Item "$d\PaRuXData\parux*.log" $out -ErrorAction SilentlyContinue
+   Copy-Item "$d\PaRuXData\LocalAI\logs\*" $out -ErrorAction SilentlyContinue
+   Copy-Item "$d\PaRuXData\logs\*" $out -ErrorAction SilentlyContinue
+   Copy-Item "$env:TEMP\PaRuX-startup-error.log" $out -ErrorAction SilentlyContinue
+   $os = Get-CimInstance Win32_OperatingSystem; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; $gpu = (Get-CimInstance Win32_VideoController | % { $_.Name + " / driver " + $_.DriverVersion }) -join "; "
+   @("Windows: $($os.Caption) $($os.Version)", "CPU: $($cpu.Name)", "RAM totale: $([math]::Round($os.TotalVisibleMemorySize/1MB,1)) GB; libera ora: $([math]::Round($os.FreePhysicalMemory/1MB,1)) GB", "GPU: $gpu", "Cartella PaRuX: $d", "Filesystem: " + (Get-Volume -DriveLetter $d[0]).FileSystem) | Set-Content "$out\pc.txt"
+   Get-Process PaRuX*,llama-server -ErrorAction SilentlyContinue | % { "$($_.Name) $($_.Id) $([int]($_.WorkingSet64/1MB)) MB" } | Set-Content "$out\processi.txt"
+   Compress-Archive "$out\*" "$env:USERPROFILE\Desktop\PaRuX-log.zip" -Force; "Creato: $env:USERPROFILE\Desktop\PaRuX-log.zip"
+
+5) SE CHIEDE "NON ABBASTANZA RAM" / "MOTORE SEMANTICO NON INSTALLATO"
+   - Annota il messaggio completo (contiene i numeri: RAM necessaria, usabile e libera) e la RAM libera mostrata da
+     Gestione attivita' > Prestazioni > Memoria > "Disponibile".
+   - Per il motore semantico controlla che esistano questi file e dimmi se mancano:
+       PaRuXData\ai-runtimes\embeddings-e5\model.onnx   (circa 118 MB)
+       PaRuXData\ai-runtimes\rerank-mmarco\model.onnx   (circa 118 MB)
+     Un antivirus/EDR puo' aver messo in quarantena un file: se manca, estrai di nuovo lo ZIP e controlla il registro dell'antivirus.
+   - Se un file e' stato bloccato (Mark-of-the-Web): proprieta' dello ZIP > "Sblocca" PRIMA di estrarre.
+
+6) PROVA DI MEMORIA (facoltativa)
+   Apri Teams, Outlook e il browser come al solito e fai una domanda in Chat. Poi mandami: pc.txt, parux.log e
+   llama-server.stderr.log del PaRuX-log.zip. Dimmi anche quale modello ha risposto (si vede nel nome del modello attivo).

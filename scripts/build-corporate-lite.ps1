@@ -32,6 +32,11 @@ param(
     [string]$ModelPath = "",
     [string]$ModelOrigin = "",
     [string]$ModelLicenseId = "",
+    # A very small second GGUF (pinned Qwen3-0.6B Q8_0, Apache-2.0, 610 MB) shipped beside the starter model. AUTO routing uses the
+    # larger model when the PC has the memory and falls back to this one when Teams/Outlook leave too little RAM, so chat still
+    # answers. Mandatory for the standard package; -WithoutSmallAlternateModel is for a deliberate diagnostic build.
+    [string]$AlternateModelPath = "",
+    [switch]$WithoutSmallAlternateModel,
     [switch]$NoModel,
     [switch]$LowMemoryStarter,
     [string]$EmbeddingDir = "",
@@ -39,6 +44,9 @@ param(
     [string]$MultilingualRerankerDir = "",
     [string]$RerankerDir = "",
     [switch]$RequireReranker,
+    # The default document-search engine (multilingual-e5-small + mmarco reranker) is mandatory: a package without it shows
+    # "semantic search engine not installed" on a PC that cannot download anything. Opt out only for a deliberate diagnostic build.
+    [switch]$WithoutMultilingualSearch,
     [string]$RuntimeDir = "",
     [string]$RuntimeTag = "",
     # Directory holding (or receiving) the locked Vulkan runtime archive. Default: artifacts\cache\runtime, the same cache
@@ -223,6 +231,10 @@ if ($Fetch) {
         } else {
             $ModelPath = Join-Path $assets "Qwen3-4B-Q4_K_M.gguf"
             Get-PinnedAsset "Qwen/Qwen3-4B-GGUF" "main" "Qwen3-4B-Q4_K_M.gguf" $ModelPath 0 "sha256" "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"
+            if (-not $WithoutSmallAlternateModel) {
+                $AlternateModelPath = Join-Path $assets "Qwen3-0.6B-Q8_0.gguf"
+                Get-PinnedAsset "Qwen/Qwen3-0.6B-GGUF" "main" "Qwen3-0.6B-Q8_0.gguf" $AlternateModelPath 0 "sha256" "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+            }
         }
     }
     # all-MiniLM-L6-v2 (Apache-2.0): the files the Core's EmbeddingService expects.
@@ -292,6 +304,20 @@ if (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)) {
     Assert-PinnedAsset (Join-Path $MultilingualRerankerDir "model.onnx") 118620017 "sha256" "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4"
     Assert-PinnedAsset (Join-Path $MultilingualRerankerDir "tokenizer.json") 17082660 "sha256" "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626"
 }
+if (-not $WithoutMultilingualSearch -and
+    ([string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir) -or [string]::IsNullOrWhiteSpace($MultilingualRerankerDir))) {
+    throw "The Corporate package must ship the multilingual semantic search engine (default for Italian/English document search). Pass -MultilingualEmbeddingDir and -MultilingualRerankerDir (pinned ONNX folders) or -Fetch; use -WithoutMultilingualSearch only for a deliberate diagnostic build."
+}
+$smallAlternatePinnedSha256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+$includeSmallAlternate = (-not $NoModel) -and (-not $LowMemoryStarter) -and (-not $WithoutSmallAlternateModel)
+if ($includeSmallAlternate) {
+    if ([string]::IsNullOrWhiteSpace($AlternateModelPath) -or -not (Test-Path -LiteralPath $AlternateModelPath -PathType Leaf)) {
+        throw "The Corporate package must also ship the very small alternative model (Qwen3-0.6B-Q8_0.gguf) for PCs with little free RAM. Pass -AlternateModelPath or -Fetch; use -WithoutSmallAlternateModel only for a diagnostic build."
+    }
+    if ([IO.Path]::GetFileName($AlternateModelPath) -ne "Qwen3-0.6B-Q8_0.gguf") { throw "Only the reviewed pinned Qwen3-0.6B-Q8_0.gguf is accepted as the small alternative model." }
+    $altActual = (Get-FileHash -LiteralPath $AlternateModelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($altActual -ne $smallAlternatePinnedSha256) { throw "The small alternative model does not match its pinned SHA-256." }
+}
 if ($RequireReranker -and [string]::IsNullOrWhiteSpace($RerankerDir)) {
     throw "Complete local RAG requires -RerankerDir or -Fetch. No cloud or later runtime download is permitted."
 }
@@ -325,6 +351,7 @@ $runtimeDest = Join-Path $data "LocalAI\runtime\llama.cpp-$tag-cpu"
 New-Item -ItemType Directory -Force $runtimeDest, (Join-Path $data "models"), (Join-Path $data "ai-runtimes\embeddings") | Out-Null
 Copy-Item (Join-Path $RuntimeDir "*") $runtimeDest -Recurse -Force
 if (-not $NoModel) { Copy-Item $ModelPath (Join-Path $data "models") -Force }
+if ($includeSmallAlternate) { Copy-Item $AlternateModelPath (Join-Path $data "models") -Force }
 # Extra models must not silently change the starter fallback.
 if (-not $NoModel) { Set-Content (Join-Path (Join-Path $data "models") ".corporate-default-model") ([IO.Path]::GetFileName($ModelPath)) -Encoding UTF8 }
 if (-not (Test-Path (Join-Path $runtimeDest "llama-server.exe"))) { throw "Bundled CPU runtime was not staged." }
@@ -438,6 +465,9 @@ start "" "%~dp0PaRuX.exe"
 '@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Lite (CPU only).cmd") -Encoding ASCII
 $modelGuide = if ($NoModel) { "This NoModel edition has NO chat model: import a compatible GGUF before expecting local chat answers." } else { "Local GGUF included: $([IO.Path]::GetFileName($ModelPath)). The model is not guaranteed to fit every 8-16 GB PC; verify memory headroom before running." }
 $modelLicenceGuide = "Bundled model origin: $modelOriginLabel. Licence: $modelLicenseLabel. The package checksum proves included bytes, not model origin or redistribution rights."
+if ($includeSmallAlternate) {
+    $modelGuide += " A very small alternative model (Qwen3-0.6B-Q8_0.gguf, 0.6 GB, Apache-2.0) is also included: when the PC has too little free RAM for the main model (for example with Teams and Outlook open), PaRuX answers with the small one instead of refusing. It is faster but less precise on complex documents; choose a model explicitly in Chat to override. Italiano: e' incluso anche un modello molto piccolo (0.6B): se la RAM libera non basta per quello principale, PaRuX risponde con il piccolo invece di rifiutare; per i documenti complessi e' meno preciso."
+}
 if ($LowMemoryStarter) {
     $modelLicenceGuide += " LOW-MEMORY STARTER: 0.6B is primarily for basic chat; it is not a quality replacement for the 4B model, especially for complex corporate RAG or reasoning."
 }
@@ -464,6 +494,7 @@ Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: "Sta
 o Vulkan non parte, PaRuX torna da solo al motore CPU. Solo CPU (IT): "Start PaRuX Corporate Lite (CPU only).cmd" oppure PARUX_CORPORATE_GPU=0.
 Importa nuovi GGUF e scegli il modello da Chat. Solo con consenso IT usa "Start PaRuX Corporate Model Downloads.cmd".
 "@ | Set-Content (Join-Path $stage "README-corporate-lite.txt") -Encoding UTF8
+Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\corporate\LEGGIMI-LOG.txt") -Destination (Join-Path $stage "LEGGIMI-LOG.txt") -Force
 
 # --- 4. Manifest with hashes -----------------------------------------------------------------------------------------------
 $files = Get-ChildItem $stage -Recurse -File | ForEach-Object {
@@ -473,6 +504,10 @@ $manifest = [ordered]@{
     product = "PaRuX Corporate Lite Offline"; version = $Version; generatedUtc = [DateTime]::UtcNow.ToString("o")
     modelIncluded = (-not $NoModel)
     model = $(if ($NoModel) { $null } else { [IO.Path]::GetFileName($ModelPath) }); modelSha256 = $(if ($NoModel) { $null } else { (Get-FileHash $ModelPath -Algorithm SHA256).Hash.ToLowerInvariant() })
+    alternateModelIncluded = [bool]$includeSmallAlternate
+    alternateModel = $(if ($includeSmallAlternate) { [IO.Path]::GetFileName($AlternateModelPath) } else { $null })
+    alternateModelSha256 = $(if ($includeSmallAlternate) { $smallAlternatePinnedSha256 } else { $null })
+    alternateModelOrigin = $(if ($includeSmallAlternate) { "Qwen/Qwen3-0.6B-GGUF pinned SHA-256" } else { $null }); alternateModelLicense = $(if ($includeSmallAlternate) { "Apache-2.0" } else { $null })
     modelOrigin = $modelOriginLabel; modelLicense = $modelLicenseLabel; modelSourceVerifiedByBuilder = [bool]($Fetch -and -not $NoModel)
     starterProfile = $(if ($NoModel) { "none" } elseif ($LowMemoryStarter) { "low-memory-0.6b" } else { "standard-or-user-supplied" })
     runtimeTag = $tag; runtimeIncluded = $true; embeddingIncluded = $true; multilingualEmbeddingIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualEmbeddingDir)); multilingualRerankerIncluded = (-not [string]::IsNullOrWhiteSpace($MultilingualRerankerDir)); rerankerIncluded = (-not [string]::IsNullOrWhiteSpace($RerankerDir)); modelImportAllowed = $true; modelDownloadsRequireOptIn = $true
@@ -513,7 +548,7 @@ try {
     if (@($names | Where-Object { $_.Contains('\') }).Count -gt 0) { throw "ZIP has backslash entries." }
     $rel = @($names | ForEach-Object { $_.Substring("PaRuX-Corporate-Lite/".Length) })
     foreach ($req in "PaRuX.exe", "PaRuX.Server/PaRuX.Server.exe", "parux.corporate", "Start PaRuX Corporate Lite.cmd", "MANIFEST.json", "LICENSE.txt",
-        "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "Start PaRuX Corporate Lite (CPU only).cmd", "README-corporate-lite.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
+        "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "Start PaRuX Corporate Lite (CPU only).cmd", "README-corporate-lite.txt", "LEGGIMI-LOG.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/(parux\.db|history|attachments|server/)' -or $_ -match '(?i)(^|/)(rag\.db|knowledge\.db|bootstrap\.json)$' }).Count -gt 0) { throw "ZIP contains user data/indexes/tokens." }
     $expectedModels = if ($NoModel) { 0 } else { 1 }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' }).Count -ne $expectedModels) { throw "Expected $expectedModels bundled model(s)." }
@@ -563,6 +598,14 @@ try {
     if ($offlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=0' -or $onlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=1') {
         throw "Corporate model-download consent was not staged correctly."
     }
+    # The default semantic search engine must be physically inside the finished archive (a PC that cannot download anything
+    # would otherwise report "semantic search engine not installed").
+    if (-not $WithoutMultilingualSearch) {
+        foreach ($mustHave in "PaRuXData/ai-runtimes/embeddings-e5/model.onnx", "PaRuXData/ai-runtimes/embeddings-e5/tokenizer.json",
+                              "PaRuXData/ai-runtimes/rerank-mmarco/model.onnx", "PaRuXData/ai-runtimes/rerank-mmarco/tokenizer.json") {
+            if ($rel -notcontains $mustHave) { throw "The finished archive lacks the multilingual semantic search file $mustHave." }
+        }
+    }
     # Verify native CPU engine and starter model bytes from the FINISHED archive, not just the stage.
     $nativePath = @($rel | Where-Object { $_ -match '(?i)^PaRuXData/LocalAI/runtime/llama\.cpp-[^/]+-cpu/llama-server\.exe$' })[0]
     $modelPathInZip = if ($NoModel) { $null } else { @($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' })[0] }
@@ -571,6 +614,11 @@ try {
         $checks = @(@{ entry = $nativePath; expected = $manifest.nativeRuntimeSha256; title = "CPU runtime" },
             @{ entry = "$vulkanRel/llama-server.exe"; expected = $manifest.vulkanNativeRuntimeSha256; title = "Vulkan runtime" })
         if (-not $NoModel) { $checks += @{ entry = $modelPathInZip; expected = $manifest.modelSha256; title = "Starter GGUF" } }
+        if ($includeSmallAlternate) {
+            $altInZip = @($rel | Where-Object { $_ -ieq "PaRuXData/models/Qwen3-0.6B-Q8_0.gguf" })[0]
+            if ($null -eq $altInZip) { throw "The finished archive lacks the small alternative model." }
+            $checks += @{ entry = $altInZip; expected = $manifest.alternateModelSha256; title = "Small alternative GGUF" }
+        }
         foreach ($check in $checks) {
             $zipEntry = $z.GetEntry("PaRuX-Corporate-Lite/" + $check.entry)
             if ($null -eq $zipEntry) { throw "Missing $($check.title) archive entry." }

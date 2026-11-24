@@ -561,6 +561,70 @@ function Invoke-KillRecoveryStage([string]$stageRoot) {
     return $stage
 }
 
+# Tight-memory stage (own extracted copy): a helper process OWNED BY THIS TEST holds memory until only reserve + 1.8 GiB remain
+# available. The main model (needs more than that) must be refused by admission and the very small alternative model must
+# answer chat instead. Nothing of the user's is touched; the helper is stopped and the package exited at the end.
+function Invoke-LowMemoryFallbackStage([string]$stageRoot) {
+    $stage = [ordered]@{ label = "low-memory-fallback"; folder = $stageRoot }
+    $stageApp = Join-Path $stageRoot "PaRuX-Corporate-Lite"
+    $stageData = Join-Path $stageApp "PaRuXData"
+    $savedEnv = @{ PARUX_CORPORATE = $env:PARUX_CORPORATE; PARUX_DATA_ROOT = $env:PARUX_DATA_ROOT; PARUX_LOCALAI_STATE_DIR = $env:PARUX_LOCALAI_STATE_DIR }
+    $savedEndpoint = $script:endpoint; $savedToken = $script:token
+    $hog = $null; $hogStop = Join-Path $stageRoot "hog.stop"; $hogReady = Join-Path $stageRoot "hog.ready"
+    $ours = { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) }) }
+    try {
+        New-Item -ItemType Directory -Force $stageRoot | Out-Null
+        [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $stageRoot)
+        New-Item -ItemType Directory -Force $stageData | Out-Null
+        $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $stageData; $env:PARUX_LOCALAI_STATE_DIR = $stageData
+        $proc = Start-Process (Join-Path $stageApp "PaRuX.exe") -PassThru -WorkingDirectory $stageApp
+        $boot = Join-Path $stageData "server\bootstrap.json"
+        $dl = (Get-Date).AddSeconds($StartTimeoutSeconds)
+        while ((Get-Date) -lt $dl -and -not (Test-Path $boot) -and -not $proc.HasExited) { Start-Sleep -Milliseconds 300 }
+        $b = Get-Content $boot -Raw | ConvertFrom-Json
+        $script:endpoint = $b.endpoint.TrimEnd('/'); $script:token = $b.token
+        for ($i = 0; $i -lt 120; $i++) { try { if ((Api GET "/api/v1/knowledge/search?q=ping").Status -eq 200) { break } } catch {}; Start-Sleep -Milliseconds 500 }
+
+        $totalBytes = [int64](Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize * 1024
+        $reserve = [math]::Min([math]::Max([int64]($totalBytes * 0.08), 1GB), [int64](1.5GB))
+        $targetFreeBytes = [int64]($reserve + 1.8GB)
+        $stage.total_gib = [math]::Round($totalBytes / 1GB, 1); $stage.target_available_gib = [math]::Round($targetFreeBytes / 1GB, 2)
+        $hogScript = Join-Path $stageRoot "hog.ps1"
+        @"
+`$target = $targetFreeBytes
+`$keep = New-Object System.Collections.Generic.List[byte[]]
+while (`$true) {
+    `$free = [int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024
+    if (`$free -le `$target) { break }
+    `$chunk = [math]::Min(256MB, `$free - `$target)
+    if (`$chunk -lt 16MB) { break }
+    `$a = New-Object byte[] ([int]`$chunk); for (`$i = 0; `$i -lt `$a.Length; `$i += 4096) { `$a[`$i] = 1 }; `$keep.Add(`$a)
+}
+Set-Content '$hogReady' 'ready'
+while (-not (Test-Path '$hogStop')) { Start-Sleep -Milliseconds 500 }
+"@ | Set-Content $hogScript -Encoding UTF8
+        $hog = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", $hogScript) -PassThru -WindowStyle Hidden
+        $dl = (Get-Date).AddSeconds(120); while ((Get-Date) -lt $dl -and -not (Test-Path $hogReady)) { Start-Sleep -Milliseconds 500 }
+        $stage.available_gib_during_test = [math]::Round(([int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024) / 1GB, 2)
+
+        $body = @{ model = "local-default"; stream = $false; max_tokens = 24; messages = @(@{ role = "user"; content = "Reply with the single word: ready" }) }
+        $r = Api POST "/api/v1/chat/completions" $body 600
+        $stage.chat_http_status = $r.Status
+        $stage.chat_error = if ($r.Status -ne 200) { $r.Text.Substring(0, [math]::Min(400, $r.Text.Length)) } else { $null }
+        $st = Api GET "/api/v1/runtime/status" $null 60
+        $stage.active_model = if ($st.Json) { Split-Path ([string]$st.Json.activeModelPath) -Leaf } else { $null }
+        $stage.pass = [bool]($r.Status -eq 200 -and $stage.active_model -like "Qwen3-0.6B*")
+    } catch { $stage.error = $_.Exception.Message; $stage.pass = $false }
+    finally {
+        try { "stop" | Set-Content $hogStop; if ($hog) { $null = $hog.WaitForExit(15000); if (-not $hog.HasExited) { $hog.Kill() } } } catch {}
+        try { $stage.exit_request = Invoke-AppExitRequest $stageApp; $dl = (Get-Date).AddSeconds(40); while ((Get-Date) -lt $dl -and (& $ours).Count -gt 0) { Start-Sleep 1 } } catch {}
+        $left = & $ours; if ($left.Count) { $left | Stop-Process -Force -ErrorAction SilentlyContinue }
+        $script:endpoint = $savedEndpoint; $script:token = $savedToken
+        $env:PARUX_CORPORATE = $savedEnv.PARUX_CORPORATE; $env:PARUX_DATA_ROOT = $savedEnv.PARUX_DATA_ROOT; $env:PARUX_LOCALAI_STATE_DIR = $savedEnv.PARUX_LOCALAI_STATE_DIR
+    }
+    return $stage
+}
+
 # ---------------------------------------------------------------------------------------------------------------------------
 # 1. Extract + start like the launcher
 # ---------------------------------------------------------------------------------------------------------------------------
@@ -620,6 +684,19 @@ try {
         loaded = ($rer.Status -eq 200 -and [bool]$rer.Json.loaded)
     }
     Say "ONNX loader status: embedding loaded=$($R.embedding_engine.loaded), reranker loaded=$($R.reranker_engine.loaded)"
+    # The default document-search engine (multilingual-e5-small + mmarco reranker). probe=1 computes a real vector/score,
+    # so a package that ships without it, or with files that cannot run, is caught here instead of on a customer PC.
+    $mle = Api GET "/api/v1/embeddings/multilingual/engine?probe=1" $null 180
+    $mlr = Api GET "/api/v1/reranker/multilingual/engine?probe=1" $null 180
+    $R.multilingual_embedding_engine = [ordered]@{
+        http_status = $mle.Status; installed = ($mle.Status -eq 200 -and [bool]$mle.Json.installed)
+        loaded = ($mle.Status -eq 200 -and [bool]$mle.Json.loaded); probe_dimensions = $(if ($mle.Json) { $mle.Json.probeDimensions } else { $null })
+    }
+    $R.multilingual_reranker_engine = [ordered]@{
+        http_status = $mlr.Status; installed = ($mlr.Status -eq 200 -and [bool]$mlr.Json.installed)
+        loaded = ($mlr.Status -eq 200 -and [bool]$mlr.Json.loaded); probe_score = $(if ($mlr.Json) { $mlr.Json.probeScore } else { $null })
+    }
+    Say "Multilingual search engine: embedding installed=$($R.multilingual_embedding_engine.installed) loaded=$($R.multilingual_embedding_engine.loaded) dims=$($R.multilingual_embedding_engine.probe_dimensions); reranker installed=$($R.multilingual_reranker_engine.installed) loaded=$($R.multilingual_reranker_engine.loaded)"
     Start-Sleep 5
     $idleStats = Get-SampleStats $t0 (Get-Date)
     $R.idle_after_start = Fmt-Stats (Get-SampleStats (Get-Date).AddSeconds(-4) (Get-Date))
@@ -900,6 +977,10 @@ try {
         $R.portable_stage_readonly = Invoke-PortableStage "readonly-data-root" (Join-Path $work "readonly-data-stage") $true
         Say "Read-only data root stage: $($R.portable_stage_readonly | ConvertTo-Json -Compress)"
     }
+    if ($EnforceAcceptance -and $bundleManifest.alternateModelIncluded) {
+        $R.portable_stage_lowmemory = Invoke-LowMemoryFallbackStage (Join-Path $work "low-memory-stage")
+        Say "Low-memory fallback stage: $($R.portable_stage_lowmemory | ConvertTo-Json -Compress)"
+    }
     if ($EnforceAcceptance) {
         $R.portable_stage_killrecovery = Invoke-KillRecoveryStage (Join-Path $work "kill-recovery-stage")
         Say "Hard-kill recovery stage: $($R.portable_stage_killrecovery | ConvertTo-Json -Compress)"
@@ -980,6 +1061,12 @@ finally {
         if (-not $R.embedding_engine.loaded -or -not $R.reranker_engine.loaded) {
             $acceptanceFailures.Add("Real ONNX embedding/reranker loader did not succeed in the extracted standalone package.")
         }
+        if (-not $R.multilingual_embedding_engine.installed -or -not $R.multilingual_embedding_engine.loaded -or [int]$R.multilingual_embedding_engine.probe_dimensions -ne 384) {
+            $acceptanceFailures.Add("The default multilingual semantic search engine (embedding) is missing or did not run in the extracted package: " + ($R.multilingual_embedding_engine | ConvertTo-Json -Compress))
+        }
+        if (-not $R.multilingual_reranker_engine.installed -or -not $R.multilingual_reranker_engine.loaded) {
+            $acceptanceFailures.Add("The default multilingual reranker is missing or did not run in the extracted package: " + ($R.multilingual_reranker_engine | ConvertTo-Json -Compress))
+        }
         if ($R.index_final_state -ne "done" -or [int]$R.index_chunks -lt 1) {
             $acceptanceFailures.Add("Document indexing did not finish with searchable chunks.")
         }
@@ -1006,6 +1093,9 @@ finally {
         }
         if ($R.portable_stage_unicode -and -not $R.portable_stage_unicode.pass) {
             $acceptanceFailures.Add("Unicode-path package stage failed: $($R.portable_stage_unicode | ConvertTo-Json -Compress)")
+        }
+        if ($bundleManifest.alternateModelIncluded -and -not ($R.portable_stage_lowmemory -and $R.portable_stage_lowmemory.pass)) {
+            $acceptanceFailures.Add("Low-memory fallback did not answer with the small alternative model: " + ($R.portable_stage_lowmemory | ConvertTo-Json -Compress))
         }
         if ($R.portable_stage_killrecovery -and -not $R.portable_stage_killrecovery.pass) {
             $acceptanceFailures.Add("Hard-kill recovery stage failed: $($R.portable_stage_killrecovery | ConvertTo-Json -Compress)")

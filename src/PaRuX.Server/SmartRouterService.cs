@@ -266,8 +266,12 @@ public sealed class SmartRouterService : IRoleRouter
             .Where(c => c.EstimatedNeededMib.HasValue && c.AvailableMib.HasValue)
             .OrderBy(c => c.EstimatedNeededMib!.Value - c.AvailableMib!.Value)
             .FirstOrDefault();
-        return closest is null ? string.Empty
-            : $" Closest candidate {closest.FileName}: needs about {closest.EstimatedNeededMib:0} MiB, about {closest.AvailableMib:0} MiB available.";
+        if (closest is null) return string.Empty;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        double needed = closest.EstimatedNeededMib!.Value, available = closest.AvailableMib!.Value;
+        double missingGiB = Math.Max(0.1, Math.Ceiling(Math.Max(0, needed - available) / 1024d * 10d) / 10d);
+        return " " + closest.FileName + " needs about " + (needed / 1024d).ToString("0.0", inv) + " GB; PaRuX can use about "
+            + (available / 1024d).ToString("0.0", inv) + " GB right now. Free about " + missingGiB.ToString("0.0", inv) + " GB more.";
     }
 
     private CandidateEvidenceDto GetExactManagedModelEvidence(string role, string path)
@@ -770,11 +774,13 @@ public sealed class SmartRouterService : IRoleRouter
             // A manual lock or explicit role never reaches this automatic pool. Unknown
             // OS RAM and candidates that cannot fit must not be promoted as successful
             // AUTO suggestions. No model installation, profile widening or forced swap.
+            IReadOnlyList<CandidateEvidenceDto> beforeFit = candidates;
             candidates = EligibleCorporateAutoCandidates(candidates);
             if (candidates.Count == 0)
                 return Failure(normalizedTextRole,
-                    "No installed Corporate CPU model fits the memory available under the current PaRuX profile. "
-                    + "Try again after freeing RAM or explicitly choose a smaller installed model in Model Hub. "
+                    "No installed Corporate CPU model fits the memory available right now."
+                    + DescribeBestFitShortfall(beforeFit)
+                    + " Close a heavy application or browser tabs you do not need and try again, or choose a smaller installed model in Model Hub. "
                     + "No other application was stopped.");
         }
         if (automaticMode && normalizedTextRole != null && candidates.Count > 0)

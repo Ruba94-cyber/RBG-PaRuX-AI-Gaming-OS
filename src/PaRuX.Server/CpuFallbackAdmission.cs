@@ -56,9 +56,13 @@ internal static class CpuFallbackAdmission
     internal static string? Evaluate(SystemRamSnapshot? ram, double maxSystemRamPercent, long reclaimableBytes, double neededMib)
     {
         if (ram is not { IsValid: true }) return null;
-        long availableBytes = RuntimeMemoryBudget.CalculateAvailableSystemRamBytes(ram, maxSystemRamPercent, reclaimableBytes);
+        long availableBytes = PaRuX.Contracts.CorporateMode.IsActive
+            ? RuntimeMemoryBudget.CalculateCorporateAvailableBytes(ram, maxSystemRamPercent, reclaimableBytes)
+            : RuntimeMemoryBudget.CalculateAvailableSystemRamBytes(ram, maxSystemRamPercent, reclaimableBytes);
         double availableMib = availableBytes / 1024d / 1024d;
         if (neededMib <= availableMib) return null;
+        if (PaRuX.Contracts.CorporateMode.IsActive)
+            return CorporateCpuMemoryPlanner.DescribeShortfall(neededMib, availableMib, ram, maxSystemRamPercent);
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         double windowsAvailableGiB = ram.AvailableBytes / 1024d / 1024d / 1024d;
         double profilePercent = double.IsFinite(maxSystemRamPercent)

@@ -47,6 +47,20 @@ internal static class CorporateGpuBackendPolicy
         return v is "force" or "integrated" or "always";
     }
 
+    private static readonly System.Text.RegularExpressions.Regex RdnaIntegratedName = new(
+        @"\bRadeon(?:\s*\((?:TM|R)\)|\s*[™®])?\s+(?:Graphics\s+)?(?:(?:6[0-9]{2}|7[0-9]{2}|8[0-9]{2})M|8[0-9]{2}S)\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// An integrated GPU that is fast enough to beat the CPU engine: AMD RDNA2/RDNA3/RDNA3.5 Radeon 660M-890M (the 760M and
+    /// 780M of Ryzen 5/7/9 PRO 7000/8000 laptops). Measured on the Radeon 780M: Qwen3-4B Q4_K_M decodes at about 24-29
+    /// tok/s on Vulkan (execution plan, 2026-11-21), several times the CPU engine. The 760M is the same architecture with
+    /// fewer compute units; it is NOT measured here. Intel UHD/Gen9-11 and Radeon Vega iGPUs are not in this class (an
+    /// Intel UHD measured 3.6 tok/s on Vulkan against 6.5 on the CPU engine).
+    /// </summary>
+    internal static bool IsCapableIntegrated(GpuAdapterStatus adapter) =>
+        adapter.VendorId == 0x1002 && !string.IsNullOrWhiteSpace(adapter.Name) && RdnaIntegratedName.IsMatch(adapter.Name);
+
     internal static bool IsDisabledByEnvironment(string? value)
     {
         string v = value?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -82,8 +96,8 @@ internal static class CorporateGpuBackendPolicy
             return new Decision(Backend.Cpu, "No usable GPU adapter was detected; running on the CPU.");
         if (recentlyFailed)
             return new Decision(Backend.Cpu, "Vulkan failed for this model a few minutes ago; running on the CPU until it is retried.");
-        if (IsIntegrated(adapter) && !AllowsIntegratedByEnvironment(disableEnvironmentValue))
-            return new Decision(Backend.Cpu, "Only an integrated GPU (" + adapter.Name + ", shared memory) is present; it measured slower than the CPU engine, so the CPU is used. Set "
+        if (IsIntegrated(adapter) && !IsCapableIntegrated(adapter) && !AllowsIntegratedByEnvironment(disableEnvironmentValue))
+            return new Decision(Backend.Cpu, "Only an older or entry-level integrated GPU (" + adapter.Name + ", shared memory) is present; such GPUs measured slower than the CPU engine, so the CPU is used. Set "
                 + DisableEnvironmentVariable + "=force to try the GPU anyway.", adapter);
         return new Decision(Backend.Vulkan, "Vulkan adapter " + adapter.Name + (IsIntegrated(adapter) ? " (integrated, shared memory)" : " (discrete)") + ".", adapter);
     }
