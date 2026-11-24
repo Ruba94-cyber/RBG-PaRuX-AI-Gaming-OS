@@ -445,7 +445,7 @@ function Invoke-PortableStage([string]$label, [string]$stageRoot, [bool]$readOnl
     $me = "$env:USERDOMAIN\$env:USERNAME"
     $savedEnv = @{ PARUX_CORPORATE = $env:PARUX_CORPORATE; PARUX_DATA_ROOT = $env:PARUX_DATA_ROOT; PARUX_LOCALAI_STATE_DIR = $env:PARUX_LOCALAI_STATE_DIR }
     $savedEndpoint = $script:endpoint; $savedToken = $script:token
-    $stageProc = $null; $denied = $false
+    $stageProc = $null; $denied = $false; $stageStart = Get-Date
     try {
         New-Item -ItemType Directory -Force $stageRoot | Out-Null
         [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $stageRoot)
@@ -488,10 +488,76 @@ function Invoke-PortableStage([string]$label, [string]$stageRoot, [bool]$readOnl
         if ($denied) { & icacls $stageData /remove:d $me | Out-Null }
     }
     $stage.pass = if ($readOnlyData) {
-        [bool]($stage.data_root_writable -eq $false -and $stage.processes_before_harness_kill -eq "none" -and -not $stage.error)
+        # Expected behaviour (App.xaml.cs StartupFailureReport): no Core starts, a visible message names the data root and a
+        # fallback log is written under %TEMP%. The modal message box keeps PaRuX.exe alive until the user dismisses it, so
+        # the harness (not an "exit request") closes it. The fallback log is evidence, then removed so it does not count as
+        # an unexpected write outside the portable folder.
+        $log = Join-Path $env:TEMP "PaRuX-startup-error.log"
+        $stage.startup_message_logged = $false
+        if (Test-Path $log) {
+            $item = Get-Item $log
+            if ($item.LastWriteTime -ge $stageStart) {
+                $text = Get-Content $log -Raw -ErrorAction SilentlyContinue
+                $stage.startup_message_logged = [bool]($text -and $text.Contains($stageData))
+                if ($stage.startup_message_logged) { $stage.startup_message_excerpt = ($text -split "`r?`n" | Select-Object -First 3) -join " "; Remove-Item $log -Force -ErrorAction SilentlyContinue }
+            }
+        }
+        $stage.processes_after_harness_kill = if (@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) }).Count) { "still running" } else { "none" }
+        [bool]($stage.data_root_writable -eq $false -and -not $stage.core_bootstrap -and $stage.startup_message_logged -and $stage.processes_after_harness_kill -eq "none" -and -not $stage.error)
     } else {
         [bool]($stage.core_bootstrap -and $stage.search_http_status -eq 200 -and $stage.processes_before_harness_kill -eq "none" -and -not $stage.error)
     }
+    return $stage
+}
+
+# Abnormal-close stage (own extracted copy): hard-kill PaRuX.exe after the Core is up; the Core and llama-server must follow it
+# within 5 s (job object), and the SAME data root must start cleanly again afterwards (stale bootstrap/pid recovery).
+function Invoke-KillRecoveryStage([string]$stageRoot) {
+    $stage = [ordered]@{ label = "hard-kill-recovery"; folder = $stageRoot }
+    $stageApp = Join-Path $stageRoot "PaRuX-Corporate-Lite"
+    $stageData = Join-Path $stageApp "PaRuXData"
+    $savedEnv = @{ PARUX_CORPORATE = $env:PARUX_CORPORATE; PARUX_DATA_ROOT = $env:PARUX_DATA_ROOT; PARUX_LOCALAI_STATE_DIR = $env:PARUX_LOCALAI_STATE_DIR }
+    $savedEndpoint = $script:endpoint; $savedToken = $script:token
+    $ours = { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) }) }
+    try {
+        New-Item -ItemType Directory -Force $stageRoot | Out-Null
+        [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $stageRoot)
+        New-Item -ItemType Directory -Force $stageData | Out-Null
+        $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $stageData; $env:PARUX_LOCALAI_STATE_DIR = $stageData
+        $boot = Join-Path $stageData "server\bootstrap.json"
+        foreach ($round in 1, 2) {
+            $startedAt = Get-Date
+            $stage["round$round`_stale_bootstrap_present"] = Test-Path $boot
+            $proc = Start-Process (Join-Path $stageApp "PaRuX.exe") -PassThru -WorkingDirectory $stageApp
+            $dl = (Get-Date).AddSeconds($StartTimeoutSeconds)
+            # After a hard kill the previous bootstrap.json is still on disk: wait for a FRESH one, never trust the stale file.
+            while ((Get-Date) -lt $dl -and -not ((Test-Path $boot) -and (Get-Item $boot).LastWriteTime -gt $startedAt) -and -not $proc.HasExited) { Start-Sleep -Milliseconds 300 }
+            $b = Get-Content $boot -Raw | ConvertFrom-Json
+            $script:endpoint = $b.endpoint.TrimEnd('/'); $script:token = $b.token
+            $ok = $false
+            for ($i = 0; $i -lt 120 -and -not $ok; $i++) { try { $ok = ((Api GET "/api/v1/knowledge/search?q=ping").Status -eq 200) } catch {}; if (-not $ok) { Start-Sleep -Milliseconds 500 } }
+            $stage["round$round`_core_up"] = $ok
+            if ($round -eq 1) {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                $dl = (Get-Date).AddSeconds(5)
+                while ((Get-Date) -lt $dl -and (& $ours).Count -gt 0) { Start-Sleep -Milliseconds 250 }
+                $left = & $ours
+                $stage.processes_5s_after_app_killed = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+                if ($left.Count) { $left | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
+            } else {
+                $stage.exit_request = Invoke-AppExitRequest $stageApp
+                $dl = (Get-Date).AddSeconds(40); while ((Get-Date) -lt $dl -and (& $ours).Count -gt 0) { Start-Sleep 1 }
+            }
+        }
+    } catch { $stage.error = $_.Exception.Message }
+    finally {
+        $left = & $ours
+        $stage.processes_at_end = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+        if ($left.Count) { $left | Stop-Process -Force -ErrorAction SilentlyContinue }
+        $script:endpoint = $savedEndpoint; $script:token = $savedToken
+        $env:PARUX_CORPORATE = $savedEnv.PARUX_CORPORATE; $env:PARUX_DATA_ROOT = $savedEnv.PARUX_DATA_ROOT; $env:PARUX_LOCALAI_STATE_DIR = $savedEnv.PARUX_LOCALAI_STATE_DIR
+    }
+    $stage.pass = [bool]($stage.round1_core_up -and $stage.round2_core_up -and $stage.processes_5s_after_app_killed -eq "none" -and $stage.processes_at_end -eq "none" -and -not $stage.error)
     return $stage
 }
 
@@ -536,8 +602,11 @@ try {
     for ($i = 0; $i -lt 120; $i++) { try { if ((Api GET "/api/v1/knowledge/search?q=ping").Status -eq 200) { break } } catch {}; Start-Sleep -Milliseconds 500 }
     $R.cold_start_to_core_s = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
     Say "Core up at $script:endpoint after $($R.cold_start_to_core_s)s"
-    # This GET loads the real ONNX runtime and tokenizer, not merely a filename.
-    # It catches missing native DLLs or incompatible model graphs on a clean PC.
+    # The engine status endpoints are deliberately NON-loading (polling must not pull idle ONNX models back into RAM),
+    # so run one real embedding and one real rerank call first. They load the ONNX runtime and tokenizer and catch
+    # missing native DLLs or incompatible model graphs on a clean PC; the status GETs below then report the result.
+    $null = Api POST "/v1/embeddings" @{ input = "engine temperature probe" } 180
+    $null = Api POST "/api/v1/reranker/rerank" @{ query = "engine temperature"; documents = @("coolant temperature sensor", "radio volume"); topK = 2 } 180
     $emb = Api GET "/api/v1/embeddings/engine" $null 120
     $rer = Api GET "/api/v1/reranker/engine" $null 120
     $R.embedding_engine = [ordered]@{
@@ -831,6 +900,10 @@ try {
         $R.portable_stage_readonly = Invoke-PortableStage "readonly-data-root" (Join-Path $work "readonly-data-stage") $true
         Say "Read-only data root stage: $($R.portable_stage_readonly | ConvertTo-Json -Compress)"
     }
+    if ($EnforceAcceptance) {
+        $R.portable_stage_killrecovery = Invoke-KillRecoveryStage (Join-Path $work "kill-recovery-stage")
+        Say "Hard-kill recovery stage: $($R.portable_stage_killrecovery | ConvertTo-Json -Compress)"
+    }
 }
 catch {
     $R.FATAL = $_.Exception.Message + " @ " + $_.ScriptStackTrace
@@ -858,6 +931,9 @@ finally {
         $R.processes_left_after_tray_exit = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
         # App-killed case (binding, 5 s budget): only a hard kill of PaRuX.exe itself. It stays "not exercised" after a clean exit.
         $R.processes_5s_after_app_killed = "not exercised (clean exit left no package processes)"
+        if ($null -ne $R.portable_stage_killrecovery -and $R.portable_stage_killrecovery.processes_5s_after_app_killed) {
+            $R.processes_5s_after_app_killed = [string]$R.portable_stage_killrecovery.processes_5s_after_app_killed
+        }
         if ($left.Count -gt 0 -and $appProc -and -not $appProc.HasExited) {
             # Tray automation unavailable: learn whether the Core and llama-server follow the app when it dies.
             Stop-Process -Id $appProc.Id -Force -ErrorAction SilentlyContinue
@@ -930,6 +1006,9 @@ finally {
         }
         if ($R.portable_stage_unicode -and -not $R.portable_stage_unicode.pass) {
             $acceptanceFailures.Add("Unicode-path package stage failed: $($R.portable_stage_unicode | ConvertTo-Json -Compress)")
+        }
+        if ($R.portable_stage_killrecovery -and -not $R.portable_stage_killrecovery.pass) {
+            $acceptanceFailures.Add("Hard-kill recovery stage failed: $($R.portable_stage_killrecovery | ConvertTo-Json -Compress)")
         }
         if ($R.portable_stage_readonly -and -not $R.portable_stage_readonly.pass) {
             $acceptanceFailures.Add("Read-only PaRuXData stage failed: $($R.portable_stage_readonly | ConvertTo-Json -Compress)")
