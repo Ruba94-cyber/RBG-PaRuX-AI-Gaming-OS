@@ -449,6 +449,21 @@ internal sealed class PlayniteThemeService
     private void InstallStaged(string staging, string themes, ThemeArchiveInfo info, PlayniteThemePlanDto plan, bool replace)
     {
         string target = Path.Combine(themes, info.Id);
+        PlayniteThemeStore.State prior = _store.Get();
+        // A backup recorded before PaRuX first replaced a user's theme belongs to
+        // that user, not to the most recent PaRuX-managed version. Do not overwrite
+        // its provenance during later updates of this same managed installation.
+        bool updatingManaged = string.Equals(prior.ManagedFolderName, info.Id, StringComparison.OrdinalIgnoreCase) &&
+            SameDataFolder(prior.ManagedDataFolder, DataFolder());
+        string? preservedBackup = updatingManaged ? prior.BackupFolder : null;
+        if (preservedBackup is not null &&
+            (!IsPaRuXBackup(preservedBackup, themes) ||
+             !Directory.Exists(Path.Combine(preservedBackup, info.Id))))
+        {
+            Fail("The original theme backup is missing or belongs to another Playnite profile. The update was refused to protect the original.");
+            return;
+        }
+
         string? backupRoot = null;
         string? backedUp = null;
         bool stagedIn = false;
@@ -483,13 +498,15 @@ internal sealed class PlayniteThemeService
             return;
         }
 
-        string? oldBackup = _store.Get().BackupFolder;
         if (!_store.Update(s =>
         {
             s.ManagedFolderName = info.Id;
             s.ManagedVersion = info.Version;
             s.ManagedDataFolder = DataFolder();
-            if (backupRoot is not null) s.BackupFolder = backupRoot;
+            // The oldest existing backup is the original owner folder. The new
+            // backupRoot only contains the prior PaRuX version, never supersedes
+            // an older recorded backup during a managed-to-managed update.
+            s.BackupFolder = preservedBackup ?? backupRoot;
         }))
         {
             // Never report success or discard an older backup if ownership/provenance could not be saved.
@@ -497,8 +514,9 @@ internal sealed class PlayniteThemeService
             Fail("The theme files were installed, but PaRuX could not record ownership. Do not remove the existing backup; inspect the theme in Playnite before retrying.");
             return;
         }
-        // Only the newest backup is kept; an older one that PaRuX created itself is removed.
-        if (backupRoot is not null && oldBackup is not null && IsPaRuXBackup(oldBackup, themes)) TryDelete(oldBackup);
+        // After the journal points to the owner's original, the intermediate
+        // PaRuX-managed version may be removed. Never delete preservedBackup.
+        if (backupRoot is not null && preservedBackup is not null) TryDelete(backupRoot);
         Set(s => { s.Stage = "completed"; s.Error = null; });
     }
 

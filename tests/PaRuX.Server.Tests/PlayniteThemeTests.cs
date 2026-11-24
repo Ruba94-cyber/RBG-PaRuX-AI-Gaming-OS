@@ -435,6 +435,47 @@ public sealed class PlayniteThemeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Reinstalling_a_parux_managed_theme_keeps_the_original_user_backup_for_rollback()
+    {
+        MakeUserTheme("the-original-user-theme");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        string originalBackup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        Assert.Equal("the-original-user-theme", File.ReadAllText(Path.Combine(originalBackup, Folder, "mine.txt")));
+
+        // Updating an already managed theme must not substitute a second backup
+        // of PaRuX's own version for the irreplaceable pre-PaRuX original.
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        Assert.Equal(originalBackup, Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*")));
+        Assert.Equal("the-original-user-theme", File.ReadAllText(Path.Combine(originalBackup, Folder, "mine.txt")));
+        Assert.Equal(originalBackup, _store.Get().BackupFolder);
+
+        Assert.Equal("rolled-back", svc.Rollback(consent: true).Outcome);
+        Assert.Equal("the-original-user-theme", File.ReadAllText(Path.Combine(Themes, Folder, "mine.txt")));
+        Assert.Equal(ComponentOwnership.USER_MANAGED, svc.Detect().Ownership);
+    }
+
+    [Fact]
+    public async Task Managed_theme_update_is_refused_if_original_backup_disappeared()
+    {
+        MakeUserTheme("preserve-me");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        string originalBackup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        string rescued = Path.Combine(_root, "safekeeping");
+        Directory.Move(originalBackup, rescued);
+        byte[] installedYaml = File.ReadAllBytes(Path.Combine(Themes, Folder, "theme.yaml"));
+
+        Assert.Equal("failed", (await Install(svc, Req(package, replace: true))).Stage);
+        Assert.Equal(installedYaml, File.ReadAllBytes(Path.Combine(Themes, Folder, "theme.yaml")));
+        Assert.Equal(originalBackup, _store.Get().BackupFolder);
+        Assert.Equal("preserve-me", File.ReadAllText(Path.Combine(rescued, Folder, "mine.txt")));
+        Assert.Empty(Directory.GetDirectories(Themes, ".parux-backup-*"));
+    }
+
+    [Fact]
     public async Task Rollback_refuses_when_the_original_backup_is_missing_instead_of_deleting_the_replacement()
     {
         MakeUserTheme("irreplaceable-user-data");
