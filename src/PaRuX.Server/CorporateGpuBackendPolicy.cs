@@ -36,6 +36,17 @@ internal static class CorporateGpuBackendPolicy
         internal bool UseVulkan => Backend == Backend.Vulkan;
     }
 
+    /// <summary>
+    /// "force", "integrated" or "always" also lets an INTEGRATED (shared-memory) GPU run the model. The default is the CPU
+    /// there: on the Intel UHD reference PC the Vulkan offload measured 3.6 tok/s against 6.5 tok/s on the CPU engine
+    /// (first reply 107 s versus 22 s). A discrete GPU keeps Vulkan by default.
+    /// </summary>
+    internal static bool AllowsIntegratedByEnvironment(string? value)
+    {
+        string v = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        return v is "force" or "integrated" or "always";
+    }
+
     internal static bool IsDisabledByEnvironment(string? value)
     {
         string v = value?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -71,6 +82,9 @@ internal static class CorporateGpuBackendPolicy
             return new Decision(Backend.Cpu, "No usable GPU adapter was detected; running on the CPU.");
         if (recentlyFailed)
             return new Decision(Backend.Cpu, "Vulkan failed for this model a few minutes ago; running on the CPU until it is retried.");
+        if (IsIntegrated(adapter) && !AllowsIntegratedByEnvironment(disableEnvironmentValue))
+            return new Decision(Backend.Cpu, "Only an integrated GPU (" + adapter.Name + ", shared memory) is present; it measured slower than the CPU engine, so the CPU is used. Set "
+                + DisableEnvironmentVariable + "=force to try the GPU anyway.", adapter);
         return new Decision(Backend.Vulkan, "Vulkan adapter " + adapter.Name + (IsIntegrated(adapter) ? " (integrated, shared memory)" : " (discrete)") + ".", adapter);
     }
 

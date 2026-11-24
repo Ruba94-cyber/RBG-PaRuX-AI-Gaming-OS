@@ -16,6 +16,7 @@ Corporate Lite is a restricted, offline edition of RBG – PaRuX for local chat 
   and records why (Runtime Manager launch trace). Nothing is downloaded or installed and no other process is stopped.
   GPU memory shared with system RAM counts against the same profile RAM limit; the Vulkan start is skipped when it
   would not fit. Network features are off; the model-download and runtime-installer endpoints answer 403.
+- **Default backend:** a discrete GPU uses Vulkan; an integrated (shared-memory) GPU stays on the CPU engine, because on the Intel UHD reference PC Vulkan measured 3.6 tok/s against 6.5 tok/s on the CPU (first reply 107 s versus 22 s). `PARUX_CORPORATE_GPU=force` lets an integrated GPU try Vulkan anyway.
 - **IT switch:** `PARUX_CORPORATE_GPU=0` (also `false`, `off`, `no`, `cpu`) forces CPU only. The package includes
   `Start PaRuX Corporate Lite (CPU only).cmd`, which sets it.
 

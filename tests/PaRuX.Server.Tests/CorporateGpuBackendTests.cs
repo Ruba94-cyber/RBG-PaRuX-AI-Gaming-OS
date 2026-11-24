@@ -57,10 +57,10 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [Fact]
     public void Vulkan_is_chosen_only_when_corporate_runtime_present_and_adapter_usable()
     {
-        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd());
+        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia());
         var decision = CorporateGpuBackendPolicy.Decide(true, null, true, inventory, false);
         Assert.Equal(CorporateGpuBackendPolicy.Backend.Vulkan, decision.Backend);
-        Assert.Equal("AMD Radeon 780M Graphics", decision.Adapter?.Name);
+        Assert.Equal("NVIDIA Test Adapter", decision.Adapter?.Name);
 
         Assert.Equal(CorporateGpuBackendPolicy.Backend.Cpu,
             CorporateGpuBackendPolicy.Decide(true, null, false, inventory, false).Backend);          // runtime absent
@@ -90,10 +90,34 @@ public sealed class CorporateGpuBackendTests : IDisposable
     public void The_IT_switch_forces_cpu_only(string? value, bool disabled)
     {
         Assert.Equal(disabled, CorporateGpuBackendPolicy.IsDisabledByEnvironment(value));
-        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd());
+        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia());
         var decision = CorporateGpuBackendPolicy.Decide(true, value, true, inventory, false);
         Assert.Equal(disabled ? CorporateGpuBackendPolicy.Backend.Cpu : CorporateGpuBackendPolicy.Backend.Vulkan, decision.Backend);
         if (disabled) Assert.Contains("PARUX_CORPORATE_GPU", decision.Reason);
+    }
+
+    [Theory]
+    [InlineData(null, false)]       // default: an integrated GPU measured slower than the CPU engine, so the CPU runs
+    [InlineData("1", false)]
+    [InlineData("auto", false)]
+    [InlineData("force", true)]     // IT/owner opts in explicitly
+    [InlineData(" Integrated ", true)]
+    [InlineData("always", true)]
+    [InlineData("0", false)]        // the kill switch still wins
+    public void An_integrated_gpu_only_runs_the_model_when_forced(string? value, bool vulkan)
+    {
+        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd());
+        var decision = CorporateGpuBackendPolicy.Decide(true, value, true, inventory, false);
+        Assert.Equal(vulkan ? CorporateGpuBackendPolicy.Backend.Vulkan : CorporateGpuBackendPolicy.Backend.Cpu, decision.Backend);
+        if (!vulkan && value is not "0") Assert.Contains("integrated GPU", decision.Reason);
+    }
+
+    [Fact]
+    public void A_discrete_gpu_keeps_vulkan_by_default()
+    {
+        var inventory = GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia());
+        Assert.Equal(CorporateGpuBackendPolicy.Backend.Vulkan,
+            CorporateGpuBackendPolicy.Decide(true, null, true, inventory, false).Backend);
     }
 
     [Fact]
@@ -211,7 +235,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [Fact]
     public async Task Corporate_with_runtime_and_adapter_starts_on_vulkan_and_does_not_start_cpu()
     {
-        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), _ => true);
+        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), _ => true);
         var result = await manager.StartTextAsync(CancellationToken.None);
         Assert.True(result.Success, result.Message);
         Launch only = Assert.Single(launches);
@@ -225,7 +249,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [Fact]
     public async Task A_failed_vulkan_start_falls_back_to_the_cpu_engine_observably_and_is_not_retried_at_once()
     {
-        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), kind => kind == "cpu");
+        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), kind => kind == "cpu");
         var result = await manager.StartTextAsync(CancellationToken.None);
         Assert.True(result.Success, result.Message);
         Assert.Equal(2, launches.Count);
@@ -249,7 +273,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [Fact]
     public async Task If_both_engines_fail_the_failure_is_reported_honestly()
     {
-        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), _ => false);
+        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), _ => false);
         var result = await manager.StartTextAsync(CancellationToken.None);
         Assert.False(result.Success);
         Assert.Equal(2, launches.Count);
@@ -260,7 +284,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
     public async Task The_IT_switch_keeps_corporate_on_the_cpu_engine_without_probing_vulkan()
     {
         SetEnvironment(CorporateGpuBackendPolicy.DisableEnvironmentVariable, "0");
-        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), _ => true);
+        var (manager, launches) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), _ => true);
         var result = await manager.StartTextAsync(CancellationToken.None);
         Assert.True(result.Success, result.Message);
         Assert.False(IsVulkan(Assert.Single(launches)));
@@ -275,7 +299,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
         Assert.False(IsVulkan(Assert.Single(launchesA)));
 
         Directory.Delete(LocalAiPaths.RuntimeVulkanPath, recursive: true); // the first scenario had created it
-        var (noRuntime, launchesB) = Prepare(false, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), _ => true);
+        var (noRuntime, launchesB) = Prepare(false, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), _ => true);
         Assert.True((await noRuntime.StartTextAsync(CancellationToken.None)).Success);
         Assert.False(IsVulkan(Assert.Single(launchesB)));
     }
@@ -283,7 +307,7 @@ public sealed class CorporateGpuBackendTests : IDisposable
     [Fact]
     public async Task Runtime_status_lists_the_vulkan_backend_only_when_it_is_shipped_and_not_disabled()
     {
-        var (manager, _) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.IntegratedAmd()), _ => true);
+        var (manager, _) = Prepare(true, GpuInventoryFixtures.Inventory(GpuInventoryFixtures.Nvidia()), _ => true);
         var service = new RuntimeManagerService(manager);
         var with = await service.GetStatusAsync(CancellationToken.None, ramSnapshot: null);
         Assert.Contains(with.Backends, b => b.Backend == "text-cpu" && b.Installed);

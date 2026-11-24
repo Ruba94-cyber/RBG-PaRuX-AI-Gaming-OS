@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds PaRuX Corporate Lite Offline Portable (same product, restricted profile) and verifies it.
 
@@ -446,8 +446,8 @@ $ragGuide = if ([string]::IsNullOrWhiteSpace($RerankerDir)) { "Local embeddings 
 PaRuX Corporate Lite Offline $Version
 Start with "Start PaRuX Corporate Lite.cmd". No installation and no administrator rights are needed by the application.
 CPU runtime, Vulkan (GPU) runtime and embedding model are included. No runtime setup or Internet needed.
-GPU: if a usable graphics adapter is found, the bundled Vulkan engine ($vulkanSizeMb MB, llama.cpp $($vulkanArtifact.version), SHA-256 pinned in
-PaRuXData/LocalAI/runtime/$vulkanFolder/parux-runtime-lock.json) is tried first. Integrated-GPU shared memory counts against the same RAM limit.
+GPU: if a usable discrete graphics adapter is found, the bundled Vulkan engine ($vulkanSizeMb MB, llama.cpp $($vulkanArtifact.version), SHA-256 pinned in
+PaRuXData/LocalAI/runtime/$vulkanFolder/parux-runtime-lock.json) is tried first. Integrated-GPU shared memory counts against the same RAM limit; an integrated GPU stays on the CPU engine by default (measured faster) unless PARUX_CORPORATE_GPU=force is set.
 If Vulkan does not start in time or fails (no driver, VM, allocation error) PaRuX falls back automatically to the CPU engine. Nothing is
 installed or downloaded. IT can force CPU only with "Start PaRuX Corporate Lite (CPU only).cmd" or the variable PARUX_CORPORATE_GPU=0.
 $modelGuide
@@ -460,7 +460,7 @@ IT network rules still apply; downloads require network permission. Documents re
 Licences: see LICENSE.txt and THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: multilingual-e5-small (MIT, default for Italian/English document search) and all-MiniLM-L6-v2 (Apache-2.0, fallback);
 llama.cpp: MIT; optional cross-encoder reranker: Xenova/ms-marco-MiniLM-L-6-v2, review source licence before redistribution).
 
-Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: "Start PaRuX Corporate Lite.cmd". Se la GPU non e' utilizzabile
+Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: "Start PaRuX Corporate Lite.cmd". Con una GPU integrata resta il motore CPU (piu' veloce, PARUX_CORPORATE_GPU=force per provare la GPU). Se la GPU non e' utilizzabile
 o Vulkan non parte, PaRuX torna da solo al motore CPU. Solo CPU (IT): "Start PaRuX Corporate Lite (CPU only).cmd" oppure PARUX_CORPORATE_GPU=0.
 Importa nuovi GGUF e scegli il modello da Chat. Solo con consenso IT usa "Start PaRuX Corporate Model Downloads.cmd".
 "@ | Set-Content (Join-Path $stage "README-corporate-lite.txt") -Encoding UTF8
