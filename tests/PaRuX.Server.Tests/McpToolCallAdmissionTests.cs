@@ -39,6 +39,7 @@ public sealed class McpToolCallAdmissionTests
     [InlineData("search_docs", "{\"q\":")]
     [InlineData("search_docs", "{\"q\":\"truncated}")]
     [InlineData("search_docs", "{\"a\":1,\"a\":2}")]
+    [InlineData("search_docs", "{\"outer\":{\"a\":1,\"a\":2}}")]
     [InlineData("search_docs", "```python\n{}\n```")]
     public void Unknown_or_ambiguous_calls_fail_closed(string name, string args)
     {

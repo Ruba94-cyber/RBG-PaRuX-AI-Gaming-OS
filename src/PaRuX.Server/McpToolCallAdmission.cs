@@ -64,11 +64,10 @@ internal static class McpToolCallAdmission
             if (document.RootElement.ValueKind != JsonValueKind.Object)
                 return Deny("The tool arguments must be a JSON object.");
 
-            // Duplicate top-level properties have ambiguous meanings across providers.
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (JsonProperty property in document.RootElement.EnumerateObject())
-                if (!names.Add(property.Name))
-                    return Deny("Duplicate argument keys are not allowed.");
+            // Duplicate keys at ANY nesting depth can be interpreted differently
+            // by local runtimes or external MCP tools. Reject rather than guess.
+            if (HasDuplicateKeys(document.RootElement))
+                return Deny("Duplicate argument keys are not allowed.");
 
             // JsonElement serialization removes trailing commas without interpreting or
             // inventing the values. Do not rewrite already-valid JSON at all.
@@ -87,6 +86,30 @@ internal static class McpToolCallAdmission
         {
             return Deny("The tool arguments are not complete, valid JSON; provide one complete object.");
         }
+    }
+
+    private static bool HasDuplicateKeys(JsonElement root)
+    {
+        var pending = new Stack<JsonElement>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            JsonElement value = pending.Pop();
+            if (value.ValueKind == JsonValueKind.Object)
+            {
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (JsonProperty property in value.EnumerateObject())
+                {
+                    if (!keys.Add(property.Name)) return true;
+                    pending.Push(property.Value);
+                }
+            }
+            else if (value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in value.EnumerateArray()) pending.Push(item);
+            }
+        }
+        return false;
     }
 
     private static Result Deny(string reason) => new(false, "{}", reason);
