@@ -361,8 +361,10 @@ namespace PaRuX
                 NavView.MenuItems.Clear();
 
                 NavView.MenuItems.Add(WorkspaceSectionHeader);
+                // Settings and Help live in NavView.FooterMenuItems (pinned below the scrolling list).
                 foreach (NavigationViewItem workspaceItem in WorkspaceNavigationItems())
-                    NavView.MenuItems.Add(workspaceItem);
+                    if (!ReferenceEquals(workspaceItem, SettingsNavItem) && !ReferenceEquals(workspaceItem, HelpNavItem))
+                        NavView.MenuItems.Add(workspaceItem);
 
                 var header = new NavigationViewItemHeader { Content = T("Recent", "Recenti") };
                 NavView.MenuItems.Add(header);

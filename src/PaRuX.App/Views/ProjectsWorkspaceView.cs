@@ -27,7 +27,15 @@ namespace PaRuX.Views
         private readonly TextBlock _repository = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.76 };
         private readonly Button _chooseRepository = new() { Content = T("Choose Project repository…", "Scegli il repository del progetto…") };
         private readonly Button _clearRepository = new() { Content = T("Clear session repository", "Cancella il repository della sessione") };
-        private readonly TextBox _goal = new() { PlaceholderText = T("Goal for a new durable Project", "Obiettivo per un nuovo progetto duraturo") };
+        private readonly TextBox _goal = new()
+        {
+            PlaceholderText = T("Goal for a new durable Project", "Obiettivo per un nuovo progetto duraturo"),
+            MinWidth = 320,
+            MinHeight = 36,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            VerticalAlignment = VerticalAlignment.Center
+        };
         private readonly TextBlock _newProjectRepository = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.76 };
         private readonly Button _chooseNewProjectRepository = new() { Content = T("Choose repository for new Project…", "Scegli il repository per il nuovo progetto…") };
         private readonly Button _clearNewProjectRepository = new() { Content = T("Clear", "Cancella"), IsEnabled = false };
@@ -42,9 +50,20 @@ namespace PaRuX.Views
         public ProjectsWorkspaceView()
         {
             Content = BuildUi();
+            ApplyGoalInputChrome();
             Loaded += async (_, _) => { if (Visibility == Visibility.Visible) await RefreshAllAsync(); };
             Unloaded += (_, _) => _cts?.Cancel();
             ProjectWorkspaceSession.Current.Changed += (_, _) => DispatcherQueue.TryEnqueue(async () => await RefreshAllAsync());
+        }
+
+        // The goal field must read as an input: keep the theme's own text-box fill and focus states (so light and dark both work)
+        // and add a clearly visible neutral outline instead of the near-invisible default stroke.
+        private void ApplyGoalInputChrome()
+        {
+            var outline = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.75 };
+            _goal.BorderBrush = outline;
+            _goal.Resources["TextControlBorderBrush"] = outline;
+            _goal.Resources["TextControlBorderBrushPointerOver"] = outline;
         }
 
         public async void OnShown() => await RefreshAllAsync();
@@ -56,8 +75,8 @@ namespace PaRuX.Views
             {
                 Spacing = 18,
                 Margin = new Thickness(24),
-                MaxWidth = 1050,
-                HorizontalAlignment = HorizontalAlignment.Center
+                MaxWidth = 1100,
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
             scroll.Content = body;
 
