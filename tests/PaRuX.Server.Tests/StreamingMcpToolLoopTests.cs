@@ -543,6 +543,41 @@ public sealed class StreamingMcpToolLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Streaming_lines_with_CrLf_Cr_and_Lf_remain_compatible()
+    {
+        _turnOverride = async ctx =>
+        {
+            string wire = Delta("CRLF") + "\r\n\r\n" +
+                Delta("+LF") + "\n\n" +
+                Finish("stop") + "\r\r" +
+                "data: [DONE]\r\n\r\n";
+            await ctx.Response.WriteAsync(wire);
+        };
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Equal("CRLF+LF", Text(h));
+        Assert.Empty(h.ToolInvocations);
+        Assert.Equal("data: [DONE]\n\n", h.Frames[^1].Text);
+    }
+
+    [Fact]
+    public async Task Large_valid_streaming_line_spanning_multiple_read_buffers_is_preserved()
+    {
+        string content = new string('L', 20_000);
+        _turns.Add(() => new[]
+        {
+            new Step(0, Delta(content)),
+            new Step(0, Finish("stop")),
+            new Step(0, "data: [DONE]")
+        });
+        Harness h = NewHarness();
+        await RunAsync(h);
+        Assert.Equal(content, Text(h));
+        Assert.Empty(h.ToolInvocations);
+        Assert.Equal("data: [DONE]\n\n", h.Frames[^1].Text);
+    }
+
+    [Fact]
     public async Task Fenced_json_is_normalized_and_repeated_tool_ids_are_made_unique()
     {
         _turns.Add(() => new[]

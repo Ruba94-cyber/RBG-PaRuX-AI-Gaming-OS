@@ -254,15 +254,10 @@ internal sealed class StreamingMcpToolLoop
         {
             await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+            var bounded = new BoundedSseLineReader(reader);
+            while (await bounded.ReadLineAsync(MaxSseLineCharacters, cancellationToken).ConfigureAwait(false) is { } line)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (line.Length > MaxSseLineCharacters)
-                {
-                    turn.Failed = true;
-                    turn.FailureMessage = "The model emitted an oversized SSE message; no tools were executed.";
-                    return turn;
-                }
                 if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
                 string data = line[5..].Trim();
                 if (data.Length == 0) continue;
@@ -364,6 +359,12 @@ internal sealed class StreamingMcpToolLoop
             }
         }
         catch (OperationCanceledException) { throw; }
+        catch (SseLineTooLongException)
+        {
+            turn.Failed = true;
+            turn.FailureMessage = "The model emitted an oversized SSE message; no tools were executed.";
+            return turn;
+        }
         catch (Exception ex) when (ex is IOException or HttpRequestException or ObjectDisposedException)
         {
             turn.Failed = true;
@@ -413,6 +414,57 @@ internal sealed class StreamingMcpToolLoop
         node is JsonValue v && v.GetValueKind() == JsonValueKind.String ? v.GetValue<string>() : null;
 
     private static string Trim(string text) => text.Length <= 400 ? text : text[..400] + "...";
+
+    /// <summary>
+    /// Read SSE text with a strict in-flight memory bound. StreamReader.ReadLineAsync
+    /// allocates the entire line before the caller can check its length. A corrupted
+    /// local provider could therefore send a multi-megabyte token/tool-argument line.
+    /// This reader checks each chunk BEFORE appending and recognizes LF, CRLF and CR.
+    /// </summary>
+    private sealed class BoundedSseLineReader
+    {
+        private readonly TextReader _reader;
+        private readonly char[] _buffer = new char[4 * 1024];
+        private int _position;
+        private int _available;
+        private bool _skipFollowingLf;
+
+        public BoundedSseLineReader(TextReader reader) => _reader = reader;
+
+        public async ValueTask<string?> ReadLineAsync(int maximumCharacters, CancellationToken cancellationToken)
+        {
+            var line = new StringBuilder();
+            while (true)
+            {
+                if (_position >= _available)
+                {
+                    _available = await _reader.ReadAsync(_buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    _position = 0;
+                    if (_available == 0) return line.Length == 0 ? null : line.ToString();
+                }
+
+                if (_skipFollowingLf)
+                {
+                    _skipFollowingLf = false;
+                    if (_buffer[_position] == '\n') { _position++; continue; }
+                }
+
+                int end = _position;
+                while (end < _available && _buffer[end] != '\n' && _buffer[end] != '\r') end++;
+                int length = end - _position;
+                if (length > maximumCharacters - line.Length) throw new SseLineTooLongException();
+                line.Append(_buffer, _position, length);
+                _position = end;
+                if (_position < _available)
+                {
+                    _skipFollowingLf = _buffer[_position++] == '\r';
+                    return line.ToString();
+                }
+            }
+        }
+    }
+
+    private sealed class SseLineTooLongException : Exception { }
 
     private sealed class PendingToolCall
     {
