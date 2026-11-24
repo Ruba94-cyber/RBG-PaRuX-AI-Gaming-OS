@@ -424,19 +424,42 @@ public sealed class ContextEngineService
                 "Web search empty") };
         }
 
-        string? firstPage = null;
-        if (results.Count > 0)
+        // Read the top pages (main content only, bounded) so the answer can rest on page text and not only on snippets.
+        // Reading is best-effort per page: a page that cannot be read falls back to its search snippet, never to invented text.
+        var pages = new string?[results.Count];
+        for (int i = 0; i < Math.Min(results.Count, MaximumWebPagesRead); i++)
         {
-            try { firstPage = await _web.FetchPageTextAsync(results[0].Url, cancellationToken).ConfigureAwait(false); }
+            try { pages[i] = await _web.FetchPageTextAsync(results[i].Url, cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) { throw; }
             catch { }
         }
 
-        return results.Select((result, index) => new ContextCandidate(
-            "web", result.Url, result.Title,
-            WebSearchService.UntrustedContentHeader + "\n"
-                + (index == 0 && !string.IsNullOrWhiteSpace(firstPage) ? firstPage! : result.Snippet),
-            result.Url)).ToList();
+        return BuildNumberedWebCandidates(results, pages);
+    }
+
+    internal const int MaximumWebPagesRead = 3;
+    private const int MaximumExtraPageCharacters = 1_200;
+
+    /// <summary>Numbered sources: result n is shown to the model as "[n]" with its address, and the chat footer lists the same "[n] address"
+    /// so a citation in the answer can be matched to a source. Page text is capped harder after the first page to keep the prompt small.</summary>
+    internal static List<ContextCandidate> BuildNumberedWebCandidates(IReadOnlyList<WebSearchResult> results, IReadOnlyList<string?> pages)
+    {
+        var list = new List<ContextCandidate>(results.Count);
+        for (int i = 0; i < results.Count; i++)
+        {
+            WebSearchResult result = results[i];
+            string? page = i < pages.Count ? pages[i] : null;
+            bool read = !string.IsNullOrWhiteSpace(page);
+            string body = read ? (i == 0 || page!.Length <= MaximumExtraPageCharacters ? page! : page![..MaximumExtraPageCharacters].TrimEnd() + "…") : result.Snippet;
+            string number = "[" + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + "]";
+            string provider = string.IsNullOrWhiteSpace(result.Provider) ? string.Empty : " (" + result.Provider + ")";
+            list.Add(new ContextCandidate(
+                "web", number + " " + result.Url + provider, number + " " + result.Title,
+                WebSearchService.UntrustedContentHeader + "\nWeb source " + number + (read ? " (page text read)" : " (search snippet only)")
+                    + " - when you use it, cite it as " + number + ".\n" + body,
+                result.Url));
+        }
+        return list;
     }
 
     internal static ContextPackDto Assemble(IReadOnlyList<List<ContextCandidate>> groups, int maxCharacters)

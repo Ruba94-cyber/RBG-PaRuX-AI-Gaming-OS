@@ -164,4 +164,90 @@ public sealed class CreateAgentTaskActionConfig
 {
     public string GoalTemplate { get; set; } = "Automation triggered.";
     public string? Role { get; set; }
+    /// <summary>Agent Flow only: true when the definition was built from validated blocks (see <c>AgentFlowCompiler</c>).</summary>
+    public bool Flow { get; set; }
+    /// <summary>Agent Flow only: condition blocks, all of which must hold when the trigger fires; otherwise the run is logged as skipped.</summary>
+    public List<AutomationGuard>? Guards { get; set; }
+}
+
+/// <summary>Closed, declarative signals a condition block may test. Never an expression: no script, shell or regex is evaluated.</summary>
+public static class AutomationGuardSignal
+{
+    /// <summary>The name of the file that fired a file_created trigger (text comparison).</summary>
+    public const string TriggerFileName = "trigger_file_name";
+    public static bool IsKnown(string signal) => signal == TriggerFileName || AutomationConditionSignal.Numeric.Contains(signal);
+}
+
+public static class AutomationGuardOperator
+{
+    public const string Contains = "contains";
+    public const string NotContains = "not_contains";
+    public static readonly IReadOnlySet<string> Text = new HashSet<string>(StringComparer.Ordinal)
+    { AutomationConditionOperator.Equal, AutomationConditionOperator.NotEqual, Contains, NotContains };
+}
+
+/// <summary>One condition block of an Agent Flow.</summary>
+public sealed class AutomationGuard
+{
+    public string Signal { get; set; } = AutomationConditionSignal.FailedTaskCount;
+    public string Operator { get; set; } = AutomationConditionOperator.GreaterThanOrEqual;
+    public string Value { get; set; } = "1";
+    public string Role { get; set; } = string.Empty;
+    public string FileNameContains { get; set; } = string.Empty;
+}
+
+// ---- Agent Flows: the no-code builder's blocks, compiled onto an automation definition ----
+
+public sealed class AgentFlowTriggerBlock
+{
+    /// <summary>One of <see cref="AutomationTriggerType.All"/>.</summary>
+    public string Type { get; set; } = AutomationTriggerType.Schedule;
+    public int IntervalSeconds { get; set; } = 3600;
+    public string FolderPath { get; set; } = string.Empty;
+    public string Filter { get; set; } = "*";
+    public string RepositoryPath { get; set; } = string.Empty;
+    public string Branch { get; set; } = string.Empty;
+    public string FileNameContains { get; set; } = string.Empty;
+    public string ComponentId { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Signal { get; set; } = AutomationConditionSignal.FailedTaskCount;
+    public string Operator { get; set; } = AutomationConditionOperator.GreaterThanOrEqual;
+    public string Value { get; set; } = "1";
+}
+
+public sealed class AgentFlowActionBlock
+{
+    public string Type { get; set; } = AutomationActionType.CreateAgentTask;
+    public string Goal { get; set; } = string.Empty;
+    public string? Role { get; set; }
+}
+
+public sealed class AgentFlowRequest
+{
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Opt-in: a new flow is created switched off unless the person says otherwise.</summary>
+    public bool Enabled { get; set; }
+    public AgentFlowTriggerBlock Trigger { get; set; } = new();
+    public List<AutomationGuard> Conditions { get; set; } = new();
+    public AgentFlowActionBlock Action { get; set; } = new();
+}
+
+public sealed class AgentFlowRunDto
+{
+    public required long Id { get; set; }
+    public required string AutomationId { get; set; }
+    public required DateTime AtUtc { get; set; }
+    /// <summary>fired, skipped or failed - never a made-up success.</summary>
+    public required string Outcome { get; set; }
+    public required string Detail { get; set; }
+    public string? TaskId { get; set; }
+}
+
+public sealed class AgentFlowDto
+{
+    public required AutomationDto Automation { get; set; }
+    public required List<AutomationGuard> Conditions { get; set; }
+    public required string Goal { get; set; }
+    public string? Role { get; set; }
 }

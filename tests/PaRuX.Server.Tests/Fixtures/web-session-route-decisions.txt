@@ -787,6 +787,21 @@ DENY GET /api/v1/embeddings/multilingual/engine
 DENY GET /api/v1/reranker/multilingual/engine
 DENY POST /api/v1/embeddings/multilingual/engine/install
 DENY POST /api/v1/reranker/multilingual/engine/install
+DENY DELETE /api/v1/meetings/{id}
+DENY GET /api/v1/agent-flows
+DENY GET /api/v1/agent-flows/{id}/runs
+DENY GET /api/v1/meetings
+DENY GET /api/v1/meetings/settings
+DENY GET /api/v1/meetings/{id}/notes
+DENY POST /api/v1/agent-flows
+DENY POST /api/v1/agent-flows/validate
+DENY POST /api/v1/agent-flows/{id}/run
+DENY POST /api/v1/knowledge/connectors
+DENY POST /api/v1/meetings
+DENY POST /api/v1/meetings/{id}/cancel
+DENY POST /api/v1/meetings/{id}/chunks
+DENY POST /api/v1/meetings/{id}/finish
+DENY PUT /api/v1/meetings/settings
 DENY GET /api/v1/gaming/power-profile
 DENY POST /api/v1/gaming/power-profile/apply
 DENY POST /api/v1/gaming/power-profile/restore
@@ -818,5 +833,4 @@ DENY GET /api/v1/gaming/mods/changesets/pending
 DENY POST /api/v1/gaming/mods/changesets/apply
 DENY POST /api/v1/gaming/mods/changesets/prompt
 DENY POST /api/v1/gaming/mods/changesets/restore
-DENY POST /api/v1/knowledge/connectors
 DENY POST /api/v1/runtime/components/{id}/remove-managed

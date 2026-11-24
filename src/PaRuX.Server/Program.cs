@@ -184,6 +184,28 @@ builder.Services.AddSingleton<LoraGgufConversionService>();
 builder.Services.AddSingleton<AdapterManagerService>();
 builder.Services.AddSingleton<TrainingLabService>();
 builder.Services.AddSingleton<SpeechService>();
+builder.Services.AddSingleton<PaRuX.Server.Meetings.MeetingSettingsStore>(_ => new PaRuX.Server.Meetings.MeetingSettingsStore(ServerState.StateDirectory));
+builder.Services.AddSingleton<PaRuX.Server.Meetings.MeetingAssistantService>(sp =>
+{
+    var speech = sp.GetRequiredService<SpeechService>();
+    var ragStore = sp.GetRequiredService<RagStore>();
+    var knowledgeJobs = sp.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
+    var svc = new PaRuX.Server.Meetings.MeetingAssistantService(
+        PaRuX.Server.Meetings.MeetingAssistantService.DefaultRoot(),
+        sp.GetRequiredService<PaRuX.Server.Meetings.MeetingSettingsStore>(),
+        (request, ct) => speech.TranscribeAsync(request, ct),
+        sp.GetRequiredService<PaRuX.Server.Orchestration.ILocalCompletionClient>(),
+        registerKnowledge: folder =>
+        {
+            if (PaRuX.Server.Knowledge.SensitivePathPolicy.EvaluateFolder(folder).Verdict == PaRuX.Server.Knowledge.SensitiveVerdict.Blocked) return null;
+            string id = ragStore.AddSource(folder).Id;
+            knowledgeJobs.Start(id);
+            return id;
+        },
+        unregisterKnowledge: id => { ragStore.RemoveSource(id); knowledgeJobs.Remove(id); });
+    svc.LoadExisting();
+    return svc;
+});
 builder.Services.AddSingleton<IContinuousSpeechStatusProvider>(services => services.GetRequiredService<SpeechService>());
 builder.Services.AddSingleton<IContinuousSpeechStreamWorker>(services =>
     ContinuousTtsWorker.For(services.GetRequiredService<LocalRuntimeService>()));
@@ -1228,6 +1250,8 @@ app.MapPost("/api/v1/rag/sources/{id}/reindex", async (string id, RagStore rag, 
 
 PaRuX.Server.Knowledge.KnowledgeEndpoints.MapKnowledgeEndpoints(app);
 PaRuX.Server.Knowledge.KnowledgeWebWatchEndpoints.MapKnowledgeWebWatchEndpoints(app);
+PaRuX.Server.Automation.AgentFlowEndpoints.MapAgentFlowEndpoints(app);
+PaRuX.Server.Meetings.MeetingEndpoints.MapMeetingEndpoints(app);
 PaRuX.Server.Knowledge.WebKnowledgeSources.Shared = app.Services.GetRequiredService<PaRuX.Server.Knowledge.WebKnowledgeSources>();
 PaRuX.Server.Knowledge.KnowledgeWebWatchEndpoints.RestoreWatchers(app.Services.GetRequiredService<RagStore>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.WatchedFolderStore>());
 PaRuX.Server.Knowledge.KnowledgeContextProvider.Current = app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
@@ -1385,6 +1409,7 @@ app.MapPost("/api/v1/internet/search-providers", (WebSearchProvidersRequest requ
     try
     {
         settings.Set(request.SearxngUrl, request.DisabledProviders);
+        settings.SetBraveKey(request.BraveApiKey);
     }
     catch (ArgumentException ex)
     {

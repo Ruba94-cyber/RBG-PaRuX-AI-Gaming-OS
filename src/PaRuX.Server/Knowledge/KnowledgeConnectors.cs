@@ -12,8 +12,9 @@ public static class ConnectorKind
     public const string GitHub = "github";
     public const string YouTube = "youtube";
     public const string Confluence = "confluence";
+    public const string Paperless = "paperless";
 
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { GitHub, YouTube, Confluence };
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { GitHub, YouTube, Confluence, Paperless };
     public static bool IsKnown(string? kind) => kind != null && All.Contains(kind);
 }
 
@@ -64,7 +65,14 @@ internal sealed class ConnectorHttp
 {
     private readonly HttpClient _http;
     private readonly ConnectorLimits _limits;
-    public ConnectorHttp(HttpClient http, ConnectorLimits limits) { _http = http; _limits = limits; }
+    private readonly bool _allowLoopbackHttp;
+    public ConnectorHttp(HttpClient http, ConnectorLimits limits, bool allowLoopbackHttp = false)
+    { _http = http; _limits = limits; _allowLoopbackHttp = allowLoopbackHttp; }
+
+    /// <summary>Plain http is only ever allowed for a loopback host (a self-hosted service on this very PC); never for a LAN or public host.</summary>
+    internal static bool IsLoopbackHost(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+        || (IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? ip) && IPAddress.IsLoopback(ip));
 
     public async Task<ConnectorResponse> GetAsync(Uri uri, IReadOnlyCollection<string> allowedHosts, Action<HttpRequestMessage>? configure,
         long maxBytes, CancellationToken ct)
@@ -72,7 +80,7 @@ internal sealed class ConnectorHttp
         Uri current = uri;
         for (int hop = 0; hop <= _limits.MaxRedirects; hop++)
         {
-            if (current.Scheme != Uri.UriSchemeHttps)
+            if (current.Scheme != Uri.UriSchemeHttps && !(_allowLoopbackHttp && current.Scheme == Uri.UriSchemeHttp && IsLoopbackHost(current.Host)))
                 throw new ConnectorException("insecure_address", "Only https:// addresses are used by connectors.");
             if (!allowedHosts.Contains(current.Host, StringComparer.OrdinalIgnoreCase))
                 throw new ConnectorException("blocked_host", "The source pointed at a different site than the one you chose, so it was not followed.");
@@ -618,22 +626,118 @@ internal sealed class ConfluenceConnector
     }
 }
 
+// ============================================================================================ Paperless-ngx
+
+public sealed record PaperlessTarget(Uri Origin, string BasePath);
+
+public static class PaperlessTargetParser
+{
+    private static readonly Regex SegmentRx = new("^[A-Za-z0-9._~-]{1,64}$", RegexOptions.Compiled);
+
+    /// <summary>Parses the address of a self-hosted Paperless-ngx. https is required; plain http only for this PC (loopback).
+    /// No credentials, query or fragment. Which machines may be reached is decided at connect time by the validated handler.</summary>
+    public static bool TryParse(string? input, out PaperlessTarget target, out string error)
+    {
+        target = null!;
+        error = "Enter the address of your Paperless-ngx, for example https://paperless.example.lan:8000.";
+        if (string.IsNullOrWhiteSpace(input) || input.Length > 2048) return false;
+        if (!Uri.TryCreate(input.Trim(), UriKind.Absolute, out Uri? uri)) return false;
+        bool https = uri.Scheme == Uri.UriSchemeHttps;
+        bool loopbackHttp = uri.Scheme == Uri.UriSchemeHttp && ConnectorHttp.IsLoopbackHost(uri.Host);
+        if (!https && !loopbackHttp)
+        {
+            error = uri.Scheme == Uri.UriSchemeHttp
+                ? "Plain http:// is only accepted for this PC (localhost). Use https:// for another machine so the token is not sent in clear text."
+                : "Only https:// addresses can be used.";
+            return false;
+        }
+        if (!string.IsNullOrEmpty(uri.UserInfo)) { error = "The address cannot contain a user name or password."; return false; }
+        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment)) { error = "The address must not contain a query or fragment."; return false; }
+        string[] seg = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (seg.Length > 4 || seg.Any(p => !SegmentRx.IsMatch(p) || p is "." or "..")) return false;
+        target = new PaperlessTarget(new Uri(uri.GetLeftPart(UriPartial.Authority)), seg.Length == 0 ? string.Empty : "/" + string.Join('/', seg));
+        return true;
+    }
+}
+
+/// <summary>Imports the OCR text of documents from a self-hosted Paperless-ngx through its read-only REST API (GET only, token header,
+/// bounded pages). Each document carries the address of its Paperless page as citation.</summary>
+internal sealed class PaperlessConnector
+{
+    public const int PageSize = 25;
+
+    public async Task<ConnectorResult> FetchAsync(ConnectorRequest req, ConnectorHttp http, ConnectorLimits limits, CancellationToken ct)
+    {
+        if (!PaperlessTargetParser.TryParse(req.Target, out PaperlessTarget target, out string error))
+            throw new ConnectorException("invalid_target", error);
+        bool hadToken = !string.IsNullOrEmpty(req.Token);
+        if (!hadToken) throw new ConnectorException("auth_required", "Paperless-ngx needs an API token. Create one in your Paperless profile and paste it here.");
+        string[] hosts = { target.Origin.Host };
+        Action<HttpRequestMessage> auth = r =>
+        {
+            r.Headers.Accept.ParseAdd("application/json");
+            r.Headers.Authorization = new AuthenticationHeaderValue("Token", req.Token);
+        };
+        string root = target.Origin.GetLeftPart(UriPartial.Authority) + target.BasePath;
+        int cap = Math.Clamp(req.MaxItems ?? limits.MaxDocs, 1, Math.Min(limits.MaxDocs, ConnectorLimits.HardMaxDocs));
+        string? filter = string.IsNullOrWhiteSpace(req.Ref) ? null : Uri.EscapeDataString(req.Ref.Trim().Length > 200 ? req.Ref.Trim()[..200] : req.Ref.Trim());
+        var result = new ConnectorResult();
+        long totalBytes = 0;
+
+        for (int page = 1; page <= 50; page++)
+        {
+            ct.ThrowIfCancellationRequested();
+            string url = root + "/api/documents/?page=" + page + "&page_size=" + PageSize + "&ordering=-modified"
+                + (filter != null ? "&title_content=" + filter : string.Empty);
+            ConnectorResponse response = await http.GetAsync(new Uri(url), hosts, auth, limits.MaxBytesPerDoc * PageSize, ct).ConfigureAwait(false);
+            if (response.TooLarge) { result.StoppedBecause = "limit"; result.Notes.Add("page_too_large"); break; }
+            ConnectorHttp.ThrowForStatus(response, "Paperless-ngx", hadToken);
+            if (response.Body == null) break;
+            using JsonDocument doc = JsonDocument.Parse(response.Body);
+            if (!doc.RootElement.TryGetProperty("results", out JsonElement results) || results.ValueKind != JsonValueKind.Array)
+                throw new ConnectorException("unreadable_response", "The server answered, but not like a Paperless-ngx API.");
+            foreach (JsonElement item in results.EnumerateArray())
+            {
+                if (result.Docs.Count >= cap) { result.StoppedBecause = "limit"; result.Notes.Add("document_cap:" + cap); break; }
+                if (!item.TryGetProperty("id", out JsonElement idEl) || idEl.ValueKind != JsonValueKind.Number || !idEl.TryGetInt64(out long id) || id <= 0) { result.SkippedFiles++; continue; }
+                string title = item.TryGetProperty("title", out JsonElement t) && t.ValueKind == JsonValueKind.String && t.GetString() is { Length: > 0 } ts
+                    ? ConnectorText.Sanitize(ts, 200).Replace('\n', ' ') : "Paperless document " + id;
+                string text = item.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String
+                    ? ConnectorText.Sanitize(c.GetString() ?? string.Empty, limits.MaxCharsPerDoc) : string.Empty;
+                if (text.Length == 0) { result.SkippedFiles++; continue; }
+                totalBytes += Encoding.UTF8.GetByteCount(text);
+                if (totalBytes > limits.MaxTotalBytes) { result.StoppedBecause = "limit"; result.Notes.Add("size_cap"); return result; }
+                result.Docs.Add(new ConnectorDoc(root + "/documents/" + id.ToString(System.Globalization.CultureInfo.InvariantCulture) + "/details", title, text));
+            }
+            if (result.StoppedBecause != "done") break;
+            if (!(doc.RootElement.TryGetProperty("next", out JsonElement next) && next.ValueKind == JsonValueKind.String)) break;
+        }
+        return result;
+    }
+}
+
 // ============================================================================================ orchestration
 
 /// <summary>Runs one connector import. The HTTP client comes from a factory so production uses the public-address-only handler and tests a fake one.</summary>
 public sealed class KnowledgeConnectors
 {
     private readonly Func<HttpClient> _httpFactory;
+    private readonly Func<HttpClient> _lanHttpFactory;
     private readonly ConnectorLimits _limits;
 
     public KnowledgeConnectors(Func<HttpClient>? httpFactory = null, ConnectorLimits? limits = null)
     {
         _httpFactory = httpFactory ?? DefaultClient;
+        _lanHttpFactory = httpFactory ?? DefaultLanClient;
         _limits = limits ?? new ConnectorLimits();
     }
 
     internal static HttpClient DefaultClient() =>
         new(ValidatedRemoteConnector.CreateHandler(WebAddressRule.PublicOnly), disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
+
+    /// <summary>Self-hosted sources (Paperless-ngx): public addresses plus this PC and private LAN ranges, never link-local/metadata/CGNAT.</summary>
+    internal static HttpClient DefaultLanClient() =>
+        new(ValidatedRemoteConnector.CreateHandler(WebAddressRule.PublicOrPrivateLan), disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>Validates the target without any network traffic. Returns an English message on failure.</summary>
     public static bool TryValidate(string kind, string target, string? @ref, string? path, out string error)
@@ -652,6 +756,7 @@ public sealed class KnowledgeConnectors
                 if (!WebUrl.TryValidate(c.Origin.ToString(), WebAddressRule.PublicOnly, out _, out error)) return false;
                 return true;
             }
+            case ConnectorKind.Paperless: return PaperlessTargetParser.TryParse(target, out _, out error);
             default: error = "Unknown connector."; return false;
         }
     }
@@ -660,8 +765,9 @@ public sealed class KnowledgeConnectors
     {
         using var total = CancellationTokenSource.CreateLinkedTokenSource(ct);
         total.CancelAfter(_limits.TotalTimeout);
-        using HttpClient client = _httpFactory();
-        var http = new ConnectorHttp(client, _limits);
+        bool lan = request.Kind == ConnectorKind.Paperless;
+        using HttpClient client = lan ? _lanHttpFactory() : _httpFactory();
+        var http = new ConnectorHttp(client, _limits, allowLoopbackHttp: lan);
         try
         {
             return request.Kind switch
@@ -669,6 +775,7 @@ public sealed class KnowledgeConnectors
                 ConnectorKind.GitHub => await new GitHubConnector().FetchAsync(request, http, _limits, total.Token).ConfigureAwait(false),
                 ConnectorKind.YouTube => await new YouTubeConnector().FetchAsync(request, http, _limits, total.Token).ConfigureAwait(false),
                 ConnectorKind.Confluence => await new ConfluenceConnector().FetchAsync(request, http, _limits, total.Token).ConfigureAwait(false),
+                ConnectorKind.Paperless => await new PaperlessConnector().FetchAsync(request, http, _limits, total.Token).ConfigureAwait(false),
                 _ => throw new ConnectorException("invalid_target", "Unknown connector.")
             };
         }
@@ -694,10 +801,15 @@ public sealed class ConnectorSecretStore
     private readonly ISecretProtector _protector;
     private readonly object _gate = new();
 
-    public ConnectorSecretStore(string stateDirectory) : this(stateDirectory, SecretProtection.For(stateDirectory)) { }
-    internal ConnectorSecretStore(string stateDirectory, ISecretProtector protector) { _stateDirectory = stateDirectory; _protector = protector; }
+    private readonly string _fileName;
 
-    private string StorePath => Path.Combine(_stateDirectory, "knowledge-connector-secrets.json");
+    public ConnectorSecretStore(string stateDirectory) : this(stateDirectory, SecretProtection.For(stateDirectory)) { }
+    /// <summary>A separate store file (for example the web-search provider key) so two owners never rewrite the same file.</summary>
+    public ConnectorSecretStore(string stateDirectory, string fileName) : this(stateDirectory, SecretProtection.For(stateDirectory), fileName) { }
+    internal ConnectorSecretStore(string stateDirectory, ISecretProtector protector, string fileName = "knowledge-connector-secrets.json")
+    { _stateDirectory = stateDirectory; _protector = protector; _fileName = fileName; }
+
+    private string StorePath => Path.Combine(_stateDirectory, _fileName);
 
     public void Set(string sourceId, string? secret)
     {

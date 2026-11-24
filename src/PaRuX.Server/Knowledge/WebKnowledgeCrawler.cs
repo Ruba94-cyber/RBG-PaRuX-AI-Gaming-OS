@@ -636,4 +636,19 @@ public static class WebAddressRule
 {
     /// <summary>Production rule: only public internet addresses (no loopback, private, link-local, CGNAT or multicast).</summary>
     public static bool PublicOnly(string host, IPAddress address) => ExplicitApiInferenceTransport.IsPublicAddress(address);
+
+    /// <summary>For self-hosted sources the person names explicitly (Paperless-ngx): public addresses, this PC and private LAN ranges
+    /// (10/8, 172.16/12, 192.168/16, fc00::/7). Link-local (cloud metadata), CGNAT, multicast and unspecified stay refused.</summary>
+    public static bool PublicOrPrivateLan(string host, IPAddress address)
+    {
+        if (ExplicitApiInferenceTransport.IsPublicAddress(address)) return true;
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (IPAddress.IsLoopback(address)) return true;
+        byte[] b = address.GetAddressBytes();
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            return b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168);
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            return (b[0] & 0xFE) == 0xFC;
+        return false;
+    }
 }

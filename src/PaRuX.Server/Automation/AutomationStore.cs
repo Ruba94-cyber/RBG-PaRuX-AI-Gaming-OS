@@ -28,7 +28,7 @@ public sealed class AutomationStore
     {
         lock (Gate)
         {
-            if (_initialized && SqliteSchemaGuard.HasAllTables(connection, "automations")) return;
+            if (_initialized && SqliteSchemaGuard.HasAllTables(connection, "automations", "automation_runs")) return;
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = @"
 PRAGMA journal_mode=WAL;
@@ -46,7 +46,16 @@ CREATE TABLE IF NOT EXISTS automations (
     last_result TEXT,
     last_created_task_id TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_automations_enabled ON automations(enabled);";
+CREATE INDEX IF NOT EXISTS ix_automations_enabled ON automations(enabled);
+CREATE TABLE IF NOT EXISTS automation_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_id TEXT NOT NULL,
+    at_utc TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    task_id TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_automation_runs_automation ON automation_runs(automation_id, id);";
             command.ExecuteNonQuery();
             _initialized = true;
         }
@@ -135,7 +144,7 @@ VALUES ($id, $name, $enabled, $triggerType, $triggerConfig, $actionType, $action
         {
             using SqliteConnection connection = Open();
             using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM automations WHERE id = $id;";
+            command.CommandText = "DELETE FROM automation_runs WHERE automation_id = $id; DELETE FROM automations WHERE id = $id;";
             command.Parameters.AddWithValue("$id", id);
             return command.ExecuteNonQuery() > 0;
         }
@@ -155,6 +164,44 @@ WHERE id = $id;";
             command.Parameters.AddWithValue("$taskId", (object?)createdTaskId ?? DBNull.Value);
             command.Parameters.AddWithValue("$id", id);
             command.ExecuteNonQuery();
+
+            // The per-run log: one row per firing attempt, honest outcome, bounded to the last MaximumRunsPerAutomation.
+            string outcome = result.StartsWith("fired", StringComparison.Ordinal) ? "fired"
+                : result.StartsWith("skipped", StringComparison.Ordinal) ? "skipped" : "failed";
+            using SqliteCommand log = connection.CreateCommand();
+            log.CommandText = @"INSERT INTO automation_runs (automation_id, at_utc, outcome, detail, task_id) VALUES ($id, $now, $outcome, $detail, $taskId);
+DELETE FROM automation_runs WHERE automation_id = $id AND id NOT IN
+    (SELECT id FROM automation_runs WHERE automation_id = $id ORDER BY id DESC LIMIT " + MaximumRunsPerAutomation + ");";
+            log.Parameters.AddWithValue("$id", id);
+            log.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+            log.Parameters.AddWithValue("$outcome", outcome);
+            log.Parameters.AddWithValue("$detail", result.Length > 500 ? result[..500] : result);
+            log.Parameters.AddWithValue("$taskId", (object?)createdTaskId ?? DBNull.Value);
+            log.ExecuteNonQuery();
+        }
+    }
+
+    public const int MaximumRunsPerAutomation = 100;
+
+    /// <summary>Newest first.</summary>
+    public List<AgentFlowRunDto> ListRuns(string automationId, int limit = 50)
+    {
+        lock (Gate)
+        {
+            using SqliteConnection connection = Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT id, automation_id, at_utc, outcome, detail, task_id FROM automation_runs WHERE automation_id = $id ORDER BY id DESC LIMIT $limit;";
+            command.Parameters.AddWithValue("$id", automationId);
+            command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, MaximumRunsPerAutomation));
+            using SqliteDataReader reader = command.ExecuteReader();
+            var runs = new List<AgentFlowRunDto>();
+            while (reader.Read())
+                runs.Add(new AgentFlowRunDto
+                {
+                    Id = reader.GetInt64(0), AutomationId = reader.GetString(1), AtUtc = DateTime.Parse(reader.GetString(2)).ToUniversalTime(),
+                    Outcome = reader.GetString(3), Detail = reader.GetString(4), TaskId = reader.IsDBNull(5) ? null : reader.GetString(5)
+                });
+            return runs;
         }
     }
 

@@ -62,6 +62,12 @@ namespace PaRuX.Models
         public int BubbleY { get; set; } = -1;
         public bool BubbleManuallyPositioned { get; set; }
         public string Hotkey { get; set; } = "Ctrl+Alt+Space";
+        /// <summary>Opt-in system-wide dictation (speak, the text is typed into the app that is active). Off until the person turns it on.</summary>
+        public bool SystemDictationEnabled { get; set; } = false;
+        /// <summary>One registered key combination (toggle: press to start, press again to stop). Never a keyboard hook.</summary>
+        public string SystemDictationHotkey { get; set; } = "Ctrl+Alt+D";
+        /// <summary>When the person accepted the dictation explanation; empty while it is off.</summary>
+        public string SystemDictationAcceptedUtc { get; set; } = string.Empty;
         public string DefaultProfile { get; set; } = "AUTO";
 
         /// <summary>Controller buttons: PaRuX actions per control and the Console/TV navigation overrides. Version tolerant; a missing or

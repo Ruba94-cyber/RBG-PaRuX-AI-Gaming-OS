@@ -419,6 +419,70 @@ public sealed class AutomationEngine
         }
     }
 
+    /// <summary>"Run now" for an automation or Agent Flow the person owns: same guards and the same task creation as a trigger, logged as manual.
+    /// Returns the logged run, or null when the automation does not exist. A paused engine (Universal STOP) creates nothing and says so.</summary>
+    public AgentFlowRunDto? RunNow(string automationId)
+    {
+        AutomationDto? automation = _automations.Get(automationId);
+        if (automation == null) return null;
+        if (IsPaused) _automations.RecordRun(automation.Id, "failed: automations are paused (Universal STOP); nothing was started [manual run]", null);
+        else Fire(automation, fileName: null, folderPath: null, CancellationToken.None, manual: true);
+        return _automations.ListRuns(automation.Id, 1).FirstOrDefault();
+    }
+
+    /// <summary>All condition blocks must hold. Count signals read Core state (tasks created by this same automation are excluded so a flow
+    /// cannot sustain itself); the file-name signal reads the file that fired the trigger. Returns the reason for the first failing block.</summary>
+    internal (bool Pass, string Reason) EvaluateGuards(AutomationDto automation, IReadOnlyList<AutomationGuard>? guards, string? fileName)
+    {
+        if (guards == null || guards.Count == 0) return (true, string.Empty);
+        List<AgentTaskDto>? tasks = null;
+        IReadOnlyList<ModelDownloadStatus>? downloads = null;
+        foreach (AutomationGuard guard in guards)
+        {
+            string signal = (guard.Signal ?? string.Empty).Trim(), op = (guard.Operator ?? string.Empty).Trim(), expected = (guard.Value ?? string.Empty).Trim();
+            if (signal == AutomationGuardSignal.TriggerFileName)
+            {
+                string actual = fileName ?? string.Empty;
+                bool ok = op switch
+                {
+                    AutomationConditionOperator.Equal => string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
+                    AutomationConditionOperator.NotEqual => !string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
+                    AutomationGuardOperator.Contains => actual.Contains(expected, StringComparison.OrdinalIgnoreCase),
+                    AutomationGuardOperator.NotContains => !actual.Contains(expected, StringComparison.OrdinalIgnoreCase),
+                    _ => false
+                };
+                if (!ok) return (false, "file name '" + actual + "' " + op + " '" + expected + "' is false");
+                continue;
+            }
+            if (!AutomationConditionSignal.Numeric.Contains(signal) || !int.TryParse(expected, NumberStyles.None, CultureInfo.InvariantCulture, out int threshold))
+                return (false, "unusable condition " + signal);
+            int count;
+            switch (signal)
+            {
+                case AutomationConditionSignal.FailedTaskCount:
+                case AutomationConditionSignal.RunningTaskCount:
+                case AutomationConditionSignal.CompletedTaskCount:
+                    tasks ??= _tasks.List();
+                    string wanted = signal == AutomationConditionSignal.FailedTaskCount ? AgentTaskStatus.Failed
+                        : signal == AutomationConditionSignal.RunningTaskCount ? AgentTaskStatus.Running : AgentTaskStatus.Completed;
+                    count = tasks.Count(t => t.CreatedByAutomationId != automation.Id && string.Equals(t.Status, wanted, StringComparison.Ordinal)
+                        && (string.IsNullOrWhiteSpace(guard.Role) || string.Equals(t.Role, guard.Role, StringComparison.OrdinalIgnoreCase)));
+                    break;
+                default:
+                    downloads ??= _downloads.List();
+                    count = downloads.Count(d => (signal switch
+                    {
+                        AutomationConditionSignal.FailedDownloadCount => d.Status == "failed",
+                        AutomationConditionSignal.ActiveDownloadCount => d.Status is "queued" or "downloading",
+                        _ => d.Status == "completed"
+                    }) && (string.IsNullOrWhiteSpace(guard.FileNameContains) || d.FileName.Contains(guard.FileNameContains, StringComparison.OrdinalIgnoreCase)));
+                    break;
+            }
+            if (!CompareNumeric(count, threshold, op)) return (false, signal + " is " + count + ", wanted " + op + " " + threshold);
+        }
+        return (true, string.Empty);
+    }
+
     private void Fire(
         AutomationDto automation, string? fileName, string? folderPath, CancellationToken cancellationToken,
         string? commitSha = null, string? commitMessage = null, string? repositoryPath = null,
@@ -426,7 +490,7 @@ public sealed class AutomationEngine
         string? componentId = null, string? componentHealth = null, string? componentPreviousHealth = null,
         string? taskId = null, string? taskGoal = null, string? taskStatus = null, string? taskRole = null,
         string? conditionSignal = null, string? conditionOperator = null, string? conditionExpected = null,
-        string? conditionObserved = null, string? conditionComponentId = null)
+        string? conditionObserved = null, string? conditionComponentId = null, bool manual = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -441,6 +505,13 @@ public sealed class AutomationEngine
             if (actionConfig == null || string.IsNullOrWhiteSpace(actionConfig.GoalTemplate))
             {
                 _automations.RecordRun(automation.Id, "failed: invalid action config", null);
+                return;
+            }
+
+            (bool pass, string reason) = EvaluateGuards(automation, actionConfig.Guards, fileName);
+            if (!pass)
+            {
+                _automations.RecordRun(automation.Id, "skipped: condition not met (" + reason + ")" + (manual ? " [manual run]" : string.Empty), null);
                 return;
             }
 
@@ -469,8 +540,8 @@ public sealed class AutomationEngine
             {
                 Goal = goal, Role = actionConfig.Role, CreatedByAutomationId = automation.Id
             });
-            _tasks.AppendLog(task.Id, "Created by automation \"" + automation.Name + "\" (trigger: " + automation.TriggerType + ")");
-            _automations.RecordRun(automation.Id, "fired: created task " + task.Id, task.Id);
+            _tasks.AppendLog(task.Id, "Created by automation \"" + automation.Name + "\" (" + (manual ? "manual run" : "trigger: " + automation.TriggerType) + ")");
+            _automations.RecordRun(automation.Id, "fired: created task " + task.Id + (manual ? " [manual run]" : string.Empty), task.Id);
         }
         catch (Exception ex)
         {

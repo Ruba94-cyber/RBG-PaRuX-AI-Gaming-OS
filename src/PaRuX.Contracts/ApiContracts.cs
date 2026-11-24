@@ -765,6 +765,8 @@ public sealed class WebSearchProvidersRequest
     /// <summary>Self-hosted SearXNG root on loopback or a private LAN IPv4 address; empty clears it.</summary>
     public string? SearxngUrl { get; set; }
     public List<string>? DisabledProviders { get; set; }
+    /// <summary>Optional Brave Search API key. Write-only: null leaves it unchanged, empty clears it; it is never returned by any read.</summary>
+    public string? BraveApiKey { get; set; }
 }
 
 // ---- Research Engine (Fast/Balanced/Deep Research, built on the Internet toggle above) ----
