@@ -21,7 +21,9 @@ namespace PaRuX.Services
     public sealed record KnowledgeSettingsView(bool OcrEnabled, bool StrictOffline, bool CorporateOffline, string Profile, bool ProfileIsAutomatic,
         string RecommendedProfile, int MemoryBudgetMb, int EmbeddingThreads, int TotalRamMb, bool? OcrAvailable, string? OcrReason, string OcrLanguages);
 
-    public sealed record KnowledgeEmbedderView(string Id, string Label, int Dimensions, bool Installed, bool Selected);
+    /// <summary><paramref name="Key"/> is the vector identity tag stored with every vector this model makes (model, version, size): vectors of
+    /// another identity are never mixed into a search.</summary>
+    public sealed record KnowledgeEmbedderView(string Id, string Label, int Dimensions, bool Installed, bool Selected, string Key = "");
 
     public sealed record KnowledgeRetrievalPlanView(string Workspace, string RequestedMode, string EffectiveMode, string? DegradedReason,
         IReadOnlyList<KnowledgeEmbedderView> Embedders, bool RerankerInstalled, int TotalChunks, int CurrentVectors, int StaleVectors, int MissingVectors,
@@ -146,7 +148,7 @@ namespace PaRuX.Services
             var embedders = new List<KnowledgeEmbedderView>();
             if (e.TryGetProperty("embedders", out JsonElement arr) && arr.ValueKind == JsonValueKind.Array)
                 foreach (JsonElement x in arr.EnumerateArray())
-                    embedders.Add(new KnowledgeEmbedderView(Str(x, "id"), Str(x, "label"), Int(x, "dimensions"), Bool(x, "installed"), Bool(x, "selected")));
+                    embedders.Add(new KnowledgeEmbedderView(Str(x, "id"), Str(x, "label"), Int(x, "dimensions"), Bool(x, "installed"), Bool(x, "selected"), Str(x, "key")));
             JsonElement emb = e.TryGetProperty("embedding", out JsonElement em) ? em : default;
             JsonElement re = e.TryGetProperty("reembed", out JsonElement r2) ? r2 : default;
             return new KnowledgeRetrievalPlanView(Str(e, "workspace"), Str(e, "requestedMode"), Str(e, "effectiveMode"), NullableStr(e, "degradedReason"), embedders,

@@ -127,6 +127,9 @@ public class WebSearchService
         IWebSearchProvider? searxng = BuildSearxng();
         if (searxng != null) providers.Add(searxng);
         IReadOnlySet<string> disabled = _settings?.Get().DisabledProviders ?? new HashSet<string>();
+        // Opt-in keyed provider: only while the person stored a key. It goes first because it is an API, not a scraped page.
+        string? braveKey = _settings?.GetBraveKey();
+        if (!string.IsNullOrEmpty(braveKey)) providers.Insert(searxng != null ? 1 : 0, new BraveSearchProvider(_http, braveKey));
         if (!disabled.Contains(WebSearchSettingsService.DuckDuckGoId)) providers.Add(new DuckDuckGoProvider(this));
         if (!disabled.Contains(WebSearchSettingsService.WikipediaId)) providers.Add(new WikipediaSearchProvider(_http));
 
@@ -195,6 +198,7 @@ public class WebSearchService
         WebSearchSettingsService.Snapshot snap = _settings?.Get()
             ?? new WebSearchSettingsService.Snapshot(string.Empty, new HashSet<string>());
         bool searxngConfigured = BuildSearxng() != null;
+        bool braveConfigured = _settings?.HasBraveKey == true;
         lock (_statusGate)
         {
             WebSearchProviderInfo Make(string id, string name, bool enabled, bool configured)
@@ -216,6 +220,7 @@ public class WebSearchService
                 Providers = new List<WebSearchProviderInfo>
                 {
                     Make(WebSearchSettingsService.SearxngId, "SearXNG (self-hosted)", searxngConfigured, searxngConfigured),
+                    Make(WebSearchSettingsService.BraveId, "Brave Search (your API key)", braveConfigured, braveConfigured),
                     Make(WebSearchSettingsService.DuckDuckGoId, "DuckDuckGo",
                         !snap.DisabledProviders.Contains(WebSearchSettingsService.DuckDuckGoId), true),
                     Make(WebSearchSettingsService.WikipediaId, "Wikipedia",
@@ -339,8 +344,15 @@ public class WebSearchService
             throw new InvalidDataException("Only HTML/text pages can be fetched, not " + contentType + ".");
 
         string html = await ReadBoundedTextAsync(response.Content, ct).ConfigureAwait(false);
-        if (html.Length > MaxFetchChars * 6) html = html[..(MaxFetchChars * 6)];
-        string text = ExtractReadableText(html);
+        // Main-content extraction needs the whole document (article text usually sits after a lot of navigation markup);
+        // the response itself is already bounded by MaxResponseBytes and the output below stays at MaxFetchChars.
+        bool isHtml = contentType.Contains("html", StringComparison.OrdinalIgnoreCase);
+        string text = isHtml ? WebReadability.Extract(html).Text : string.Empty;
+        if (text.Length == 0)
+        {
+            if (html.Length > MaxFetchChars * 6) html = html[..(MaxFetchChars * 6)];
+            text = ExtractReadableText(html);
+        }
         return text.Length > MaxFetchChars ? text[..MaxFetchChars] + "\n[Truncated]" : text;
     }
 

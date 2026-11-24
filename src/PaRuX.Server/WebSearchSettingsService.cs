@@ -4,7 +4,7 @@ namespace PaRuX.Server;
 
 /// <summary>
 /// Operator choices for web search providers: an optional self-hosted SearXNG endpoint and which of the
-/// built-in keyless providers are switched off. Holds no secrets (no keys, no credentials). It does not
+/// built-in keyless providers are switched off. Holds no secrets in its own file (the optional Brave key lives in a separate encrypted credential file). It does not
 /// grant Internet access: <see cref="InternetSettingsService"/> stays the only consent switch.
 /// </summary>
 public sealed class WebSearchSettingsService
@@ -17,9 +17,35 @@ public sealed class WebSearchSettingsService
     private readonly string _stateDirectory;
     private Snapshot? _cache;
 
+    public const string BraveId = "brave";
+    private const string BraveKeyName = "websearch:brave";
+    private readonly PaRuX.Server.Knowledge.ConnectorSecretStore _secrets;
+
     public WebSearchSettingsService() : this(ServerState.StateDirectory) { }
 
-    public WebSearchSettingsService(string stateDirectory) => _stateDirectory = stateDirectory;
+    public WebSearchSettingsService(string stateDirectory)
+        : this(stateDirectory, new PaRuX.Server.Knowledge.ConnectorSecretStore(stateDirectory, "websearch-secrets.json")) { }
+
+    internal WebSearchSettingsService(string stateDirectory, PaRuX.Server.Knowledge.ConnectorSecretStore secrets)
+    {
+        _stateDirectory = stateDirectory;
+        _secrets = secrets;
+    }
+
+    /// <summary>Optional Brave Search API key, kept encrypted in its own credential file (never in websearch.json, never logged).
+    /// Brave is opt-in: it is used only while a key is stored.</summary>
+    public bool HasBraveKey => _secrets.Has(BraveKeyName);
+    internal string? GetBraveKey() => _secrets.Get(BraveKeyName);
+
+    /// <summary>Null leaves the key unchanged, an empty string clears it. A key must be one line without spaces.</summary>
+    public void SetBraveKey(string? key)
+    {
+        if (key == null) return;
+        string trimmed = key.Trim();
+        if (trimmed.Length > 0 && (trimmed.Length > 512 || trimmed.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))))
+            throw new ArgumentException("The Brave Search API key looks invalid (it must be one line without spaces).");
+        _secrets.Set(BraveKeyName, trimmed.Length == 0 ? null : trimmed);
+    }
 
     private string SettingPath => Path.Combine(_stateDirectory, "websearch.json");
 

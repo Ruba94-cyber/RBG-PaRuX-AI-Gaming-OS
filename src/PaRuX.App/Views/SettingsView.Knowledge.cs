@@ -303,6 +303,10 @@ namespace PaRuX.Views
                     + (plan.RerankerInstalled ? KT(" · local reranker on", " · riordino locale attivo") : KT(" · local reranker not installed", " · riordino locale non installato"));
                 if (plan.DegradedReason != null)
                     text += "\n" + KT("Not as chosen: ", "Non come scelto: ") + plan.DegradedReason;
+                KnowledgeEmbedderView? active = plan.Embedders.FirstOrDefault(o => o.Selected);
+                if (active != null && active.Key.Length > 0)
+                    text += "\n" + KT("Vector identity: ", "Identità dei vettori: ") + active.Key
+                        + KT(" (vectors made by a different identity are kept but never mixed into a search)", " (i vettori di un'altra identità sono conservati ma mai mescolati in una ricerca)");
                 if (plan.TotalChunks > 0)
                     text += "\n" + plan.CurrentVectors + "/" + plan.TotalChunks + KT(" passages have a vector from this model", " passaggi hanno un vettore di questo modello")
                         + (plan.StaleVectors > 0 ? " · " + plan.StaleVectors + KT(" from another model (kept, not used)", " da un altro modello (conservati, non usati)") : string.Empty);
@@ -341,7 +345,43 @@ namespace PaRuX.Views
 
             async Task Change(string? newMode, string? newEmbedder)
             {
-                try { Apply(await KnowledgeClient.Current.SetRetrievalAsync(workspace, newMode, newEmbedder, CancellationToken.None)); }
+                try
+                {
+                    KnowledgeRetrievalPlanView changed = await KnowledgeClient.Current.SetRetrievalAsync(workspace, newMode, newEmbedder, CancellationToken.None);
+                    Apply(changed);
+                    // Guided re-index: a new search model only helps passages that carry its vectors, so say so and offer the bounded,
+                    // cancellable re-embed right away. Nothing starts without the person's yes, and nothing is deleted either way.
+                    if (newEmbedder != null && changed.NeedsReembed && changed.ReembedState != "running" && XamlRoot != null)
+                    {
+                        int todo = changed.StaleVectors + changed.MissingVectors;
+                        var dialog = new ContentDialog
+                        {
+                            XamlRoot = XamlRoot,
+                            Title = KT("Re-index with the new search model?", "Reindicizzare con il nuovo modello di ricerca?"),
+                            Content = new TextBlock
+                            {
+                                TextWrapping = TextWrapping.Wrap,
+                                Text = KT($"{todo} of {changed.TotalChunks} passages have no vector from the chosen model, so meaning-based search cannot use them yet. "
+                                    + "Re-embedding runs in the background, can be cancelled at any time, keeps the old vectors and does not touch your documents. It is paused during Gaming Mode.",
+                                    $"{todo} passaggi su {changed.TotalChunks} non hanno un vettore del modello scelto, quindi la ricerca per significato non può ancora usarli. "
+                                    + "La rigenerazione gira in background, si può annullare in qualsiasi momento, conserva i vecchi vettori e non tocca i tuoi documenti. È sospesa durante la modalità Gaming.")
+                            },
+                            PrimaryButtonText = KT("Re-embed now", "Rigenera ora"),
+                            CloseButtonText = KT("Later", "Più tardi"),
+                            DefaultButton = ContentDialogButton.Primary
+                        };
+                        AutomationProperties.SetAutomationId(dialog, "Settings_Rag_ReembedGuide_Dialog");
+                        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                        {
+                            try
+                            {
+                                await KnowledgeClient.Current.StartReembedAsync(CancellationToken.None);
+                                Apply(await KnowledgeClient.Current.GetRetrievalPlanAsync(workspace, CancellationToken.None));
+                            }
+                            catch (Exception ex) { reembedStatus.Text = KT("Could not start: ", "Impossibile avviare: ") + ex.Message; }
+                        }
+                    }
+                }
                 catch (Exception ex) { note.Text = KT("Could not change the setting: ", "Impossibile cambiare l’impostazione: ") + ex.Message; }
             }
             embedder.SelectionChanged += async (a, b) => { if (!loading && embedder.SelectedItem is ComboBoxItem { Tag: string id }) await Change(null, id); };

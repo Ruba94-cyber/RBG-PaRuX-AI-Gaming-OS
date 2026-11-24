@@ -126,6 +126,15 @@ public sealed class KnowledgeRetrievalModeTests : IDisposable
     }
 
     [Fact]
+    public void Every_embedder_option_carries_its_own_vector_identity_tag_for_the_picker()
+    {
+        var catalog = new KnowledgeEmbedderCatalog(new IRetrievalEmbeddingProvider[] { new FakeEmbedder("fake-a"), new FakeEmbedder("fake-b") });
+        IReadOnlyList<KnowledgeEmbedderOption> options = catalog.Options(null);
+        Assert.All(options, o => Assert.False(string.IsNullOrWhiteSpace(o.Key)));
+        Assert.Equal(2, options.Select(o => o.Key).Distinct().Count()); // two models never share a tag, so their vectors are never mixed
+    }
+
+    [Fact]
     public void Catalog_lists_only_registered_embedders_marks_the_selected_one_and_falls_back_to_an_installed_one()
     {
         var a = new FakeEmbedder("fake-a") { Available = false };

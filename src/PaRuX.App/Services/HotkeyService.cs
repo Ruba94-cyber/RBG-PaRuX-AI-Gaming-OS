@@ -11,7 +11,8 @@ namespace PaRuX.Services
     public sealed class HotkeyService : IDisposable
     {
         private const int WM_HOTKEY = 0x0312;
-        private const int HotkeyId = 0xA17E;
+        private const int DefaultHotkeyId = 0xA17E;
+        private readonly int HotkeyId;
 
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_CONTROL = 0x0002;
@@ -53,8 +54,12 @@ namespace PaRuX.Services
         /// configured.</summary>
         public bool IsRegistered => _registered;
 
-        public HotkeyService()
+        public HotkeyService() : this(DefaultHotkeyId) { }
+
+        /// <summary>A second, independent hotkey (for example system dictation) needs its own id so the two never collide.</summary>
+        public HotkeyService(int hotkeyId)
         {
+            HotkeyId = hotkeyId;
             _proc = OnMessage;
         }
 

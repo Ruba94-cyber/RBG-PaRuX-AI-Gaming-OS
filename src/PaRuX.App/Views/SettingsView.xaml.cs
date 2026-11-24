@@ -2302,8 +2302,13 @@ namespace PaRuX.Views
             try
             {
                 ApplySearchProviders(await InternetClient.Current.SetSearchProvidersAsync(
-                    new WebSearchProvidersRequest { SearxngUrl = SearxngUrlBox.Text.Trim(), DisabledProviders = disabled },
+                    new WebSearchProvidersRequest
+                    {
+                        SearxngUrl = SearxngUrlBox.Text.Trim(), DisabledProviders = disabled,
+                        BraveApiKey = string.IsNullOrWhiteSpace(BraveApiKeyBox.Password) ? null : BraveApiKeyBox.Password.Trim()
+                    },
                     CancellationToken.None));
+                BraveApiKeyBox.Password = string.Empty;
             }
             catch (Exception ex)
             {

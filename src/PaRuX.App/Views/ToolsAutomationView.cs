@@ -109,6 +109,8 @@ namespace PaRuX.Views
             body.Children.Add(Section("SKILLS & PERMISSIONS", BuildSkillsSection()));
             body.Children.Add(Section("MCP SERVERS", BuildMcpSection()));
             body.Children.Add(Section("AUTOMATIONS", BuildAutomationSection()));
+            body.Children.Add(Section("AGENT FLOWS", new AgentFlowBuilderPanel()));
+            body.Children.Add(Section("VOICE: MEETINGS & DICTATION", new VoiceFeaturesPanel()));
             body.Children.Add(Section("WORKFLOW BUILDER", BuildWorkflowSection()));
             return scroll;
         }

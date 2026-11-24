@@ -121,6 +121,8 @@ namespace PaRuX
             App.Hotkey.Attach(hwnd);
             App.Hotkey.Pressed += OnHotkeyPressed;
             App.Hotkey.Register(SettingsStore.Current.Data.Hotkey);
+            // Opt-in system dictation: registers its own single shortcut only when the person switched it on.
+            SystemDictationService.Current.Attach(hwnd, DispatcherQueue);
 
             // (The Games page is created on first open; its game-guide handoff is wired in CreateGameLibraryPage.)
 

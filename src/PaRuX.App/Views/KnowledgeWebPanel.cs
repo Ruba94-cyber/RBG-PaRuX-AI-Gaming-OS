@@ -74,6 +74,7 @@ internal sealed class KnowledgeWebPanel : StackPanel
         _kind.Items.Add(new ComboBoxItem { Content = T("GitHub repository", "Repository GitHub"), Tag = "github" });
         _kind.Items.Add(new ComboBoxItem { Content = T("YouTube video transcript", "Trascrizione di un video YouTube"), Tag = "youtube" });
         _kind.Items.Add(new ComboBoxItem { Content = T("Confluence / wiki page", "Pagina Confluence / wiki"), Tag = "confluence" });
+        _kind.Items.Add(new ComboBoxItem { Content = T("Paperless-ngx (self-hosted documents)", "Paperless-ngx (documenti self-hosted)"), Tag = "paperless" });
         _kind.SelectedIndex = 0;
         _kind.SelectionChanged += (_, _) => UpdateKindFields();
         AutomationProperties.SetAutomationId(_kind, "Settings_KnowledgeSource_Kind");
@@ -150,16 +151,20 @@ internal sealed class KnowledgeWebPanel : StackPanel
     {
         string kind = Kind;
         _mode.Visibility = kind == "web" ? Visibility.Visible : Visibility.Collapsed;
-        _ref.Visibility = _path.Visibility = kind == "github" ? Visibility.Visible : Visibility.Collapsed;
+        _ref.Visibility = kind is "github" or "paperless" ? Visibility.Visible : Visibility.Collapsed;
+        _path.Visibility = kind == "github" ? Visibility.Visible : Visibility.Collapsed;
+        _ref.Header = kind == "paperless" ? T("Only documents whose title or text contains (optional)", "Solo documenti il cui titolo o testo contiene (facoltativo)")
+            : T("Branch or tag (optional)", "Branch o tag (facoltativo)");
         _language.Visibility = kind == "youtube" ? Visibility.Visible : Visibility.Collapsed;
         _email.Visibility = kind == "confluence" ? Visibility.Visible : Visibility.Collapsed;
         _children.Visibility = kind == "confluence" ? Visibility.Visible : Visibility.Collapsed;
-        _token.Visibility = kind is "github" or "confluence" ? Visibility.Visible : Visibility.Collapsed;
+        _token.Visibility = kind is "github" or "confluence" or "paperless" ? Visibility.Visible : Visibility.Collapsed;
         _url.PlaceholderText = kind switch
         {
             "github" => "https://github.com/owner/repository",
             "youtube" => "https://www.youtube.com/watch?v=...",
             "confluence" => "https://yourteam.atlassian.net/wiki/spaces/KEY/pages/12345/Title",
+            "paperless" => "https://paperless.example.lan:8000",
             _ => "https://docs.example.com/guide/"
         };
         _kindHelp.Text = kind switch
@@ -170,6 +175,8 @@ internal sealed class KnowledgeWebPanel : StackPanel
                 "Importa i sottotitoli di un video come trascrizione con marcatori temporali. I video senza sottotitoli non possono essere importati. Richiede l'interruttore Internet attivo."),
             "confluence" => T("Imports one Confluence page (and optionally its child pages) through the Confluence REST API, https only. A private page needs your access token (and your email for Confluence Cloud). Needs the Internet switch on.",
                 "Importa una pagina Confluence (e facoltativamente le pagine figlie) tramite l'API REST di Confluence, solo https. Una pagina privata richiede il tuo token di accesso (e la tua email per Confluence Cloud). Richiede l'interruttore Internet attivo."),
+            "paperless" => T("Imports the OCR text of your Paperless-ngx documents (most recently modified first, up to 150) through its read-only API. Needs an API token from your Paperless profile (stored encrypted on this PC). https is required; plain http only for localhost. Your own PC and private LAN addresses are allowed here, nothing else. Needs the Internet switch on. The imported text of private documents is saved on this PC.",
+                "Importa il testo OCR dei tuoi documenti Paperless-ngx (dal modificato più di recente, fino a 150) tramite la sua API di sola lettura. Richiede un token API dal tuo profilo Paperless (salvato cifrato su questo PC). Serve https; http semplice solo per localhost. Qui sono ammessi il tuo PC e gli indirizzi LAN privati, nient'altro. Richiede l'interruttore Internet attivo. Il testo importato dei documenti privati viene salvato su questo PC."),
             _ => string.Empty
         };
         _kindHelp.Visibility = kind == "web" ? Visibility.Collapsed : Visibility.Visible;

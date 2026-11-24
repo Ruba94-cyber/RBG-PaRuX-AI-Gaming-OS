@@ -225,7 +225,7 @@ public sealed class WebKnowledgeSources
     private void EnsureAllowed(bool connector = false)
     {
         if (connector && _internetEnabled != null && !_internetEnabled())
-            throw new InternetDisabledException("The Internet switch is off, so nothing was requested. Turn Internet on in Settings to import from GitHub, YouTube or Confluence.");
+            throw new InternetDisabledException("The Internet switch is off, so nothing was requested. Turn Internet on in Settings to import from GitHub, YouTube, Confluence or Paperless-ngx.");
         if (_offlineBlocked())
             throw new OfflineBlockedException("Strict offline mode is on, so websites cannot be fetched. Nothing was downloaded. Turn strict offline mode off in Document Settings to add a website.");
         if (_gamingActive())

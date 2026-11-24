@@ -145,6 +145,7 @@ public static class AutomationDefinitionValidator
             if (action.GoalTemplate.Length > MaximumGoalCharacters)
                 throw new InvalidDataException($"goalTemplate exceeds the {MaximumGoalCharacters}-character limit.");
             ValidateOptionalAgentRole(action.Role, "create_agent_task role");
+            AgentFlowCompiler.ValidateGuards(action.Guards, ValidateOptionalAgentRole);
         }
         catch (JsonException ex)
         {
