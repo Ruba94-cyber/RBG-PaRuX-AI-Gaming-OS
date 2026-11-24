@@ -1,3 +1,11 @@
+## 2026-11-24 — CORPORATE LOCALLY VALIDATED (synthetic corpus), MAIN CLEANED
+
+- Full Server xUnit on `main` d836b4e6 (native Windows x64, SDK 10.0.302 from `%USERPROFILE%\.dotnet`): **16033 passed, 2 failed, 9 skipped (54 min)**. Both failures came from `PARUX_EXECUTION_PLAN.md` being truncated by commit `26b657ff`; the 1 MB plan was restored (`be5705a8`) and both tests pass. Full suite after the Corporate fixes below still has to be re-run.
+- Corporate Lite Offline package built from `main` and `measure-corporate-lite.ps1 -EnforceAcceptance -UnicodeSpacesPath -ReadOnlyDataRoot` **PASS**: see `docs/validation/CORPORATE_LOCAL_ACCEPTANCE_2026-11-24.md`. Status is `VALIDATED LOCALLY`; **not** `VALIDATED ON RESTRICTED CORPORATE WINDOWS` (needs a real or VM corporate image, 8 GB RAM profile, large PDFs, signing).
+- Corporate fixes integrated on `main`: lazy model warm-up, Core singleton + per-data-root App mutex, visible startup failure + fallback log, `PaRuXData` creation beside the marker (no profile fallback), PID/profile write failure stops the orphan, `PaRuXData\tmp` instead of `%TEMP%`, non-loopback egress refused in `ValidatedRemoteConnector` under Corporate, source guard against new `UseProxy = false`.
+- Branch cleanup: all superseded branches deleted locally and on origin; a bundle of every ref before deletion is at `Parux\backup-branches-20261124\all-branches-20261124.bundle` (outside the repo). Remaining remote branches: `main` and six `worktree-agent-*` that hold unreviewed WIP (knowledge connectors, optional components, sandboxed chat code + tool-call repair, Playnite theme, Games home, training admission). Compare before integrating; do not delete blindly.
+- Still open: `DocumentQuestionRetrievalTests` case "Quale e' la durata della registrazione TR-A.asc?" failed on 23/11 (not in this run's failures, re-verify); FlaUI/UI suite; physical Playnite/Aniki/TV/pad; eGPU/VRAM/FPS; Standard/MSI/APK packages. No GitHub Actions.
+
 ## 2026-11-24 — MAINLINE CONTINUATION: ANIKI TRANSACTION AND TOOL-STREAM COMMIT GATES
 
 Direct main commits (no branch/PR/Actions): `d9e9fc9`, `c9d70ff`, `9e31527`, `2d20136`.
