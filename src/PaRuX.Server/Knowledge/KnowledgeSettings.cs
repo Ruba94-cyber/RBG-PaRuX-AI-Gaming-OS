@@ -209,7 +209,12 @@ public sealed class MemoryBudgetGuard
     public async Task WaitForHeadroomAsync(CancellationToken ct, int maxWaits = 20, int waitMs = 100)
     {
         if (_budget <= 0 || _used() <= _budget) return;
-        GC.Collect(); GC.WaitForPendingFinalizers(); Collections++;
+        // Bounded: a finalizer that never returns (a stuck native/COM release elsewhere in the process) must not
+        // freeze indexing, so the wait for pending finalizers is capped instead of unbounded.
+        GC.Collect();
+        Task finalizers = Task.Run(GC.WaitForPendingFinalizers, CancellationToken.None);
+        await Task.WhenAny(finalizers, Task.Delay(2000, ct)).ConfigureAwait(false);
+        Collections++;
         for (int i = 0; i < maxWaits && _used() > _budget; i++)
         {
             Waits++;
