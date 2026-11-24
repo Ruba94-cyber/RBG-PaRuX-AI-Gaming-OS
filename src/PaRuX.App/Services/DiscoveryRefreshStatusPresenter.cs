@@ -88,7 +88,7 @@ namespace PaRuX.Services
                     "Next check: " + ToUtcString(nextRefreshUtc.Value));
             }
 
-            return new DiscoveryRefreshStatusPresentation("Not checked yet", null);
+            return new DiscoveryRefreshStatusPresentation(UiText.Pick("Not checked yet", "Non ancora controllato"), null);
         }
 
         public static DiscoveryRefreshStatusPresentation Present(

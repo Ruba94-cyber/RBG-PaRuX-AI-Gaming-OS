@@ -4322,14 +4322,14 @@ namespace PaRuX.Views
             RuntimeAcceleratorProfile? accelerator = _hardware.AcceleratorProfile;
             string gpu = accelerator is { AcceleratorEligible: true, SharedMemoryPrimary: true }
                 ? (accelerator.AdapterName ?? "Integrated GPU") + " · " + FormatBytes(accelerator.SharedSystemMemoryLimitBytes)
-                    + " shared system-memory limit (" + accelerator.Backend + "; not extra VRAM)"
+                    + T(" shared system-memory limit (", " di memoria di sistema condivisa al massimo (") + accelerator.Backend + T("; not extra VRAM)", "; non è VRAM aggiuntiva)")
                 : accelerator is { AcceleratorEligible: true }
                     ? (accelerator.AdapterName ?? "GPU") + " · " + FormatBytes(accelerator.DedicatedVideoMemoryBytes)
-                        + " dedicated (" + accelerator.Backend + ")"
+                        + T(" dedicated (", " dedicati (") + accelerator.Backend + ")"
                     : accelerator is { GpuPresent: true, AcceleratorEligible: false }
-                        ? (accelerator.AdapterName ?? "Physical GPU") + " detected, but no compatible installed PaRuX text backend is eligible; current model fit uses CPU/RAM only"
+                        ? (accelerator.AdapterName ?? "Physical GPU") + T(" detected, but no compatible installed PaRuX text backend is eligible; current model fit uses CPU/RAM only", " rilevata, ma nessun backend di testo PaRuX compatibile installato è idoneo; l'adattamento dei modelli usa solo CPU/RAM")
                         : adapters.Count == 0
-                        ? (_hardware.GpuDetected ? "CUDA GPU · " + _hardware.VramTotalMib + " MiB" : "no dedicated GPU capacity reported")
+                        ? (_hardware.GpuDetected ? "CUDA GPU · " + _hardware.VramTotalMib + " MiB" : T("no dedicated GPU capacity reported", "nessuna GPU dedicata rilevata"))
                         : string.Join(" · ", adapters.Select(adapter => adapter.Name + " " + FormatBytes(adapter.DedicatedVideoMemoryBytes)));
             _hardwareDetailText = "Hardware fit source: "
                 + (_hardware.GpuInventoryAvailable ? _hardware.GpuInventorySource : "runtime fallback")

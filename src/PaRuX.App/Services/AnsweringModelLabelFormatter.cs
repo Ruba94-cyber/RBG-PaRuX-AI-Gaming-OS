@@ -43,7 +43,7 @@ namespace PaRuX.Services
                     DisplayName = "Auto",
                     RoleOrMode = "Auto",
                     BadgeText = "Model: Auto",
-                    OneLineReason = "No message has been answered yet in this chat.",
+                    OneLineReason = UiText.Pick("No message has been answered yet in this chat.", "Nessun messaggio ha ancora ricevuto risposta in questa chat."),
                     AccessibleName = "Answering model: Auto. No message answered yet.",
                     TooltipText = "Model: Auto\n\nNo message has been answered yet in this chat.\n\n" + QualityDisclaimer,
                     HasRoute = false
@@ -155,7 +155,7 @@ namespace PaRuX.Services
 
         public static string FormatOneLineReason(ChatModelRouteInfo? route)
         {
-            if (route == null) return "No message has been answered yet in this chat.";
+            if (route == null) return UiText.Pick("No message has been answered yet in this chat.", "Nessun messaggio ha ancora ricevuto risposta in questa chat.");
 
             if (route.ManualLock)
                 return "Manual lock: model was selected directly by user preference.";

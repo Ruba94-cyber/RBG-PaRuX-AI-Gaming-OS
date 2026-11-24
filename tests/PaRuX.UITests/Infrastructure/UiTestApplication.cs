@@ -60,6 +60,7 @@ internal sealed class UiTestApplication : IDisposable
     internal UIA3Automation Automation { get; }
     internal Window MainWindow { get; }
     internal string DataRoot => _testRoot;
+    internal string ArtifactsDirectory => _artifacts;
     internal string LocalAiStateRoot => _localAiStateRoot;
     internal string SettingsPath => Path.Combine(_testRoot, "settings.json");
     internal string LogPath => Path.Combine(_testRoot, "parux.log");
@@ -175,7 +176,11 @@ internal sealed class UiTestApplication : IDisposable
         {
             ["OnboardingCompleted"] = true,
             ["StudioModeEnabled"] = false,
-            ["BubbleMode"] = "Disabled"
+            ["BubbleMode"] = "Disabled",
+            // Console mode asks once before touching the Xbox Game Bar HKCU settings; UI tests never change the host's Windows
+            // settings, so the feature is off and the consent already answered (the dialog would swallow Escape/B in tests).
+            ["BlockXboxGameBar"] = false,
+            ["GameBarBlockConsentAsked"] = true
         };
         if (!string.IsNullOrWhiteSpace(uiLanguage))
             initialSettings["UiLanguage"] = uiLanguage;

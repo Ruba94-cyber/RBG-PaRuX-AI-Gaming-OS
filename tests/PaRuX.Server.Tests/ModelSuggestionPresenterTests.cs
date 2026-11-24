@@ -6,6 +6,7 @@ using Xunit;
 
 namespace PaRuX.Server.Tests
 {
+    [EnglishUi]
     public sealed class ModelSuggestionPresenterTests
     {
         private static SuggestionFeedProposalDto Proposal(string key, string fit, string kind = "new_candidate",

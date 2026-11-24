@@ -93,9 +93,29 @@ namespace PaRuX.Views
             return scroll;
         }
 
+        /// <summary>Core sends English metric labels; the card title follows the UI language (value and details stay as Core wrote them).</summary>
+        private static string MetricLabel(ObservabilityMetric metric) => metric.Id switch
+        {
+            "execution_profile" => T("Execution profile", "Profilo di esecuzione"),
+            "active_tasks" => T("Active agent work", "Attività agente in corso"),
+            "active_training" => T("Active training", "Training in corso"),
+            "active_downloads" => T("Active downloads", "Download in corso"),
+            "model_benchmarks" => T("Completed model benchmarks", "Benchmark di modelli completati"),
+            "router_success" => T("Router decisions", "Decisioni del router"),
+            _ => metric.Label == "Engine Race evidence" ? T("Engine Race evidence", "Evidenze Engine Race") : metric.Label
+        };
+
+        private static string HeadingText(string text) => text switch
+        {
+            "CURRENT CORE SNAPSHOT" => T("CURRENT CORE SNAPSHOT", "STATO ATTUALE DI CORE"),
+            "MODEL BENCHMARK LEADERBOARD" => T("MODEL BENCHMARK LEADERBOARD", "CLASSIFICA BENCHMARK DEI MODELLI"),
+            "ACTIVITY TIMELINE" => T("ACTIVITY TIMELINE", "CRONOLOGIA ATTIVITÀ"),
+            _ => text
+        };
+
         private static TextBlock SectionHeading(string text) => new()
         {
-            Text = text,
+            Text = HeadingText(text),
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = new Thickness(0, 8, 0, 0),
@@ -138,7 +158,7 @@ namespace PaRuX.Views
                 header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 header.Children.Add(new TextBlock
                 {
-                    Text = metric.Label,
+                    Text = MetricLabel(metric),
                     TextWrapping = TextWrapping.Wrap,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center

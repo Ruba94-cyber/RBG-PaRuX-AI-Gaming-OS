@@ -57,7 +57,7 @@ namespace PaRuX.Services
                 && f.ValueKind == System.Text.Json.JsonValueKind.String ? f.GetString() : null;
 
         public static string EmptyList =>
-            "No LoRA is installed. Install one from COMFYUI WORKFLOWS AND LORAS below, or copy a .safetensors file into ComfyUI's models/loras folder.";
+            UiText.Pick("No LoRA is installed. Install one from COMFYUI WORKFLOWS AND LORAS below, or copy a .safetensors file into ComfyUI's models/loras folder.", "Nessun LoRA installato. Installane uno da WORKFLOW COMFYUI E LORA qui sotto, oppure copia un file .safetensors nella cartella models/loras di ComfyUI.");
 
         /// <summary>The line under the slots: how many are chosen and the first reason the stack cannot be used, if any.</summary>
         public static string Summary(IReadOnlyList<LoraStackSlot> slots, IReadOnlyList<InstalledLoraChoice> installed)

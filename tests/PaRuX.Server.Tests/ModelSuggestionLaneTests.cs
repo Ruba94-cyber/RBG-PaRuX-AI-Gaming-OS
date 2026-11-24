@@ -69,6 +69,7 @@ public sealed class ModelSuggestionLaneTests
     }
 }
 
+[EnglishUi]
 public sealed class ModelSuggestionLanePresenterTests
 {
     private static readonly DateTime Now = new(2026, 10, 25, 12, 0, 0, DateTimeKind.Utc);

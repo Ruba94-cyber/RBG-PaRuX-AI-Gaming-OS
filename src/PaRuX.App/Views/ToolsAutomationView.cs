@@ -640,7 +640,7 @@ namespace PaRuX.Views
             if (p.Browser) granted.Add("browser");
             if (p.ComputerUse) granted.Add("computer-use");
             if (p.ExternalProcesses) granted.Add("external-processes");
-            return granted.Count == 0 ? "permissions: none" : "permissions: " + string.Join(", ", granted);
+            return granted.Count == 0 ? T("permissions: none", "permessi: nessuno") : T("permissions: ", "permessi: ") + string.Join(", ", granted);
         }
 
         private static Grid ThreeColumnRow()
@@ -652,10 +652,21 @@ namespace PaRuX.Views
             return row;
         }
 
+        private static string SectionTitle(string title) => !PaRuX.Services.UiText.IsItalian ? title : title switch
+        {
+            "SKILLS & PERMISSIONS" => "SKILL E PERMESSI",
+            "MCP SERVERS" => "SERVER MCP",
+            "AUTOMATIONS" => "AUTOMAZIONI",
+            "AGENT FLOWS" => "FLUSSI DEGLI AGENTI",
+            "VOICE: MEETINGS & DICTATION" => "VOCE: RIUNIONI E DETTATURA",
+            "WORKFLOW BUILDER" => "COSTRUTTORE DI WORKFLOW",
+            _ => title
+        };
+
         private static Border Section(string title, UIElement child)
         {
             var panel = new StackPanel { Spacing = 10 };
-            panel.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
+            panel.Children.Add(new TextBlock { Text = SectionTitle(title), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
             panel.Children.Add(child);
             return new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Child = panel };
         }

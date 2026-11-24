@@ -87,7 +87,7 @@ namespace PaRuX.Services
             }
             else if (files.Count == 0)
             {
-                hint = "No compatible model is installed yet. Use the setup card above or the Model Hub; until then the workflow default is used.";
+                hint = UiText.Pick("No compatible model is installed yet. Use the setup card above or the Model Hub; until then the workflow default is used.", "Nessun modello compatibile è ancora installato. Usa la scheda di configurazione qui sopra o il Model Hub; nel frattempo si usa il valore predefinito del workflow.");
             }
             else
             {

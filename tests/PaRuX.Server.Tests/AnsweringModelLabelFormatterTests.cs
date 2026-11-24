@@ -4,6 +4,7 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
+[EnglishUi]
 public sealed class AnsweringModelLabelFormatterTests
 {
     [Fact]
