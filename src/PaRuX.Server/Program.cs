@@ -328,6 +328,7 @@ builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AgentSkillTools>(sp => ne
 builder.Services.AddSingleton<MobileArtifactService>();
 builder.Services.AddSingleton<UnifiedRegistryService>();
 builder.Services.AddSingleton<ProjectManagerService>();
+builder.Services.AddProjectChatServices();
 builder.Services.AddHostedService<ProjectProvisioningRecoveryHostedService>();
 builder.Services.AddSingleton<AutopilotStore>();
 builder.Services.AddSingleton<AutopilotService>();
@@ -797,6 +798,7 @@ app.Use((context, next) => PrincipalRoleStore.EnforceAsync(context, context.Requ
 // middleware as every other API route. The module exposes durable Project/task operations and
 // sanitized Artifact transfer only; it never exposes raw Windows filesystem/input primitives.
 app.MapMobileControlEndpoints();
+app.MapProjectChatEndpoints();
 app.MapCandidateUtilityEndpoints();
 app.MapModelArenaEndpoints();
 app.MapCandidateRecommendationEndpoints();
@@ -4242,6 +4244,15 @@ app.MapPost("/api/v1/group-chat", (GroupChatRequest request, GroupChatService gr
 
 app.MapGet("/api/v1/group-chat/{id}", (string id, GroupChatService groupChat) =>
     groupChat.Get(id) is { } status ? Results.Ok(status) : Results.NotFound(new { error = "Group chat run not found" }));
+
+app.MapPost("/api/v1/group-chat/{id}/regenerate/{index}", (string id, int index, GroupChatService groupChat, LocalRuntimeService runtime) =>
+{
+    if (runtime.GamingMode) return Results.Conflict(new { error = "AI paused by Gaming — Return to AI." });
+    try { return Results.Accepted("/api/v1/group-chat/" + id, groupChat.Regenerate(id, index)); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireDesktopOwner();
 
 app.MapPost("/api/v1/group-chat/{id}/cancel", (string id, GroupChatService groupChat) =>
     groupChat.Cancel(id) ? Results.Accepted() : Results.NotFound(new { error = "Active group chat run not found" })).RequireDesktopOwner();

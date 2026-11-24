@@ -49,6 +49,8 @@ namespace PaRuX.Views
             public TextBlock? Sources;
             /// <summary>Model, locality and any fallback that produced this reply. Collapsed until Core reports them.</summary>
             public TextBlock? Provenance;
+            /// <summary>Server-reported token usage of this reply (Advanced only). Collapsed when the server reported none.</summary>
+            public TextBlock? Usage;
             public Storyboard? ThinkingAnimation;
             public bool ErrorStyleApplied;
             public FrameworkElement? MediaPanel;
@@ -100,6 +102,7 @@ namespace PaRuX.Views
         {
             InitializeComponent();
             InitDocumentsButton();
+            HookCanvasPreview();
             // Non-modal "Tuning for your PC" line: visible only while a model is queued or being tuned.
             TuningStatusHost.Children.Add(new ModelTuningStatusControl(ModelTuningStatusControl.Mode.Line, "text"));
 
@@ -528,6 +531,7 @@ namespace PaRuX.Views
 
             EmptyState.Visibility = messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             UpdateRouteLabel();
+            ApplyChatAppearance();
             ScrollToBottom(true);
         }
 
@@ -702,6 +706,7 @@ namespace PaRuX.Views
                 Style? userText = LocalStyle("PaRuXUserTextStyle");
                 if (userText != null) text.Style = userText;
                 panel.Children.Add(text);
+                ApplyUserTextAppearance(panel);
                 return;
             }
 
@@ -1040,6 +1045,21 @@ namespace PaRuX.Views
                 }
             }
 
+            if (visuals.Usage != null)
+            {
+                // Advanced shows the server-reported token usage under each reply; Normal stays quiet (use /usage on demand).
+                string? usageLine = _isSimpleMode ? null
+                    : PaRuX.Intelligence.ChatTokenUsageFormatter.FormatLine(message.Usage, ChatItalian);
+                visuals.Usage.Visibility = usageLine == null ? Visibility.Collapsed : Visibility.Visible;
+                if (usageLine != null)
+                {
+                    visuals.Usage.Text = usageLine;
+                    string detail = T("Token usage reported by the model server for this reply.", "Uso dei token riportato dal server del modello per questa risposta.");
+                    AutomationProperties.SetName(visuals.Usage, usageLine + ". " + detail);
+                    ToolTipService.SetToolTip(visuals.Usage, detail);
+                }
+            }
+
             // IsError is only set once the turn has failed, i.e. after the bubble
             // was built, so the style has to be swapped in here rather than there.
             if (message.IsError && visuals.Bubble != null && !visuals.ErrorStyleApplied)
@@ -1123,6 +1143,13 @@ namespace PaRuX.Views
                 visuals.Provenance = provenance;
                 column.Children.Add(provenance);
 
+                var usage = new TextBlock { Margin = new Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+                Style? usageStyle = LocalStyle("PaRuXMessageRouteTextStyle");
+                if (usageStyle != null) usage.Style = usageStyle;
+                AutomationProperties.SetAutomationId(usage, "Chat_Message_TokenUsage_Text");
+                visuals.Usage = usage;
+                column.Children.Add(usage);
+
                 var caret = new Border { Visibility = Visibility.Collapsed };
                 Style? caretStyle = LocalStyle("PaRuXStreamCaretStyle");
                 if (caretStyle != null)
@@ -1151,6 +1178,7 @@ namespace PaRuX.Views
             RenderInto(content, message);
             MessagesPanel.Children.Add(row);
             SyncStreamingChrome(message);
+            ApplyBubbleAppearance(message, visuals);
 
             if (animate) PlayEntrance(row);
         }
@@ -2858,6 +2886,13 @@ namespace PaRuX.Views
         {
             string text = InputBox.Text ?? string.Empty;
             if (text.Trim().Length == 0 && _pendingAttachments.Count == 0) return;
+            // Local command: never sent to the model, answered from the usage the server already reported.
+            if (_pendingAttachments.Count == 0 && string.Equals(text.Trim(), "/usage", StringComparison.OrdinalIgnoreCase))
+            {
+                InputBox.Text = string.Empty;
+                _ = ShowUsageReportAsync();
+                return;
+            }
             if (ChatSession.Current.IsBusy || _isSwitchingProfile) return;
 
             var attachments = new List<ChatAttachment>(_pendingAttachments);

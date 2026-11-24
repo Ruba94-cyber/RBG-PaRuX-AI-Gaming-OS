@@ -1983,6 +1983,7 @@
                             <ComboBox x:Name="GroupChatModel3Combo" AutomationProperties.Name="Group chat participant 3" loc:Loc.ItName="Partecipante 3 della chat di gruppo" Grid.Row="1" Grid.Column="0" PlaceholderText="Participant 3 (optional)" loc:Loc.ItPlaceholder="Partecipante 3 (facoltativo)" HorizontalAlignment="Stretch" />
                             <ComboBox x:Name="GroupChatModel4Combo" AutomationProperties.Name="Group chat participant 4" loc:Loc.ItName="Partecipante 4 della chat di gruppo" Grid.Row="1" Grid.Column="1" PlaceholderText="Participant 4 (optional)" loc:Loc.ItPlaceholder="Partecipante 4 (facoltativo)" HorizontalAlignment="Stretch" />
                         </Grid>
+                        <Button x:Name="GroupChatReorderButton" AutomationProperties.AutomationId="Settings_GroupChat_Reorder_Button" Content="Reorder speakers…" loc:Loc.ItContent="Riordina gli speaker…" Click="GroupChatReorder_Click" HorizontalAlignment="Left" />
                         <Button x:Name="GroupChatRunButton" Content="Start group chat" loc:Loc.ItContent="Avvia la chat di gruppo" Click="GroupChatRun_Click" HorizontalAlignment="Left" />
                         <Button x:Name="GroupChatCancelButton" Content="Cancel group chat" loc:Loc.ItContent="Annulla la chat di gruppo" Visibility="Collapsed" Click="GroupChatCancel_Click" HorizontalAlignment="Left" />
                         <ProgressRing x:Name="GroupChatProgress" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Left" Width="20" Height="20" />

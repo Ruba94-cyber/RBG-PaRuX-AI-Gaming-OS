@@ -267,6 +267,9 @@ DENY GET /api/v1/orchestrator/tasks/{taskId}/workspace
 DENY GET /api/v1/personas
 DENY GET /api/v1/projects
 DENY GET /api/v1/projects/{projectId}
+DENY GET /api/v1/projects/{projectId}/chat-settings
+DENY GET /api/v1/projects/{projectId}/chat-settings/documents
+DENY GET /api/v1/projects/{projectId}/knowledge
 DENY GET /api/v1/rag/performance/configured
 DENY GET /api/v1/rag/performance/evaluation-documents
 DENY GET /api/v1/rag/sources
@@ -489,6 +492,7 @@ DENY POST /api/v1/gaming/xinput-shim/install
 DENY POST /api/v1/gaming/xinput-shim/uninstall
 DENY POST /api/v1/group-chat
 DENY POST /api/v1/group-chat/{id}/cancel
+DENY POST /api/v1/group-chat/{id}/regenerate/{index}
 DENY POST /api/v1/images/generations
 DENY POST /api/v1/jobs
 DENY POST /api/v1/jobs/{id}/cancel
@@ -724,6 +728,7 @@ DENY PUT /api/v1/models/download-settings
 DENY PUT /api/v1/orchestrator/tasks/{id}/review-status/{section}
 DENY PUT /api/v1/orchestrator/tasks/{taskId}/repositories
 DENY PUT /api/v1/orchestrator/tasks/{taskId}/workspace
+DENY PUT /api/v1/projects/{projectId}/chat-settings
 DENY PUT /api/v1/routing/capability-modes/{capability}
 DENY PUT /api/v2/execution-profiles/models/{modelKey}
 DENY PUT /api/v2/execution-profiles/quality
@@ -807,3 +812,11 @@ DENY POST /api/v1/mcp/servers/{id}/start
 DENY POST /api/v1/mcp/servers/{id}/stop
 DENY POST /api/v1/mcp/servers/{id}/reload
 DENY POST /api/v1/mcp/servers/{id}/timeout
+DENY GET /api/v1/gaming/mods/changesets/backups
+DENY GET /api/v1/gaming/mods/changesets/candidates
+DENY GET /api/v1/gaming/mods/changesets/pending
+DENY POST /api/v1/gaming/mods/changesets/apply
+DENY POST /api/v1/gaming/mods/changesets/prompt
+DENY POST /api/v1/gaming/mods/changesets/restore
+DENY POST /api/v1/knowledge/connectors
+DENY POST /api/v1/runtime/components/{id}/remove-managed

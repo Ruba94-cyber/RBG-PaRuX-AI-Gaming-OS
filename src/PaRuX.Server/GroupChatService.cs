@@ -22,8 +22,12 @@ public sealed class GroupChatService
     private sealed class Entry
     {
         public readonly object Gate = new();
-        public readonly CancellationTokenSource Cancellation = new();
+        public CancellationTokenSource Cancellation = new();
         public required GroupChatStatus Status { get; init; }
+        // Kept so one speaker can be regenerated later without the caller resending anything.
+        public string Prompt = string.Empty;
+        public string SharedContext = string.Empty;
+        public List<(string Path, string Label)> Participants = new();
     }
 
     private readonly ConcurrentDictionary<string, Entry> _runs = new();
@@ -69,6 +73,9 @@ public sealed class GroupChatService
         {
             Status = new GroupChatStatus { Id = Guid.NewGuid().ToString("N"), Status = "queued", Stage = "Queued", CreatedUtc = now, UpdatedUtc = now }
         };
+        entry.Prompt = prompt;
+        entry.SharedContext = sharedContext;
+        entry.Participants = resolved;
         _runs[entry.Status.Id] = entry;
         // Capture only explicitly supplied context; do not silently collect
         // conversation history, project files, memory or cloud material.
@@ -115,6 +122,102 @@ public sealed class GroupChatService
         if (string.IsNullOrWhiteSpace(path)) throw new InvalidDataException(which + ": no model path was resolved.");
         if (!File.Exists(path)) throw new InvalidDataException(which + ": file not found: " + path);
         return path;
+    }
+
+    /// <summary>
+    /// Regenerates ONE speaker of a finished run (or produces the next missing one). The speaker sees only the
+    /// replies that precede it, exactly as in the original run. Replies after it are kept but flagged
+    /// <see cref="GroupChatTurn.Stale"/> (they were written against the old reply) and the verdict is dropped,
+    /// because a reconciliation of replies that no longer match would be a false statement.
+    /// </summary>
+    public GroupChatStatus Regenerate(string id, int index)
+    {
+        if (!_runs.TryGetValue(id, out Entry? entry)) throw new KeyNotFoundException("Group chat run not found.");
+        lock (entry.Gate)
+        {
+            if (entry.Status.Status is not ("completed" or "failed" or "cancelled"))
+                throw new InvalidOperationException("The group chat is still running.");
+            if (entry.Participants.Count == 0)
+                throw new InvalidDataException("This run has no stored participants.");
+            if (index < 0 || index >= entry.Participants.Count || index > entry.Status.Turns.Count)
+                throw new InvalidDataException("That speaker cannot be regenerated yet.");
+            entry.Cancellation.Dispose();
+            entry.Cancellation = new CancellationTokenSource();
+            entry.Status.Status = "queued";
+            entry.Status.Stage = "Queued";
+            entry.Status.Error = null;
+            entry.Status.UpdatedUtc = DateTime.UtcNow;
+        }
+        _ = Task.Run(() => RegenerateAsync(entry, index));
+        return Snapshot(entry);
+    }
+
+    private async Task RegenerateAsync(Entry entry, int index)
+    {
+        CancellationToken ct = entry.Cancellation.Token;
+        bool modelMutationAttempted = false;
+        (string path, string label) = entry.Participants[index];
+        try
+        {
+            await using (MediaExecutionCoordinator.Lease exclusive = await MediaExecutionCoordinator.Current
+                .AcquireAsync("text-exclusive:group-chat", ct).ConfigureAwait(false))
+            {
+                Update(entry, "running", "Loading " + label + "…");
+                modelMutationAttempted = true;
+                RuntimeLoadResult load = await _runtimeManager.StartArbitraryTextModelWithinLeaseAsync(
+                    exclusive, path, label, "Compare: ", adapterPaths: null, role: null,
+                    persistRoleAssignment: false, ct: ct).ConfigureAwait(false);
+                if (!load.Success) throw new InvalidOperationException("Failed to load " + label + ": " + load.Message);
+
+                Update(entry, "running", label + " is responding…");
+                List<GroupChatTurn> prior;
+                lock (entry.Gate)
+                    prior = entry.Status.Turns.Take(index).Select(t => new GroupChatTurn { Label = t.Label, Response = t.Response }).ToList();
+                string response = await _chat.CompleteOnceAsync(BuildParticipantPrompt(entry.Prompt, entry.SharedContext, prior), ct);
+                lock (entry.Gate)
+                {
+                    var fresh = new GroupChatTurn { Label = label, Response = response };
+                    if (index < entry.Status.Turns.Count) entry.Status.Turns[index] = fresh; else entry.Status.Turns.Add(fresh);
+                    foreach (int stale in PaRuX.Intelligence.GroupChatOrderPolicy.StaleTurnsAfterRegenerate(entry.Status.Turns.Count, index))
+                        entry.Status.Turns[stale].Stale = true;
+                    entry.Status.Verdict = null;
+                    entry.Status.UpdatedUtc = DateTime.UtcNow;
+                }
+            }
+
+            Update(entry, "restoring", "Restoring your default model…");
+            string? restoreError = await TryRestoreDefaultProfileAsync();
+            if (restoreError != null)
+                throw new InvalidOperationException("The speaker was regenerated, but PaRuX could not restore the default text model: " + restoreError);
+            lock (entry.Gate)
+            {
+                entry.Status.Status = "completed";
+                entry.Status.Stage = "Completed";
+                entry.Status.UpdatedUtc = DateTime.UtcNow;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            string? restoreError = modelMutationAttempted ? await TryRestoreDefaultProfileAsync() : null;
+            lock (entry.Gate)
+            {
+                entry.Status.Status = "cancelled";
+                entry.Status.Stage = restoreError == null ? "Cancelled; the previous reply was kept" : "Cancelled; default model restore failed";
+                entry.Status.Error = restoreError == null ? null : "Default text model restore failed: " + restoreError;
+                entry.Status.UpdatedUtc = DateTime.UtcNow;
+            }
+        }
+        catch (Exception ex)
+        {
+            string? restoreError = modelMutationAttempted ? await TryRestoreDefaultProfileAsync() : null;
+            lock (entry.Gate)
+            {
+                entry.Status.Status = "failed";
+                entry.Status.Stage = "Failed";
+                entry.Status.Error = restoreError == null ? ex.Message : ex.Message + " | Default text model restore also failed: " + restoreError;
+                entry.Status.UpdatedUtc = DateTime.UtcNow;
+            }
+        }
     }
 
     public IReadOnlyList<GroupChatStatus> List() => _runs.Values
@@ -380,7 +483,8 @@ public sealed class GroupChatService
                 Turns = s.Turns.Select(turn => new GroupChatTurn
                 {
                     Label = turn.Label,
-                    Response = turn.Response
+                    Response = turn.Response,
+                    Stale = turn.Stale
                 }).ToList(),
                 Verdict = s.Verdict == null ? null : new GroupChatVerdict
                 {
