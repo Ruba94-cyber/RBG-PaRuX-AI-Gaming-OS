@@ -47,6 +47,7 @@ namespace PaRuX
             [StudioWorkspace.Observability] = new("Workspace_Observability_Page", "Observability", "Osservabilità", () => new ObservabilityView()),
             [StudioWorkspace.Updates] = new("Workspace_Updates_Page", "Updates", "Aggiornamenti", () => new UpdateManagerView()),
             [StudioWorkspace.Runtime] = new("Workspace_Runtime_Page", "Runtime", "Runtime", () => new RuntimeManagerView()),
+            [StudioWorkspace.GamesTools] = new("Workspace_GamesTools_Page", "Games tools", "Strumenti giochi", () => new GamesToolsView()),
         };
 
         // Model Hub, Games and Settings are heavy to construct (about 120, 100 and 150 ms) and are not visible on a normal
@@ -98,7 +99,7 @@ namespace PaRuX
         {
             StudioWorkspace.Create or StudioWorkspace.Projects or StudioWorkspace.DocumentSearch or StudioWorkspace.ModelRouting
                 or StudioWorkspace.Lifecycle or StudioWorkspace.Workflows or StudioWorkspace.Tools or StudioWorkspace.Observability
-                or StudioWorkspace.Updates or StudioWorkspace.Runtime => true,
+                or StudioWorkspace.Updates or StudioWorkspace.Runtime or StudioWorkspace.GamesTools => true,
             _ => false,
         };
 
@@ -116,6 +117,8 @@ namespace PaRuX
             try
             {
                 FrameworkElement page = lazy.Factory();
+                // Same guarded Chat handoff the library uses: the local game guide only PREFILLS the composer, never sends.
+                if (page is GamesToolsView gamesTools) gamesTools.GameGuideChatRequested += OnGameGuideChatRequested;
                 page.Visibility = Visibility.Collapsed;
                 AutomationProperties.SetAutomationId(page, lazy.AutomationId);
                 // A UserControl with only an id is dropped from the UIA tree; a name plus the Content view exposes the page root.
@@ -164,6 +167,7 @@ namespace PaRuX
                     case ObservabilityView v: v.OnShown(); break;
                     case UpdateManagerView v: v.OnShown(); break;
                     case RuntimeManagerView v: v.OnShown(); break;
+                    case GamesToolsView v: v.OnShown(); break;
                 }
             }
             catch (Exception ex)

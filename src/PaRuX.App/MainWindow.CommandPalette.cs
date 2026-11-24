@@ -48,7 +48,7 @@ namespace PaRuX
                 if (!IsWorkspaceAllowedForSetup(tag)) return;
                 Add("go-" + tag.Trim('_'), "Go to " + en, "Vai a " + it, keywords, () =>
                 {
-                    if (tag == "__games__") SelectModeTab(ModeKeyGaming, navigate: true);
+                    if (tag is "__games__" or "__gamestools__") SelectModeTab(ModeKeyGaming, navigate: true);
                     else if (IsGamingModeTab) SelectModeTab(ModeKeyAi, navigate: false);
                     TryNavigateWorkspace(tag);
                 });
@@ -57,6 +57,7 @@ namespace PaRuX
             Workspace("__create__", "Create", "Crea", "image video music speech immagine musica voce 3d");
             Workspace("__projects__", "Projects", "Progetti", "artifacts gallery repository artefatti");
             Workspace("__modelhub__", "Model Hub", "Model Hub", "models download install modelli scarica");
+            Workspace("__gamestools__", "Games tools", "Strumenti giochi", "playnite mods downloads controller pad streaming guide mod giochi scarica");
             Workspace("__documents__", "Documents", "Documenti", "search files rag cerca file");
             Workspace("__settings__", "Settings", "Impostazioni", "preferences options language theme lingua tema opzioni");
             Workspace("__help__", "Help", "Aiuto", "guide support how to supporto");

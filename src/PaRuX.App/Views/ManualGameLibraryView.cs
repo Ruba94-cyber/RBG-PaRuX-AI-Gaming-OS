@@ -412,6 +412,17 @@ public sealed partial class ManualGameLibraryView : UserControl
         AutomationProperties.SetAutomationId(openTools, "GameLibrary_OpenTools_Button");
         openTools.Click += (_, _) => OpenGamesSection("Tools");
         root.Children.Add(openTools);
+        // The slim Games tools workspace page (mods, downloads, Playnite, handoff, guide, controller tools) hosts the same entry points.
+        var openToolsPage = new Button
+        {
+            Content = T("Open the Games tools page", "Apri la pagina Strumenti giochi"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            MinHeight = 48
+        };
+        AutomationProperties.SetAutomationId(openToolsPage, "GameLibrary_OpenToolsPage_Button");
+        openToolsPage.Click += (_, _) => App.MainWin?.ShowGamesTools();
+        root.Children.Add(openToolsPage);
         var toolsHome = _toolsHome = new GamesToolsHome(OpenGamesSection);
         var sections = new (string Id, string Title, List<UIElement> Items)[]
         {
@@ -495,6 +506,9 @@ public sealed partial class ManualGameLibraryView : UserControl
             });
         }
     }
+
+    /// <summary>Opens one section of this page from the slim Games tools page. Navigation only.</summary>
+    internal void OpenSection(string section) => OpenGamesSection(section);
 
     /// <summary>Shared navigation for Games tools. No refresh, scan or install happens merely by changing sections.</summary>
     private void OpenGamesSection(string section)

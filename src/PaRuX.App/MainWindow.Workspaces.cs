@@ -35,7 +35,8 @@ namespace PaRuX
             Updates,
             Runtime,
             Games,
-            DocumentSearch
+            DocumentSearch,
+            GamesTools
         }
 
         private void NavView_Loaded(object sender, RoutedEventArgs e)
@@ -198,6 +199,25 @@ namespace PaRuX
         /// <summary>Opens the Runtime Manager workspace (engine installs), whichever interface mode is active.</summary>
         public void ShowRuntimeManager() => TryNavigateWorkspace("__runtime__");
 
+        /// <summary>Opens the slim Games tools page (same setup-profile gate as Games).</summary>
+        internal void ShowGamesTools() => TryNavigateWorkspace(WorkspaceNavigationOrder.GamesToolsWorkspaceTag);
+
+        /// <summary>From Games tools: opens one existing section of the Games library page (Downloads, Add, Devices...). Navigation only.</summary>
+        internal void ShowGamesLibrarySection(string section)
+        {
+            if (!IsWorkspaceAllowedForSetup(WorkspaceNavigationOrder.GamesWorkspaceTag)) return;
+            ShowStudioWorkspace(StudioWorkspace.Games);
+            GameLibraryPage.OnShown();
+            GameLibraryPage.OpenSection(section);
+        }
+
+        /// <summary>From Games tools: opens Settings > Gaming and AI Sharing on one existing section (see SettingsView.GamingSection*).</summary>
+        internal void ShowGamingAiSharingSettings(string? sectionAutomationId)
+        {
+            ShowSettings();
+            SettingsPage.ShowGamingAiSharingSection(sectionAutomationId);
+        }
+
         /// <summary>
         /// "PaRuX.exe --play key" (a desktop or Steam shortcut): bring PaRuX forward, open Games and run the normal Play
         /// path for that title. The usual confirmation still comes first; nothing starts silently.
@@ -259,6 +279,10 @@ namespace PaRuX
                 case "__games__":
                     ShowStudioWorkspace(StudioWorkspace.Games);
                     GameLibraryPage.OnShown();
+                    return true;
+                case WorkspaceNavigationOrder.GamesToolsWorkspaceTag:
+                    ShowStudioWorkspace(StudioWorkspace.GamesTools);
+                    NotifyLazyPageShown(StudioWorkspace.GamesTools);
                     return true;
                 case "__chat__":
                     ShowChat();
@@ -328,7 +352,7 @@ namespace PaRuX
                 return;
             }
 
-            SyncModeTabToWorkspace(gaming: workspace == StudioWorkspace.Games);
+            SyncModeTabToWorkspace(gaming: workspace is StudioWorkspace.Games or StudioWorkspace.GamesTools);
             SetNavPaneVisible(true);
             ChatPage.Visibility = Visibility.Collapsed;
             if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
@@ -350,6 +374,7 @@ namespace PaRuX
                 case StudioWorkspace.Runtime: ShowLazyPage(StudioWorkspace.Runtime); break;
                 case StudioWorkspace.Games: GameLibraryPage.Visibility = Visibility.Visible; break;
                 case StudioWorkspace.DocumentSearch: ShowLazyPage(StudioWorkspace.DocumentSearch); break;
+                case StudioWorkspace.GamesTools: ShowLazyPage(StudioWorkspace.GamesTools); break;
             }
         }
 
@@ -381,6 +406,7 @@ namespace PaRuX
         private string? ActiveWorkspaceTag()
         {
             if (GameLibraryPageIfCreated is { Visibility: Visibility.Visible }) return "__games__";
+            if (IsLazyPageVisible(StudioWorkspace.GamesTools)) return WorkspaceNavigationOrder.GamesToolsWorkspaceTag;
             if (IsLazyPageVisible(StudioWorkspace.Create)) return "__create__";
             if (IsLazyPageVisible(StudioWorkspace.Projects)) return "__projects__";
             if (ModelHubPageIfCreated is { Visibility: Visibility.Visible }) return "__modelhub__";
@@ -417,7 +443,7 @@ namespace PaRuX
         private NavigationViewItem NavigationItemFor(StudioWorkspace workspace) => workspace switch
         {
             StudioWorkspace.Chat => ChatNavItem,
-            StudioWorkspace.Games => GameLibraryNavItem,
+            StudioWorkspace.Games or StudioWorkspace.GamesTools => GameLibraryNavItem,
             StudioWorkspace.DocumentSearch => DocumentSearchNavItem,
             StudioWorkspace.Create => CreateNavItem,
             StudioWorkspace.Projects => ProjectsNavItem,

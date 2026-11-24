@@ -31,6 +31,9 @@ namespace PaRuX.Services
         // active: the AI tab hides it and the Gaming tab hides every AI workspace.
         public const string GameLibraryAutomationId = "Navigation_GameLibrary_Item";
         public const string GamesWorkspaceTag = "__games__";
+        // Slim Games tools page: a sub-page of the Games workspace (no sidebar item of its own, selection stays on Games).
+        // It follows exactly the same setup-profile rules as Games and is reachable from the Games page, the command palette and deep links.
+        public const string GamesToolsWorkspaceTag = "__gamestools__";
         // Corporate Lite edition only (PARUX_CORPORATE): hidden everywhere else.
         public const string DocumentSearchAutomationId = "Navigation_DocumentSearch_Item";
         public const string DocumentSearchWorkspaceTag = "__documents__";
@@ -111,9 +114,9 @@ namespace PaRuX.Services
             if (tag is "__settings__" or "__help__") return true;
             if (corporateMode)
                 return tag is "__chat__" or "__documents__" or "__modelhub__";
-            if (profile == SetupProfile.GamingOnly) return tag == GamesWorkspaceTag;
+            if (profile == SetupProfile.GamingOnly) return tag is GamesWorkspaceTag or GamesToolsWorkspaceTag;
             if (tag == DocumentSearchWorkspaceTag) return false;
-            if (tag == GamesWorkspaceTag) return profile == SetupProfile.Both;
+            if (tag is GamesWorkspaceTag or GamesToolsWorkspaceTag) return profile == SetupProfile.Both;
             return AllEntries.Any(e => string.Equals(e.Tag, tag, StringComparison.Ordinal)
                 && !e.IsGamingOnly && !e.IsCorporateOnly);
         }

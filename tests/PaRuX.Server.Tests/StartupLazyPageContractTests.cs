@@ -6,7 +6,7 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
-/// <summary>Source contracts for the first-paint startup work. The ten advanced workspace pages are created in code on first
+/// <summary>Source contracts for the first-paint startup work. The eleven lazy workspace pages (ten advanced ones plus the slim Games tools page) are created in code on first
 /// open (never x:Load/FindName: FindName returned null for an x:Load element in this window, leaving a blank page).
 /// The real behaviour is proven by tests/PaRuX.UITests LazyWorkspacePagesUiTests; timing by tools/measure-app-startup.ps1.</summary>
 public sealed class StartupLazyPageContractTests
@@ -15,6 +15,7 @@ public sealed class StartupLazyPageContractTests
     {
         "CreateWorkspaceView", "ProjectsWorkspaceView", "DocumentSearchView", "ModelRoutingPanel", "LifecycleLabView",
         "WorkflowWorkspaceView", "ToolsAutomationView", "ObservabilityView", "UpdateManagerView", "RuntimeManagerView",
+        "GamesToolsView",
     };
 
     [Fact]
@@ -36,7 +37,7 @@ public sealed class StartupLazyPageContractTests
         string lazy = Read("src", "PaRuX.App", "MainWindow.LazyPages.cs");
         foreach (string view in LazyViews)
             Assert.Contains("new " + view + "()", lazy, StringComparison.Ordinal);
-        Assert.Equal(10, Regex.Matches(lazy, "\\[StudioWorkspace\\.\\w+\\] = new\\(\"Workspace_\\w+_Page\"").Count);
+        Assert.Equal(11, Regex.Matches(lazy, "\\[StudioWorkspace\\.\\w+\\] = new\\(\"Workspace_\\w+_Page\"").Count);
         Assert.Contains("AutomationProperties.SetAutomationId(page, lazy.AutomationId)", lazy, StringComparison.Ordinal);
     }
 

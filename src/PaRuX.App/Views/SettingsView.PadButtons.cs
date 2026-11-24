@@ -56,6 +56,40 @@ public sealed partial class SettingsView
         try { PadButtonsCard.StartBringIntoView(); } catch (Exception) { }
     }
 
+    /// <summary>Settings sections the slim Games tools page links to (Settings_Playnite_Section and Settings_SignInApps_Section are
+    /// built in code; the Console display / Game Bar card is declared in XAML).</summary>
+    internal const string GamingSectionPlaynite = "Settings_Playnite_Section";
+    internal const string GamingSectionSignInApps = "Settings_SignInApps_Section";
+    internal const string GamingSectionConsoleDisplays = "ConsoleDisplaysHeading";
+
+    /// <summary>Called by the Games tools page: opens "Gaming &amp; AI Sharing" and brings one existing section into view.
+    /// It only navigates; nothing is changed, detected or started.</summary>
+    internal void ShowGamingAiSharingSection(string? sectionAutomationId)
+    {
+        SelectSettingsCategory("Gaming & AI Sharing");
+        if (string.IsNullOrEmpty(sectionAutomationId)) return;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            try
+            {
+                FrameworkElement? target = sectionAutomationId == GamingSectionConsoleDisplays
+                    ? ConsoleDisplaysHeading
+                    : FindByAutomationId(SettingsContentPanel, sectionAutomationId);
+                target?.StartBringIntoView();
+            }
+            catch (Exception) { /* scrolling is a convenience; the category is already open */ }
+        });
+    }
+
+    private static FrameworkElement? FindByAutomationId(DependencyObject root, string id)
+    {
+        if (root is FrameworkElement fe && AutomationProperties.GetAutomationId(fe) == id) return fe;
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+            if (FindByAutomationId(VisualTreeHelper.GetChild(root, i), id) is { } hit) return hit;
+        return null;
+    }
+
     private PadActionSettings PbSettings => SettingsStore.Current.Data.PadActions ??= new PadActionSettings();
 
     private List<PadButtonBinding> PbEditable() =>
