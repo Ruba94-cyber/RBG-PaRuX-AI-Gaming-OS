@@ -72,4 +72,25 @@ public sealed class AutomaticWarmupPolicyTests
         try { Assert.False(LocalAiProcessManager.ShouldSkipAutomaticWarmup(null, existing, true)); }
         finally { File.Delete(existing); }
     }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void Corporate_defers_automatic_warmup(bool corporate, bool deferred) =>
+        Assert.Equal(deferred, LocalRuntimeService.ShouldDeferAutomaticWarmup(corporate));
+
+    [Fact]
+    public async Task Corporate_warmup_is_a_noop_that_never_touches_the_process_manager()
+    {
+        int preflightCalls = 0;
+        var manager = new LocalAiProcessManager
+        {
+            AutomaticWarmupSkipForTests = _ => { preflightCalls++; return Task.FromResult(false); }
+        };
+        var runtime = new LocalRuntimeService(null!, manager, null!) { CorporateProbeForTests = () => true };
+        LocalRuntimeService.RuntimeResult result = await runtime.RunActionAsync("Warmup", CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.Contains("skipped", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, preflightCalls);
+    }
 }
