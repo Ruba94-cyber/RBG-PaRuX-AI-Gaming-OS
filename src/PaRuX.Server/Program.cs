@@ -87,6 +87,7 @@ builder.Services.AddSingleton<RuntimeManagerService>(services => new RuntimeMana
 builder.Services.AddSingleton<RuntimeInstallService>();
 builder.Services.AddSingleton<MediaSetupService>();
 builder.Services.AddSingleton<ComponentInventoryService>();
+builder.Services.AddSingleton<ManagedComponentRemover>();
 builder.Services.AddSingleton<SmartRouterService>(services => new SmartRouterService(
     services.GetRequiredService<RuntimeManagerService>(),
     services.GetRequiredService<ModelBenchmarkService>(),
@@ -3749,6 +3750,14 @@ app.MapPost("/api/v1/runtime/components/{id}/skip", async (string id, ComponentI
 app.MapPost("/api/v1/runtime/components/{id}/unskip", async (string id, ComponentInventoryService inventory, CancellationToken ct) =>
 {
     LocalAiPaths.ClearComponentSkipped(id);
+    return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
+}).RequireDesktopOwner();
+
+app.MapPost("/api/v1/runtime/components/{id}/remove-managed", async (string id, ManagedComponentRemover remover,
+    ComponentInventoryService inventory, CancellationToken ct) =>
+{
+    ManagedComponentRemover.Result result = await remover.RemoveAsync(id, ct);
+    if (!result.Removed) return Results.BadRequest(new { error = result.Message });
     return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
 }).RequireDesktopOwner();
 

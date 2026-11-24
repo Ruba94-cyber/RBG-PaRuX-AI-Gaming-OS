@@ -1841,14 +1841,15 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="RUNTIME COMPONENTS &amp; LIFECYCLE" loc:Loc.ItText="COMPONENTI E CICLO DI VITA DEL RUNTIME" Style="{StaticResource PaRuXSectionHeaderTextStyle}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="0" Text="OPTIONAL COMPONENTS" loc:Loc.ItText="COMPONENTI OPZIONALI" AutomationProperties.AutomationId="Settings_OptionalComponents_Header" Style="{StaticResource PaRuXSectionHeaderTextStyle}" VerticalAlignment="Center" />
                     <Button Grid.Column="1" x:Name="RefreshComponentsSettingsButton" AutomationProperties.AutomationId="Settings_RefreshComponents_Button" Content="Refresh components" loc:Loc.ItContent="Aggiorna i componenti" Click="RefreshComponentsSettings_Click" FontSize="12" />
                 </Grid>
                 <Border Style="{StaticResource PaRuXCardStyle}">
                     <StackPanel Spacing="{StaticResource PaRuXSpaceM}">
-                        <TextBlock TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
-                            Text="Local-first component lifecycle. You can detect, locate existing, install with PaRuX, or skip components at any time. PaRuX never alters user-managed software without explicit direction." loc:Loc.ItText="Ciclo di vita dei componenti local-first. Puoi rilevare, individuare quelli esistenti, installare con PaRuX o saltare i componenti in qualsiasi momento. PaRuX non modifica mai il software gestito dall&#x27;utente senza una tua indicazione esplicita." />
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" AutomationProperties.AutomationId="Settings_OptionalComponents_Intro"
+                            Text="Everything here is optional. Nothing is installed until you press Download now, and you can skip a component and come back to it later. Components you already have on this PC can be located instead of downloaded; PaRuX never changes software you installed yourself." loc:Loc.ItText="Tutto qui è opzionale. Non viene installato nulla finché non premi Scarica ora, e puoi saltare un componente e tornarci più tardi. I componenti che hai già su questo PC possono essere indicati invece di scaricati; PaRuX non modifica mai il software che hai installato tu." />
                         <ProgressBar x:Name="ComponentsSettingsProgress" AutomationProperties.AutomationId="Settings_Components_Progress" IsIndeterminate="True" Visibility="Collapsed" HorizontalAlignment="Stretch" />
+                        <Button x:Name="ComponentsSettingsCancelButton" AutomationProperties.AutomationId="Settings_Components_CancelDownload_Button" Content="Cancel download" loc:Loc.ItContent="Annulla il download" Click="CancelComponentsSettingsDownload_Click" Visibility="Collapsed" FontSize="12" HorizontalAlignment="Left" />
                         <TextBlock x:Name="ComponentsSettingsStatusText" AutomationProperties.AutomationId="Settings_Components_StatusText" Style="{StaticResource PaRuXCaptionTextStyle}" TextWrapping="Wrap" />
                         <StackPanel x:Name="ComponentsSettingsList" AutomationProperties.AutomationId="Settings_Components_List" Spacing="{StaticResource PaRuXSpaceS}" />
                     </StackPanel>
