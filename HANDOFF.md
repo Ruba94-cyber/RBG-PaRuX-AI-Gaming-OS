@@ -1,3 +1,11 @@
+## 2026-11-24 (evening) — PACKAGES: STANDARD PORTABLE PASS, CORPORATE LITE SHIPS VULKAN
+
+- Full Server xUnit on `main` 146fda40: **16099 passed, 0 failed, 9 skipped** (53 min). After that: router fixes (resident model compatible, context-ladder fit, bounded retrieval reclaim, closest-candidate numbers in the refusal), Corporate Vulkan packaging/policy, retry of the staged-runtime move. The full suite must be re-run on the final `main`.
+- Portable Standard acceptance **12/12**; Corporate Lite (with Vulkan) acceptance **PASS**: see `docs/validation/PACKAGES_LOCAL_ACCEPTANCE_2026-11-24.md` (numbers, defects, what is NOT verified).
+- Corporate requirement from the owner: the package must contain the Vulkan runtime. Integrated GPUs stay on CPU by default (measured 3.6 vs 6.5 tok/s); discrete GPUs use Vulkan with CPU fallback; `PARUX_CORPORATE_GPU=force|0`.
+- MSI needs the owner to accept the WiX v7 EULA; APK needs the Android toolchain. Neither was built.
+- The Standard package must be built from the pinned assets (`-ModelPath/-CpuRuntimeDir/-EmbeddingDir/-RerankerDir`), not `-FetchAssets`, until a new llama.cpp tag is reviewed and pinned.
+
 ## 2026-11-24 — CORPORATE LOCALLY VALIDATED (synthetic corpus), MAIN CLEANED
 
 - Full Server xUnit on `main` d836b4e6 (native Windows x64, SDK 10.0.302 from `%USERPROFILE%\.dotnet`): **16033 passed, 2 failed, 9 skipped (54 min)**. Both failures came from `PARUX_EXECUTION_PLAN.md` being truncated by commit `26b657ff`; the 1 MB plan was restored (`be5705a8`) and both tests pass. Full suite after the Corporate fixes below still has to be re-run.
