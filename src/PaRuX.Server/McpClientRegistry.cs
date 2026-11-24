@@ -46,6 +46,9 @@ public sealed class McpClientRegistry : IAsyncDisposable
     private PaRuX.Server.AgentSkills.AgentSkillTools? _skillTools;
     private PaRuX.Server.AgentSkills.AgentSkillTools? _agentSkills =>
         _skillTools ??= _services?.GetService(typeof(PaRuX.Server.AgentSkills.AgentSkillTools)) as PaRuX.Server.AgentSkills.AgentSkillTools;
+    private PaRuX.Server.ChatCode.ChatCodeTools? _chatCodeTools;
+    private PaRuX.Server.ChatCode.ChatCodeTools? _chatCode =>
+        _chatCodeTools ??= _services?.GetService(typeof(PaRuX.Server.ChatCode.ChatCodeTools)) as PaRuX.Server.ChatCode.ChatCodeTools;
     private List<McpServerConfig>? _configCache;
     private readonly Dictionary<string, McpClient> _liveClients = new();
 
@@ -385,6 +388,16 @@ public sealed class McpClientRegistry : IAsyncDisposable
             }
         }
 
+        // Offered only while the user's own managed Python runtime is installed and Gaming is off; every run still needs approval.
+        if (_chatCode != null)
+        {
+            foreach (JsonNode? schema in _chatCode.GetToolSchemas(allowedTools))
+            {
+                if (schema == null) continue;
+                if (!TryAddSchema(schema)) return schemas;
+            }
+        }
+
         if (_knowledge != null)
         {
             foreach (JsonNode? schema in _knowledge.GetToolSchemas(allowedTools))
@@ -629,6 +642,14 @@ public sealed class McpClientRegistry : IAsyncDisposable
                 success = !libraryResult.StartsWith("Library tool failed:", StringComparison.OrdinalIgnoreCase);
                 outcome = success ? "success" : "tool-error";
                 return libraryResult;
+            }
+
+            if (_chatCode != null && PaRuX.Server.ChatCode.ChatCodeTools.IsBuiltInTool(toolName))
+            {
+                string codeResult = await _chatCode.CallAsync(toolName, argumentsJson, ct, allowedTools).ConfigureAwait(false);
+                success = !codeResult.StartsWith("Code tool failed:", StringComparison.OrdinalIgnoreCase);
+                outcome = success ? "success" : "tool-error";
+                return codeResult;
             }
 
             if (_knowledge != null && KnowledgeBrowserTools.IsBuiltInTool(toolName))

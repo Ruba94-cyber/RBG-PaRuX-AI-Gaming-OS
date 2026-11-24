@@ -23,6 +23,12 @@ internal sealed class StreamingMcpToolLoop
 {
     internal const int MaxToolRounds = 5;
 
+    /// <summary>Rounds in which a malformed/schema-invalid call is bounced back to the model with the validation error.</summary>
+    internal const int MaxRepairRounds = 2;
+
+    /// <summary>A tool that already failed this many times in one turn is not executed again.</summary>
+    internal const int MaxExecutionFailuresPerTool = 2;
+
     /// <summary>Sends one provider request (after any prompt-growth check) and returns the response with headers read.</summary>
     internal delegate Task<HttpResponseMessage> OpenRound(JsonObject payload, CancellationToken cancellationToken);
 
@@ -39,6 +45,10 @@ internal sealed class StreamingMcpToolLoop
     private readonly int _maxCallsPerTurn;
     private int _toolCallsUsed;
     private int _toolResultCharactersRemaining;
+    private readonly Dictionary<string, JsonObject?> _schemas;
+    private readonly Dictionary<string, int> _executionFailures = new(StringComparer.Ordinal);
+    private int _repairRoundsUsed;
+    private bool _forceNoTools;
 
     public StreamingMcpToolLoop(
         JsonObject payload,
@@ -59,6 +69,7 @@ internal sealed class StreamingMcpToolLoop
         _maxCallsPerRound = maxCallsPerRound;
         _maxCallsPerTurn = maxCallsPerTurn;
         _toolResultCharactersRemaining = maxToolResultCharactersPerTurn;
+        _schemas = ToolCallRepair.SchemasOf(tools);
         _payload["tools"] = tools;
         _payload["stream"] = true;
     }
@@ -84,10 +95,10 @@ internal sealed class StreamingMcpToolLoop
         {
             for (int round = 0; ; round++)
             {
-                bool toolsAllowed = round < MaxToolRounds;
+                bool toolsAllowed = round < MaxToolRounds && !_forceNoTools;
                 if (response == null)
                 {
-                    if (!toolsAllowed) _payload.Remove("tools");
+                    if (!toolsAllowed) { _payload.Remove("tools"); _payload.Remove("tool_choice"); }
                     response = await _open(_payload, cancellationToken).ConfigureAwait(false);
                     if (!response.IsSuccessStatusCode)
                     {
@@ -138,9 +149,11 @@ internal sealed class StreamingMcpToolLoop
 
     private async Task ExecuteToolsAsync(TurnResult turn, int round, CancellationToken cancellationToken)
     {
-        var callsArray = new JsonArray();
+        // 1. Inspect every call before anything runs: repair what is unambiguous, reject the rest with the reason.
+        // Layers: provider IDs made unique, 64 KiB bound, strict JSON admission (exact advertised name, no duplicate keys),
+        // then schema validation and bounded local repair.
+        var prepared = new List<PreparedCall>();
         var usedIds = new HashSet<string>(StringComparer.Ordinal);
-        var oversizedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (PendingToolCall call in turn.ToolCalls)
         {
             string id = call.Id;
@@ -152,97 +165,144 @@ internal sealed class StreamingMcpToolLoop
                 do { id = "call_" + round + "_" + call.Index + "_" + suffix++; }
                 while (!usedIds.Add(id));
             }
-            string arguments = call.Arguments.Length == 0 ? "{}" : call.Arguments.ToString();
-            if (call.ArgumentsTooLarge) oversizedIds.Add(id);
-            callsArray.Add(new JsonObject
+            string rawArguments = call.Arguments.Length == 0 ? "{}" : call.Arguments.ToString();
+            ToolCallRepair.Outcome outcome;
+            if (call.ArgumentsTooLarge)
+                outcome = new ToolCallRepair.Outcome(ToolCallRepair.Status.Invalid, call.Name, "{}",
+                    "The tool arguments exceeded the 64 KiB model-output limit.", Array.Empty<string>());
+            else if (call.ParseError != null)
+                outcome = new ToolCallRepair.Outcome(ToolCallRepair.Status.Invalid, call.Name, "{}", call.ParseError, Array.Empty<string>());
+            else
             {
-                ["id"] = id,
-                ["type"] = "function",
-                ["function"] = new JsonObject { ["name"] = call.Name, ["arguments"] = arguments }
-            });
+                outcome = ToolCallRepair.Inspect(call.Name, rawArguments, _schemas);
+                if (outcome.Status != ToolCallRepair.Status.Invalid)
+                {
+                    McpToolCallAdmission.Result admission = McpToolCallAdmission.Inspect(outcome.Name, rawArguments, _advertisedToolNames);
+                    if (!admission.Allowed)
+                        outcome = new ToolCallRepair.Outcome(ToolCallRepair.Status.Invalid, outcome.Name, "{}", admission.Error, Array.Empty<string>());
+                }
+            }
+            if (outcome.Status != ToolCallRepair.Status.Valid) McpToolUseTelemetry.RecordRepair("detected");
+            if (outcome.Status == ToolCallRepair.Status.LocallyRepaired) McpToolUseTelemetry.RecordRepair("fixed-locally");
+            prepared.Add(new PreparedCall(id, outcome, outcome.Name.Length == 0 ? call.Name : outcome.Name));
         }
 
-        // Verify the exact tool name and JSON syntax before any user-facing or
-        // external tool invocation. Incomplete and unadvertised calls are NOT run.
-        int roundAllowance = Math.Min(_maxCallsPerRound, Math.Max(0, _maxCallsPerTurn - _toolCallsUsed));
-        var admittedCalls = new JsonArray();
-        var refused = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (int i = 0; i < callsArray.Count; i++)
-        {
-            JsonObject call = callsArray[i]!.AsObject();
-            string id = call["id"]!.GetValue<string>();
-            if (i >= roundAllowance)
-            {
-                refused[id] = "Tool call skipped: the per-turn tool-call limit was reached.";
-                call["function"]!["arguments"] = "{}"; // tool-call transcript must stay valid JSON
-                continue;
-            }
-            if (oversizedIds.Contains(id))
-            {
-                refused[id] = "Tool call NOT executed: arguments exceeded the 64 KiB model-output limit.";
-                call["function"]!["arguments"] = "{}";
-                continue;
-            }
-            JsonObject fn = call["function"]!.AsObject();
-            McpToolCallAdmission.Result admission = McpToolCallAdmission.Inspect(
-                fn["name"]!.GetValue<string>(), fn["arguments"]!.GetValue<string>(), _advertisedToolNames);
-            if (!admission.Allowed)
-            {
-                refused[id] = "Tool call NOT executed: " + admission.Error +
-                    " Retry with an advertised tool name and complete JSON arguments.";
-                // Preserve the explanation in the tool message, not invalid/oversized
-                // arguments in the following provider request. This avoids a second
-                // malformed-tool-request failure before the model can correct itself.
-                fn["arguments"] = "{}";
-                continue;
-            }
-            fn["arguments"] = admission.ArgumentsJson;
-            admittedCalls.Add(call.DeepClone());
-        }
+        var callsArray = new JsonArray();
+        foreach (PreparedCall p in prepared) callsArray.Add(CallJson(p));
 
         var assistant = new JsonObject { ["role"] = "assistant", ["content"] = turn.Content.ToString(), ["tool_calls"] = callsArray };
         if (turn.Reasoning.Length > 0) assistant["reasoning_content"] = turn.Reasoning.ToString();
         _payload["messages"]!.AsArray().Add(assistant);
 
-        var names = callsArray.Select(c => c!["function"]!["name"]!.GetValue<string>()).ToArray();
+        // 2. Bounded repair budget: the first MaxRepairRounds rounds that contain an invalid call bounce it back;
+        // after that the call fails for good and the model is told to answer without tools.
+        bool anyInvalid = prepared.Any(p => p.Outcome.Status == ToolCallRepair.Status.Invalid);
+        bool repairAvailable = anyInvalid && _repairRoundsUsed < MaxRepairRounds;
+        if (anyInvalid)
+        {
+            if (repairAvailable) _repairRoundsUsed++;
+            else _forceNoTools = true;
+        }
+
+        var messageById = new Dictionary<string, string>(StringComparer.Ordinal);
+        var admittedCalls = new JsonArray();
+        int roundAllowance = Math.Min(_maxCallsPerRound, Math.Max(0, _maxCallsPerTurn - _toolCallsUsed));
+        int slot = 0;
+        var repairEvents = new List<object>();
+        foreach (PreparedCall p in prepared)
+        {
+            if (p.Outcome.Status == ToolCallRepair.Status.Invalid)
+            {
+                string schemaHint = _schemas.TryGetValue(p.Name, out JsonObject? sch)
+                    ? " Expected arguments: " + ToolCallRepair.DescribeSchema(sch) + "." : string.Empty;
+                if (repairAvailable)
+                {
+                    McpToolUseTelemetry.RecordRepair("reprompted");
+                    messageById[p.Id] = "Tool call rejected and NOT executed: " + p.Outcome.Error + schemaHint
+                        + " Send the call again with corrected arguments (" + (MaxRepairRounds - _repairRoundsUsed)
+                        + " repair attempt(s) left), or answer without the tool.";
+                    repairEvents.Add(new { id = p.Id, tool = p.Name, status = "reprompted", error = p.Outcome.Error });
+                }
+                else
+                {
+                    McpToolUseTelemetry.RecordRepair("exhausted");
+                    messageById[p.Id] = "Tool call failed and was NOT executed: " + p.Outcome.Error
+                        + " Repair attempts are exhausted. Do not call tools again; tell the user plainly that this tool call could not be completed.";
+                    repairEvents.Add(new { id = p.Id, tool = p.Name, status = "exhausted", error = p.Outcome.Error });
+                }
+                continue;
+            }
+
+            if (_executionFailures.TryGetValue(p.Name, out int failed) && failed >= MaxExecutionFailuresPerTool)
+            {
+                messageById[p.Id] = "Tool call not executed: \"" + p.Name + "\" already failed " + failed
+                    + " times in this turn. Do not retry it; tell the user it failed.";
+                continue;
+            }
+            if (slot++ < roundAllowance) admittedCalls.Add(CallJson(p));
+            else messageById[p.Id] = "Tool call skipped: the per-turn tool-call limit was reached.";
+        }
+
+        string[] names = prepared.Select(p => p.Name).ToArray();
         await _writeFrame("data: " + JsonSerializer.Serialize(new { parux_event = "tool_calls", round, names }) + "\n\n",
             cancellationToken).ConfigureAwait(false);
+        foreach (object repairEvent in repairEvents)
+            await _writeFrame("data: " + JsonSerializer.Serialize(new { parux_event = "tool_repair", repair = repairEvent }) + "\n\n",
+                cancellationToken).ConfigureAwait(false);
 
+        // 3. Execute what is valid.
         IReadOnlyList<McpToolCallBatchExecutor.Result> results = await McpToolCallBatchExecutor.ExecuteAsync(
             admittedCalls, _invokeTool, cancellationToken).ConfigureAwait(false);
         _toolCallsUsed += admittedCalls.Count;
-        var byId = results.ToDictionary(result => result.Id, StringComparer.Ordinal);
 
-        // Write tool messages in the MODEL'S original order, including refused
-        // siblings. Each ID receives exactly one result, so providers cannot
-        // misattribute a successful tool reply to an invalid neighbour.
-        foreach (JsonNode? node in callsArray)
+        var nameById = prepared.ToDictionary(p => p.Id, p => p.Name, StringComparer.Ordinal);
+        foreach (McpToolCallBatchExecutor.Result result in results)
         {
-            string id = node!["id"]!.GetValue<string>();
-            string resultText;
-            if (refused.TryGetValue(id, out string? reason))
-                resultText = reason;
-            else if (byId.TryGetValue(id, out McpToolCallBatchExecutor.Result? result))
+            string resultText = result.Content;
+            if (IsExecutionFailure(resultText) && nameById.TryGetValue(result.Id, out string? failedTool))
             {
-                resultText = result.Content;
-                if (_toolResultCharactersRemaining <= 0)
-                    resultText = "Tool result omitted: the cumulative tool-result budget is exhausted.";
-                else
-                {
-                    int limit = Math.Min(8_000, _toolResultCharactersRemaining);
-                    if (resultText.Length > limit)
-                        resultText = resultText[..limit] + "\n[tool result truncated by the Context Engine budget]";
-                    _toolResultCharactersRemaining = Math.Max(0, _toolResultCharactersRemaining - resultText.Length);
-                }
+                int count = _executionFailures.GetValueOrDefault(failedTool) + 1;
+                _executionFailures[failedTool] = count;
+                McpToolUseTelemetry.RecordRepair("execution-failure");
+                resultText += count >= MaxExecutionFailuresPerTool
+                    ? " (This tool has now failed " + count + " times this turn and will not run again; tell the user it failed.)"
+                    : " (If this was caused by the arguments, correct them and retry once; otherwise answer without it.)";
             }
+            if (_toolResultCharactersRemaining <= 0)
+                resultText = "Tool result omitted: the cumulative tool-result budget is exhausted.";
             else
-                resultText = "Tool call NOT executed: no result was returned.";
+            {
+                int limit = Math.Min(8_000, _toolResultCharactersRemaining);
+                if (resultText.Length > limit)
+                    resultText = resultText[..limit] + "\n[tool result truncated by the Context Engine budget]";
+                _toolResultCharactersRemaining = Math.Max(0, _toolResultCharactersRemaining - resultText.Length);
+            }
+            messageById[result.Id] = resultText;
+        }
+
+        // 4. Exactly one tool message per tool_call_id, in the model's original call order, refused siblings included.
+        foreach (PreparedCall p in prepared)
+        {
             _payload["messages"]!.AsArray().Add(new JsonObject
             {
-                ["role"] = "tool", ["tool_call_id"] = id, ["content"] = resultText
+                ["role"] = "tool", ["tool_call_id"] = p.Id,
+                ["content"] = messageById.GetValueOrDefault(p.Id) ?? "Tool call NOT executed: no result was returned."
             });
         }
     }
+
+    private static JsonObject CallJson(PreparedCall p) => new()
+    {
+        ["id"] = p.Id,
+        ["type"] = "function",
+        ["function"] = new JsonObject { ["name"] = p.Name, ["arguments"] = p.Outcome.ArgumentsJson }
+    };
+
+    private static bool IsExecutionFailure(string result) =>
+        result.StartsWith("Tool call failed:", StringComparison.Ordinal)
+        || result.StartsWith("Tool reported an error:", StringComparison.Ordinal);
+
+    private sealed record PreparedCall(string Id, ToolCallRepair.Outcome Outcome, string Name);
 
     private async Task<TurnResult> StreamTurnAsync(HttpResponseMessage response, bool toolsAllowed, CancellationToken cancellationToken)
     {
@@ -250,6 +310,22 @@ internal sealed class StreamingMcpToolLoop
         var calls = new SortedDictionary<int, PendingToolCall>();
         bool sawDone = false, sawFinish = false;
         string? finalFinishReason = null;
+
+        // A model that writes its call as text (<tool_call>... or <function=...>) must not have that raw markup
+        // shown as the answer: while the start of the reply could still become such a call, frames are held back.
+        var held = new List<string>();
+        bool holding = false, holdDecided = false;
+        async Task Emit(string frame, CancellationToken ct)
+        {
+            if (holding) held.Add(frame);
+            else await _writeFrame(frame, ct).ConfigureAwait(false);
+        }
+        async Task ReleaseHeldAsync(CancellationToken ct)
+        {
+            holding = false;
+            foreach (string frame in held) await _writeFrame(frame, ct).ConfigureAwait(false);
+            held.Clear();
+        }
         try
         {
             await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -265,12 +341,13 @@ internal sealed class StreamingMcpToolLoop
 
                 JsonNode? chunk;
                 try { chunk = JsonNode.Parse(data); }
-                catch (JsonException) { await _writeFrame(line + "\n\n", cancellationToken).ConfigureAwait(false); continue; }
+                catch (JsonException) { await Emit(line + "\n\n", cancellationToken).ConfigureAwait(false); continue; }
 
                 if (chunk is JsonObject obj && obj.ContainsKey("error"))
                 {
-                    await _writeFrame(line + "\n\n", cancellationToken).ConfigureAwait(false);
-                    await _writeFrame("data: [DONE]\n\n", cancellationToken).ConfigureAwait(false);
+                    if (holding) await ReleaseHeldAsync(cancellationToken).ConfigureAwait(false);
+                    await Emit(line + "\n\n", cancellationToken).ConfigureAwait(false);
+                    await Emit("data: [DONE]\n\n", cancellationToken).ConfigureAwait(false);
                     turn.Errored = true;
                     return turn;
                 }
@@ -343,6 +420,17 @@ internal sealed class StreamingMcpToolLoop
                     finalFinishReason = finishReason;
                 }
 
+                if (toolsAllowed && calls.Count == 0 && !holdDecided && !string.IsNullOrEmpty(content))
+                {
+                    string lead = turn.Content.ToString().TrimStart();
+                    if (lead.Length > 0)
+                    {
+                        if (ToolCallRepair.StartsTextualCall(lead)) { holding = true; holdDecided = true; }
+                        else if (ToolCallRepair.CouldStartTextualCall(lead)) holding = true;
+                        else { if (holding) await ReleaseHeldAsync(cancellationToken).ConfigureAwait(false); holdDecided = true; }
+                    }
+                }
+
                 bool turnHasTools = calls.Count > 0;
                 if (hasToolDelta && string.IsNullOrEmpty(content) && string.IsNullOrEmpty(reasoning) && !hasFinish)
                     continue; // pure tool_call delta: accumulated, never shown
@@ -352,10 +440,10 @@ internal sealed class StreamingMcpToolLoop
                 {
                     // Mixed chunk: forward only the text half.
                     delta!.Remove("tool_calls");
-                    await _writeFrame("data: " + chunk!.ToJsonString() + "\n\n", cancellationToken).ConfigureAwait(false);
+                    await Emit("data: " + chunk!.ToJsonString() + "\n\n", cancellationToken).ConfigureAwait(false);
                     continue;
                 }
-                await _writeFrame(line + "\n\n", cancellationToken).ConfigureAwait(false);
+                await Emit(line + "\n\n", cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { throw; }
@@ -394,6 +482,28 @@ internal sealed class StreamingMcpToolLoop
             turn.FailureMessage = "The provider declared tool_calls but sent no tool calls; no tools were executed.";
             return turn;
         }
+        if (toolsAllowed && calls.Count == 0 && turn.Content.Length > 0)
+        {
+            List<ToolCallRepair.TextualCall> textual = ToolCallRepair.ParseTextualCalls(turn.Content.ToString(), out string remaining);
+            if (textual.Count > 0)
+            {
+                // Recovered: the markup is not shown, the calls go through the same inspect/execute path.
+                held.Clear();
+                holding = false;
+                turn.Content.Clear().Append(remaining);
+                int i = 0;
+                foreach (ToolCallRepair.TextualCall t in textual)
+                {
+                    var pending = new PendingToolCall { Index = i++, Name = t.Name, ParseError = t.ParseError };
+                    pending.Arguments.Append(t.RawArguments);
+                    turn.ToolCalls.Add(pending);
+                    McpToolUseTelemetry.RecordRepair("textual-recovered");
+                }
+                return turn;
+            }
+        }
+        if (holding) await ReleaseHeldAsync(cancellationToken).ConfigureAwait(false);
+
         if (toolsAllowed) foreach (PendingToolCall call in calls.Values) turn.ToolCalls.Add(call);
         return turn;
     }
@@ -473,6 +583,8 @@ internal sealed class StreamingMcpToolLoop
         public string Name = string.Empty;
         public StringBuilder Arguments { get; } = new();
         public bool ArgumentsTooLarge;
+        /// <summary>Set for a text-form call that could not be parsed; the call is rejected, not run.</summary>
+        public string? ParseError;
     }
 
     private sealed class TurnResult
