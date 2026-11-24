@@ -149,11 +149,19 @@ public sealed class PadActionSettings
     public const int MaxBindings = 128;
     public const int MaxTvOverrides = 48;
     public const long HoldMs = 600;
+    public const int MinHoldMs = 300;
+    public const int MaxHoldMs = 3000;
 
     public int Version { get; set; } = CurrentVersion;
 
     /// <summary>"Use controller buttons for PaRuX actions". Default on (only effective with at least one binding).</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>Owner-chosen hold time in milliseconds (300..3000). Null means the built-in <see cref="HoldMs"/>. Applies to every pad.</summary>
+    public int? HoldMsOverride { get; set; }
+
+    /// <summary>The hold time actually used: the owner's value clamped to the safe range, else the default.</summary>
+    public long EffectiveHoldMs => HoldMsOverride is int v ? Math.Clamp(v, MinHoldMs, MaxHoldMs) : HoldMs;
 
     /// <summary>Owner-edited table. Null means "never edited": the built-in defaults apply. An empty list means "owner cleared everything".</summary>
     public List<PadButtonBinding>? Bindings { get; set; }
@@ -209,7 +217,7 @@ public sealed class PadActionSettings
 
     public PadActionSettings Clone() => new()
     {
-        Version = Version, Enabled = Enabled,
+        Version = Version, Enabled = Enabled, HoldMsOverride = HoldMsOverride,
         Bindings = Bindings?.ToList(),
         Tv = Tv is null ? null : new Dictionary<string, string>(Tv)
     };
@@ -234,6 +242,10 @@ internal sealed class PadActionSettingsJsonConverter : JsonConverter<PadActionSe
                 {
                     case "enabled":
                         if (p.Value.ValueKind is JsonValueKind.True or JsonValueKind.False) result.Enabled = p.Value.GetBoolean();
+                        break;
+                    case "holdms":
+                        if (p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out int hold)
+                            && hold is >= PadActionSettings.MinHoldMs and <= PadActionSettings.MaxHoldMs) result.HoldMsOverride = hold;
                         break;
                     case "bindings":
                         if (p.Value.ValueKind == JsonValueKind.Array) result.Bindings = ReadBindings(p.Value);
@@ -293,6 +305,8 @@ internal sealed class PadActionSettingsJsonConverter : JsonConverter<PadActionSe
         writer.WriteStartObject();
         writer.WriteNumber("version", PadActionSettings.CurrentVersion);
         writer.WriteBoolean("enabled", value.Enabled);
+        if (value.HoldMsOverride is int hold)
+            writer.WriteNumber("holdMs", Math.Clamp(hold, PadActionSettings.MinHoldMs, PadActionSettings.MaxHoldMs));
         if (value.Bindings is not null)
         {
             writer.WriteStartArray("bindings");

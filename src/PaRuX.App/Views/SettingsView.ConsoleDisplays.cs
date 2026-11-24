@@ -44,6 +44,56 @@ public sealed partial class SettingsView
         SettingsStore.Current.Save();
     }
 
+    private void ConsolePowerSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        SettingsStore.Current.Data.ConsolePowerProfileEnabled = ConsolePowerSwitch.IsOn;
+        SettingsStore.Current.Save();
+        ConsolePowerPlanCombo.IsEnabled = ConsolePowerSwitch.IsOn;
+        // Switching it off while a plan is applied puts the previous plan back right away.
+        if (!ConsolePowerSwitch.IsOn) _ = PlayniteClient.Current.RestorePowerProfileAsync();
+    }
+
+    private void ConsolePowerPlanCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
+        if ((ConsolePowerPlanCombo.SelectedItem as ComboBoxItem)?.Tag is not string id) return;
+        SettingsStore.Current.Data.ConsolePowerPlanId = id;
+        SettingsStore.Current.Save();
+    }
+
+    /// <summary>Fills the plan list from the Core (existing Windows plans only). The saved choice stays selected when it still exists.</summary>
+    private async Task RefreshConsolePowerPlansAsync()
+    {
+        ConsolePowerSwitch.Header = TvT("Use a Windows power plan while Console is in use", "Usa un piano di alimentazione Windows mentre la Console è in uso");
+        ConsolePowerPlanCombo.Header = TvT("Power plan to use", "Piano di alimentazione da usare");
+        ConsolePowerExplanation.Text = TvT(
+            "PaRuX only selects a plan that already exists in Windows and puts your previous plan back when Console ends or after a crash. If you change the plan yourself meanwhile, PaRuX leaves your choice alone.",
+            "PaRuX seleziona solo un piano già presente in Windows e rimette il tuo piano precedente quando la Console termina o dopo un arresto anomalo. Se nel frattempo cambi tu il piano, PaRuX rispetta la tua scelta.");
+        _syncingOwnedGameRouteSwitch = true;
+        try
+        {
+            ConsolePowerSwitch.IsOn = SettingsStore.Current.Data.ConsolePowerProfileEnabled;
+            ConsolePowerPlanCombo.IsEnabled = ConsolePowerSwitch.IsOn;
+            var reply = await PlayniteClient.Current.GetPowerProfileAsync();
+            ConsolePowerPlanCombo.Items.Clear();
+            if (!reply.Succeeded || reply.Value.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !reply.Value.TryGetProperty("available", out var plans) || plans.ValueKind != System.Text.Json.JsonValueKind.Array) return;
+            string saved = SettingsStore.Current.Data.ConsolePowerPlanId ?? string.Empty;
+            foreach (var plan in plans.EnumerateArray())
+            {
+                string? id = plan.TryGetProperty("id", out var i) ? i.GetString() : null;
+                string? name = plan.TryGetProperty("name", out var n) ? n.GetString() : null;
+                if (string.IsNullOrEmpty(id)) continue;
+                var item = new ComboBoxItem { Content = string.IsNullOrWhiteSpace(name) ? id : name, Tag = id };
+                ConsolePowerPlanCombo.Items.Add(item);
+                if (string.Equals(id, saved, StringComparison.OrdinalIgnoreCase)) ConsolePowerPlanCombo.SelectedItem = item;
+            }
+        }
+        catch (Exception ex) { Log.Write("Console power plan list failed: " + ex.GetType().Name); }
+        finally { _syncingOwnedGameRouteSwitch = false; }
+    }
+
     private void ConsoleStartWithoutTvCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_consoleTvSettingsInitialized || _syncingOwnedGameRouteSwitch) return;
@@ -108,6 +158,7 @@ public sealed partial class SettingsView
         }
         finally { _syncingOwnedGameRouteSwitch = false; }
         _consoleTvSettingsInitialized = true;
+        _ = RefreshConsolePowerPlansAsync();
         int version = ++_consoleDisplayRefreshVersion;
         ConsoleDisplaysRefresh.IsEnabled = false;
         ConsoleDisplaysStatus.Text = TvT("Detecting connected screens…", "Rilevamento schermi collegati…");

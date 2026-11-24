@@ -1298,6 +1298,14 @@
                             <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />
                             <ComboBoxItem Content="Minimized" loc:Loc.ItContent="Ridotto a icona" Tag="minimized" />
                         </ComboBox>
+                        <ToggleSwitch x:Name="ConsolePowerSwitch" Header="Use a Windows power plan while Console is in use" loc:Loc.ItHeader="Usa un piano di alimentazione Windows mentre la Console è in uso"
+                            IsOn="False" AutomationProperties.AutomationId="Settings_ConsolePower_Toggle" Toggled="ConsolePowerSwitch_Toggled" />
+                        <ComboBox x:Name="ConsolePowerPlanCombo" MinWidth="320"
+                            Header="Power plan to use" loc:Loc.ItHeader="Piano di alimentazione da usare"
+                            AutomationProperties.AutomationId="Settings_ConsolePower_Plan_Combo" SelectionChanged="ConsolePowerPlanCombo_SelectionChanged" />
+                        <TextBlock x:Name="ConsolePowerExplanation" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="PaRuX only selects a plan that already exists in Windows and puts your previous plan back when Console ends or after a crash. If you change the plan yourself meanwhile, PaRuX leaves your choice alone."
+                            loc:Loc.ItText="PaRuX seleziona solo un piano già presente in Windows e rimette il tuo piano precedente quando la Console termina o dopo un arresto anomalo. Se nel frattempo cambi tu il piano, PaRuX rispetta la tua scelta." />
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
                     </StackPanel>
                 </Border>
@@ -1307,6 +1315,9 @@
                         <TextBlock x:Name="PadButtonsIntro" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
                         <ToggleSwitch x:Name="PadButtonsEnabledSwitch" Header="Use controller buttons for PaRuX actions" loc:Loc.ItHeader="Usa i pulsanti del controller per le azioni di PaRuX" IsOn="True"
                             AutomationProperties.AutomationId="Settings_PadButtons_Enabled_Toggle" Toggled="PadButtonsEnabledSwitch_Toggled" />
+                        <NumberBox x:Name="PadButtonsHoldBox" Width="200" Header="Hold time (ms)" loc:Loc.ItHeader="Durata pressione lunga (ms)"
+                            Minimum="300" Maximum="3000" SmallChange="100" LargeChange="300" Value="600" SpinButtonPlacementMode="Inline"
+                            AutomationProperties.AutomationId="Settings_PadButtons_HoldMs_Box" ValueChanged="PadButtonsHoldBox_ValueChanged" />
                         <ComboBox x:Name="PadButtonsPadCombo" MinWidth="360" Header="Pad" loc:Loc.ItHeader="Controller"
                             AutomationProperties.AutomationId="Settings_PadButtons_Pad_Combo" SelectionChanged="PadButtonsPadCombo_SelectionChanged" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
