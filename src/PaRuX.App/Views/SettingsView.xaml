@@ -1298,6 +1298,21 @@
                             <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />
                             <ComboBoxItem Content="Minimized" loc:Loc.ItContent="Ridotto a icona" Tag="minimized" />
                         </ComboBox>
+                        <ToggleSwitch x:Name="ConsolePowerSwitch" Header="Use a Windows power plan while Console is in use" loc:Loc.ItHeader="Usa un piano di alimentazione Windows mentre la Console è in uso"
+                            IsOn="False" AutomationProperties.AutomationId="Settings_ConsolePower_Toggle" Toggled="ConsolePowerSwitch_Toggled" />
+                        <ComboBox x:Name="ConsolePowerPlanCombo" MinWidth="320"
+                            Header="Power plan to use" loc:Loc.ItHeader="Piano di alimentazione da usare"
+                            AutomationProperties.AutomationId="Settings_ConsolePower_Plan_Combo" SelectionChanged="ConsolePowerPlanCombo_SelectionChanged" />
+                        <TextBlock x:Name="ConsolePowerExplanation" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="PaRuX only selects a plan that already exists in Windows and puts your previous plan back when Console ends or after a crash. If you change the plan yourself meanwhile, PaRuX leaves your choice alone."
+                            loc:Loc.ItText="PaRuX seleziona solo un piano già presente in Windows e rimette il tuo piano precedente quando la Console termina o dopo un arresto anomalo. Se nel frattempo cambi tu il piano, PaRuX rispetta la tua scelta." />
+                        <ToggleSwitch x:Name="GameBarBlockSwitch" Header="Block the Xbox Game Bar" loc:Loc.ItHeader="Blocca la Xbox Game Bar"
+                            IsOn="True" AutomationProperties.AutomationId="Settings_GameBarBlock_Toggle" Toggled="GameBarBlockSwitch_Toggled" />
+                        <ToggleSwitch x:Name="GameBarPermanentSwitch" Header="Keep the block after Console ends (permanent)" loc:Loc.ItHeader="Mantieni il blocco anche dopo la Console (permanente)"
+                            IsOn="False" AutomationProperties.AutomationId="Settings_GameBarBlock_Permanent_Toggle" Toggled="GameBarPermanentSwitch_Toggled" />
+                        <TextBlock x:Name="GameBarBlockExplanation" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
+                            Text="While Console or Playnite Fullscreen is in use, the controller Guide/Xbox button no longer opens the Xbox Game Bar. PaRuX changes only four per-user Windows settings (no administrator rights), saves their previous values and puts them back when Console ends, on exit or after a crash; a value you change yourself meanwhile is left alone. The Win+G shortcut is not covered."
+                            loc:Loc.ItText="Mentre Console o Playnite a schermo intero è in uso, il pulsante Guide/Xbox del controller non apre più la Xbox Game Bar. PaRuX modifica solo quattro impostazioni di Windows per il tuo utente (nessun permesso di amministratore), salva i valori precedenti e li ripristina quando la Console termina, alla chiusura o dopo un arresto anomalo; un valore che cambi tu nel frattempo viene rispettato. La scorciatoia Win+G non è coperta." />
                         <StackPanel x:Name="ConsoleDisplaysList" Spacing="8" />
                     </StackPanel>
                 </Border>
@@ -1307,6 +1322,9 @@
                         <TextBlock x:Name="PadButtonsIntro" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
                         <ToggleSwitch x:Name="PadButtonsEnabledSwitch" Header="Use controller buttons for PaRuX actions" loc:Loc.ItHeader="Usa i pulsanti del controller per le azioni di PaRuX" IsOn="True"
                             AutomationProperties.AutomationId="Settings_PadButtons_Enabled_Toggle" Toggled="PadButtonsEnabledSwitch_Toggled" />
+                        <NumberBox x:Name="PadButtonsHoldBox" Width="200" Header="Hold time (ms)" loc:Loc.ItHeader="Durata pressione lunga (ms)"
+                            Minimum="300" Maximum="3000" SmallChange="100" LargeChange="300" Value="600" SpinButtonPlacementMode="Inline"
+                            AutomationProperties.AutomationId="Settings_PadButtons_HoldMs_Box" ValueChanged="PadButtonsHoldBox_ValueChanged" />
                         <ComboBox x:Name="PadButtonsPadCombo" MinWidth="360" Header="Pad" loc:Loc.ItHeader="Controller"
                             AutomationProperties.AutomationId="Settings_PadButtons_Pad_Combo" SelectionChanged="PadButtonsPadCombo_SelectionChanged" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
@@ -1841,14 +1859,15 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="RUNTIME COMPONENTS &amp; LIFECYCLE" loc:Loc.ItText="COMPONENTI E CICLO DI VITA DEL RUNTIME" Style="{StaticResource PaRuXSectionHeaderTextStyle}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="0" Text="OPTIONAL COMPONENTS" loc:Loc.ItText="COMPONENTI OPZIONALI" AutomationProperties.AutomationId="Settings_OptionalComponents_Header" Style="{StaticResource PaRuXSectionHeaderTextStyle}" VerticalAlignment="Center" />
                     <Button Grid.Column="1" x:Name="RefreshComponentsSettingsButton" AutomationProperties.AutomationId="Settings_RefreshComponents_Button" Content="Refresh components" loc:Loc.ItContent="Aggiorna i componenti" Click="RefreshComponentsSettings_Click" FontSize="12" />
                 </Grid>
                 <Border Style="{StaticResource PaRuXCardStyle}">
                     <StackPanel Spacing="{StaticResource PaRuXSpaceM}">
-                        <TextBlock TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
-                            Text="Local-first component lifecycle. You can detect, locate existing, install with PaRuX, or skip components at any time. PaRuX never alters user-managed software without explicit direction." loc:Loc.ItText="Ciclo di vita dei componenti local-first. Puoi rilevare, individuare quelli esistenti, installare con PaRuX o saltare i componenti in qualsiasi momento. PaRuX non modifica mai il software gestito dall&#x27;utente senza una tua indicazione esplicita." />
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" AutomationProperties.AutomationId="Settings_OptionalComponents_Intro"
+                            Text="Everything here is optional. Nothing is installed until you press Download now, and you can skip a component and come back to it later. Components you already have on this PC can be located instead of downloaded; PaRuX never changes software you installed yourself." loc:Loc.ItText="Tutto qui è opzionale. Non viene installato nulla finché non premi Scarica ora, e puoi saltare un componente e tornarci più tardi. I componenti che hai già su questo PC possono essere indicati invece di scaricati; PaRuX non modifica mai il software che hai installato tu." />
                         <ProgressBar x:Name="ComponentsSettingsProgress" AutomationProperties.AutomationId="Settings_Components_Progress" IsIndeterminate="True" Visibility="Collapsed" HorizontalAlignment="Stretch" />
+                        <Button x:Name="ComponentsSettingsCancelButton" AutomationProperties.AutomationId="Settings_Components_CancelDownload_Button" Content="Cancel download" loc:Loc.ItContent="Annulla il download" Click="CancelComponentsSettingsDownload_Click" Visibility="Collapsed" FontSize="12" HorizontalAlignment="Left" />
                         <TextBlock x:Name="ComponentsSettingsStatusText" AutomationProperties.AutomationId="Settings_Components_StatusText" Style="{StaticResource PaRuXCaptionTextStyle}" TextWrapping="Wrap" />
                         <StackPanel x:Name="ComponentsSettingsList" AutomationProperties.AutomationId="Settings_Components_List" Spacing="{StaticResource PaRuXSpaceS}" />
                     </StackPanel>

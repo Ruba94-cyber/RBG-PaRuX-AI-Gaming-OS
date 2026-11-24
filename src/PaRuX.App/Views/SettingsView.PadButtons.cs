@@ -74,8 +74,9 @@ public sealed partial class SettingsView
             "Choose what every control of a pad does. 'Passes to the game as' remaps what the game sees (needs PaRuX pad forwarding); 'PaRuX action' runs a PaRuX function and works from the raw device while a game runs. Nothing is ever sent into a game.",
             "Scegli cosa fa ogni controllo di un pad. 'Arriva al gioco come' rimappa ciò che vede il gioco (richiede l'inoltro del pad di PaRuX); 'Azione PaRuX' esegue una funzione di PaRuX e funziona dal dispositivo raw anche mentre un gioco è in esecuzione. Nulla viene mai inviato dentro un gioco.");
         _pbSyncing = true;
-        try { PadButtonsEnabledSwitch.IsOn = PbSettings.Enabled; }
+        try { PadButtonsEnabledSwitch.IsOn = PbSettings.Enabled; PadButtonsHoldBox.Value = PbSettings.EffectiveHoldMs; }
         finally { _pbSyncing = false; }
+        PadButtonsHoldBox.Header = PbT("Hold time (ms): how long a button is held for its 'hold' action", "Durata pressione lunga (ms): quanto tenere premuto per l'azione 'lunga'");
         PadButtonsEnabledSwitch.Header = PbT("Use controller buttons for PaRuX actions", "Usa i pulsanti del controller per le azioni di PaRuX");
         PadButtonsRefreshButton.Content = PbT("Detect pads", "Rileva i pad");
         PbRebuildPads();
@@ -87,6 +88,15 @@ public sealed partial class SettingsView
     {
         if (_pbSyncing) return;
         PbSettings.Enabled = PadButtonsEnabledSwitch.IsOn;
+        SettingsStore.Current.Save();
+    }
+
+    private void PadButtonsHoldBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_pbSyncing) return;
+        double v = double.IsNaN(args.NewValue) ? PadActionSettings.HoldMs : args.NewValue;
+        int ms = (int)Math.Clamp(Math.Round(v), PadActionSettings.MinHoldMs, PadActionSettings.MaxHoldMs);
+        PbSettings.HoldMsOverride = ms == PadActionSettings.HoldMs ? null : ms;
         SettingsStore.Current.Save();
     }
 
@@ -212,7 +222,7 @@ public sealed partial class SettingsView
                 PbActionItems(), Current(PadTrigger.Tap), key => PbSetRow(pad, c.Id, PadTrigger.Tap, key, mapping));
             Grid.SetColumn(tap, 2);
             grid.Children.Add(tap);
-            ComboBox hold = PbCombo($"Settings_PadButtons_{safeKey}_{ctlId}_Hold_Combo", label + " - " + PbT("PaRuX action (hold 600 ms)", "Azione PaRuX (pressione lunga 600 ms)"),
+            ComboBox hold = PbCombo($"Settings_PadButtons_{safeKey}_{ctlId}_Hold_Combo", label + " - " + PbT("PaRuX action (long press)", "Azione PaRuX (pressione lunga)"),
                 PbActionItems(), Current(PadTrigger.Hold), key => PbSetRow(pad, c.Id, PadTrigger.Hold, key, mapping));
             Grid.SetColumn(hold, 3);
             grid.Children.Add(hold);
@@ -223,8 +233,8 @@ public sealed partial class SettingsView
         }
 
         PadButtonsHeaderRow.Text = pad.DeviceId is null
-            ? PbT("Control  |  PaRuX action (tap)  |  PaRuX action (hold 600 ms)", "Controllo  |  Azione PaRuX (tocco)  |  Azione PaRuX (pressione lunga 600 ms)")
-            : PbT("Control  |  Passes to the game as  |  PaRuX action (tap)  |  PaRuX action (hold 600 ms)", "Controllo  |  Arriva al gioco come  |  Azione PaRuX (tocco)  |  Azione PaRuX (pressione lunga 600 ms)");
+            ? PbT("Control  |  PaRuX action (tap)  |  PaRuX action (long press)", "Controllo  |  Azione PaRuX (tocco)  |  Azione PaRuX (pressione lunga)")
+            : PbT("Control  |  Passes to the game as  |  PaRuX action (tap)  |  PaRuX action (long press)", "Controllo  |  Arriva al gioco come  |  Azione PaRuX (tocco)  |  Azione PaRuX (pressione lunga)");
         PadButtonsDetectButton.Content = _pbLearning ? PbT("Stop detecting", "Ferma il rilevamento") : PbT("Detect button", "Rileva pulsante");
         PadButtonsRestoreButton.Content = PbT("Restore defaults (this pad)", "Ripristina predefiniti (questo pad)");
         PbShowConflicts(pad, mapping, rows);
@@ -349,10 +359,16 @@ public sealed partial class SettingsView
             PrimaryButtonText = PbT("Apply", "Applica"),
             CloseButtonText = PbT("Cancel", "Annulla"),
             DefaultButton = ContentDialogButton.Close,
-            IsPrimaryButtonEnabled = result.Bindings.Count > 0
+            IsPrimaryButtonEnabled = result.Bindings.Count > 0 || result.HoldMs is not null
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
+        if (result.HoldMs is int importedHold)
+        {
+            PbSettings.HoldMsOverride = importedHold == PadActionSettings.HoldMs ? null : importedHold;
+            _pbSyncing = true;
+            try { PadButtonsHoldBox.Value = PbSettings.EffectiveHoldMs; } finally { _pbSyncing = false; }
+        }
         PbSaveBindings(LauncherConfigImporter.Merge(PbEditable(), result.Bindings));
         PadButtonsStatus.Text = PbT($"Imported {result.Bindings.Count} assignment(s). Review them in the table below.", $"Importate {result.Bindings.Count} assegnazioni. Controllale nella tabella qui sotto.");
         PbRebuildTable();

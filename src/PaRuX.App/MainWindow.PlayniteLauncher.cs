@@ -53,6 +53,10 @@ public sealed partial class MainWindow
                     return;
                 }
             }
+            // Explicit Console request (argument, shortcut, pad action, second launch): go straight to Playnite Fullscreen like the owner's
+            // Console Mode shortcut, without a dialog. If it cannot start, the launcher below shows the reason and the setup.
+            if (action == PlayniteLauncherAction.Console && fromRequest && _plSurface is null && await TryDirectPlayniteConsoleAsync())
+                return;
             PadBringForward();
             if (_plSurface is { } open)
             {

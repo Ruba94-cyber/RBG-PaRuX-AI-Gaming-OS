@@ -57,6 +57,13 @@ public sealed class WebSourceManifest
     public string Folder { get; set; } = string.Empty;
     public DateTime AddedUtc { get; set; } = DateTime.UtcNow;
     public DateTime? LastSyncUtc { get; set; }
+    /// <summary>Empty for a website; otherwise a <see cref="ConnectorKind"/> (github, youtube, confluence). Tokens are never stored here.</summary>
+    public string Connector { get; set; } = string.Empty;
+    public string? ConnectorRef { get; set; }
+    public string? ConnectorPath { get; set; }
+    public string? ConnectorLanguage { get; set; }
+    public string? ConnectorEmail { get; set; }
+    public bool ConnectorChildren { get; set; }
     public Dictionary<string, WebPageRecord> Pages { get; set; } = new(StringComparer.Ordinal);
 }
 

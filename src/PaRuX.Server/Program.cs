@@ -87,6 +87,7 @@ builder.Services.AddSingleton<RuntimeManagerService>(services => new RuntimeMana
 builder.Services.AddSingleton<RuntimeInstallService>();
 builder.Services.AddSingleton<MediaSetupService>();
 builder.Services.AddSingleton<ComponentInventoryService>();
+builder.Services.AddSingleton<ManagedComponentRemover>();
 builder.Services.AddSingleton<SmartRouterService>(services => new SmartRouterService(
     services.GetRequiredService<RuntimeManagerService>(),
     services.GetRequiredService<ModelBenchmarkService>(),
@@ -157,7 +158,10 @@ builder.Services.AddSingleton<PaRuX.Server.Knowledge.WebKnowledgeSources>(sp =>
         folder => ragStore.AddSource(folder).Id,
         id => { ragStore.RemoveSource(id); knowledgeJobs.Remove(id); },
         id => knowledgeJobs.Start(id),
-        offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings));
+        offlineBlocked: () => PaRuX.Server.Knowledge.OfflinePolicy.IsBlocked(knowledgeJobs.Settings),
+        secrets: new PaRuX.Server.Knowledge.ConnectorSecretStore(ServerState.StateDirectory),
+        internetEnabled: () => sp.GetRequiredService<InternetSettingsService>().GetEnabled(),
+        internetOffToken: () => sp.GetRequiredService<InternetSettingsService>().SwitchOffToken);
 });
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<WebSearchSettingsService>();
@@ -366,6 +370,7 @@ builder.Services.AddSingleton<PaRuX.Server.Orchestration.Gaming.QuickResumeServi
 builder.Services.AddSingleton<TemporaryGameModService>();
 builder.Services.AddSingleton<GameSkinStudioService>();
 builder.Services.AddSingleton<GameAssetModService>();
+builder.Services.AddSingleton<GameModChangeSetService>();
 builder.Services.AddSingleton<GameModDropInService>();
 builder.Services.AddSingleton<ManualGameSessionService>();
 builder.Services.AddSingleton<SteamGameDiscoveryProvider>();
@@ -387,6 +392,12 @@ builder.Services.AddSingleton(sp => new DisplayChangeJournal(
 builder.Services.AddSingleton(sp => new StreamingModeService(
     sp.GetRequiredService<IStreamingHost>(), sp.GetRequiredService<IStreamingDisplayController>(),
     sp.GetRequiredService<DisplayChangeJournal>(), TimeSpan.FromSeconds(20)));
+builder.Services.AddSingleton<IPowerPlanApi, WindowsPowerPlanApi>();
+builder.Services.AddSingleton(sp => new PowerProfileService(sp.GetRequiredService<IPowerPlanApi>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "power-profile-journal.json")));
+builder.Services.AddSingleton<IGameBarRegistry, WindowsGameBarRegistry>();
+builder.Services.AddSingleton(sp => new GameBarSuppressionService(sp.GetRequiredService<IGameBarRegistry>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "game-bar-journal.json")));
 builder.Services.AddSingleton<GgufQuantizeService>();
 builder.Services.AddSingleton<GameTitleStore>();
 builder.Services.AddSingleton<GameLaunchProfileStore>();
@@ -2533,7 +2544,7 @@ app.MapPost("/api/v1/training/plan", async (
 
     TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
         shape, request.Method, request.BaseModel,
-        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
     QuickTrainingDatasetValidator.VerifiedDataset? verified = null;
     if (request.ValidateEntireDataset && plan.CanStart)
@@ -2565,7 +2576,7 @@ app.MapPost("/api/v1/training/plan", async (
             };
             plan = TrainingRunPlanner.Plan(shape, request.Method, request.BaseModel,
                 request.LoraRank, request.MaxSteps, request.LearningRate,
-                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2627,7 +2638,7 @@ app.MapPost("/api/v1/training/jobs", async (
 
         TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
             shape, request.Method, request.BaseModel,
-            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
 
         if (!plan.CanStart)
         {
@@ -3754,6 +3765,14 @@ app.MapPost("/api/v1/runtime/components/{id}/unskip", async (string id, Componen
     return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
 }).RequireDesktopOwner();
 
+app.MapPost("/api/v1/runtime/components/{id}/remove-managed", async (string id, ManagedComponentRemover remover,
+    ComponentInventoryService inventory, CancellationToken ct) =>
+{
+    ManagedComponentRemover.Result result = await remover.RemoveAsync(id, ct);
+    if (!result.Removed) return Results.BadRequest(new { error = result.Message });
+    return Results.Ok((await inventory.DiscoverAsync(ct)).FirstOrDefault(c => c.Id == id));
+}).RequireDesktopOwner();
+
 app.MapPost("/api/v1/models/library/{fileName}/load", async (string fileName, LoadManagedModelRequest request,
     RuntimeManagerService runtimeManager, CancellationToken ct) =>
 {
@@ -4297,6 +4316,7 @@ PaRuX.Server.Orchestration.Gaming.Playnite.PlayniteEndpoints.MapPlayniteEndpoint
 app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
+app.MapGameModChangeSetEndpoints();
 app.MapLocalWishlistEndpoints();
 app.MapSignInAppListEndpoints();
 app.MapGgufQuantizeEndpoints();
@@ -4306,6 +4326,7 @@ PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
 app.MapGameSaveBackupEndpoints();
 app.MapGameExtensionEndpoints();
 app.MapOpenAiCompatibleProviderEndpoints();
+app.MapTrainingToolsEndpoints();
 app.MapEmulatorEndpoints();
 PaRuX.Server.Orchestration.Gaming.QuickResumeEndpoints.MapQuickResumeEndpoints(app);
 PaRuX.Server.Orchestration.Gaming.Downloads.GameDownloadEndpoints.MapGameDownloadEndpoints(app);
@@ -4336,6 +4357,19 @@ if (!app.Environment.IsEnvironment("Testing"))
     // Display changes a crashed streaming session journaled are restored off the startup path, bounded and logged.
     // StreamingStartupRecovery never throws; a timeout or failure leaves the journal for the next start.
     _ = StreamingStartupRecovery.RunAsync(app.Services.GetRequiredService<StreamingModeService>(), app.Logger, StreamingStartupRecovery.DefaultTimeout);
+    // A Console power plan a crash left behind is put back (never overriding a plan the owner chose meanwhile).
+    PowerProfileStartupRecovery.Run(app.Services.GetRequiredService<PowerProfileService>(), app.Logger);
+    GameBarStartupRecovery.Run(app.Services.GetRequiredService<GameBarSuppressionService>(), app.Logger);
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<GameBarSuppressionService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Xbox Game Bar settings could not be restored at shutdown; the restore point stays recorded."); }
+    });
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<PowerProfileService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Console power plan could not be restored at shutdown; the restore point stays recorded."); }
+    });
     // On a normal shutdown, undo what an active streaming session changed (display values, a Sunshine PaRuX started).
     app.Lifetime.ApplicationStopping.Register(() =>
     {

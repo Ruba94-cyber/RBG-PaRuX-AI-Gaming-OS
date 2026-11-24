@@ -51,7 +51,7 @@ public sealed partial class MainWindow
     /// No native PaRuX Gaming Home is constructed on success; no Playnite theme or
     /// controller files are altered. On failure the caller retains its safe legacy fallback.
     /// </summary>
-    internal async Task<ConsolePlayniteStartResult> TryStartPlayniteConsoleAsync()
+    internal async Task<ConsolePlayniteStartResult> TryStartPlayniteConsoleAsync(bool explicitRequest = false)
     {
         try
         {
@@ -59,7 +59,7 @@ public sealed partial class MainWindow
                 return ConsolePlayniteStartResult.Unavailable;
             var before = await PlayniteClient.Current.GetStatusAsync();
             if (!before.Succeeded || before.Value is not { } status) return ConsolePlayniteStartResult.Unavailable;
-            if (!ConsoleModeReadiness.ShouldStartWithConsole(status.Settings, status.Component)) return ConsolePlayniteStartResult.Unavailable;
+            if (!ConsoleModeReadiness.ShouldStartWithConsole(status.Settings, status.Component, explicitRequest)) return ConsolePlayniteStartResult.Unavailable;
 
             var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, PlayniteDisplayId());
             Log.Write("Playnite-first Console handoff: " + (result.Value?.Outcome ?? result.Error ?? "no answer"));
@@ -78,6 +78,8 @@ public sealed partial class MainWindow
                 return ConsolePlayniteStartResult.Unavailable;
 
             _playniteConsoleHandoffActive = true;
+            _ = ApplyConsolePowerProfileAsync();
+            _ = ApplyConsoleGameBarBlockAsync();
             if (result.Value!.Outcome == "started" || status.Session.PaRuXLaunchedPlaynite)
                 BeginPlayniteReturnWatch(status.Session.PaRuXLaunchedClosedCounter);
             else
@@ -92,6 +94,48 @@ public sealed partial class MainWindow
             Log.Write("Playnite-first Console handoff failed: " + ex.GetType().Name);
             return ConsolePlayniteStartResult.Unavailable;
         }
+    }
+
+    /// <summary>Hides PaRuX behind Playnite Fullscreen. The AI keeps running; Playnite closing (or a pad action) brings PaRuX back.</summary>
+    internal void MinimizeForPlayniteConsole()
+    {
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter p) p.Minimize();
+    }
+
+    /// <summary>
+    /// "Start PaRuX in Console mode" (Settings): no TV needed, any controller. Starts Playnite Fullscreen and minimizes PaRuX; if Playnite
+    /// is missing, skipped, refuses or a game is active, PaRuX just opens normally (never a native TV takeover). True when this handled the start.
+    /// </summary>
+    internal async Task<bool> ApplyAlwaysConsoleStartupAsync()
+    {
+        if (!SettingsStore.Current.Data.StartInConsoleMode) return false;
+        if (GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive()) return true;   // a game is running: never take the screen
+        ConsolePlayniteStartResult result = await TryStartPlayniteConsoleAsync(explicitRequest: true);
+        switch (ConsoleModeReadiness.FollowUp(result, alwaysConsole: true))
+        {
+            case ConsoleStartFollowUp.MinimizePaRuX:
+                MinimizeForPlayniteConsole();
+                Log.Write("Console mode start: Playnite Fullscreen accepted; PaRuX minimized, AI stays available.");
+                break;
+            default:
+                Log.Write("Console mode start: Playnite Fullscreen was not started (" + result + "); PaRuX stays open.");
+                break;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// An explicit Console request (--playnite-console, pad action, second launch): start Playnite Fullscreen straight away, like the owner's
+    /// Console Mode shortcut. True when Fullscreen is now up (PaRuX minimized); false means the caller should show the launcher so the
+    /// reason or the Detect / Locate / Install / Skip setup is visible.
+    /// </summary>
+    internal async Task<bool> TryDirectPlayniteConsoleAsync()
+    {
+        ConsolePlayniteStartResult result = await TryStartPlayniteConsoleAsync(explicitRequest: true);
+        if (ConsoleModeReadiness.FollowUp(result, alwaysConsole: true) != ConsoleStartFollowUp.MinimizePaRuX)
+            return result == ConsolePlayniteStartResult.DesktopFallback;   // Desktop was started: nothing more to show
+        MinimizeForPlayniteConsole();
+        return true;
     }
 
     /// <summary>Pad action: Console &lt;-&gt; Desktop for a Playnite PaRuX started. A refusal is shown as a short toast.</summary>
@@ -161,7 +205,7 @@ public sealed partial class MainWindow
             {
                 // Avoid a permanently stuck Console state after a provider failure,
                 // a cancelled watch or the bounded idle timeout; never auto-focus here.
-                if (consoleHandoffWatcher) _playniteConsoleHandoffActive = false;
+                if (consoleHandoffWatcher) { _playniteConsoleHandoffActive = false; _ = RestoreConsolePowerProfileAsync(); _ = RestoreConsoleGameBarBlockAsync(); }
                 Interlocked.Exchange(ref _playniteWatchRunning, 0);
             }
         });

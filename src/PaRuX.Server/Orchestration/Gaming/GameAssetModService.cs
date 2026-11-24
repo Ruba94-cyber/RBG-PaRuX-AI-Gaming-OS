@@ -165,6 +165,40 @@ public sealed class GameAssetModService
         finally { _lease.Release(); }
     }
 
+    /// <summary>
+    /// Re-colours an existing PNG (same size, same alpha) with the same local image pipeline as the
+    /// texture studio, for one image entry of a "prompt to mod" change set. Nothing is stored or written.
+    /// </summary>
+    internal async Task<byte[]> RestyleAsync(byte[] original, string description, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        if (original.Length > MaxSourceBytes)
+            throw new ArgumentException("The original PNG asset exceeds 2 MiB.");
+        (int width, int height) = PngAssetGuard.ReadDimensions(original);
+        if (width is < 16 or > 1024 || height is < 16 or > 1024)
+            throw new ArgumentException("AI texture generation supports source textures of 16 to 1024 pixels per side.");
+        if (_gaming())
+            throw new InvalidOperationException("Gaming Mode must be off to release GPU resources for local image generation.");
+        if (!await _lease.WaitAsync(0, ct).ConfigureAwait(false))
+            throw new InvalidOperationException("Another local game texture generation is in progress.");
+        try
+        {
+            string prompt = "Create a FLAT seamless full-frame material TEXTURE reference for an existing " +
+                "video-game asset. No perspective, environment, text, scene, character portrait, watermark or blank margins. " +
+                "This reference will tint an EXISTING UV-aligned PNG while retaining its layout and transparency. " +
+                "User request: " + description;
+            byte[] generated = await _generate(prompt, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (_gaming())
+                throw new OperationCanceledException("Gaming started; no asset modification was prepared.", ct);
+            (byte[] png, long changed) = Recolour(original, generated, width, height, ct);
+            if (changed == 0)
+                throw new InvalidOperationException("The generated material did not change any visible texture pixels.");
+            return png;
+        }
+        finally { _lease.Release(); }
+    }
+
     private static (byte[] Png, long ChangedPixels) Recolour(
         byte[] original, byte[] referenceBytes, int width, int height, CancellationToken ct)
     {

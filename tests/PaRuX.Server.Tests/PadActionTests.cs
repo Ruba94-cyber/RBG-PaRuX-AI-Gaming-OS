@@ -639,4 +639,42 @@ public sealed class PadActionTests
         Assert.All(ConsoleNavigationBindings.Controls, c => Assert.True(PadControlId.IsValid(c)));
         Assert.All(TvActionCatalog.All, a => { Assert.NotEmpty(a.En); Assert.NotEmpty(a.It); });
     }
+
+    [Fact]
+    public void HoldTimeIsConfigurableClampedAndPersisted()
+    {
+        Assert.Equal(PadActionSettings.HoldMs, new PadActionSettings().EffectiveHoldMs);
+        Assert.Equal(1000, new PadActionSettings { HoldMsOverride = 1000 }.EffectiveHoldMs);
+        Assert.Equal(PadActionSettings.MinHoldMs, new PadActionSettings { HoldMsOverride = 1 }.EffectiveHoldMs);
+        Assert.Equal(PadActionSettings.MaxHoldMs, new PadActionSettings { HoldMsOverride = 999999 }.EffectiveHoldMs);
+
+        var back = JsonSerializer.Deserialize<PadActionSettings>(JsonSerializer.Serialize(new PadActionSettings { HoldMsOverride = 1200 }))!;
+        Assert.Equal(1200, back.HoldMsOverride);
+        Assert.Equal(1200, back.Clone().HoldMsOverride);
+        Assert.Null(JsonSerializer.Deserialize<PadActionSettings>("{\"holdMs\": 5}")!.HoldMsOverride);      // out of range: ignored
+        Assert.Null(JsonSerializer.Deserialize<PadActionSettings>("{\"holdMs\": \"x\"}")!.HoldMsOverride);  // wrong type: ignored
+        Assert.DoesNotContain("holdMs", JsonSerializer.Serialize(new PadActionSettings()));
+    }
+
+    [Fact]
+    public void EngineHonoursACustomHoldTime()
+    {
+        var rows = new[] { PadButtonBinding.Make(Stadia, "raw:11", PadActionId.MiniAgent, PadTrigger.Hold) };
+        var e = new PadButtonEngine(rows, 1000);
+        e.Feed(Pressed(), 0);
+        Assert.Empty(e.Feed(Pressed(11), 100));
+        Assert.Empty(e.Feed(Pressed(11), 900));    // the default 600 ms would already have fired
+        Assert.Single(e.Feed(Pressed(11), 1200));
+
+        var fast = new PadButtonEngine(rows, 300);
+        fast.Feed(Pressed(), 0);
+        Assert.Empty(fast.Feed(Pressed(11), 100));
+        Assert.Single(fast.Feed(Pressed(11), 450));
+
+        var clamped = new PadButtonEngine(rows, 1);   // never below the minimum
+        clamped.Feed(Pressed(), 0);
+        Assert.Empty(clamped.Feed(Pressed(11), 100));
+        Assert.Empty(clamped.Feed(Pressed(11), 250));
+        Assert.Single(clamped.Feed(Pressed(11), 400));
+    }
 }

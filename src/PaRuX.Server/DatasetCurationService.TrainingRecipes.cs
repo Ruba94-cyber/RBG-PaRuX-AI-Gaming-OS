@@ -113,6 +113,18 @@ public sealed partial class DatasetCurationService
         if (method == TrainingMethod.Kto && (positive == 0 || negative == 0))
             throw new InvalidDataException("KTO requires real positive and negative labels. No dataset was written.");
 
+        if (request.PreviewOnly)
+            return new TrainingDatasetRecipeResult
+            {
+                TrainJsonlPath = string.Empty,
+                Method = method,
+                SourceRows = rows.Count,
+                WrittenRows = lines.Count,
+                SkippedRows = skipped,
+                Preview = lines.Take(5).Select(l => l.Length <= 600 ? l : l[..600] + "...").ToList(),
+                Note = "Preview only: every check passed and nothing was written."
+            };
+
         // The explicit, reviewed result is created inside PaRuX-owned storage, never
         // beside the user's document. A partial write is not a successful recipe.
         string root = TrainingRecipeTestOutputRoot
@@ -138,6 +150,7 @@ public sealed partial class DatasetCurationService
                 WrittenRows = lines.Count,
                 SkippedRows = skipped,
                 Sha256 = hash,
+                Preview = lines.Take(5).Select(l => l.Length <= 600 ? l : l[..600] + "...").ToList(),
                 Note = "PaRuX-owned local JSONL. No labels, answers or rejected completions were synthesized."
             };
         }

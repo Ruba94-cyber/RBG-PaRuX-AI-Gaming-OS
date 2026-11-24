@@ -33,6 +33,10 @@ namespace PaRuX.Services
             SendAsync<ComponentStatus>(HttpMethod.Post,
                 "/api/v1/runtime/components/" + Uri.EscapeDataString(componentId) + "/remove-location", null, ct);
 
+        public Task<ComponentStatus> RemoveManagedAsync(string componentId, CancellationToken ct) =>
+            SendAsync<ComponentStatus>(HttpMethod.Post,
+                "/api/v1/runtime/components/" + Uri.EscapeDataString(componentId) + "/remove-managed", null, ct);
+
         public Task<ComponentStatus> SkipAsync(string componentId, CancellationToken ct) =>
             SendAsync<ComponentStatus>(HttpMethod.Post,
                 "/api/v1/runtime/components/" + Uri.EscapeDataString(componentId) + "/skip", null, ct);

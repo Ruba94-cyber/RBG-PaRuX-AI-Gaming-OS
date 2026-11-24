@@ -72,168 +72,81 @@ namespace PaRuX.Views
             }
         }
 
+        private IReadOnlyList<ComponentStatus> _componentsSettingsInventory = Array.Empty<ComponentStatus>();
+        private string? _componentsSettingsInstallId;
+
+        private static bool ComponentsSettingsItalian => string.Equals(T("en", "it"), "it", StringComparison.Ordinal);
+
         private void RenderComponentsSettings(IReadOnlyList<ComponentStatus> components)
         {
             if (ComponentsSettingsList == null) return;
-            ComponentsSettingsList.Children.Clear();
+            _componentsSettingsInventory = components;
+            bool italian = ComponentsSettingsItalian;
+            IReadOnlyList<OptionalComponentRow> rows = OptionalComponentPolicy.BuildRows(
+                components, new OptionalComponentsContext(StoreEditionPolicy.AllowsExecutableDownloads, italian));
+            OptionalComponentCards.Render(ComponentsSettingsList, rows, "Settings_OptionalComponent_", italian, _componentsSettingsBusy,
+                OnOptionalComponentButtonAsync, OnOptionalComponentError);
+        }
 
-            foreach (ComponentStatus component in components)
+        private void OnOptionalComponentError(Exception ex)
+        {
+            Log.Write("Settings optional component action failed: " + ex.Message);
+            SetComponentsSettingsBusy(false, ex.Message);
+        }
+
+        private async Task OnOptionalComponentButtonAsync(OptionalComponentRow row, OptionalComponentButton button)
+        {
+            if (_componentsSettingsBusy) return;
+            ComponentStatus? component = _componentsSettingsInventory.FirstOrDefault(c => string.Equals(c.Id, row.Id, StringComparison.OrdinalIgnoreCase));
+            if (component == null) return;
+            switch (button)
             {
-                ComponentDisplayItem item = ComponentLifecyclePresenter.FormatComponent(component);
-                string id = item.Id;
-
-                var card = new Border
-                {
-                    Padding = new Thickness(12),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Margin = new Thickness(0, 0, 0, 4)
-                };
-
-                var cardBody = new StackPanel { Spacing = 4 };
-                card.Child = cardBody;
-
-                var header = new Grid { ColumnSpacing = 8 };
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var title = new TextBlock
-                {
-                    Text = item.DisplayName,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    TextWrapping = TextWrapping.Wrap
-                };
-                AutomationProperties.SetAutomationId(title, "Settings_Component_" + id + "_Title");
-                Grid.SetColumn(title, 0);
-                header.Children.Add(title);
-
-                var ownership = new TextBlock
-                {
-                    Text = item.OwnershipLabel,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    FontSize = 11,
-                    Opacity = 0.75
-                };
-                AutomationProperties.SetAutomationId(ownership, "Settings_Component_" + id + "_Ownership");
-                Grid.SetColumn(ownership, 1);
-                header.Children.Add(ownership);
-                cardBody.Children.Add(header);
-
-                var stateBlock = new TextBlock
-                {
-                    Text = item.StateSummary,
-                    TextWrapping = TextWrapping.Wrap,
-                    FontSize = 12,
-                    Opacity = 0.85
-                };
-                AutomationProperties.SetAutomationId(stateBlock, "Settings_Component_" + id + "_State");
-                cardBody.Children.Add(stateBlock);
-
-                if (!string.IsNullOrWhiteSpace(item.Path))
-                {
-                    var pathBlock = new TextBlock
-                    {
-                        Text = item.Path,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 11,
-                        Opacity = 0.7
-                    };
-                    AutomationProperties.SetAutomationId(pathBlock, "Settings_Component_" + id + "_Path");
-                    cardBody.Children.Add(pathBlock);
-                }
-
-                if (!string.IsNullOrWhiteSpace(item.ValidationMessage))
-                {
-                    var valBlock = new TextBlock
-                    {
-                        Text = item.ValidationMessage,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 11,
-                        Opacity = 0.7
-                    };
-                    AutomationProperties.SetAutomationId(valBlock, "Settings_Component_" + id + "_ValidationMessage");
-                    cardBody.Children.Add(valBlock);
-                }
-
-                var actions = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 6,
-                    Margin = new Thickness(0, 4, 0, 0)
-                };
-
-                if (item.CanInstall)
-                {
-                    var btn = SettingsComponentActionButton(item.InstallActionLabel, "Settings_Component_" + id + "_InstallButton",
-                        async () => await InstallComponentSettingsAsync(component));
-                    actions.Children.Add(btn);
-                }
-
-                if (item.CanLocate)
-                {
-                    var btn = SettingsComponentActionButton(item.LocateActionLabel, "Settings_Component_" + id + "_LocateButton",
-                        async () => await LocateComponentSettingsAsync(component));
-                    actions.Children.Add(btn);
-                }
-
-                if (item.CanRemove)
-                {
-                    var btn = SettingsComponentActionButton(item.RemoveActionLabel, "Settings_Component_" + id + "_RemoveButton",
-                        async () => await RemoveLocationSettingsAsync(component));
-                    actions.Children.Add(btn);
-                }
-
-                if (item.CanSkip)
-                {
-                    var btn = SettingsComponentActionButton(item.SkipActionLabel, "Settings_Component_" + id + "_SkipButton",
-                        async () => await SkipComponentSettingsAsync(component));
-                    actions.Children.Add(btn);
-                }
-
-                if (item.CanUnskip)
-                {
-                    var btn = SettingsComponentActionButton(item.UnskipActionLabel, "Settings_Component_" + id + "_UnskipButton",
-                        async () => await UnskipComponentSettingsAsync(component));
-                    actions.Children.Add(btn);
-                }
-
-                if (actions.Children.Count > 0)
-                {
-                    cardBody.Children.Add(actions);
-                }
-
-                ComponentsSettingsList.Children.Add(card);
+                case OptionalComponentButton.DownloadNow: await InstallComponentSettingsAsync(component); break;
+                case OptionalComponentButton.LocateExisting: await LocateComponentSettingsAsync(component); break;
+                case OptionalComponentButton.ForgetLocation: await RemoveLocationSettingsAsync(component); break;
+                case OptionalComponentButton.Skip: await SkipComponentSettingsAsync(component); break;
+                case OptionalComponentButton.UndoSkip: await UnskipComponentSettingsAsync(component); break;
+                case OptionalComponentButton.Remove: await RemoveManagedComponentSettingsAsync(component, row); break;
             }
         }
 
-        private Button SettingsComponentActionButton(string text, string automationId, Func<Task> action)
+        private async void CancelComponentsSettingsDownload_Click(object sender, RoutedEventArgs e)
         {
-            var button = new Button
+            _componentsSettingsCts?.Cancel();
+            string? id = _componentsSettingsInstallId;
+            if (id == null) return;
+            try { await RuntimeManagerClient.Current.CancelInstallAsync(id, CancellationToken.None); }
+            catch (Exception ex) { Log.Write("Settings cancel install failed: " + ex.Message); }
+        }
+
+        private async Task RemoveManagedComponentSettingsAsync(ComponentStatus component, OptionalComponentRow row)
+        {
+            bool italian = ComponentsSettingsItalian;
+            var dialog = new ContentDialog
             {
-                Content = text,
-                FontSize = 12,
-                Padding = new Thickness(8, 3, 8, 3)
+                XamlRoot = XamlRoot,
+                Title = (italian ? "Rimuovere " : "Remove ") + row.Name + "?",
+                Content = italian
+                    ? "PaRuX eliminerà la propria copia scaricata. Puoi scaricarla di nuovo in qualsiasi momento. Il tuo software e i tuoi dati non vengono toccati."
+                    : "PaRuX will delete its own downloaded copy. You can download it again at any time. Your own software and data are not touched.",
+                PrimaryButtonText = OptionalComponentPolicy.ButtonLabel(OptionalComponentButton.Remove, italian),
+                CloseButtonText = italian ? "Annulla" : "Cancel",
+                DefaultButton = ContentDialogButton.Close
             };
-            AutomationProperties.SetAutomationId(button, automationId);
-            AutomationProperties.SetName(button, text);
-            button.Click += async (s, e) =>
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            SetComponentsSettingsBusy(true, T("Removing ", "Rimozione di ") + row.Name + "…");
+            try
             {
-                if (_componentsSettingsBusy) return;
-                try
-                {
-                    await action();
-                }
-                catch (Exception ex)
-                {
-                    Log.Write("Settings component action failed: " + ex.Message);
-                    if (ComponentsSettingsStatusText != null)
-                    {
-                        ComponentsSettingsStatusText.Text = ex.Message;
-                    }
-                    SetComponentsSettingsBusy(false, ComponentsSettingsStatusText?.Text ?? string.Empty);
-                }
-            };
-            return button;
+                await RuntimeManagerClient.Current.RemoveManagedAsync(component.Id, CancellationToken.None);
+                if (ComponentsSettingsStatusText != null)
+                    ComponentsSettingsStatusText.Text = row.Name + T(" removed.", " rimosso.");
+            }
+            finally
+            {
+                SetComponentsSettingsBusy(false, ComponentsSettingsStatusText?.Text ?? string.Empty);
+                await RefreshRuntimeComponentsAsync();
+            }
         }
 
         private async Task InstallComponentSettingsAsync(ComponentStatus component)
@@ -259,6 +172,14 @@ namespace PaRuX.Views
                     throw new InvalidOperationException("No compatible Windows build is currently published for " + component.DisplayName + ".");
                 }
 
+                long free;
+                try { free = new System.IO.DriveInfo(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(PaRuXDataRoot.Path))!).AvailableFreeSpace; }
+                catch (Exception) { free = -1; }
+                OptionalComponentDownloadGate.Decision gate = OptionalComponentDownloadGate.Evaluate(
+                    selected.AssetSizeBytes, free, StoreEditionPolicy.AllowsExecutableDownloads);
+                if (!gate.Allowed) throw new InvalidOperationException(ComponentsSettingsItalian ? gate.ReasonIt : gate.ReasonEn);
+
+                if (ComponentsSettingsCancelButton != null) ComponentsSettingsCancelButton.Visibility = Visibility.Visible;
                 if (ComponentsSettingsStatusText != null)
                 {
                     ComponentsSettingsStatusText.Text = T("Installing ", "Installazione di ") + component.DisplayName + " " + selected.Tag
@@ -268,6 +189,7 @@ namespace PaRuX.Views
                 RuntimeInstallStatus started = await RuntimeManagerClient.Current.StartInstallAsync(
                     backend, selected.Tag, selected.Variant, token);
 
+                _componentsSettingsInstallId = started.Id;
                 RuntimeInstallStatus final = await RuntimeManagerClient.Current.WaitForInstallAsync(started.Id, progress =>
                 {
                     _dispatcher.TryEnqueue(() =>
@@ -299,8 +221,15 @@ namespace PaRuX.Views
                     ComponentsSettingsStatusText.Text = ComponentLifecyclePresenter.FormatInstallCompletion(component.DisplayName, final);
                 }
             }
+            catch (OperationCanceledException)
+            {
+                if (ComponentsSettingsStatusText != null)
+                    ComponentsSettingsStatusText.Text = component.DisplayName + T(" download cancelled. Nothing was installed.", " download annullato. Non è stato installato nulla.");
+            }
             finally
             {
+                _componentsSettingsInstallId = null;
+                if (ComponentsSettingsCancelButton != null) ComponentsSettingsCancelButton.Visibility = Visibility.Collapsed;
                 SetComponentsSettingsBusy(false, ComponentsSettingsStatusText?.Text ?? string.Empty);
                 await RefreshRuntimeComponentsAsync();
             }

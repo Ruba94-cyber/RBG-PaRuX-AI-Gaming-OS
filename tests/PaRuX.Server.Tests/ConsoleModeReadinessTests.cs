@@ -119,4 +119,53 @@ public sealed class ConsoleModeReadinessTests
         Assert.Contains(rows, r => r.Id == "AnikiHelper" && r.State == ConsoleReadinessState.Attention && r.Detail.Contains("manifest found"));
         Assert.Contains(rows, r => r.Id == "Controller" && r.State == ConsoleReadinessState.Ok && r.Detail.Contains("Wireless Controller"));
     }
+
+    [Fact]
+    public void An_explicit_Console_request_ignores_the_TV_start_switch_but_never_Playnite_that_cannot_start()
+    {
+        var options = new PlayniteSettingsDto { ConsoleStartsPlaynite = false };
+        Assert.False(ConsoleModeReadiness.ShouldStartWithConsole(options, Installed()));
+        Assert.True(ConsoleModeReadiness.ShouldStartWithConsole(options, Installed(), explicitRequest: true));
+
+        options.Skipped = true;
+        Assert.False(ConsoleModeReadiness.ShouldStartWithConsole(options, Installed(), explicitRequest: true));
+        options.Skipped = false;
+        var noFullscreen = Installed();
+        noFullscreen.FullscreenExe = null;
+        Assert.False(ConsoleModeReadiness.ShouldStartWithConsole(options, noFullscreen, explicitRequest: true));
+        Assert.False(ConsoleModeReadiness.ShouldStartWithConsole(options, new PlayniteComponentDto(), explicitRequest: true));
+    }
+
+    [Theory]
+    [InlineData(ConsolePlayniteStartResult.Fullscreen, true, ConsoleStartFollowUp.MinimizePaRuX)]
+    [InlineData(ConsolePlayniteStartResult.Fullscreen, false, ConsoleStartFollowUp.MinimizePaRuX)]
+    [InlineData(ConsolePlayniteStartResult.DesktopFallback, true, ConsoleStartFollowUp.StayOpen)]
+    [InlineData(ConsolePlayniteStartResult.DesktopFallback, false, ConsoleStartFollowUp.StayOpen)]
+    [InlineData(ConsolePlayniteStartResult.Unavailable, true, ConsoleStartFollowUp.StayOpen)]
+    [InlineData(ConsolePlayniteStartResult.Unavailable, false, ConsoleStartFollowUp.LegacyConsoleFallback)]
+    public void Only_a_confirmed_Fullscreen_hides_PaRuX_and_always_Console_never_opens_a_native_TV_takeover(
+        ConsolePlayniteStartResult result, bool alwaysConsole, ConsoleStartFollowUp expected) =>
+        Assert.Equal(expected, ConsoleModeReadiness.FollowUp(result, alwaysConsole));
+
+    [Fact]
+    public void Theme_advice_is_honest_and_silent_when_nothing_is_wrong_or_the_owner_skipped_it()
+    {
+        Assert.Null(ConsoleModeReadiness.ThemeAdvice(null, T));
+        Assert.Null(ConsoleModeReadiness.ThemeAdvice(new PlayniteThemeComponentDto { Skipped = true }, T));
+        Assert.Null(ConsoleModeReadiness.ThemeAdvice(new PlayniteThemeComponentDto { Detected = true, Selected = true, ConfigReadable = true }, T));
+        Assert.Null(ConsoleModeReadiness.ThemeAdvice(new PlayniteThemeComponentDto { Detected = true, ConfigReadable = false }, T));
+        Assert.Contains("not installed", ConsoleModeReadiness.ThemeAdvice(new PlayniteThemeComponentDto(), T));
+        string? other = ConsoleModeReadiness.ThemeAdvice(
+            new PlayniteThemeComponentDto { Detected = true, ConfigReadable = true, SelectedTheme = "Default" }, T);
+        Assert.Contains("Default", other);
+        Assert.Contains("Select it", other);
+    }
+
+    [Fact]
+    public void Always_Console_start_is_off_by_default_and_needs_no_TV_choice()
+    {
+        // The option lives in AppSettings (App project); the pure decision above never reads a display.
+        Assert.False(new PlayniteSettingsDto().LaunchAtStartup);
+        Assert.True(ConsoleModeReadiness.ShouldStartWithConsole(new PlayniteSettingsDto { ConsoleStartsPlaynite = false }, Installed(), explicitRequest: true));
+    }
 }

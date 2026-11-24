@@ -24,7 +24,7 @@ namespace PaRuX.Views
         private ComboBox? _plMode, _plFallback;
         private TextBox? _plPath;
         private Button? _plInstallConfirm, _plSkip;
-        private ToggleSwitch? _plConsoleStarts;
+        private ToggleSwitch? _plConsoleStarts, _plStartConsole;
         private ConsoleComponentsPanel? _plTheme;
         private TextBlock? _plReadiness;
         private PlayniteStatusDto? _plState;
@@ -90,6 +90,26 @@ namespace PaRuX.Views
             _plReturn = PlayniteToggle(card, "ReturnToPaRuX", T("Return to PaRuX when Playnite (started by PaRuX) closes", "Torna a PaRuX quando Playnite (avviato da PaRuX) si chiude"));
             _plStartup = PlayniteToggle(card, "StartWithPaRuX", T("Start Playnite when PaRuX starts", "Avvia Playnite quando si avvia PaRuX"));
             _plConsoleStarts = PlayniteToggle(card, "ConsoleStartsPlaynite", T("Start Playnite Fullscreen (Aniki ReMake) in Console mode", "Avvia Playnite Fullscreen (Aniki ReMake) in modalità Console"));
+
+            // The simple switch: every PaRuX start opens Playnite Fullscreen (theme chosen in Playnite), no TV needed, any controller.
+            _plStartConsole = new ToggleSwitch
+            {
+                Header = T("Start PaRuX in Console mode (Playnite Fullscreen, any controller)", "Avvia PaRuX in modalità Console (Playnite Fullscreen, qualsiasi controller)"),
+                OnContent = T("On", "Acceso"), OffContent = T("Off", "Spento")
+            };
+            AutomationProperties.SetAutomationId(_plStartConsole, PlayniteIdPrefix + "_StartInConsoleMode_Toggle");
+            _plStartConsole.IsOn = SettingsStore.Current.Data.StartInConsoleMode;
+            _plStartConsole.Toggled += (_, _) =>
+            {
+                if (_plApplying) return;
+                SettingsStore.Current.Data.StartInConsoleMode = _plStartConsole.IsOn;
+                SettingsStore.Current.Save();
+                SetPlayniteStatus(_plStartConsole.IsOn
+                    ? T("PaRuX will open Playnite Fullscreen at every start and stay minimized for the AI. If Playnite is missing it opens normally. Command line: PaRuX.exe --playnite-console.",
+                        "PaRuX aprirà Playnite Fullscreen a ogni avvio e resterà ridotto a icona per l'IA. Se Playnite manca si apre normalmente. Riga di comando: PaRuX.exe --playnite-console.")
+                    : T("PaRuX starts normally.", "PaRuX si avvia normalmente."));
+            };
+            card.Children.Insert(card.Children.Count - 1, _plStartConsole);
 
             // Optional Aniki ReMake theme component (Detect -> Locate / Install / Skip) and the live state rows of the whole Console flow.
             _plReadiness = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85,
@@ -205,6 +225,7 @@ namespace PaRuX.Views
                 _plReturn!.IsOn = st.Settings.ReturnToPaRuXOnClose;
                 _plStartup!.IsOn = st.Settings.LaunchAtStartup;
                 _plConsoleStarts!.IsOn = st.Settings.ConsoleStartsPlaynite;
+                if (_plStartConsole is not null) _plStartConsole.IsOn = SettingsStore.Current.Data.StartInConsoleMode;
                 SelectByTag(_plMode!, st.Settings.StartMode);
                 SelectByTag(_plFallback!, st.Settings.FallbackWithoutDisplay);
             }
@@ -248,9 +269,11 @@ namespace PaRuX.Views
 
         private async Task LaunchPlayniteAsync(string mode)
         {
+            // Baseline BEFORE the launch: a Playnite that closes before the first poll must still bring PaRuX back.
+            long? baseline = (await PlayniteClient.Current.GetStatusAsync()).Value?.Session.PaRuXLaunchedClosedCounter;
             var result = await PlayniteClient.Current.LaunchAsync(mode, MainWindow.PlayniteDisplayId());
             SetPlayniteStatus(result.Error ?? result.Value?.Message ?? (result.Value?.Outcome == "started" ? T("Playnite started.", "Playnite avviato.") : T("Done.", "Fatto.")));
-            App.MainWin?.BeginPlayniteReturnWatch();
+            if (result.Value is { Ok: true }) App.MainWin?.BeginPlayniteReturnWatch(baseline);
             await RefreshPlayniteAsync();
         }
 

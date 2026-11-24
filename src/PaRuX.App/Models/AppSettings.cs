@@ -79,6 +79,11 @@ namespace PaRuX.Models
         /// Console/TV mode on that screen (the Gaming library), so the owner can play from the couch. Off by default.</summary>
         public bool ConsoleStartOnTvWhenPresent { get; set; } = false;
 
+        /// <summary>Opt-in, no TV needed: every time PaRuX starts, hand the screen to Playnite Fullscreen (with the theme selected in Playnite,
+        /// Aniki ReMake when the owner chose it) and keep PaRuX minimized for the AI. Works with any controller. When Playnite is missing,
+        /// skipped or refuses, PaRuX simply opens normally. Off by default.</summary>
+        public bool StartInConsoleMode { get; set; } = false;
+
         /// <summary>What a launch does when <see cref="ConsoleStartOnTvWhenPresent"/> is on but the TV is NOT connected:
         /// "normal" (the usual AI window in desktop mode, the default) or "minimized".</summary>
         public string StartupWithoutTv { get; set; } = "normal";
@@ -93,6 +98,20 @@ namespace PaRuX.Models
         /// AND confirms the AI resources were restored. Never on manual Return,
         /// game handoffs, splash exits or generic Gaming marker disappearance.</summary>
         public bool AutoShowConsoleAfterVerifiedGameExit { get; set; } = false;
+
+        /// <summary>Opt-in: while Console/TV mode (or a Playnite Fullscreen PaRuX started) is in use, select the Windows power plan
+        /// <see cref="ConsolePowerPlanId"/> (an existing plan) and put the previous one back afterwards. Off by default; the Core keeps a
+        /// crash-safe restore point and never overrides a plan the owner picked meanwhile.</summary>
+        public bool ConsolePowerProfileEnabled { get; set; } = false;
+        public string ConsolePowerPlanId { get; set; } = string.Empty;
+
+        /// <summary>Block the Xbox Game Bar (controller Guide button, startup panel, Game DVR capture) for this Windows user while Console
+        /// or a PaRuX-started Playnite Fullscreen is in use. On by default but only applied after <see cref="GameBarBlockConsentAsked"/>
+        /// (one consent dialog, or turning the Settings switch on). The Core keeps the restore point.</summary>
+        public bool BlockXboxGameBar { get; set; } = true;
+        public bool GameBarBlockConsentAsked { get; set; } = false;
+        /// <summary>Keep the block after Console ends (until the owner turns it off). Off by default.</summary>
+        public bool GameBarBlockPermanent { get; set; } = false;
 
         public int ChatRoutingMirrorVersion { get; set; }
         public int CapabilityRoutingMirrorVersion { get; set; }

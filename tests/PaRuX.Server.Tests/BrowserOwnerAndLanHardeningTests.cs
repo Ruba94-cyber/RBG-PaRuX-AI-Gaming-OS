@@ -288,6 +288,7 @@ public sealed class BrowserOwnerAndLanHardeningTests : IClassFixture<ApiSecurity
     [InlineData("POST", "/api/v1/runtime/components/no-such-id/remove-location", null)]
     [InlineData("POST", "/api/v1/runtime/components/no-such-id/skip", null)]
     [InlineData("POST", "/api/v1/runtime/components/no-such-id/unskip", null)]
+    [InlineData("POST", "/api/v1/runtime/components/no-such-id/remove-managed", null)]
     [InlineData("POST", "/api/v1/runtime/builds/install", "{}")]
     [InlineData("POST", "/api/v1/runtime/builds/install/no-such-id/cancel", null)]
     [InlineData("POST", "/api/v1/runtime/builds/rollback", "{}")]
