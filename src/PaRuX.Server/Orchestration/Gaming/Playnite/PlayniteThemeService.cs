@@ -509,9 +509,42 @@ internal sealed class PlayniteThemeService
             s.BackupFolder = preservedBackup ?? backupRoot;
         }))
         {
-            // Never report success or discard an older backup if ownership/provenance could not be saved.
-            // The staged theme remains on disk for owner recovery; it is not silently considered managed.
-            Fail("The theme files were installed, but PaRuX could not record ownership. Do not remove the existing backup; inspect the theme in Playnite before retrying.");
+            // A successful filesystem swap is NOT an install until its ownership
+            // journal is committed. Roll back the uncommitted theme and restore
+            // the former folder instead of leaving an untracked replacement.
+            // If a reverse move fails, keep every surviving copy for recovery.
+            bool restored = false;
+            string? uncommitted = null;
+            try
+            {
+                if (Directory.Exists(target))
+                {
+                    uncommitted = Path.Combine(themes, BackupPrefix + "uncommitted-" + Guid.NewGuid().ToString("N")[..8]);
+                    Directory.Move(target, uncommitted);
+                }
+
+                if (backedUp is not null && Directory.Exists(backedUp) && !Directory.Exists(target))
+                    Directory.Move(backedUp, target);
+
+                restored = backedUp is null
+                    ? !Directory.Exists(target)
+                    : Directory.Exists(target) && !Directory.Exists(backedUp);
+                if (restored)
+                {
+                    if (uncommitted is not null) TryDelete(uncommitted);
+                    if (backupRoot is not null && !Directory.Exists(backedUp ?? string.Empty))
+                        TryDelete(backupRoot);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The original remains either in target or its recorded backup.
+            }
+
+            Fail(restored
+                ? "The ownership journal could not be saved. The previous theme state was restored; nothing was installed."
+                : "The ownership journal could not be saved and automatic recovery was incomplete. Do not delete the theme or the preserved .parux-backup folders; inspect the Playnite theme folder before retrying.",
+                restored);
             return;
         }
         // After the journal points to the owner's original, the intermediate

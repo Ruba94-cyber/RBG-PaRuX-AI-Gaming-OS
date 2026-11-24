@@ -413,6 +413,64 @@ public sealed class PlayniteThemeServiceTests : IDisposable
         Assert.Equal(ComponentOwnership.USER_MANAGED, svc.Detect().Ownership);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_install_ownership_journal_restores_previous_files_and_leaves_no_orphan(bool replaceExisting)
+    {
+        if (replaceExisting) MakeUserTheme("original-not-to-lose");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+
+        // Fail only the durable journal replace; filesystem moves and ZIP extraction
+        // still run. This exercises the recovery path after the staged theme is live.
+        string journal = Path.Combine(_root, "state", "theme.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(journal)!);
+        Directory.CreateDirectory(journal);
+        PlayniteThemeInstallStatusDto status = await Install(svc, Req(package, replace: replaceExisting));
+
+        Assert.Equal("failed", status.Stage);
+        Assert.True(status.RolledBack);
+        Assert.Contains("previous theme state was restored", status.Error);
+        Assert.Null(_store.Get().ManagedFolderName);
+        Assert.Empty(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "state"), "theme.json.*.tmp"));
+        if (replaceExisting)
+        {
+            Assert.Equal("original-not-to-lose", File.ReadAllText(Path.Combine(Themes, Folder, "mine.txt")));
+            Assert.Equal(ComponentOwnership.USER_MANAGED, svc.Detect().Ownership);
+        }
+        else
+        {
+            Assert.False(Directory.Exists(Path.Combine(Themes, Folder)));
+            Assert.False(svc.Detect().Detected);
+        }
+    }
+
+    [Fact]
+    public async Task Failed_managed_update_journal_keeps_original_user_backup_and_previous_managed_theme()
+    {
+        MakeUserTheme("original-owner-data");
+        byte[] package = MakeTheme();
+        var (svc, _) = Make(package);
+        Assert.Equal("completed", (await Install(svc, Req(package, replace: true))).Stage);
+        string originalBackup = Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*"));
+        byte[] before = File.ReadAllBytes(Path.Combine(Themes, Folder, "theme.yaml"));
+        string journal = Path.Combine(_root, "state", "theme.json");
+        File.Delete(journal);
+        Directory.CreateDirectory(journal);
+
+        PlayniteThemeInstallStatusDto status = await Install(svc, Req(package, replace: true));
+        Assert.Equal("failed", status.Stage);
+        Assert.True(status.RolledBack);
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(Themes, Folder, "theme.yaml")));
+        Assert.Equal(ComponentOwnership.PARUX_MANAGED, svc.Detect().Ownership);
+        Assert.Equal(originalBackup, _store.Get().BackupFolder);
+        Assert.Equal(originalBackup, Assert.Single(Directory.GetDirectories(Themes, ".parux-backup-*")));
+        Assert.Equal("original-owner-data", File.ReadAllText(Path.Combine(originalBackup, Folder, "mine.txt")));
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "state"), "theme.json.*.tmp"));
+    }
+
     [Fact]
     public async Task Replacing_with_consent_keeps_a_backup_and_rollback_puts_the_original_back()
     {
