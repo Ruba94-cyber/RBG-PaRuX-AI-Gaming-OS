@@ -11,7 +11,8 @@
       2. the Core writes its bootstrap inside the extracted folder (not in %LOCALAPPDATA%\PaRuX);
       3. add a folder of synthetic documents, index it, ask in document mode: the answer must contain
          the known fact and cite the right file; a question no document supports must be declined;
-      4. exit cleanly with "PaRuX.exe --exit" (no process of the package left);
+      4. exit cleanly with "PaRuX.exe --exit" (no process of the package left); the root PaRuX.exe is the
+         launcher, which passes --exit to app\PaRuX.exe and returns its exit code;
       5. MOVE the whole folder to another directory, start again: the document source and its index are
          still there (no re-index) and the same question is answered again;
       6. nothing was created or modified under %LOCALAPPDATA%\PaRuX while the package ran.
@@ -137,6 +138,10 @@ try {
     if (@(Get-Process PaRuX -ErrorAction SilentlyContinue).Count -gt 0) { throw "Another PaRuX is running (single-instance application). Close it first." }
     Say "ZIP $ZipPath ($([math]::Round((Get-Item -LiteralPath $ZipPath).Length / 1MB)) MB)"
     [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $first)
+    # Layered layout: the package root holds only the launcher PaRuX.exe and the folders app, PaRuXData, docs, launchers.
+    $rootNames = @(Get-ChildItem -LiteralPath (Join-Path $first "PaRuX") -Force | ForEach-Object { $_.Name })
+    $rootBad = @($rootNames | Where-Object { $_ -cnotin @("PaRuX.exe", "app", "PaRuXData", "docs", "launchers") })
+    Check "package root holds only PaRuX.exe plus app, PaRuXData, docs, launchers" ($rootBad.Count -eq 0 -and ($rootNames -ccontains "PaRuX.exe") -and (Test-Path -LiteralPath (Join-Path $first "PaRuX\app\PaRuX.exe"))) "root=$($rootNames -join ', ')"
 
     New-Item -ItemType Directory -Force $docs | Out-Null
     [IO.File]::WriteAllText((Join-Path $docs "sentinel-vault.md"), "# Records vault access (SEN-VAULT-01)`n`nThe access code for the Kestrel records vault is 4417-ZEPHYR. Only the archive lead may open the vault.`n")
@@ -147,6 +152,8 @@ try {
     # ---- first location ------------------------------------------------------------------------
     $app = Start-Package $first
     Check "starts by double-click with no PARUX_* variable; bootstrap inside the extracted folder" $true $script:endpoint
+    $appExe = [IO.Path]::GetFullPath((Join-Path $first "PaRuX\app\PaRuX.exe"))
+    Check "the root launcher started the real application app\PaRuX.exe" (@(Get-Process -Name PaRuX -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExe }).Count -ge 1) $appExe
     $add = Api POST "/api/v1/rag/sources" @{ folderPath = $docs }
     if ($add.Status -ne 200) { throw "Adding the document folder failed: $($add.Status) $($add.Text)" }
     $sourceId = $add.Json.id; if (-not $sourceId) { $sourceId = $add.Json.Id }
@@ -196,7 +203,7 @@ finally {
 }
 
 $failed = @($checks | Where-Object { -not $_.pass })
-$passed = (-not $fatal) -and $checks.Count -ge 11 -and $failed.Count -eq 0
+$passed = (-not $fatal) -and $checks.Count -ge 13 -and $failed.Count -eq 0
 $report = Join-Path $ResultsDir ("standard-portable-acceptance-{0:yyyyMMdd-HHmm}.md" -f (Get-Date))
 $lines = @("# Standard Portable acceptance", "", "- ZIP: $ZipPath", "- SHA-256: $((Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant())",
     "- Result: $(if ($passed) { 'PASS' } else { 'FAIL' }) ($($checks.Count - $failed.Count)/$($checks.Count) checks)$(if ($fatal) { ' - fatal: ' + $fatal } else { '' })",

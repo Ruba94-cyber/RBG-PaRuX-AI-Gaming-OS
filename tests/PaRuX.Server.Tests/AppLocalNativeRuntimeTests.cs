@@ -67,7 +67,8 @@ public sealed class AppLocalNativeRuntimeTests : IDisposable
         Assert.Contains("O=Microsoft Corporation", assets, StringComparison.Ordinal);
         Assert.Contains("$signature.Status -ne \"Valid\"", assets, StringComparison.Ordinal);
         Assert.Contains("Copy-PaRuXVcRuntime -Destinations", standard, StringComparison.Ordinal);
-        Assert.Contains("$required += \"PaRuX.Server/\" + $vcFile", standard, StringComparison.Ordinal);
+        // The application lives in app\ since the layered package layout.
+        Assert.Contains("$required += \"app/PaRuX.Server/\" + $vcFile", standard, StringComparison.Ordinal);
         Assert.Contains("Copy-PaRuXVcRuntime -Destinations", corporate, StringComparison.Ordinal);
         Assert.Contains("Visual C++ runtime not staged", corporate, StringComparison.Ordinal);
     }

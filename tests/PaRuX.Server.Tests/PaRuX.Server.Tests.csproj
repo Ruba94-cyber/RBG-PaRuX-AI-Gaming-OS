@@ -30,6 +30,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\tools\PaRuX.VirtualPadSim\PadScript.cs" Link="Linked\PadScript.cs" />
+    <!-- The portable launcher (root PaRuX.exe of the layered ZIPs): its logic is exercised here with a stand-in app. -->
+    <Compile Include="..\..\src\PaRuX.Launcher\LauncherCore.cs" Link="Linked\LauncherCore.cs" />
+    <Compile Include="..\..\src\PaRuX.Launcher\KillOnCloseJob.cs" Link="Linked\KillOnCloseJob.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ChatDocumentScopeState.cs" Link="Linked\ChatDocumentScopeState.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\HistoryBackupSafety.cs" Link="Linked\HistoryBackupSafety.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\UiLanguage.cs" Link="Linked\UiLanguage.cs" />

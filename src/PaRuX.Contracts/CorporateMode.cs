@@ -32,8 +32,9 @@ public static class CorporateMode
             || string.Equals(environmentValue?.Trim(), "true", StringComparison.OrdinalIgnoreCase)) return true;
         try
         {
-            // The Core runs from a PaRuX.Server subfolder: the marker may sit one level above.
-            foreach (string dir in new[] { baseDirectory, Path.GetDirectoryName(baseDirectory.TrimEnd(Path.DirectorySeparatorChar)) ?? baseDirectory })
+            // The Core runs from PaRuX.Server (inside app\ in the layered package): the marker may sit up to
+            // three levels above the running program.
+            foreach (string dir in PaRuXDataRoot.PackageSearchDirectories(baseDirectory))
                 if (File.Exists(Path.Combine(dir, MarkerFileName))) return true;
         }
         catch (Exception) { /* unreadable directory: not corporate */ }

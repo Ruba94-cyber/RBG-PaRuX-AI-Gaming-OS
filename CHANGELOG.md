@@ -8,6 +8,10 @@
 - **Fixes:** the Italian first-run text for the no-runtime path no longer shows English "Setup is incomplete"; the UI test harness waits for pane policy before toggling and exempts only pointer-only ScrollBar parts in the accessibility sweep.
 - Verification and limits are listed in `docs/RELEASE_NOTES_4.2.0.md`. The signing certificate is self-signed; SmartScreen reputation is not established.
 
+## Layered portable layout (unreleased)
+
+- **Standard Portable and Corporate Lite ZIPs:** the package folder now holds only `PaRuX.exe` (a small launcher, `src/PaRuX.Launcher`) plus `app\` (the application, Core and runtimes), `PaRuXData\`, `docs\` and `launchers\`. The launcher starts `app\PaRuX.exe` with the same arguments, waits and returns its exit code, and ties it to a kill-on-close Job Object. Markers `parux.portable`/`parux.corporate` live in `app\`; data-root detection climbs up to three levels. The builders verify the finished ZIP and fail on any other root entry. Flat packages already extracted, MSI and MSIX are unchanged.
+
 ## Integration branch 2026-11-23 (unreleased; not part of any signed release)
 
 - **Integrated PRs:** #8 (Corporate live-memory routing, CPU-only diagnostics), #9 (per-game launch focus and post-launch actions), #12-#16 (Playnite safe switch and pad commands, reversible JSON/AI gameplay mods, Games tools). Conflicts resolved in `KnowledgeService`, `SmartRouterService`, `ManualGameLibraryView` (post-launch status text ported to `ManualGameLibraryView.Launch.cs`) and tests.

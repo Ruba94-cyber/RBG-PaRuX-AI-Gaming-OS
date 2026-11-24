@@ -308,7 +308,10 @@ while (-not (Test-Path $Stop)) {
         $pct = 0
         if ($cpu -ne $null -and $prev.ContainsKey($p.Id) -and $dt -gt 0) { $pct = [math]::Round(100 * ($cpu - $prev[$p.Id]) / $dt / $Cores, 1) }
         if ($cpu -ne $null) { $prev[$p.Id] = $cpu }
-        $rows += [string]::Format([Globalization.CultureInfo]::InvariantCulture, "{0:o},{1},{2},{3},{4},{5}", $now.ToUniversalTime(), $p.Id, $p.ProcessName, [math]::Round($p.WorkingSet64/1MB,1), [math]::Round($p.PrivateMemorySize64/1MB,1), $pct)
+        # The package has two PaRuX.exe: the root launcher and app\PaRuX.exe. Report the launcher under its own name.
+        $label = $p.ProcessName
+        if ($label -eq "PaRuX" -and (Split-Path (Split-Path $p.Path -Parent) -Leaf) -ne "app") { $label = "PaRuX-launcher" }
+        $rows += [string]::Format([Globalization.CultureInfo]::InvariantCulture, "{0:o},{1},{2},{3},{4},{5}", $now.ToUniversalTime(), $p.Id, $label, [math]::Round($p.WorkingSet64/1MB,1), [math]::Round($p.PrivateMemorySize64/1MB,1), $pct)
     }
     if ($rows) { Add-Content $Out $rows -Encoding ASCII }
     if ($pids) {
@@ -402,9 +405,17 @@ function Invoke-TrayExit {
     return 'blocked: tray icon ownership cannot be tied to the test process'
 }
 
+# The package has TWO processes called PaRuX.exe: the root launcher and the real application in app\.
+# CloseMainWindow and "kill the app" must target the application (the launcher has no window).
+function Get-PackageAppProcess([string]$packageRoot) {
+    $appExe = [IO.Path]::GetFullPath((Join-Path $packageRoot "app\PaRuX.exe"))
+    @(Get-Process -Name PaRuX -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExe }) | Select-Object -First 1
+}
+
 function Invoke-AppExitRequest([string]$appDirectory) {
     # "PaRuX.exe --exit" signals the instance that uses the data folder of THIS extracted package
     # (the name is derived from the data root), so it cannot close any other PaRuX on the machine.
+    # The process started here is the root launcher: it passes --exit to app\PaRuX.exe and returns its exit code.
     $exe = Join-Path $appDirectory "PaRuX.exe"
     $request = Start-Process -FilePath $exe -ArgumentList "--exit" -WorkingDirectory $appDirectory -PassThru
     $null = $request.Handle
@@ -510,8 +521,9 @@ function Invoke-PortableStage([string]$label, [string]$stageRoot, [bool]$readOnl
     return $stage
 }
 
-# Abnormal-close stage (own extracted copy): hard-kill PaRuX.exe after the Core is up; the Core and llama-server must follow it
-# within 5 s (job object), and the SAME data root must start cleanly again afterwards (stale bootstrap/pid recovery).
+# Abnormal-close stage (own extracted copy): hard-kill the application (app\PaRuX.exe) in round 1 and the root launcher in
+# round 2, after the Core is up; everything (launcher, app, Core, llama-server) must be gone within 5 s (job objects), and the
+# SAME data root must start cleanly again each time (stale bootstrap/pid recovery). Round 3 is a clean --exit.
 function Invoke-KillRecoveryStage([string]$stageRoot) {
     $stage = [ordered]@{ label = "hard-kill-recovery"; folder = $stageRoot }
     $stageApp = Join-Path $stageRoot "PaRuX-Corporate-Lite"
@@ -525,7 +537,7 @@ function Invoke-KillRecoveryStage([string]$stageRoot) {
         New-Item -ItemType Directory -Force $stageData | Out-Null
         $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $stageData; $env:PARUX_LOCALAI_STATE_DIR = $stageData
         $boot = Join-Path $stageData "server\bootstrap.json"
-        foreach ($round in 1, 2) {
+        foreach ($round in 1, 2, 3) {
             $startedAt = Get-Date
             $stage["round$round`_stale_bootstrap_present"] = Test-Path $boot
             $proc = Start-Process (Join-Path $stageApp "PaRuX.exe") -PassThru -WorkingDirectory $stageApp
@@ -537,12 +549,16 @@ function Invoke-KillRecoveryStage([string]$stageRoot) {
             $ok = $false
             for ($i = 0; $i -lt 120 -and -not $ok; $i++) { try { $ok = ((Api GET "/api/v1/knowledge/search?q=ping").Status -eq 200) } catch {}; if (-not $ok) { Start-Sleep -Milliseconds 500 } }
             $stage["round$round`_core_up"] = $ok
-            if ($round -eq 1) {
-                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            if ($round -le 2) {
+                # Round 1: kill the real application (the launcher then returns). Round 2: kill the launcher (KILL_ON_JOB_CLOSE).
+                $victim = if ($round -eq 1) { Get-PackageAppProcess $stageApp } else { $proc }
+                $stage["round$round`_killed"] = if ($victim) { if ($round -eq 1) { "app\PaRuX.exe" } else { "PaRuX.exe (launcher)" } } else { "NOT FOUND" }
+                if ($victim) { Stop-Process -Id $victim.Id -Force -ErrorAction SilentlyContinue }
                 $dl = (Get-Date).AddSeconds(5)
                 while ((Get-Date) -lt $dl -and (& $ours).Count -gt 0) { Start-Sleep -Milliseconds 250 }
                 $left = & $ours
-                $stage.processes_5s_after_app_killed = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+                $after = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
+                if ($round -eq 1) { $stage.processes_5s_after_app_killed = $after } else { $stage.processes_5s_after_launcher_killed = $after }
                 if ($left.Count) { $left | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
             } else {
                 $stage.exit_request = Invoke-AppExitRequest $stageApp
@@ -557,7 +573,7 @@ function Invoke-KillRecoveryStage([string]$stageRoot) {
         $script:endpoint = $savedEndpoint; $script:token = $savedToken
         $env:PARUX_CORPORATE = $savedEnv.PARUX_CORPORATE; $env:PARUX_DATA_ROOT = $savedEnv.PARUX_DATA_ROOT; $env:PARUX_LOCALAI_STATE_DIR = $savedEnv.PARUX_LOCALAI_STATE_DIR
     }
-    $stage.pass = [bool]($stage.round1_core_up -and $stage.round2_core_up -and $stage.processes_5s_after_app_killed -eq "none" -and $stage.processes_at_end -eq "none" -and -not $stage.error)
+    $stage.pass = [bool]($stage.round1_core_up -and $stage.round2_core_up -and $stage.round3_core_up -and $stage.processes_5s_after_app_killed -eq "none" -and $stage.processes_5s_after_launcher_killed -eq "none" -and $stage.processes_at_end -eq "none" -and -not $stage.error)
     return $stage
 }
 
@@ -639,8 +655,8 @@ try {
     $app = Join-Path $extract "PaRuX-Corporate-Lite"
     $R.zip_mb = [math]::Round((Get-Item $ZipPath).Length / 1MB, 0); $R.extract_s = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     $R.package_extracted_mb = [math]::Round((Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 0)
-    $bundleManifestPath = Join-Path $app "MANIFEST.json"
-    if (-not (Test-Path -LiteralPath $bundleManifestPath -PathType Leaf)) { throw "Corporate archive has no MANIFEST.json." }
+    $bundleManifestPath = Join-Path $app "docs\MANIFEST.json"
+    if (-not (Test-Path -LiteralPath $bundleManifestPath -PathType Leaf)) { throw "Corporate archive has no docs\MANIFEST.json." }
     $bundleManifest = Get-Content -LiteralPath $bundleManifestPath -Raw | ConvertFrom-Json
     $R.package_model_included = [bool]$bundleManifest.modelIncluded
     $R.package_embedding_included = [bool]$bundleManifest.embeddingIncluded
@@ -650,8 +666,13 @@ try {
     }
     Say "Extracted $($R.zip_mb) MB ZIP in $($R.extract_s)s -> $($R.package_extracted_mb) MB"
 
-    $cmd = Get-Content (Join-Path $app "Start PaRuX Corporate Lite.cmd") -Raw
-    if ($cmd -notmatch 'PARUX_CORPORATE=1' -or $cmd -notmatch 'PARUX_DATA_ROOT=%~dp0PaRuXData') { throw "Launcher no longer matches what this script replicates." }
+    # Layered package: the root holds only PaRuX.exe (launcher) + folders; the .cmd files are in launchers\ and use ..\PaRuXData.
+    $rootEntries = @(Get-ChildItem -LiteralPath $app -Force | ForEach-Object { $_.Name })
+    $rootViolations = @($rootEntries | Where-Object { $_ -cnotin @("PaRuX.exe", "app", "PaRuXData", "docs", "launchers") })
+    if ($rootViolations.Count -gt 0) { throw "Package root has unexpected entries: $($rootViolations -join ', ')" }
+    if (-not (Test-Path -LiteralPath (Join-Path $app "app\PaRuX.exe") -PathType Leaf)) { throw "app\PaRuX.exe is missing." }
+    $cmd = Get-Content (Join-Path $app "launchers\Start PaRuX Corporate Lite.cmd") -Raw
+    if ($cmd -notmatch 'PARUX_CORPORATE=1' -or $cmd -notmatch 'PARUX_DATA_ROOT=%PARUX_PACKAGE%\\PaRuXData') { throw "Launcher no longer matches what this script replicates." }
     $dataRoot = Join-Path $app "PaRuXData"
     $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $dataRoot; $env:PARUX_LOCALAI_STATE_DIR = $dataRoot
 
@@ -1003,7 +1024,8 @@ finally {
         function Get-Ours { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase) }) }
         $R.processes_after_window_close = "not observed"
         # (a) window close: by design PaRuX hides to the tray, so the processes are expected to stay.
-        if ($appProc -and -not $appProc.HasExited) { $null = $appProc.CloseMainWindow(); Start-Sleep 4; $R.processes_after_window_close = (Get-Ours | ForEach-Object { $_.ProcessName }) -join ", " }
+        $realApp = if ($app) { Get-PackageAppProcess $app } else { $null }
+        if ($realApp -and -not $realApp.HasExited) { $null = $realApp.CloseMainWindow(); Start-Sleep 4; $R.processes_after_window_close = (Get-Ours | ForEach-Object { $_.ProcessName }) -join ", " }
         # (b) the real exit: the same clean shutdown as the tray menu "Exit", requested for this
         # package's own data folder. The tray icon itself is owned by Explorer and stays untouched.
         Say "Requesting a clean exit (PaRuX.exe --exit) ..."
@@ -1011,14 +1033,15 @@ finally {
         $dl = (Get-Date).AddSeconds(40); while ((Get-Date) -lt $dl -and (Get-Ours).Count -gt 0) { Start-Sleep 1 }
         $left = Get-Ours
         $R.processes_left_after_tray_exit = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }
-        # App-killed case (binding, 5 s budget): only a hard kill of PaRuX.exe itself. It stays "not exercised" after a clean exit.
+        # App-killed case (binding, 5 s budget): only a hard kill of the application (app\PaRuX.exe) itself. It stays "not exercised" after a clean exit.
         $R.processes_5s_after_app_killed = "not exercised (clean exit left no package processes)"
         if ($null -ne $R.portable_stage_killrecovery -and $R.portable_stage_killrecovery.processes_5s_after_app_killed) {
             $R.processes_5s_after_app_killed = [string]$R.portable_stage_killrecovery.processes_5s_after_app_killed
         }
         if ($left.Count -gt 0 -and $appProc -and -not $appProc.HasExited) {
             # Tray automation unavailable: learn whether the Core and llama-server follow the app when it dies.
-            Stop-Process -Id $appProc.Id -Force -ErrorAction SilentlyContinue
+            $killTarget = if ($app) { Get-PackageAppProcess $app } else { $null }
+            if ($killTarget) { Stop-Process -Id $killTarget.Id -Force -ErrorAction SilentlyContinue } else { Stop-Process -Id $appProc.Id -Force -ErrorAction SilentlyContinue }
             $dl = (Get-Date).AddSeconds(5); while ((Get-Date) -lt $dl -and (Get-Ours).Count -gt 0) { Start-Sleep -Milliseconds 250 }
             $left = Get-Ours
             $R.processes_5s_after_app_killed = if ($left.Count) { ($left | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", " } else { "none" }

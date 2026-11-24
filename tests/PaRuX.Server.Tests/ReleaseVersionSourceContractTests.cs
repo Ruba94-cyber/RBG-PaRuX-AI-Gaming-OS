@@ -18,6 +18,7 @@ public sealed class ReleaseVersionSourceContractTests
         Path.Combine("src", "PaRuX.Server", "PaRuX.Server.csproj"),
         Path.Combine("src", "PaRuX.Cli", "PaRuX.Cli.csproj"),
         Path.Combine("src", "PaRuX.UpdateHelper", "PaRuX.UpdateHelper.csproj"),
+        Path.Combine("src", "PaRuX.Launcher", "PaRuX.Launcher.csproj"),
         Path.Combine("src", "PaRuX.WinMlWorker", "PaRuX.WinMlWorker.csproj"),
     };
 
