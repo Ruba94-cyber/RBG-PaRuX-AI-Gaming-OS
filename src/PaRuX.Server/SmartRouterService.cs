@@ -109,7 +109,8 @@ public sealed class SmartRouterService : IRoleRouter
     private async Task<List<CandidateEvidenceDto>> GetCandidateEvidenceAsync(
         string role,
         bool includeManagedLibrary,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool allowRetrievalReclaim = false)
     {
         string? normalizedRole = LocalAiPaths.NormalizeTextRole(role);
         if (normalizedRole == null) return new List<CandidateEvidenceDto>();
@@ -221,7 +222,7 @@ public sealed class SmartRouterService : IRoleRouter
         // Other editions: the same bounded recovery, only when NOTHING fits (never on a normal prompt). On a busy 16 GB PC
         // the retrieval ONNX sessions that document search keeps resident can be exactly what makes the only candidate
         // "not fit", so the first document chat after an indexing run was refused with 503 while the same chat later worked.
-        if (!corporateAuto && includeManagedLibrary && results.Count > 0 &&
+        if (!corporateAuto && allowRetrievalReclaim && results.Count > 0 &&
             results.All(c => c.HardwareCompatible != true))
         {
             int releasedIdle = 0;
@@ -257,6 +258,17 @@ public sealed class SmartRouterService : IRoleRouter
     /// </summary>
     internal static bool? ResolveCandidateCompatibility(bool isCurrentlyLoaded, bool? estimatedCompatible) =>
         isCurrentlyLoaded ? true : estimatedCompatible;
+
+    /// <summary>Numbers behind a "nothing fits" refusal, so the message explains itself (closest candidate only).</summary>
+    internal static string DescribeBestFitShortfall(IReadOnlyList<CandidateEvidenceDto> candidates)
+    {
+        CandidateEvidenceDto? closest = candidates
+            .Where(c => c.EstimatedNeededMib.HasValue && c.AvailableMib.HasValue)
+            .OrderBy(c => c.EstimatedNeededMib!.Value - c.AvailableMib!.Value)
+            .FirstOrDefault();
+        return closest is null ? string.Empty
+            : $" Closest candidate {closest.FileName}: needs about {closest.EstimatedNeededMib:0} MiB, about {closest.AvailableMib:0} MiB available.";
+    }
 
     private CandidateEvidenceDto GetExactManagedModelEvidence(string role, string path)
     {
@@ -333,7 +345,7 @@ public sealed class SmartRouterService : IRoleRouter
         // EnsureExactCandidateLoadedAsync still applies the strict live admission checks.
         List<CandidateEvidenceDto> candidates = normalizedTextRole != null && !scopedForce
             && (!exactManagedForced || exactRegisteredForced)
-            ? await GetCandidateEvidenceAsync(normalizedTextRole, managedLibraryExpanded, ct)
+            ? await GetCandidateEvidenceAsync(normalizedTextRole, managedLibraryExpanded, ct, allowRetrievalReclaim: true)
             : new List<CandidateEvidenceDto>();
         int candidatesConsidered = candidates.Count;
         CandidateEvidenceDto? selectedEvidence = null;
@@ -554,7 +566,7 @@ public sealed class SmartRouterService : IRoleRouter
         {
             fellBack = true;
             List<CandidateEvidenceDto> standardCandidates =
-                await GetCandidateEvidenceAsync("standard", managedLibraryExpanded, ct);
+                await GetCandidateEvidenceAsync("standard", managedLibraryExpanded, ct, allowRetrievalReclaim: true);
             candidatesConsidered += standardCandidates.Count;
             result = await SelectAndLoadAsync(
                 "standard", "standard", requestedRole, standardCandidates, mode,
@@ -568,7 +580,7 @@ public sealed class SmartRouterService : IRoleRouter
             if (selectedEvidence == null && fellBack)
             {
                 List<CandidateEvidenceDto> standardCandidates =
-                    await GetCandidateEvidenceAsync("standard", managedLibraryExpanded, ct);
+                    await GetCandidateEvidenceAsync("standard", managedLibraryExpanded, ct, allowRetrievalReclaim: true);
                 selectedEvidence = standardCandidates.FirstOrDefault(candidate => PathsEqual(candidate.FilePath, result.ModelPath));
             }
         }
@@ -768,7 +780,8 @@ public sealed class SmartRouterService : IRoleRouter
         if (automaticMode && normalizedTextRole != null && candidates.Count > 0)
         {
             if (candidates.All(candidate => candidate.HardwareCompatible == false))
-                return Failure(normalizedTextRole, "No candidate fits the current memory and Execution Profile budget. Free memory or choose a smaller model.");
+                return Failure(normalizedTextRole, "No candidate fits the current memory and Execution Profile budget. Free memory or choose a smaller model."
+                    + DescribeBestFitShortfall(candidates));
             IReadOnlyList<CandidateEvidenceDto> pool = mode == RouteMode.Auto
                 ? AutoTrivialTurnPolicy.Narrow(candidates, promptText, rankingRole, autoProfile)
                 : candidates;

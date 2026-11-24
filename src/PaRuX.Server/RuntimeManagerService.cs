@@ -710,6 +710,9 @@ public sealed class RuntimeManagerService
         return BuildHardwareFitEstimate(path, sizeBytes, availableMib);
     }
 
+    /// <summary>Smallest window the fit estimate will consider when it mirrors the launch planner's reduction ladder.</summary>
+    private const long ReducedContextFloorTokens = 4096;
+
     private static HardwareFitEstimate BuildHardwareFitEstimate(string path, long sizeBytes, double availableMib)
     {
         GgufModelInfo model = GgufMetadataReader.Read(path);
@@ -719,6 +722,24 @@ public sealed class RuntimeManagerService
         double weightsMib = sizeBytes / 1024.0 / 1024.0;
         double? kvMib = kvBytes.HasValue ? kvBytes.Value / 1024.0 / 1024.0 : null;
         double neededMib = kvMib.HasValue ? weightsMib + kvMib.Value + RuntimeReserveMib : weightsMib * VramOverheadFactor;
+        // The launch planner lowers the context window (halving, never a user-chosen one) before it gives up, so a model is
+        // admissible when ANY window of that ladder fits, not only the full one. Judging only the full window refused a
+        // 4B model on a 16 GB PC (needs 5.6 GiB at 32K, 3.5 GiB available) that the launch itself would have started at 8K.
+        if (neededMib > availableMib && kvBytes.HasValue && ContextPreferenceStore.Get(path) is not { ContextLength: > 0 })
+        {
+            long reducedContext = contextLength;
+            for (int step = 0; step < 3; step++)
+            {
+                reducedContext = reducedContext / 2 / 1024 * 1024;
+                if (reducedContext < ReducedContextFloorTokens) break;
+                long? reducedKv = KvCacheSizeEstimator.Estimate(model, reducedContext, cacheType, cacheType);
+                if (reducedKv is not { } rkv) break;
+                double reducedKvMib = rkv / 1024.0 / 1024.0;
+                double reducedNeeded = weightsMib + reducedKvMib + RuntimeReserveMib;
+                if (reducedNeeded <= availableMib)
+                    return new HardwareFitEstimate(true, reducedNeeded, availableMib, reducedKvMib, reducedContext);
+            }
+        }
         return new HardwareFitEstimate(neededMib <= availableMib, neededMib, availableMib, kvMib, kvMib.HasValue ? contextLength : null);
     }
 
