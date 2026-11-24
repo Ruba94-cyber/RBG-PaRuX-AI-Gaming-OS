@@ -58,6 +58,31 @@ public static class DocumentChatPlanner
         "spiega","perché","perche","come","riassum*","confronta","differenz*","descrivi","analizz*","revisiona","traduci","riscrivi"
     };
 
+    // Nouns that merely designate the named file ("la registrazione TR-A.asc", "the capture"): not content to look for in its passages.
+    private static readonly HashSet<string> FileNounWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "registrazione","registrazioni","traccia","tracce","acquisizione","recording","recordings","trace","traces","capture","file","documento","document"
+    };
+
+    // Italian/English words for file-level metadata (duration, counts, channels, range) that a trace summary passage states in other words.
+    // Only used for a question that names an indexed file; each word is checked against the file's own passages.
+    private static readonly Dictionary<string, string[]> MetadataSynonyms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["durata"] = new[] { "duration", "durata" },
+        ["duration"] = new[] { "durata" },
+        ["lunghezza"] = new[] { "duration", "durata" },
+        ["canali"] = new[] { "channel" },
+        ["canale"] = new[] { "channel" },
+        ["channels"] = new[] { "channel" },
+        ["intervallo"] = new[] { "trace time", "duration", "range" },
+        ["inizio"] = new[] { "trace time" },
+        ["fine"] = new[] { "trace time" },
+        ["frames"] = new[] { "frame" },
+        ["messaggi"] = new[] { "frame" },
+        ["distinti"] = new[] { "distinct" },
+        ["identificatori"] = new[] { "can id", "distinct" },
+    };
+
     /// <summary>Content words of the question (stop words removed, lower-cased).</summary>
     public static IReadOnlyList<string> ContentTerms(string query)
     {
@@ -129,13 +154,16 @@ public static class DocumentChatPlanner
         // and one real content word in common is enough (the words of an Italian question rarely equal those of English evidence).
         bool namesFile = hits.Any(h => h.FileName.Length >= 4 && query.Contains(h.FileName, StringComparison.OrdinalIgnoreCase));
         if (namesFile)
-            terms = terms.Where(t => !hits.Any(h => h.FileName.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
+            // Words that only say "this recording/file" are the name of the thing, not what is asked about it (and "trace"
+            // appears in every chunk of a trace, so counting it would make any question about the file look covered).
+            terms = terms.Where(t => !hits.Any(h => h.FileName.Contains(t, StringComparison.OrdinalIgnoreCase)) && !FileNounWords.Contains(t)).ToList();
         if (terms.Count == 0) return false;
         double best = 0;
         foreach (KnowledgeHit h in hits)
         {
             string haystack = (h.Text + " " + h.FileName + " " + h.Position.Heading).ToLowerInvariant();
-            double covered = terms.Count(t => haystack.Contains(t, StringComparison.Ordinal));
+            double covered = terms.Count(t => haystack.Contains(t, StringComparison.Ordinal)
+                || (namesFile && MetadataSynonyms.TryGetValue(t, out string[]? alts) && alts.Any(a => haystack.Contains(a, StringComparison.Ordinal))));
             best = Math.Max(best, covered / terms.Count);
         }
         return best >= (namesFile ? 0.25 : 0.5);
@@ -298,7 +326,7 @@ public static class DocumentChatPlanner
             // only, drawing from a wider candidate pool so the named file is not crowded out by identical IDs in other files.
             IReadOnlyList<KnowledgeHit> pool = service.Index.Search(query, KnowledgeSearchMode.Auto, Math.Max(topK, 30), allowed);
             IReadOnlyList<KnowledgeHit> named = KeepNamedFiles(query, pool);
-            return FocusOnRelevant(named.Take(topK).ToList());
+            return FocusOnRelevant(WithFileOverview(query, named.Take(topK).ToList(), service.Index, allowed));
         }
         catch (Exception) { return Array.Empty<KnowledgeHit>(); }
     }
@@ -309,6 +337,29 @@ public static class DocumentChatPlanner
         if (hits.Count == 0) return hits;
         var named = hits.Where(h => h.FileName.Length >= 4 && query.Contains(h.FileName, StringComparison.OrdinalIgnoreCase)).ToList();
         return named.Count > 0 ? named : hits;
+    }
+
+    /// <summary>True when the question asks for file-level metadata (duration, channels, frame count, time range) rather than a content fact.</summary>
+    internal static bool AsksFileMetadata(string query) => ContentTerms(query).Any(MetadataSynonyms.ContainsKey);
+
+    /// <summary>
+    /// A question about a named file's duration / channels / frame count is answered by the file's overview passage (the first one: a trace's
+    /// summary), which ranks below the per-ID passages for such words. When the question names an indexed file and asks for metadata, the
+    /// overview is put first so the model has it; nothing is added for any other question, and a file with no passages adds nothing.
+    /// </summary>
+    internal static IReadOnlyList<KnowledgeHit> WithFileOverview(string query, IReadOnlyList<KnowledgeHit> hits, KnowledgeIndex index, IReadOnlyCollection<string>? allowed)
+    {
+        if (hits.Count == 0 || !AsksFileMetadata(query)) return hits;
+        KnowledgeHit? first = hits.FirstOrDefault(h => h.FileName.Length >= 4 && query.Contains(h.FileName, StringComparison.OrdinalIgnoreCase));
+        if (first == null) return hits;
+        IndexedFile? file = index.FindFiles(first.FileName, allowed, 1).FirstOrDefault(f => string.Equals(f.Name, first.FileName, StringComparison.OrdinalIgnoreCase));
+        if (file == null) return hits;
+        IndexedPassage? overview = index.GetPassages(file.Id).FirstOrDefault();
+        if (overview == null || hits.Any(h => h.Text.StartsWith(overview.Text[..Math.Min(80, overview.Text.Length)], StringComparison.Ordinal))) return hits;
+        string text = overview.Text.Length > 1500 ? overview.Text[..1500] : overview.Text;
+        var list = new List<KnowledgeHit> { new(0, file.Path, file.Name, text, overview.Position, 1.0, "overview") };
+        list.AddRange(hits);
+        return list;
     }
 
     public static void ApplyGrounding(ChatCompletionRequest request)
