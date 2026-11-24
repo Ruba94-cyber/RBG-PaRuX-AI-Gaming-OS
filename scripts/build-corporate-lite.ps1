@@ -8,7 +8,13 @@
     Vulkan llama.cpp runtime (same lock entry 'llama.cpp-vulkan' as the Standard builder; optional GPU offload with automatic
     CPU fallback, switched off with PARUX_CORPORATE_GPU=0), ONE small
     quantised model with a redistribution-friendly licence, the light embedding model, offline configuration
-    (`parux.corporate` marker, launcher that sets PARUX_CORPORATE=1 and keeps all data in .\PaRuXData), licences and a manifest.
+    (`parux.corporate` marker in app\, launchers that set PARUX_CORPORATE=1 and keep all data in .\PaRuXData), licences and a manifest.
+    Layout (the ZIP root folder holds ONLY PaRuX.exe plus these folders; the build verifies it and fails otherwise):
+        PaRuX.exe          small launcher: starts app\PaRuX.exe, waits, returns its exit code
+        app\               the application (PaRuX.exe, PaRuX.Server\, runtime, languages, marker parux.corporate)
+        PaRuXData\         all data, beside the launcher (never %LOCALAPPDATA%)
+        docs\              README-corporate-lite.txt, MANIFEST.json, licences, notices
+        launchers\         Start PaRuX Corporate Lite.cmd, "(CPU only)", "Model Downloads"
     Never included: documents, indexes, history, tokens, anything from the developer PC. Weights are NOT stored in Git: they are
     supplied with -ModelPath / -EmbeddingDir / -RerankerDir / -RuntimeDir (or fetched with -Fetch from the official sources, hashes recorded).
 
@@ -52,6 +58,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "portable-layout.ps1")
 # Windows PowerShell 5.1 renders a progress bar for every Invoke-WebRequest chunk, which cuts multi-GB model downloads to ~1 MB/s.
 $ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
@@ -91,21 +98,26 @@ if (-not $SkipPublish) {
 }
 if (-not (Test-Path (Join-Path $portableStage "PaRuX.exe"))) { throw "Portable stage not found. Run without -SkipPublish." }
 $sourceCommit = ([string](& git -C $repoRoot rev-parse HEAD)).Trim().ToLowerInvariant()
-$sourceMarker = Join-Path $portableStage ".parux-publish-source"
+$sourceMarker = Join-Path $portableStage "app\.parux-publish-source"
 if ($sourceCommit -notmatch '^[a-f0-9]{40}$' -or
     -not (Test-Path -LiteralPath $sourceMarker -PathType Leaf) -or
     (Get-Content -LiteralPath $sourceMarker -Raw).Trim() -cne ($sourceCommit + "|cpu-shell")) {
     throw "Corporate Lite CPU shell was compiled from a different commit or edition. Rebuild without -SkipPublish."
 }
-if (Test-Path (Join-Path $portableStage "PaRuX.Server\\runtime-baseline")) {
+if (Test-Path (Join-Path $portableStage "app\PaRuX.Server\runtime-baseline")) {
     throw "Corporate Lite requires a CPU-only portable stage. Rebuild without -SkipPublish using -WithoutVulkan."
 }
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item -Path (Join-Path $portableStage "*") -Destination $stage -Recurse -Force
-# Not part of this edition: CLI and the portable launchers/readme are replaced below.
-Remove-Item (Join-Path $stage "Cli") -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $stage "PaRuX (portable data).cmd"), (Join-Path $stage "README-portable.txt") -Force -ErrorAction SilentlyContinue
+# Not part of this edition: CLI and the portable launchers/readme/manifest are replaced below.
+Remove-Item (Join-Path $stage "app\Cli") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $stage "launchers") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $stage "docs\README-portable.txt"), (Join-Path $stage "docs\MANIFEST-portable.json") -Force -ErrorAction SilentlyContinue
+$appStage = Join-Path $stage "app"
+$docsStage = Join-Path $stage "docs"
+$launchersStage = Join-Path $stage "launchers"
+New-Item -ItemType Directory -Force $docsStage, $launchersStage | Out-Null
 if (-not $Version) {
     [xml]$p = Get-Content (Join-Path $repoRoot "Directory.Build.props") -Raw
     $Version = [string]($p.Project.PropertyGroup | ForEach-Object { $_.PaRuXProductVersion } | Where-Object { $_ } | Select-Object -First 1)
@@ -380,8 +392,8 @@ Remove-Item -LiteralPath $vulkanTemp -Recurse -Force -ErrorAction SilentlyContin
 # No prerequisites on the target PC: llama.cpp and ONNX Runtime import the Visual C++ runtime,
 # so it travels app-local next to every native engine and next to the Core.
 . (Join-Path $PSScriptRoot "portable-offline-assets.ps1")
-$vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($runtimeDest, $vulkanDest, (Join-Path $stage "PaRuX.Server"), $stage)
-foreach ($vcDir in @($runtimeDest, $vulkanDest, (Join-Path $stage "PaRuX.Server"))) {
+$vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($runtimeDest, $vulkanDest, (Join-Path $appStage "PaRuX.Server"), $appStage)
+foreach ($vcDir in @($runtimeDest, $vulkanDest, (Join-Path $appStage "PaRuX.Server"))) {
     foreach ($vcFile in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll") {
         if (-not (Test-Path -LiteralPath (Join-Path $vcDir $vcFile) -PathType Leaf)) { throw "Visual C++ runtime not staged: $vcDir\$vcFile" }
     }
@@ -402,40 +414,44 @@ if (-not [string]::IsNullOrWhiteSpace($RerankerDir)) {
     New-Item -ItemType Directory -Force $rerankerDest | Out-Null
     Copy-Item (Join-Path $RerankerDir "*") $rerankerDest -Recurse -Force
 }
-Set-Content (Join-Path $stage "parux.corporate") "PaRuX Corporate Lite Offline: AI + documents only, no cloud." -Encoding ASCII
+# The marker lives in app\ (no loose file at the package root); PaRuXDataRoot finds PaRuXData beside app\.
+Set-Content (Join-Path $appStage "parux.corporate") "PaRuX Corporate Lite Offline: AI + documents only, no cloud." -Encoding ASCII
 $settings = @{ OnboardingCompleted = $true; SetupProfileId = "ai"; StudioModeEnabled = $false; DefaultProfile = "AUTO" } | ConvertTo-Json
 Set-Content (Join-Path $data "settings.json") $settings -Encoding UTF8
 @'
 @echo off
-rem Corporate offline default: no external HTTP, data beside app.
+rem Corporate offline default: no external HTTP, data in the PaRuXData folder of the package (one level above "launchers").
 setlocal
+for %%I in ("%~dp0..") do set "PARUX_PACKAGE=%%~fI"
 set "PARUX_CORPORATE=1"
 set "PARUX_CORPORATE_MODEL_DOWNLOADS=0"
-set "PARUX_DATA_ROOT=%~dp0PaRuXData"
-set "PARUX_LOCALAI_STATE_DIR=%~dp0PaRuXData"
-start "" "%~dp0PaRuX.exe"
-'@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Lite.cmd") -Encoding ASCII
+set "PARUX_DATA_ROOT=%PARUX_PACKAGE%\PaRuXData"
+set "PARUX_LOCALAI_STATE_DIR=%PARUX_PACKAGE%\PaRuXData"
+start "" "%PARUX_PACKAGE%\PaRuX.exe"
+'@ | Set-Content (Join-Path $launchersStage "Start PaRuX Corporate Lite.cmd") -Encoding ASCII
 @'
 @echo off
 rem Use only with IT approval. Allows GGUF model transfers, not cloud inference.
 setlocal
+for %%I in ("%~dp0..") do set "PARUX_PACKAGE=%%~fI"
 set "PARUX_CORPORATE=1"
 set "PARUX_CORPORATE_MODEL_DOWNLOADS=1"
-set "PARUX_DATA_ROOT=%~dp0PaRuXData"
-set "PARUX_LOCALAI_STATE_DIR=%~dp0PaRuXData"
-start "" "%~dp0PaRuX.exe"
-'@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Model Downloads.cmd") -Encoding ASCII
+set "PARUX_DATA_ROOT=%PARUX_PACKAGE%\PaRuXData"
+set "PARUX_LOCALAI_STATE_DIR=%PARUX_PACKAGE%\PaRuXData"
+start "" "%PARUX_PACKAGE%\PaRuX.exe"
+'@ | Set-Content (Join-Path $launchersStage "Start PaRuX Corporate Model Downloads.cmd") -Encoding ASCII
 @'
 @echo off
 rem IT option: force the CPU engine only. The bundled Vulkan (GPU) engine is never started.
 setlocal
+for %%I in ("%~dp0..") do set "PARUX_PACKAGE=%%~fI"
 set "PARUX_CORPORATE=1"
 set "PARUX_CORPORATE_MODEL_DOWNLOADS=0"
 set "PARUX_CORPORATE_GPU=0"
-set "PARUX_DATA_ROOT=%~dp0PaRuXData"
-set "PARUX_LOCALAI_STATE_DIR=%~dp0PaRuXData"
-start "" "%~dp0PaRuX.exe"
-'@ | Set-Content (Join-Path $stage "Start PaRuX Corporate Lite (CPU only).cmd") -Encoding ASCII
+set "PARUX_DATA_ROOT=%PARUX_PACKAGE%\PaRuXData"
+set "PARUX_LOCALAI_STATE_DIR=%PARUX_PACKAGE%\PaRuXData"
+start "" "%PARUX_PACKAGE%\PaRuX.exe"
+'@ | Set-Content (Join-Path $launchersStage "Start PaRuX Corporate Lite (CPU only).cmd") -Encoding ASCII
 $modelGuide = if ($NoModel) { "This NoModel edition has NO chat model: import a compatible GGUF before expecting local chat answers." } else { "Local GGUF included: $([IO.Path]::GetFileName($ModelPath)). The model is not guaranteed to fit every 8-16 GB PC; verify memory headroom before running." }
 $modelLicenceGuide = "Bundled model origin: $modelOriginLabel. Licence: $modelLicenseLabel. The package checksum proves included bytes, not model origin or redistribution rights."
 if ($LowMemoryStarter) {
@@ -444,7 +460,9 @@ if ($LowMemoryStarter) {
 $ragGuide = if ([string]::IsNullOrWhiteSpace($RerankerDir)) { "Local embeddings included; advanced second-stage reranking is NOT included in this reduced package." } else { "Local embeddings and cross-encoder reranking included for document retrieval." }
 @"
 PaRuX Corporate Lite Offline $Version
-Start with "Start PaRuX Corporate Lite.cmd". No installation and no administrator rights are needed by the application.
+Start with PaRuX.exe or "launchers\Start PaRuX Corporate Lite.cmd". No installation and no administrator rights are needed by the application.
+Folder layout: PaRuX.exe (launcher, the only file at the root), app\ (the application), PaRuXData\ (all data, never moved to the user profile),
+docs\ (this file, manifest, licences), launchers\ (the .cmd entry points; they set the Corporate options and use ..\PaRuXData).
 CPU runtime, Vulkan (GPU) runtime and embedding model are included. No runtime setup or Internet needed.
 GPU: if a usable discrete graphics adapter is found, the bundled Vulkan engine ($vulkanSizeMb MB, llama.cpp $($vulkanArtifact.version), SHA-256 pinned in
 PaRuXData/LocalAI/runtime/$vulkanFolder/parux-runtime-lock.json) is tried first. Integrated-GPU shared memory counts against the same RAM limit; an integrated GPU stays on the CPU engine by default (measured faster) unless PARUX_CORPORATE_GPU=force is set.
@@ -453,17 +471,18 @@ installed or downloaded. IT can force CPU only with "Start PaRuX Corporate Lite 
 $modelGuide
 $modelLicenceGuide
 $ragGuide
-Offline: "Start PaRuX Corporate Lite.cmd". Import further GGUF files in Model Hub (files are copied into PaRuXData/models).
-For IT-approved GGUF downloads only: "Start PaRuX Corporate Model Downloads.cmd". Model inference remains entirely local;
+Offline: "launchers\Start PaRuX Corporate Lite.cmd". Import further GGUF files in Model Hub (files are copied into PaRuXData/models).
+For IT-approved GGUF downloads only: "launchers\Start PaRuX Corporate Model Downloads.cmd". Model inference remains entirely local;
 Gaming, media, online runtime installers, cloud inference and automatic updates stay disabled.
 IT network rules still apply; downloads require network permission. Documents remain on this PC.
-Licences: see LICENSE.txt and THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: multilingual-e5-small (MIT, default for Italian/English document search) and all-MiniLM-L6-v2 (Apache-2.0, fallback);
+Licences: see docs\LICENSE.txt and docs\THIRD_PARTY_NOTICES.md. Bundled GGUF licence is stated above and must be verified independently; embeddings: multilingual-e5-small (MIT, default for Italian/English document search) and all-MiniLM-L6-v2 (Apache-2.0, fallback);
 llama.cpp: MIT; optional cross-encoder reranker: Xenova/ms-marco-MiniLM-L-6-v2, review source licence before redistribution).
 
-Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: "Start PaRuX Corporate Lite.cmd". Con una GPU integrata resta il motore CPU (piu' veloce, PARUX_CORPORATE_GPU=force per provare la GPU). Se la GPU non e' utilizzabile
+Struttura: PaRuX.exe (avviatore, unico file alla radice), app\ (l'applicazione), PaRuXData\ (tutti i dati), docs\ (documenti, manifest, licenze), launchers\ (avvii .cmd).
+Avvio offline con motori CPU e Vulkan (GPU, $vulkanSizeMb MB) gia' inclusi: PaRuX.exe oppure "launchers\Start PaRuX Corporate Lite.cmd". Con una GPU integrata resta il motore CPU (piu' veloce, PARUX_CORPORATE_GPU=force per provare la GPU). Se la GPU non e' utilizzabile
 o Vulkan non parte, PaRuX torna da solo al motore CPU. Solo CPU (IT): "Start PaRuX Corporate Lite (CPU only).cmd" oppure PARUX_CORPORATE_GPU=0.
 Importa nuovi GGUF e scegli il modello da Chat. Solo con consenso IT usa "Start PaRuX Corporate Model Downloads.cmd".
-"@ | Set-Content (Join-Path $stage "README-corporate-lite.txt") -Encoding UTF8
+"@ | Set-Content (Join-Path $docsStage "README-corporate-lite.txt") -Encoding UTF8
 
 # --- 4. Manifest with hashes -----------------------------------------------------------------------------------------------
 $files = Get-ChildItem $stage -Recurse -File | ForEach-Object {
@@ -485,7 +504,7 @@ $manifest = [ordered]@{
     corporateGpuDisableVariable = "PARUX_CORPORATE_GPU"
     fileCount = $files.Count; files = $files
 }
-$manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage "MANIFEST.json") -Encoding UTF8
+$manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $docsStage "MANIFEST.json") -Encoding UTF8
 
 # --- 5. ZIP ('/' separators, one top-level folder) -----------------------------------------------------------------------
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
@@ -512,8 +531,10 @@ try {
     $names = @($z.Entries | ForEach-Object { $_.FullName })
     if (@($names | Where-Object { $_.Contains('\') }).Count -gt 0) { throw "ZIP has backslash entries." }
     $rel = @($names | ForEach-Object { $_.Substring("PaRuX-Corporate-Lite/".Length) })
-    foreach ($req in "PaRuX.exe", "PaRuX.Server/PaRuX.Server.exe", "parux.corporate", "Start PaRuX Corporate Lite.cmd", "MANIFEST.json", "LICENSE.txt",
-        "PaRuXData/settings.json", "Start PaRuX Corporate Model Downloads.cmd", "Start PaRuX Corporate Lite (CPU only).cmd", "README-corporate-lite.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
+    # Root = ONLY PaRuX.exe + app/, PaRuXData/, docs/, launchers/ (the build fails on anything else).
+    Assert-PaRuXPackageLayout -Names $rel -Label "Corporate Lite ZIP"
+    foreach ($req in "PaRuX.exe", "app/PaRuX.exe", "app/PaRuX.Server/PaRuX.Server.exe", "app/parux.corporate", "launchers/Start PaRuX Corporate Lite.cmd", "docs/MANIFEST.json", "docs/LICENSE.txt",
+        "PaRuXData/settings.json", "launchers/Start PaRuX Corporate Model Downloads.cmd", "launchers/Start PaRuX Corporate Lite (CPU only).cmd", "docs/README-corporate-lite.txt") { if ($rel -notcontains $req) { throw "Missing $req" } }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/(parux\.db|history|attachments|server/)' -or $_ -match '(?i)(^|/)(rag\.db|knowledge\.db|bootstrap\.json)$' }).Count -gt 0) { throw "ZIP contains user data/indexes/tokens." }
     $expectedModels = if ($NoModel) { 0 } else { 1 }
     if (@($rel | Where-Object { $_ -match '(?i)^PaRuXData/models/.+\.gguf$' }).Count -ne $expectedModels) { throw "Expected $expectedModels bundled model(s)." }
@@ -548,18 +569,24 @@ try {
     if (@($shippedLock.artifacts).Count -ne 1 -or ([string]@($shippedLock.artifacts)[0].sha256).ToLowerInvariant() -ne ([string]$vulkanArtifact.sha256).ToLowerInvariant()) {
         throw "Shipped Vulkan lock does not match packaging/windows-baseline-runtime.lock.json."
     }
-    $cpuOnlyEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Lite (CPU only).cmd")
+    $cpuOnlyEntry = $z.GetEntry("PaRuX-Corporate-Lite/launchers/Start PaRuX Corporate Lite (CPU only).cmd")
     $cpuOnlyReader = [IO.StreamReader]::new($cpuOnlyEntry.Open())
     try { $cpuOnlyText = $cpuOnlyReader.ReadToEnd() } finally { $cpuOnlyReader.Dispose() }
     if ($cpuOnlyText -notmatch 'PARUX_CORPORATE_GPU=0') { throw "CPU-only launcher does not set PARUX_CORPORATE_GPU=0." }
-    $offlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Lite.cmd")
-    $onlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/Start PaRuX Corporate Model Downloads.cmd")
+    $offlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/launchers/Start PaRuX Corporate Lite.cmd")
+    $onlineEntry = $z.GetEntry("PaRuX-Corporate-Lite/launchers/Start PaRuX Corporate Model Downloads.cmd")
     if ($null -eq $offlineEntry -or $null -eq $onlineEntry) { throw "Missing Corporate launchers." }
     $reader = [IO.StreamReader]::new($offlineEntry.Open())
     try { $offlineText = $reader.ReadToEnd() } finally { $reader.Dispose() }
     $reader = [IO.StreamReader]::new($onlineEntry.Open())
     try { $onlineText = $reader.ReadToEnd() } finally { $reader.Dispose() }
     if ($offlineText -match 'PARUX_CORPORATE_GPU=0') { throw "The default launcher must not disable the GPU path." }
+    # The .cmd files sit in launchers\: they must resolve data one level up, never beside themselves.
+    foreach ($cmdText in @($cpuOnlyText, $offlineText, $onlineText)) {
+        if ($cmdText -notmatch [regex]::Escape('%~dp0..') -or $cmdText -notmatch [regex]::Escape('%PARUX_PACKAGE%\PaRuXData')) {
+            throw "A Corporate launcher does not resolve PaRuXData from the package root."
+        }
+    }
     if ($offlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=0' -or $onlineText -notmatch 'PARUX_CORPORATE_MODEL_DOWNLOADS=1') {
         throw "Corporate model-download consent was not staged correctly."
     }
@@ -625,12 +652,17 @@ if ($Smoke) {
     $null = $vProc.Handle
     if (-not $vProc.WaitForExit(15000)) { $vProc.Kill(); throw "Offline smoke: native Vulkan loader timed out." }
     if ($vProc.ExitCode -ne 0) { Write-Warning "Vulkan native loader unavailable on this host (exit $($vProc.ExitCode)); Corporate would use the CPU engine here." }
+    # The process started here is the root launcher; the application is its child from app\.
     $proc = Start-Process (Join-Path $app "PaRuX.exe") -PassThru
     try {
         $boot = Join-Path $env:PARUX_DATA_ROOT "server\bootstrap.json"
         $deadline = (Get-Date).AddSeconds($SmokeTimeoutSeconds)
         while ((Get-Date) -lt $deadline -and -not (Test-Path $boot)) { if ($proc.HasExited) { throw "App exited early." }; Start-Sleep 2 }
         if (-not (Test-Path $boot)) { throw "Core did not start." }
+        $appExePath = [IO.Path]::GetFullPath((Join-Path $app "app\PaRuX.exe"))
+        if (@(Get-Process -Name PaRuX -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExePath }).Count -lt 1) {
+            throw "The launcher did not start app\PaRuX.exe."
+        }
         $b = Get-Content $boot -Raw | ConvertFrom-Json
         $h = @{ "X-PaRuX-Token" = $b.token }
         $r = try { Invoke-WebRequest -Uri ($b.endpoint.TrimEnd('/') + "/api/v1/models/downloads") -Method Post -Headers $h -ContentType "application/json" -Body "{}" -UseBasicParsing } catch { $_.Exception.Response }
@@ -669,7 +701,7 @@ if ($Smoke) {
         }
         Write-Host "Smoke OK: offline start, downloads refused (403), embedding ONNX loaded$(if ($RequireReranker) { ', reranker ONNX loaded' }). This does NOT verify document indexing, source citations or chat inference; run tests/corporate/measure-corporate-lite.ps1 -EnforceAcceptance with a bundled model."
     } finally {
-        Get-Process PaRuX, PaRuX.Server -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($tmp, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-PaRuXPackageProcessesUnder -Root $tmp | Stop-Process -Force -ErrorAction SilentlyContinue
         Remove-Item Env:PARUX_CORPORATE, Env:PARUX_CORPORATE_MODEL_DOWNLOADS, Env:PARUX_DATA_ROOT, Env:PARUX_LOCALAI_STATE_DIR -ErrorAction SilentlyContinue
         Start-Sleep 2; Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }

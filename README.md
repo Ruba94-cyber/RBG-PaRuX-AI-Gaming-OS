@@ -105,7 +105,7 @@ A dedicated GPU is recommended for large models and media generation but is not 
 3. Launch it, review the suggested setup (Detect, then Locate existing / Install with PaRuX / Skip). Downloads require your confirmation.
 4. To build from source (Windows, .NET 10 SDK) see [RELEASING.md](docs/RELEASING.md) and [AI_LOCAL_SETUP.md](docs/AI_LOCAL_SETUP.md).
 
-**Portable:** extract the ZIP to an NTFS folder and run `PaRuX.exe`; data stays in `PaRuXData` beside it. See [PORTABLE.md](docs/guides/PORTABLE.md).
+**Portable:** extract the ZIP to an NTFS folder and run `PaRuX.exe`; the folder holds only `PaRuX.exe` (launcher) plus `app`, `PaRuXData`, `docs` and `launchers`; data stays in `PaRuXData` next to `PaRuX.exe`. See [PORTABLE.md](docs/guides/PORTABLE.md).
 
 **Android companion:** an optional controller for PaRuX running on Windows, **not** a standalone mobile inference engine. See [Android setup](docs/PARUX_ANDROID_README.md).
 

@@ -11,12 +11,17 @@
     The CLI is an optional separate self-contained publish (-IncludeCli), not part of the minimal default.
     Corporate Lite uses -WithoutVulkan and supplies its own CPU runtime and one model.
 
+    Package layout (the ZIP root folder holds ONLY PaRuX.exe plus these folders; verified, the build fails otherwise):
+      PaRuX.exe                           small launcher (src\PaRuX.Launcher); starts app\PaRuX.exe, waits, returns its exit code
+      app\                                the application: PaRuX.exe, PaRuX.Server\, .NET/WinUI runtime, languages, marker parux.portable
+      PaRuXData\                          all durable data, beside the launcher (settings, models, history, indexes)
+      docs\                               README, licences, third-party notices, MANIFEST-portable.json
+      launchers\                          "PaRuX (portable data).cmd" (optional; identical data location)
     Where data lives (no fixed paths, no duplication of the storage system):
-      * PaRuX.exe                         -> detects parux.portable and PaRuXData beside the EXE.
+      * app\PaRuX.exe                     -> detects app\parux.portable and PaRuXData beside app\ (the package root).
                                              App, Core and AI state stay inside this folder after relocation.
-      * "PaRuX (portable data).cmd"       -> optional shortcut; identical data location.
-    MSI editions have neither the portable marker nor an adjacent PaRuXData directory, so
-    they keep the original per-user %LOCALAPPDATA%\PaRuX behavior.
+    MSI/MSIX editions have neither the portable marker nor an adjacent PaRuXData directory, so
+    they keep the original per-user %LOCALAPPDATA%\PaRuX behavior (and their own, unchanged file layout).
 
     The ZIP container is not signed; when PARUX_SIGN_PFX/PARUX_SIGN_PFX_PASSWORD are set, every first-party PE inside it is Authenticode-signed. This script does nothing to bypass Windows SmartScreen, Defender or IT policy.
     The MSI-only protected update helper is not part of the portable package: update by downloading the new ZIP.
@@ -55,6 +60,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "portable-layout.ps1")
 # Standard Portable always carries a working local AI baseline. -ShellOnly is
 # for internal diagnostics; -WithoutVulkan is the Corporate builder's CPU shell.
 $fullyStandalone = -not $WithoutVulkan -and -not $ShellOnly
@@ -95,6 +101,10 @@ $zipName = $zipBase + ".zip"
 $zipPath = Join-Path $portableRoot $zipName
 $shaPath = Join-Path $portableRoot ($zipBase + ".sha256.txt")
 
+# The package root ($stageDir) holds only the launcher and folders; the application lives in app\.
+$appDir = Join-Path $stageDir "app"
+$coreDir = Join-Path $appDir "PaRuX.Server"
+
 if (-not $SkipPublish) {
     if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
     New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
@@ -103,28 +113,32 @@ if (-not $SkipPublish) {
         "-p:SourceRevisionId=$sourceCommit", "-p:DebugSymbols=false", "-p:DebugType=None")
 
     Write-Host "Publishing PaRuX Desktop..."
-    & dotnet publish $appProject -c Release -r win-x64 --self-contained true -o $stageDir $common
+    & dotnet publish $appProject -c Release -r win-x64 --self-contained true -o $appDir $common
     if ($LASTEXITCODE -ne 0) { throw "Desktop publish failed ($LASTEXITCODE)." }
     Write-Host "Publishing PaRuX Server (Core)..."
-    & dotnet publish $coreProject -c Release -r win-x64 --self-contained true -o (Join-Path $stageDir "PaRuX.Server") $common
+    & dotnet publish $coreProject -c Release -r win-x64 --self-contained true -o $coreDir $common
     if ($LASTEXITCODE -ne 0) { throw "Server publish failed ($LASTEXITCODE)." }
     if ($IncludeCli) {
         Write-Host "Publishing optional PaRuX CLI..."
-        & dotnet publish $cliProject -c Release -r win-x64 --self-contained true -o (Join-Path $stageDir "Cli") $common
+        & dotnet publish $cliProject -c Release -r win-x64 --self-contained true -o (Join-Path $appDir "Cli") $common
         if ($LASTEXITCODE -ne 0) { throw "CLI publish failed ($LASTEXITCODE)." }
     }
     if (-not $WithoutVulkan) {
         # Reuse the MSI's pinned upstream ZIP, archive SHA/size gate, safe staging and
         # complete per-file payload manifest. No CUDA/cuBLAS/uv/Python is fetched.
-        & (Join-Path $PSScriptRoot "stage-msi-runtime.ps1") -PublishDir $stageDir -ArtifactIds @("llama.cpp-vulkan")
+        & (Join-Path $PSScriptRoot "stage-msi-runtime.ps1") -PublishDir $appDir -ArtifactIds @("llama.cpp-vulkan")
         if (-not $?) { throw "Locked Vulkan runtime staging failed." }
     }
+    # The ONLY file at the package root: a small launcher that starts app\PaRuX.exe.
+    Write-Host "Publishing PaRuX launcher (root PaRuX.exe)..."
+    Publish-PaRuXLauncher -RepoRoot $repoRoot -Destination $stageDir -CommonArgs $common
 }
-if (-not (Test-Path -LiteralPath (Join-Path $stageDir "PaRuX.exe"))) { throw "Nothing staged at $stageDir. Run without -SkipPublish first." }
+if (-not (Test-Path -LiteralPath (Join-Path $appDir "PaRuX.exe")) -or
+    -not (Test-Path -LiteralPath (Join-Path $stageDir "PaRuX.exe"))) { throw "Nothing staged at $stageDir (app\PaRuX.exe and the launcher PaRuX.exe). Run without -SkipPublish first." }
 # A stale -SkipPublish must not stamp an old compiled Desktop/Core with the
 # CURRENT source commit. Stage provenance includes the variant, not just SHA.
 $variant = if ($WithoutVulkan) { "cpu-shell" } elseif ($ShellOnly) { "diagnostic-shell" } else { "standard-offline" }
-$provenancePath = Join-Path $stageDir ".parux-publish-source"
+$provenancePath = Join-Path $appDir ".parux-publish-source"
 $expectedProvenance = $sourceCommit + "|" + $variant
 if ($SkipPublish) {
     if (-not (Test-Path -LiteralPath $provenancePath -PathType Leaf) -or
@@ -135,21 +149,24 @@ if ($SkipPublish) {
     Set-Content -LiteralPath $provenancePath -Value $expectedProvenance -Encoding ASCII
 }
 
+$docsDir = Join-Path $stageDir "docs"
+New-Item -ItemType Directory -Force -Path $docsDir | Out-Null
 foreach ($notice in @("LICENSE:LICENSE.txt", "NVIDIA_CUDA_NOTICE.txt:NVIDIA_CUDA_NOTICE.txt", "THIRD_PARTY_NOTICES.md:THIRD_PARTY_NOTICES.md", "OPEN_SOURCE_PROVENANCE.md:OPEN_SOURCE_PROVENANCE.md")) {
     $src, $dst = $notice.Split(':')
-    if (Test-Path -LiteralPath (Join-Path $repoRoot $src)) { Copy-Item -LiteralPath (Join-Path $repoRoot $src) -Destination (Join-Path $stageDir $dst) -Force }
+    if (Test-Path -LiteralPath (Join-Path $repoRoot $src)) { Copy-Item -LiteralPath (Join-Path $repoRoot $src) -Destination (Join-Path $docsDir $dst) -Force }
 }
-# llama.cpp is MIT: its copyright/permission text travels with the package root and with the bundled CPU engine.
-Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $stageDir "LICENSE-llama.cpp.txt") -Force
+# llama.cpp is MIT: its copyright/permission text travels with the package docs and with the bundled CPU engine.
+Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $docsDir "LICENSE-llama.cpp.txt") -Force
 
-# A REAL portable package carries ALL durable state beside its own EXE. This
-# applies to double-clicking PaRuX.exe, not merely a special batch-file launch.
+# A REAL portable package carries ALL durable state beside its own launcher (the package root). This
+# applies to double-clicking PaRuX.exe, not merely a special batch-file launch. The marker lives in app\ so that
+# no loose file sits at the package root; PaRuXDataRoot finds PaRuXData beside app\.
 if (-not $WithoutVulkan) {
     New-Item -ItemType Directory -Force -Path (Join-Path $stageDir "PaRuXData") | Out-Null
     # ZIP libraries omit empty directories: a small marker makes first launch
     # portable even when the shell deliberately carries no model yet.
     Set-Content -LiteralPath (Join-Path $stageDir "PaRuXData\.portable-data") -Value "PaRuX portable storage" -Encoding ASCII
-    Set-Content -LiteralPath (Join-Path $stageDir "parux.portable") -Value "PaRuX Standard Portable" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $appDir "parux.portable") -Value "PaRuX Standard Portable" -Encoding ASCII
 }
 if ($fullyStandalone) {
     . (Join-Path $PSScriptRoot "portable-offline-assets.ps1")
@@ -178,28 +195,33 @@ if ($fullyStandalone) {
     # No prerequisites on the target PC: llama.cpp and ONNX Runtime import the Visual C++
     # runtime. It ships app-local beside the CPU engine and the Core; the Core adds its own
     # folder to the PATH of the engines it starts, which covers the Vulkan engine as well.
-    $vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($cpuDest, (Join-Path $stageDir "PaRuX.Server"), $stageDir)
+    $vcRuntimeVersion = Copy-PaRuXVcRuntime -Destinations @($cpuDest, $coreDir, $appDir)
 }
-# The batch file is only a convenient alternate entry point. Direct PaRuX.exe
-# reads the same nearby PaRuXData directory from the explicit marker.
+# The batch file is only a convenient alternate entry point (launchers\, one level below the package root).
+# Direct PaRuX.exe reads the same PaRuXData directory from the explicit marker in app\.
+$launchersDir = Join-Path $stageDir "launchers"
+New-Item -ItemType Directory -Force -Path $launchersDir | Out-Null
 $cmd = @'
 @echo off
 rem Starts PaRuX with ALL of its data (settings, models, history, RAG folders, indexes) inside the "PaRuXData" folder
-rem next to this file. PaRuX.exe also uses this folder directly in the Portable edition.
+rem of the package (one level above this "launchers" folder). PaRuX.exe also uses this folder directly in the Portable edition.
 setlocal
-set "PARUX_DATA_ROOT=%~dp0PaRuXData"
+for %%I in ("%~dp0..") do set "PARUX_PACKAGE=%%~fI"
+set "PARUX_DATA_ROOT=%PARUX_PACKAGE%\PaRuXData"
 if not exist "%PARUX_DATA_ROOT%" mkdir "%PARUX_DATA_ROOT%"
-start "" "%~dp0PaRuX.exe"
+start "" "%PARUX_PACKAGE%\PaRuX.exe"
 '@
-Set-Content -LiteralPath (Join-Path $stageDir "PaRuX (portable data).cmd") -Value $cmd -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $launchersDir "PaRuX (portable data).cmd") -Value $cmd -Encoding ASCII
 
 $readme = @"
 PaRuX $Version - Standard Portable for Windows x64
 =================================================
 Extract the ZIP on NTFS into a writable folder. Double-click PaRuX.exe.
-The `PaRuXData` folder, models, settings, history and knowledge index stay next to the EXE.
-This also works when moved to a different drive/USB path. The .cmd is optional.
-The EXE and Core include .NET/Windows App SDK; no separate SDK, Python, Ollama,
+Folder layout: PaRuX.exe (launcher, the only file at the root), app\ (the application), PaRuXData\ (your data),
+docs\ (this file, licences, manifest), launchers\ (optional .cmd entry points).
+The `PaRuXData` folder, models, settings, history and knowledge index stay next to PaRuX.exe.
+This also works when moved to a different drive/USB path. The .cmd in launchers\ is optional.
+The application and Core include .NET/Windows App SDK; no separate SDK, Python, Ollama,
 LM Studio or Windows App Runtime installation is needed.
 $(if ($fullyStandalone) { 'INCLUDED: verified CPU llama.cpp, Vulkan llama.cpp, Qwen3-4B local text GGUF, ONNX embedding and reranker models. Basic offline Chat and document search have no model download dependency.' } elseif ($WithoutVulkan) { 'BUILD SHELL: CPU-only base for the Corporate pack builder; not a redistributable standalone application.' } else { 'INCOMPLETE DEVELOPMENT SHELL: no offline Chat weights; do not advertise or release as self-contained.' })
 Advanced image/video/training engines are optional and must be installed with PaRuX on demand.
@@ -211,14 +233,16 @@ Use the MSI for centrally administered installations, not for a portable USB run
 PaRuX - Standard Portable
 ==========================
 Estrai lo ZIP in una cartella NTFS scrivibile e avvia direttamente PaRuX.exe.
+Struttura: PaRuX.exe (avviatore, unico file alla radice), app\ (l'applicazione), PaRuXData\ (i tuoi dati),
+docs\ (questo file, licenze, manifest), launchers\ (avvii .cmd opzionali).
 Modelli, Chat, impostazioni, documenti indicizzati e runtime risiedono in PaRuXData
-accanto al programma: la cartella puo' essere spostata su un'altra unita'.
-Il file .cmd non e' necessario. .NET e Windows App SDK sono inclusi.
+accanto a PaRuX.exe: la cartella puo' essere spostata su un'altra unita'.
+I file .cmd in launchers\ non sono necessari. .NET e Windows App SDK sono inclusi.
 $(if ($fullyStandalone) { 'INCLUSI: motori CPU e Vulkan, modello Chat GGUF, embedding e reranker ONNX. Chat e ricerca locale sono utilizzabili senza scaricare modelli aggiuntivi.' } else { 'ATTENZIONE: pacchetto shell per sviluppo; non e completo per la Chat offline.' })
 Le funzioni avanzate che richiedono modelli aggiuntivi possono scaricarli su richiesta.
 Non sono inclusi driver Windows, giochi e client degli store. Nessuna elusione delle policy IT.
 "@
-Set-Content -LiteralPath (Join-Path $stageDir "README-portable.txt") -Value $readme -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $docsDir "README-portable.txt") -Value $readme -Encoding UTF8
 
 # Authenticode: every first-party PE (PaRuX*.exe/.dll, parux.exe) is signed BEFORE the file inventory is hashed, so the
 # MANIFEST-portable.json hashes describe the signed bytes. Third-party/runtime binaries are not touched. Without
@@ -235,7 +259,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:PARUX_SIGN_PFX)) {
 # itself; it is generated from strictly staged build assets, never real user data.
 if ($fullyStandalone) {
     # A -SkipPublish re-run finds the previous manifest in the stage: it must not list itself.
-    $manifestSelf = Join-Path $stageDir "MANIFEST-portable.json"
+    $manifestSelf = Join-Path $docsDir "MANIFEST-portable.json"
     $fileManifest = @(Get-ChildItem -LiteralPath $stageDir -Recurse -File | Where-Object { $_.FullName -ne $manifestSelf } | ForEach-Object {
         [ordered]@{
             path = $_.FullName.Substring($stageDir.Length + 1).Replace('\', '/')
@@ -257,7 +281,7 @@ if ($fullyStandalone) {
         fileCount = $fileManifest.Count
     }
     $manifest | ConvertTo-Json -Depth 8 |
-        Set-Content -LiteralPath (Join-Path $stageDir "MANIFEST-portable.json") -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $docsDir "MANIFEST-portable.json") -Encoding UTF8
 }
 
 New-Item -ItemType Directory -Path $portableRoot -Force | Out-Null
@@ -288,16 +312,17 @@ Write-Host "ZIP: $zipPath ($sizeMb MB)`nSHA-256: $sha"
 
 # ---- Verify the finished ZIP -------------------------------------------------------------------------------------------
 Write-Host "Verifying the ZIP..."
-$required = @("PaRuX.exe", "PaRuX.pri", "PaRuX.Server/PaRuX.Server.exe", "PaRuX.Server/PaRuX.Server.dll",
-    "LICENSE.txt", "README-portable.txt", "PaRuX (portable data).cmd",
-    "hostfxr.dll", "hostpolicy.dll", "coreclr.dll",
-    "PaRuX.Server/hostfxr.dll", "PaRuX.Server/hostpolicy.dll", "PaRuX.Server/coreclr.dll")
+# Entry names are relative to the package root: the launcher PaRuX.exe, then app/, docs/, launchers/, PaRuXData/.
+$required = @("PaRuX.exe", "app/PaRuX.exe", "app/PaRuX.pri", "app/PaRuX.Server/PaRuX.Server.exe", "app/PaRuX.Server/PaRuX.Server.dll",
+    "docs/LICENSE.txt", "docs/README-portable.txt", "launchers/PaRuX (portable data).cmd",
+    "app/hostfxr.dll", "app/hostpolicy.dll", "app/coreclr.dll",
+    "app/PaRuX.Server/hostfxr.dll", "app/PaRuX.Server/hostpolicy.dll", "app/PaRuX.Server/coreclr.dll")
 if ($IncludeCli) {
-    $required += @("Cli/parux.exe", "Cli/hostfxr.dll", "Cli/hostpolicy.dll", "Cli/coreclr.dll")
+    $required += @("app/Cli/parux.exe", "app/Cli/hostfxr.dll", "app/Cli/hostpolicy.dll", "app/Cli/coreclr.dll")
 }
-if (-not $WithoutVulkan) { $required += "parux.portable"; $required += "PaRuXData/.portable-data" }
+if (-not $WithoutVulkan) { $required += "app/parux.portable"; $required += "PaRuXData/.portable-data" }
 if ($fullyStandalone) {
-    $required += "MANIFEST-portable.json"
+    $required += "docs/MANIFEST-portable.json"
     $required += "PaRuXData/models/Qwen3-4B-Q4_K_M.gguf"
     $required += "PaRuXData/models/.portable-default-model"
     foreach ($file in @("model.onnx", "vocab.txt", "config.json", "tokenizer_config.json")) {
@@ -308,19 +333,19 @@ if ($fullyStandalone) {
     }
     $required += "PaRuXData/LocalAI/runtime/llama.cpp-" + $offline.RuntimeTag + "-cpu/llama-server.exe"
     foreach ($vcFile in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll")) {
-        $required += "PaRuX.Server/" + $vcFile
+        $required += "app/PaRuX.Server/" + $vcFile
         $required += "PaRuXData/LocalAI/runtime/llama.cpp-" + $offline.RuntimeTag + "-cpu/" + $vcFile
     }
 }
-$baselineRelative = "PaRuX.Server/runtime-baseline"
+$baselineRelative = "app/PaRuX.Server/runtime-baseline"
 $vulkanRelative = "$baselineRelative/llama.cpp-b10549-vulkan"
 if (-not $WithoutVulkan) {
     $required += "$baselineRelative/baseline-lock.json"
     $required += "$baselineRelative/staging-manifest.json"
     $required += "$vulkanRelative/llama-server.exe"
 }
-$unwanted = @("PaRuX.Server/runtime-baseline/llama.cpp-b11871-cuda13.4/llama-server.exe",
-    "PaRuX.Server/runtime-tools/uv/uv.exe")
+$unwanted = @("app/PaRuX.Server/runtime-baseline/llama.cpp-b11871-cuda13.4/llama-server.exe",
+    "app/PaRuX.Server/runtime-tools/uv/uv.exe")
 $forbiddenPattern = '(?i)\.(gguf|safetensors|onnx|ckpt|pt|pth|bin\.gz)$|(^|/)rag\.db$|(^|/)bootstrap\.json$|^(models|LocalAI|PaRuXData)/'
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
@@ -335,8 +360,10 @@ try {
     }).Count -gt 0) { throw "Portable archive contains an unsafe entry path." }
     $names = @($zip.Entries | ForEach-Object { $_.FullName.Substring($prefix.Length) })
     if (@($names | Sort-Object -Unique).Count -ne $names.Count) { throw "Portable archive contains duplicated entry names." }
+    # The root of the package: ONLY PaRuX.exe plus app/, PaRuXData/, docs/, launchers/ (fails on anything else).
+    Assert-PaRuXPackageLayout -Names $names -Label "Portable ZIP"
     foreach ($file in $required) { if ($names -notcontains $file) { throw "Portable ZIP is missing required file: $file" } }
-    if (-not $IncludeCli -and @($names | Where-Object { $_ -like "Cli/*" }).Count -gt 0) {
+    if (-not $IncludeCli -and @($names | Where-Object { $_ -like "app/Cli/*" }).Count -gt 0) {
         throw "Minimal portable ZIP unexpectedly contains the optional CLI."
     }
     if ($WithoutVulkan -and @($names | Where-Object { $_ -like "$baselineRelative/*" }).Count -gt 0) {
@@ -346,12 +373,12 @@ try {
     if (-not $WithoutVulkan) {
         # Recheck the actual ZIP bytes, not merely staging: every native DLL and EXE
         # must match the hash-locked upstream payload selected for this distribution.
-        $lock = Get-Content -LiteralPath (Join-Path $stageDir "PaRuX.Server\runtime-baseline\baseline-lock.json") -Raw | ConvertFrom-Json
+        $lock = Get-Content -LiteralPath (Join-Path $coreDir "runtime-baseline\baseline-lock.json") -Raw | ConvertFrom-Json
         $ids = @($lock.artifacts | ForEach-Object { [string]$_.id })
         if ($ids.Count -ne 1 -or $ids[0] -cne "llama.cpp-vulkan") {
             throw "Minimal portable must contain exactly the Vulkan runtime lock entry."
         }
-        $manifest = Get-Content -LiteralPath (Join-Path $stageDir "PaRuX.Server\runtime-baseline\staging-manifest.json") -Raw | ConvertFrom-Json
+        $manifest = Get-Content -LiteralPath (Join-Path $coreDir "runtime-baseline\staging-manifest.json") -Raw | ConvertFrom-Json
         $entries = @($manifest.files | Where-Object { ([string]$_.path).StartsWith("runtime-baseline/llama.cpp-b10549-vulkan/") })
         if ($entries.Count -lt 2) { throw "Vulkan baseline manifest is missing native dependencies." }
         if (@($entries | Where-Object { $_.path -eq "runtime-baseline/llama.cpp-b10549-vulkan/ggml-vulkan.dll" }).Count -ne 1) {
@@ -361,7 +388,7 @@ try {
         $sha256 = [System.Security.Cryptography.SHA256]::Create()
         try {
             foreach ($entry in $inventory) {
-                $entryName = "PaRuX/PaRuX.Server/" + [string]$entry.path
+                $entryName = "PaRuX/app/PaRuX.Server/" + [string]$entry.path
                 $zipEntry = $zip.GetEntry($entryName)
                 if ($null -eq $zipEntry -or $zipEntry.Length -ne [int64]$entry.sizeBytes) {
                     throw "Manifested runtime payload is missing or has a different size: $entryName"
@@ -377,7 +404,7 @@ try {
             }
         }
         finally { $sha256.Dispose() }
-        if (@($names | Where-Object { $_ -like "PaRuX.Server/runtime-baseline/llama.cpp-*-cuda*/*" -or $_ -like "PaRuX.Server/runtime-tools/uv/*" }).Count -gt 0) {
+        if (@($names | Where-Object { $_ -like "app/PaRuX.Server/runtime-baseline/llama.cpp-*-cuda*/*" -or $_ -like "app/PaRuX.Server/runtime-tools/uv/*" }).Count -gt 0) {
             throw "Minimal portable contains unwanted CUDA or uv runtime files."
         }
     }
@@ -397,7 +424,7 @@ try {
     })
     if ($bad.Count -gt 0) { throw "Portable ZIP contains unapproved assets, user data or tokens: $($bad | Select-Object -First 5 | Out-String)" }
     if ($fullyStandalone) {
-        $manifestEntry = $zip.GetEntry("PaRuX/MANIFEST-portable.json")
+        $manifestEntry = $zip.GetEntry("PaRuX/docs/MANIFEST-portable.json")
         if ($null -eq $manifestEntry) { throw "Portable file inventory missing." }
         $reader = [IO.StreamReader]::new($manifestEntry.Open())
         try { $manifestOnDisk = $reader.ReadToEnd() | ConvertFrom-Json }
@@ -462,6 +489,11 @@ if ($Smoke) {
         if (-not (Test-Path -LiteralPath $bootstrap)) {
             throw "Portable Core did not write its bootstrap in the extracted data directory within $SmokeTimeoutSeconds s."
         }
+        # The process started above is the root launcher; the application must be its child from app\.
+        $appExePath = [IO.Path]::GetFullPath((Join-Path $app "app\PaRuX.exe"))
+        if (@(Get-Process -Name PaRuX -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appExePath }).Count -lt 1) {
+            throw "The launcher did not start app\PaRuX.exe."
+        }
         if (-not $WithoutVulkan) {
             $managedVulkan = Join-Path $data "LocalAI\runtime\llama.cpp-b10549-vulkan\llama-server.exe"
             if (-not (Test-Path -LiteralPath $managedVulkan -PathType Leaf)) {
@@ -525,9 +557,8 @@ if ($Smoke) {
         }
     }
     finally {
-        Get-Process -Name PaRuX, PaRuX.Server -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -and $_.Path.StartsWith($extract, [StringComparison]::OrdinalIgnoreCase) } |
-            Stop-Process -Force -ErrorAction SilentlyContinue
+        # Launcher, application and Core all live under the extracted tree.
+        Get-PaRuXPackageProcessesUnder -Root $extract | Stop-Process -Force -ErrorAction SilentlyContinue
         foreach ($name in $previousEnv.Keys) {
             [Environment]::SetEnvironmentVariable($name, $previousEnv[$name], "Process")
         }
