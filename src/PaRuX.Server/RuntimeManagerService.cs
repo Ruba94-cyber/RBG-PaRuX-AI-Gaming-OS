@@ -89,8 +89,8 @@ public sealed class RuntimeManagerService
 
     internal async Task<RuntimeManagerStatus> GetStatusAsync(CancellationToken ct, SystemRamSnapshot? ramSnapshot)
     {
-        // Corporate Lite uses the bundled CPU engine regardless of adapter. Avoid
-        // GPU inventory scans during Chat readiness on low-power office machines.
+        // Corporate Lite never scans the GPU just to report status (low-power office machines); the optional
+        // Vulkan offload is decided once per model start in LocalAiProcessManager, not here.
         int vramMib = CorporateMode.IsActive ? 0 : await _process.GetVramMibAsync(ct);
         int? textPid = _process.GetTextProcessId();
         int? mediaPid = _process.GetMediaProcessId();
@@ -115,6 +115,13 @@ public sealed class RuntimeManagerService
                 ?? Path.Combine(LocalAiPaths.RuntimeRoot, "missing-cpu-runtime");
             backends.Add(DescribeLlamaBackend(
                 "text-cpu", cpuDir, textPid, textHealthy, inProcessManaged));
+            // The package may also carry the hash-pinned Vulkan engine (optional GPU offload with automatic CPU fallback).
+            // It is reported only when physically present, so a CPU-only package or PARUX_CORPORATE_GPU=0 shows no GPU slot.
+            if (File.Exists(Path.Combine(LocalAiPaths.RuntimeVulkanPath, LocalAiPaths.LlamaServerExecutable))
+                && !CorporateGpuBackendPolicy.IsDisabledByEnvironment(
+                    Environment.GetEnvironmentVariable(CorporateGpuBackendPolicy.DisableEnvironmentVariable)))
+                backends.Add(DescribeLlamaBackend(
+                    "text-vulkan", LocalAiPaths.RuntimeVulkanPath, textPid, textHealthy, inProcessManaged: false));
         }
         else
         {

@@ -55,6 +55,9 @@ public sealed class CorporateCpuWiringSourceContractTests
     [Fact]
     public void Corporate_auto_role_and_exact_loads_never_choose_gpu_runtime()
     {
+        // Still true after Corporate gained the bundled Vulkan engine: the generic GPU runtime resolver (ResolveGpuTextRuntimePath,
+        // CUDA/Vulkan ladder) stays unreachable in Corporate. Vulkan is attempted only inside StartCorporateCpuTextAsync, which falls
+        // back to the CPU engine (see CorporateGpuBackendTests).
         string manager = Read("src", "PaRuX.Server", "RuntimeManagerService.cs");
         string process = Read("src", "PaRuX.Server", "LocalAiProcessManager.cs");
 
