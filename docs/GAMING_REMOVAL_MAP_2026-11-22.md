@@ -126,6 +126,16 @@ Baseline filter list for step 0: `Gaming|Game|QuickResume|Playnite|Pad|Streaming
 4. Emulator registry/discovery: kept as a backend dependency of manual games and Playnite import; confirm no UI is wanted.
 5. Tv override rows in the Pad settings: hide only (proposed) or delete the storage.
 
+### Owner decisions recorded 2026-11-24
+
+1. Controller tools (virtual pad, HidHide, XInput shim installer, mapping wizard, live view): **keep** as Advanced "Controller tools" on the Games page.
+2. Display mode switching and topology (`GamingDisplay*`, journal): **keep**.
+3. Local game guide: **keep**, re-homed on the slim Games page.
+4. Emulator registry/discovery: **backend only**, no UI.
+5. TV override rows in Pad settings: **hide only**, keep the stored data.
+
+Consequence: step 7 (deleting the controller and display stacks) is cancelled; only the native Console/TV shell and library views are removed (steps 2-6, 8-9), after step 1 gives the mod/handoff/download/install entry points a home.
+
 ## 10. Risks
 
 - Data loss / orphan settings: handled by "mark obsolete, never delete" (section 7). The only secrets at risk are `steam-credentials.json` and `retroachievements-credentials.json`: do not delete on upgrade.
