@@ -782,3 +782,7 @@ DENY GET /api/v1/embeddings/multilingual/engine
 DENY GET /api/v1/reranker/multilingual/engine
 DENY POST /api/v1/embeddings/multilingual/engine/install
 DENY POST /api/v1/reranker/multilingual/engine/install
+DENY GET /api/v1/ai/openai-compatible/presets
+DENY POST /api/v1/datasets/document-recipe
+DENY POST /api/v1/lifecycle/imatrix
+DENY POST /api/v1/training/export/verify

@@ -157,6 +157,8 @@ public sealed class TrainingDatasetRecipeRequest
     public string ResponseColumn { get; set; } = string.Empty;
     public string? ExtraColumn { get; set; }
     public string? SystemColumn { get; set; }
+    /// <summary>True: run every check and return the first rows, but write nothing.</summary>
+    public bool PreviewOnly { get; set; }
 }
 
 public sealed class TrainingDatasetRecipeResult
@@ -168,4 +170,6 @@ public sealed class TrainingDatasetRecipeResult
     public int SkippedRows { get; set; }
     public string Sha256 { get; set; } = string.Empty;
     public string Note { get; set; } = string.Empty;
+    /// <summary>First rows (JSONL lines) of the result; filled for preview and for written recipes.</summary>
+    public List<string> Preview { get; set; } = new();
 }

@@ -367,6 +367,14 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         string method = NormalizeMethod(request.Method);
         ValidateDatasetForMethod(request.TrainJsonlPath, method, request.GrpoRewardMode);
         ValidateRequest(request, method);
+        // Training is additive GPU load. Two jobs would fight over the same VRAM (and over what chat or a game
+        // needs), so a second job is refused with the reason instead of being queued behind an unknown wait.
+        TrainingJobStatus? active = _jobs.Values
+            .Select(e => Snapshot(e))
+            .FirstOrDefault(j => j.Status is "queued" or "running");
+        if (active != null)
+            throw new InvalidOperationException(
+                "A training job is already " + active.Status + ". Wait for it or cancel it first; PaRuX runs one training job at a time so it never takes VRAM from itself, chat or a game.");
 
         TrainingRuntimeStatus runtimeStatus = TrainingRuntimeJobGate.GetVerifiedStatus(RuntimeRoot, VenvRoot, method);
         if (method == TrainingMethod.Kto)
@@ -568,9 +576,13 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             throw new InvalidDataException("maxSequenceLength must be between 128 and 1,048,576.");
         if ((method is TrainingMethod.Dpo or TrainingMethod.Orpo or TrainingMethod.Kto) && request.DpoBeta is <= 0 or > 10)
             throw new InvalidDataException("Preference beta must be > 0 and <= 10.");
+        if (method != TrainingMethod.Grpo
+            && GrpoImportanceSampling.Normalize(request.GrpoImportanceSampling) != GrpoImportanceSampling.Token)
+            throw new InvalidDataException("GSPO (sequence importance sampling) applies to GRPO only.");
         if (method == TrainingMethod.Grpo)
         {
             _ = GrpoRewardMode.Normalize(request.GrpoRewardMode);
+            _ = GrpoImportanceSampling.Normalize(request.GrpoImportanceSampling);
             if (request.GrpoGenerations is < 2 or > 16) throw new InvalidDataException("grpoGenerations must be between 2 and 16.");
         }
         ValidateFieldName(request.TextField, "textField");
@@ -857,6 +869,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             gradient_checkpointing = request.GradientCheckpointing,
             grpo_reward_mode = GrpoRewardMode.Normalize(request.GrpoRewardMode),
             grpo_generations = request.GrpoGenerations,
+            grpo_importance_sampling = GrpoImportanceSampling.Normalize(request.GrpoImportanceSampling),
             text_field = request.TextField,
             image_field = request.ImageField,
             audio_field = request.AudioField,
@@ -1029,7 +1042,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
 
     /// <summary>Optional GPU utilisation / VRAM sampler. Null (the default) records no resource
     /// series at all - absent data is never reported as zero.</summary>
-    internal Func<(double? GpuUtilPercent, double? VramMib)?>? ResourceReader { get; set; }
+    internal Func<(double? GpuUtilPercent, double? VramMib)?>? ResourceReader { get; set; } = TrainingGpuSampler.Shared.Read;
 
     private (double? GpuUtilPercent, double? VramMib)? ReadResources()
     {
@@ -1309,7 +1322,7 @@ elif method == "embedding-ft":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
     tokenizer = AutoTokenizer.from_pretrained(base_model)
-    model = AutoModel.from_pretrained(base_model, torch_dtype=torch.bfloat16 if use_bf16 else torch.float32).to(device)
+    model = AutoModel.from_pretrained(base_model, dtype=torch.bfloat16 if use_bf16 else torch.float32).to(device)
     decoder = bool(getattr(model.config, "is_decoder", False)) or getattr(model.config, "model_type", "") in (
         "qwen2", "qwen3", "llama", "gemma", "gemma2", "gemma3", "mistral", "phi3")
     if decoder:
@@ -1567,6 +1580,18 @@ else:
                 return scores
 
             from trl import GRPOTrainer, GRPOConfig
+            grpo_extra = {}
+            if cfg.get("grpo_importance_sampling", "token") == "sequence":
+                # GSPO: sequence-level importance ratio. Refuse loudly when the installed TRL cannot do it
+                # instead of silently training plain GRPO under a GSPO label.
+                import inspect
+                accepted = inspect.signature(GRPOConfig.__init__).parameters
+                if "importance_sampling_level" not in accepted:
+                    raise ValueError("The installed TRL does not support GSPO (GRPOConfig.importance_sampling_level)")
+                grpo_extra["importance_sampling_level"] = "sequence"
+                if "epsilon_high" in accepted:
+                    grpo_extra["epsilon"] = 3e-4
+                    grpo_extra["epsilon_high"] = 4e-4
             trainer = GRPOTrainer(
                 model=model, processing_class=tokenizer, reward_funcs=reward_func, train_dataset=dataset,
                 args=GRPOConfig(
@@ -1575,7 +1600,7 @@ else:
                     learning_rate=cfg["learning_rate"], logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[],
-                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported()))
+                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **grpo_extra))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
         else:
             if method == "continued-pretraining":
