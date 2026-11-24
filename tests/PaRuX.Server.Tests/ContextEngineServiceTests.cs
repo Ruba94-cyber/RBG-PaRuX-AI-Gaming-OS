@@ -201,6 +201,15 @@ public sealed class ContextEngineServiceTests : IDisposable
     }
 
     [Theory]
+    [InlineData("Read_File", "read_file")]
+    [InlineData("read_file", "READ_FILE")]
+    [InlineData("Browser_open", "browser_*")]
+    public void Tool_allowlist_is_case_sensitive_like_the_call_admission(string toolName, string pattern)
+    {
+        Assert.False(ContextEngineService.ToolNameAllowed(toolName, new[] { pattern }));
+    }
+
+    [Theory]
     [InlineData("search the web for release news", "optional", true)]
     [InlineData("write a release note", "optional", false)]
     [InlineData("search the web for release news", "off", false)]

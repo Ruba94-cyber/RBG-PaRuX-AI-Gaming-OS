@@ -85,7 +85,15 @@ namespace PaRuX.Services
         private const uint WaitObject0 = 0x00000000;
         private const uint WaitTimeout = 0x00000102;
         private const uint JobObjectExtendedLimitInformation = 9;
+        private const uint JobObjectLimitActiveProcess = 0x00000008;
+        private const uint JobObjectLimitProcessMemory = 0x00000100;
+        private const uint JobObjectLimitJobMemory = 0x00000200;
         private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+        internal const string MemoryLimitMbEnvironmentVariable = "PARUX_SANDBOX_MEMORY_MB";
+        internal const string ActiveProcessLimitEnvironmentVariable = "PARUX_SANDBOX_MAX_PROCESSES";
+        internal const ulong DefaultMaxMemoryBytes = 2UL * 1024 * 1024 * 1024;
+        internal const ulong MinMemoryBytes = 256UL * 1024 * 1024;
+        internal const uint DefaultActiveProcessLimit = 256;
         private static readonly IntPtr ProcThreadAttributeSecurityCapabilities = new(0x00020009);
 
         private static readonly string[] SecretEnvironmentMarkers =
@@ -1841,12 +1849,43 @@ namespace PaRuX.Services
             catch { return false; }
         }
 
-        private static IntPtr CreateKillOnCloseJob()
+        /// <summary>Resource ceilings applied to the sandbox Job Object (pure value, unit-testable).</summary>
+        internal readonly record struct JobLimits(uint LimitFlags, ulong MemoryBytes, uint ActiveProcessLimit);
+
+        /// <summary>
+        /// Default cap is min(25% of physical RAM, 2 GiB), never below 256 MiB. The environment
+        /// overrides (megabytes / process count) are honoured only when they parse to a positive value.
+        /// </summary>
+        internal static JobLimits ComputeJobLimits(ulong physicalMemoryBytes, string? memoryMbOverride = null, string? maxProcessesOverride = null)
+        {
+            ulong memory = Math.Min(physicalMemoryBytes / 4, DefaultMaxMemoryBytes);
+            if (ulong.TryParse(memoryMbOverride, out ulong overrideMb) && overrideMb > 0 && overrideMb <= ulong.MaxValue / (1024 * 1024))
+                memory = overrideMb * 1024 * 1024;
+            if (memory < MinMemoryBytes) memory = MinMemoryBytes;
+            uint processes = DefaultActiveProcessLimit;
+            if (uint.TryParse(maxProcessesOverride, out uint overrideProcesses) && overrideProcesses > 0)
+                processes = overrideProcesses;
+            return new JobLimits(
+                JobObjectLimitKillOnJobClose | JobObjectLimitJobMemory | JobObjectLimitProcessMemory | JobObjectLimitActiveProcess,
+                memory, processes);
+        }
+
+        private static JobLimits CurrentJobLimits() => ComputeJobLimits(
+            (ulong)Math.Max(0L, GC.GetGCMemoryInfo().TotalAvailableMemoryBytes),
+            Environment.GetEnvironmentVariable(MemoryLimitMbEnvironmentVariable),
+            Environment.GetEnvironmentVariable(ActiveProcessLimitEnvironmentVariable));
+
+        private static IntPtr CreateKillOnCloseJob() => CreateKillOnCloseJob(CurrentJobLimits());
+
+        internal static IntPtr CreateKillOnCloseJob(JobLimits jobLimits)
         {
             IntPtr job = CreateJobObjectW(IntPtr.Zero, null);
             if (job == IntPtr.Zero) return IntPtr.Zero;
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = new();
-            limits.BasicLimitInformation.LimitFlags = JobObjectLimitKillOnJobClose;
+            limits.BasicLimitInformation.LimitFlags = jobLimits.LimitFlags;
+            limits.BasicLimitInformation.ActiveProcessLimit = jobLimits.ActiveProcessLimit;
+            limits.ProcessMemoryLimit = (UIntPtr)jobLimits.MemoryBytes;
+            limits.JobMemoryLimit = (UIntPtr)jobLimits.MemoryBytes;
             int size = Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
             IntPtr ptr = Marshal.AllocHGlobal(size);
             try

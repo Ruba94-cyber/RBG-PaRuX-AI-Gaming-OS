@@ -513,8 +513,8 @@ public sealed class ContextEngineService
         foreach (string pattern in allowedTools)
         {
             if (pattern == "*") return true;
-            if (pattern.EndsWith('*') && toolName.StartsWith(pattern[..^1], StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(pattern, toolName, StringComparison.OrdinalIgnoreCase)) return true;
+            if (pattern.EndsWith('*') && toolName.StartsWith(pattern[..^1], StringComparison.Ordinal)) return true;
+            if (string.Equals(pattern, toolName, StringComparison.Ordinal)) return true;
         }
         return false;
     }
