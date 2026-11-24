@@ -39,6 +39,7 @@ public sealed class PadActionPoller
     private readonly Entry?[] _slots = new Entry?[4];
     private IReadOnlyList<PadButtonBinding> _bindings = Array.Empty<PadButtonBinding>();
     private long _nextScan;
+    private long _holdMs = PadButtonEngine.HoldMs;
 
     public PadActionPoller(Func<IReadOnlyList<PadDeviceInfo>> list, Func<string, IRawGamepadSource?> open,
         Func<int, Xbox360Report?> readXInput, Func<long> clock)
@@ -61,9 +62,10 @@ public sealed class PadActionPoller
     /// <summary>True when a device is open, so the host should tick at the fast rate; otherwise a slow scan rate is enough.</summary>
     public bool WantsFastTick => _devices.Count > 0;
 
-    public void SetBindings(IReadOnlyList<PadButtonBinding> bindings)
+    public void SetBindings(IReadOnlyList<PadButtonBinding> bindings, long holdMs = PadButtonEngine.HoldMs)
     {
         _bindings = bindings ?? Array.Empty<PadButtonBinding>();
+        _holdMs = holdMs;
         CloseAll();
         _nextScan = 0;
     }
@@ -126,7 +128,7 @@ public sealed class PadActionPoller
             try { src = _open(d.Id); } catch (Exception) { src = null; }
             if (src is null) { _retryAt[d.Id] = now + RetryMs; continue; }
             var rows = PadBindingResolver.ForDevice(_bindings, key);
-            _devices[d.Id] = new Entry { Key = key, Raw = src, Engine = new PadButtonEngine(rows) };
+            _devices[d.Id] = new Entry { Key = key, Raw = src, Engine = new PadButtonEngine(rows, _holdMs) };
         }
 
         if (WantsXInput)
@@ -136,7 +138,7 @@ public sealed class PadActionPoller
                 Xbox360Report? r;
                 try { r = _readXInput(slot); } catch (Exception) { r = null; }
                 if (r is null) continue;
-                _slots[slot] = new Entry { Key = PadControlId.Any, Slot = slot, Engine = new PadButtonEngine(PadBindingResolver.ForDevice(_bindings, PadControlId.Any)) };
+                _slots[slot] = new Entry { Key = PadControlId.Any, Slot = slot, Engine = new PadButtonEngine(PadBindingResolver.ForDevice(_bindings, PadControlId.Any), _holdMs) };
             }
     }
 

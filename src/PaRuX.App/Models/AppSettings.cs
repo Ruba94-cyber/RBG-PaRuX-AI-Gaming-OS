@@ -99,6 +99,12 @@ namespace PaRuX.Models
         /// game handoffs, splash exits or generic Gaming marker disappearance.</summary>
         public bool AutoShowConsoleAfterVerifiedGameExit { get; set; } = false;
 
+        /// <summary>Opt-in: while Console/TV mode (or a Playnite Fullscreen PaRuX started) is in use, select the Windows power plan
+        /// <see cref="ConsolePowerPlanId"/> (an existing plan) and put the previous one back afterwards. Off by default; the Core keeps a
+        /// crash-safe restore point and never overrides a plan the owner picked meanwhile.</summary>
+        public bool ConsolePowerProfileEnabled { get; set; } = false;
+        public string ConsolePowerPlanId { get; set; } = string.Empty;
+
         public int ChatRoutingMirrorVersion { get; set; }
         public int CapabilityRoutingMirrorVersion { get; set; }
         public List<ScopedRoutingOverrideDto> CapabilityRoutingOverrides { get; set; } = new List<ScopedRoutingOverrideDto>();

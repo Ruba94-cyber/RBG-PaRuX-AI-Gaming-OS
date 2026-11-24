@@ -70,6 +70,7 @@ public sealed class PadButtonEngine
     public const long HoldMs = PadActionSettings.HoldMs;
     public const long DebounceMs = 250;
 
+    private readonly long _holdMs;
     private readonly Dictionary<(string Control, bool Hold), PadButtonBinding> _bindings = new();
     private readonly Dictionary<string, long> _since = new(StringComparer.Ordinal);
     private readonly HashSet<string> _holdFired = new(StringComparer.Ordinal);
@@ -81,8 +82,10 @@ public sealed class PadButtonEngine
     public IReadOnlyList<string> LastPressEdges { get; private set; } = Array.Empty<string>();
 
     /// <param name="bindings">Already resolved for this device (device-specific rows win over "any pad" rows for the same control and trigger).</param>
-    public PadButtonEngine(IEnumerable<PadButtonBinding> bindings)
+    /// <param name="holdMs">The hold time; clamped to the owner-settable range. Defaults to <see cref="HoldMs"/>.</param>
+    public PadButtonEngine(IEnumerable<PadButtonBinding> bindings, long holdMs = HoldMs)
     {
+        _holdMs = Math.Clamp(holdMs, PadActionSettings.MinHoldMs, PadActionSettings.MaxHoldMs);
         foreach (PadButtonBinding b in bindings)
             if (b.IsValid() && b.ActionId != PadActionId.None)
                 _bindings.TryAdd((b.Control, b.TriggerKind == PadTrigger.Hold), b);
@@ -130,7 +133,7 @@ public sealed class PadButtonEngine
             long since = _since[c];
             if (down)
             {
-                if (!_holdFired.Contains(c) && nowMs - since >= HoldMs && _bindings.TryGetValue((c, true), out PadButtonBinding? hold))
+                if (!_holdFired.Contains(c) && nowMs - since >= _holdMs && _bindings.TryGetValue((c, true), out PadButtonBinding? hold))
                 {
                     _holdFired.Add(c);
                     Fire(fired, hold, nowMs);

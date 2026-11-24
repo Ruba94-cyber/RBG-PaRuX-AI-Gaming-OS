@@ -75,7 +75,7 @@ public sealed class PadActionListener : IDisposable
         if (_queue is null) return;
         try
         {
-            _poller.SetBindings(SettingsStore.Current.Data.PadActions.EffectiveBindings);
+            _poller.SetBindings(SettingsStore.Current.Data.PadActions.EffectiveBindings, SettingsStore.Current.Data.PadActions.EffectiveHoldMs);
             if (_poller.WantsToRun) StartTimer(); else StopTimer();
         }
         catch (Exception ex) { Log.Write("PadActions: reconfigure failed: " + ex.GetType().Name + ": " + ex.Message); }

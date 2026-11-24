@@ -11,7 +11,8 @@ public sealed record LauncherImportResult(
     IReadOnlyList<PadButtonBinding> Bindings,
     IReadOnlyList<string> TvNames,
     IReadOnlyList<string> Imported,
-    IReadOnlyList<string> NotImported);
+    IReadOnlyList<string> NotImported,
+    int? HoldMs = null);
 
 /// <summary>
 /// Opt-in, read-only migration of the legacy <c>console-config.json</c> written by the owner's small ConsoleMode launcher.
@@ -46,6 +47,7 @@ public static class LauncherConfigImporter
         var skipped = new List<string>();
         var bindings = new List<PadButtonBinding>();
         var tv = new List<string>();
+        int? holdMs = null;
 
         if (string.IsNullOrWhiteSpace(json) || json.Length > MaxBytes)
             return new LauncherImportResult(false, bindings, tv, imported, new[] { "File is empty or larger than the allowed size." });
@@ -72,6 +74,25 @@ public static class LauncherConfigImporter
                         }
                         if (tv.Count > 0) imported.Add($"tvNames: {tv.Count} name(s) offered as TV hints; pick the TV in Settings > Gaming > Console / TV.");
                         break;
+                    case "longPressMs":
+                        // The legacy long-press time maps to the one PaRuX hold time (every pad, every hold binding).
+                        if (prop.Value.ValueKind == JsonValueKind.Number && prop.Value.TryGetInt32(out int ms)
+                            && ms is >= PadActionSettings.MinHoldMs and <= PadActionSettings.MaxHoldMs)
+                        {
+                            holdMs = ms;
+                            imported.Add($"longPressMs: {ms} ms becomes the hold time of every controller binding.");
+                        }
+                        else skipped.Add($"longPressMs: needs a whole number from {PadActionSettings.MinHoldMs} to {PadActionSettings.MaxHoldMs}; the default {PadActionSettings.HoldMs} ms is kept.");
+                        break;
+                    case "noFreezeGames":
+                        skipped.Add("noFreezeGames: PaRuX only pauses a game it launched itself, and never a game on its anti-cheat list; there is no per-game exclusion list.");
+                        break;
+                    case "streaming":
+                        skipped.Add("streaming: PaRuX streaming mode starts Sunshine and changes resolution/refresh only after explicit consent and never edits Sunshine's own configuration; set it up in Gaming > Streaming.");
+                        break;
+                    case "desktopMode":
+                        skipped.Add("desktopMode: PaRuX never turns a pad into keyboard or mouse input; Console navigation is configured in Settings > Controller buttons > TV mode.");
+                        break;
                     case "version":
                         break;
                     default:
@@ -79,7 +100,7 @@ public static class LauncherConfigImporter
                         break;
                 }
             }
-            return new LauncherImportResult(true, PadActionSettings.Normalize(bindings), tv, imported, skipped);
+            return new LauncherImportResult(true, PadActionSettings.Normalize(bindings), tv, imported, skipped, holdMs);
         }
         catch (JsonException ex)
         {
@@ -94,10 +115,18 @@ public static class LauncherConfigImporter
         {
             string? action = b.Value.ValueKind == JsonValueKind.Object && b.Value.TryGetProperty("action", out var a) && a.ValueKind == JsonValueKind.String
                 ? a.GetString() : null;
+            if (b.Name == "capture_assistant") { skipped.Add("buttons.capture_assistant: two-button chords are not supported; bind each button on its own."); continue; }
             if (!Buttons.TryGetValue(b.Name, out var slot)) { skipped.Add($"buttons.{b.Name}: unknown button."); continue; }
             if (action is null || !Actions.TryGetValue(action, out var id))
             {
-                skipped.Add($"buttons.{b.Name}: action '{action}' has no PaRuX equivalent.");
+                string why = action switch
+                {
+                    "desktop_mode" => "PaRuX does not turn a pad into keyboard/mouse; use 'Switch Playnite Console / Desktop' if you meant Playnite's mode",
+                    "playnite" => "use 'Open Playnite in Console' for the same effect",
+                    "hotkey" or "run" or "osk" or "close_window_confirm" => "PaRuX never sends keystrokes or runs programs from a pad button",
+                    _ => "no PaRuX equivalent"
+                };
+                skipped.Add($"buttons.{b.Name}: action '{action}' not imported ({why}).");
                 continue;
             }
             if (id == PadActionId.None) continue;

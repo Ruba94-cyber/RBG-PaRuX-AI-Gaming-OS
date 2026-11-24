@@ -391,6 +391,9 @@ builder.Services.AddSingleton(sp => new DisplayChangeJournal(
 builder.Services.AddSingleton(sp => new StreamingModeService(
     sp.GetRequiredService<IStreamingHost>(), sp.GetRequiredService<IStreamingDisplayController>(),
     sp.GetRequiredService<DisplayChangeJournal>(), TimeSpan.FromSeconds(20)));
+builder.Services.AddSingleton<IPowerPlanApi, WindowsPowerPlanApi>();
+builder.Services.AddSingleton(sp => new PowerProfileService(sp.GetRequiredService<IPowerPlanApi>(),
+    Path.Combine(Path.GetDirectoryName(LocalAiPaths.GameMarkerFile)!, "power-profile-journal.json")));
 builder.Services.AddSingleton<GgufQuantizeService>();
 builder.Services.AddSingleton<GameTitleStore>();
 builder.Services.AddSingleton<GameLaunchProfileStore>();
@@ -4339,6 +4342,13 @@ if (!app.Environment.IsEnvironment("Testing"))
     // Display changes a crashed streaming session journaled are restored off the startup path, bounded and logged.
     // StreamingStartupRecovery never throws; a timeout or failure leaves the journal for the next start.
     _ = StreamingStartupRecovery.RunAsync(app.Services.GetRequiredService<StreamingModeService>(), app.Logger, StreamingStartupRecovery.DefaultTimeout);
+    // A Console power plan a crash left behind is put back (never overriding a plan the owner chose meanwhile).
+    PowerProfileStartupRecovery.Run(app.Services.GetRequiredService<PowerProfileService>(), app.Logger);
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        try { app.Services.GetRequiredService<PowerProfileService>().Restore(); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Console power plan could not be restored at shutdown; the restore point stays recorded."); }
+    });
     // On a normal shutdown, undo what an active streaming session changed (display values, a Sunshine PaRuX started).
     app.Lifetime.ApplicationStopping.Register(() =>
     {

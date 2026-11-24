@@ -96,6 +96,17 @@ namespace PaRuX.Services
         public Task<GamingCallResult<JsonElement>> StopStreamingAsync(CancellationToken ct = default) =>
             SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/streaming/stop", null, ct);
 
+        // ---- Opt-in Console power plan (owner-only Core endpoints; the Core keeps the crash-safe restore point) ----
+
+        public Task<GamingCallResult<JsonElement>> GetPowerProfileAsync(CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Get, "/api/v1/gaming/power-profile", null, ct);
+
+        public Task<GamingCallResult<JsonElement>> ApplyPowerProfileAsync(string planId, CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/power-profile/apply", new { planId, allowPowerPlanChange = true }, ct);
+
+        public Task<GamingCallResult<JsonElement>> RestorePowerProfileAsync(CancellationToken ct = default) =>
+            SendAsync<JsonElement>(HttpMethod.Post, "/api/v1/gaming/power-profile/restore", null, ct);
+
         private static async Task<GamingCallResult<T>> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
         {
             try
