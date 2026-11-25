@@ -16,6 +16,7 @@ public static class SqlStatementGuard
     private static readonly HashSet<string> Forbidden = new(StringComparer.OrdinalIgnoreCase)
     {
         "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "ATTACH", "DETACH", "PRAGMA", "VACUUM",
+        "REINDEX", "ANALYZE", "SAVEPOINT", "ROLLBACK", "COMMIT",
         "LOAD_EXTENSION", "READFILE", "WRITEFILE", "FTS3_TOKENIZER", "ZEROBLOB", "RANDOMBLOB"
     };
 
@@ -36,7 +37,20 @@ public static class SqlStatementGuard
 
         string[] words = Words(stripped);
         if (words.Length == 0) return "A SELECT statement is required.";
-        string first = words[0];
+
+        int startIndex = 0;
+        if (words[0].Equals("EXPLAIN", StringComparison.OrdinalIgnoreCase))
+        {
+            startIndex = 1;
+            if (words.Length >= 3
+                && words[1].Equals("QUERY", StringComparison.OrdinalIgnoreCase)
+                && words[2].Equals("PLAN", StringComparison.OrdinalIgnoreCase))
+                startIndex = 3;
+            if (startIndex >= words.Length)
+                return "EXPLAIN must be followed by a read-only SELECT statement.";
+        }
+
+        string first = words[startIndex];
         if (!first.Equals("SELECT", StringComparison.OrdinalIgnoreCase)
             && !first.Equals("WITH", StringComparison.OrdinalIgnoreCase)
             && !first.Equals("VALUES", StringComparison.OrdinalIgnoreCase))

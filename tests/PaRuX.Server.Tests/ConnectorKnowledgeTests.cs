@@ -466,6 +466,52 @@ public sealed class ConnectorKnowledgeTests : IDisposable
         Assert.Equal("{\"a\":\"}{ not end\",\"b\":{\"c\":1}}", YouTubeConnectorProbe.Extract(html));
     }
 
+    [Fact]
+    public async Task YouTube_xml_captions_fallback_and_bare_host_work_with_timestamps()
+    {
+        var h = new FakeHandler();
+        const string xml = "<transcript><text start=\"0.0\" dur=\"2.0\">Intro &amp; welcome</text><text start=\"42.5\" dur=\"3.0\">Second section</text></transcript>";
+        h.Respond = r =>
+        {
+            string u = r.RequestUri!.ToString();
+            if (u.StartsWith("https://www.youtube.com/watch")) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(WatchPage("https://youtube.com/api/timedtext?v=x"), Encoding.UTF8, "text/html") };
+            if (u.StartsWith("https://youtube.com/api/timedtext")) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(xml, Encoding.UTF8, "application/xml") };
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        };
+        var (svc, _, _) = Service(h);
+        WebSourceInfo info = svc.BeginConnector("youtube", "https://youtube.com/watch?v=dQw4w9WgXcQ", null, null, "en", null, null, false);
+        await svc.WaitAsync(info.Id);
+
+        WebSourceInfo done = svc.Get(info.Id)!;
+        Assert.Equal("ready", done.State);
+        string file = Directory.GetFiles(done.Folder).Single();
+        string text = File.ReadAllText(file);
+        Assert.Contains("[00:00] Intro & welcome", text);
+        Assert.Contains("[00:42] Second section", text);
+        Assert.Equal("https://www.youtube.com/watch?v=dQw4w9WgXcQ", svc.TryGetUrl(file));
+    }
+
+    [Fact]
+    public async Task YouTube_rate_limit_429_is_an_honest_failure_and_indexes_nothing()
+    {
+        var h = new FakeHandler();
+        h.Respond = _ =>
+        {
+            var r = new HttpResponseMessage((HttpStatusCode)429);
+            r.Headers.TryAddWithoutValidation("Retry-After", "60");
+            return r;
+        };
+        var (svc, _, indexed) = Service(h);
+        WebSourceInfo info = svc.BeginConnector("youtube", "dQw4w9WgXcQ", null, null, null, null, null, false);
+        await svc.WaitAsync(info.Id);
+
+        WebSourceInfo done = svc.Get(info.Id)!;
+        Assert.Equal("failed", done.State);
+        Assert.Equal("rate_limited", done.Error);
+        Assert.Contains("60", done.Notice!);
+        Assert.Empty(indexed);
+    }
+
     // ----------------------------------------------------------------------------- Confluence
 
     [Fact]

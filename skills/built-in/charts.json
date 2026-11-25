@@ -2,7 +2,7 @@
   "id": "charts",
   "name": "charts",
   "displayName": "Charts",
-  "description": "Draws a bar, line or pie chart from numbers as a deterministic SVG saved to the documents folder and the Artifact Workspace. No network and no scripts in the output.",
+  "description": "Draws a bar, line, scatter or pie chart from numbers as a deterministic SVG saved to the documents folder and the Artifact Workspace. No network and no scripts in the output.",
   "icon": "chart",
   "category": "Data",
   "version": "1.0.0",

@@ -391,7 +391,7 @@ public static class YouTubeTargetParser
 
 internal sealed class YouTubeConnector
 {
-    private static readonly string[] Hosts = { "www.youtube.com" };
+    private static readonly string[] Hosts = { "www.youtube.com", "youtube.com" };
 
     public async Task<ConnectorResult> FetchAsync(ConnectorRequest req, ConnectorHttp http, ConnectorLimits limits, CancellationToken ct)
     {

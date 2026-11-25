@@ -11,7 +11,7 @@ public sealed class ChartSeries
 
 public sealed class ChartSpec
 {
-    /// <summary>bar | line | pie</summary>
+    /// <summary>bar | line | scatter | pie</summary>
     public string Type { get; set; } = "bar";
     public string Title { get; set; } = string.Empty;
     public List<string> Labels { get; set; } = new();
@@ -36,7 +36,7 @@ public static class ChartRenderer
     public static string? Validate(ChartSpec spec)
     {
         string type = (spec.Type ?? string.Empty).Trim().ToLowerInvariant();
-        if (type is not ("bar" or "line" or "pie")) return "type must be bar, line or pie.";
+        if (type is not ("bar" or "line" or "scatter" or "pie")) return "type must be bar, line, scatter or pie.";
         if (spec.Series.Count == 0) return "At least one series is required.";
         if (spec.Series.Count > MaxSeries) return "At most " + MaxSeries + " series are allowed.";
         if (spec.Labels.Count == 0) return "labels are required.";
@@ -67,6 +67,7 @@ public static class ChartRenderer
         {
             case "pie": Pie(sb, spec); break;
             case "line": Axes(sb, spec, line: true); break;
+            case "scatter": Scatter(sb, spec); break;
             default: Axes(sb, spec, line: false); break;
         }
         Legend(sb, spec);
@@ -124,6 +125,77 @@ public static class ChartRenderer
             }
         }
         sb.Append("<line x1=\"").Append(Left).Append("\" x2=\"").Append(Width - Right).Append("\" y1=\"").Append(F(Y(Math.Max(lo, Math.Min(0, hi))))).Append("\" y2=\"").Append(F(Y(Math.Max(lo, Math.Min(0, hi))))).Append("\" stroke=\"#6B7280\"/>\n");
+    }
+
+    private static void Scatter(StringBuilder sb, ChartSpec spec)
+    {
+        double minY = Math.Min(0, spec.Series.SelectMany(s => s.Values).Min());
+        double maxY = Math.Max(0, spec.Series.SelectMany(s => s.Values).Max());
+        if (maxY - minY < 1e-12) maxY = minY + 1;
+        double stepY = NiceStep((maxY - minY) / 5);
+        double loY = Math.Floor(minY / stepY) * stepY, hiY = Math.Ceiling(maxY / stepY) * stepY;
+        int plotW = Width - Left - Right, plotH = Height - Top - Bottom;
+        double Y(double v) => Top + plotH - (v - loY) / (hiY - loY) * plotH;
+
+        for (double tick = loY; tick <= hiY + stepY / 2; tick += stepY)
+        {
+            sb.Append("<line x1=\"").Append(Left).Append("\" x2=\"").Append(Width - Right).Append("\" y1=\"").Append(F(Y(tick))).Append("\" y2=\"").Append(F(Y(tick))).Append("\" stroke=\"#E5E7EB\"/>\n");
+            sb.Append("<text x=\"").Append(Left - 8).Append("\" y=\"").Append(F(Y(tick) + 4)).Append("\" text-anchor=\"end\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"11\" fill=\"#4B5563\">").Append(Escape(Num(tick))).Append("</text>\n");
+        }
+
+        int n = spec.Labels.Count;
+        var numericX = new double[n];
+        bool allNumeric = n > 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (!double.TryParse(spec.Labels[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+                || double.IsNaN(x) || double.IsInfinity(x) || Math.Abs(x) > 1e15)
+            {
+                allNumeric = false;
+                break;
+            }
+            numericX[i] = x;
+        }
+
+        Func<int, double> X;
+        if (allNumeric && numericX.Max() - numericX.Min() >= 1e-12)
+        {
+            double minX = numericX.Min(), maxX = numericX.Max();
+            double stepX = NiceStep((maxX - minX) / 5);
+            double loX = Math.Floor(minX / stepX) * stepX, hiX = Math.Ceiling(maxX / stepX) * stepX;
+            double MapX(double v) => Left + (v - loX) / (hiX - loX) * plotW;
+            for (double tick = loX; tick <= hiX + stepX / 2; tick += stepX)
+            {
+                double tx = MapX(tick);
+                sb.Append("<line x1=\"").Append(F(tx)).Append("\" x2=\"").Append(F(tx)).Append("\" y1=\"").Append(Top).Append("\" y2=\"").Append(Height - Bottom).Append("\" stroke=\"#F3F4F6\"/>\n");
+                sb.Append("<text x=\"").Append(F(tx)).Append("\" y=\"").Append(Height - Bottom + 18).Append("\" text-anchor=\"middle\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"11\" fill=\"#4B5563\">").Append(Escape(Num(tick))).Append("</text>\n");
+            }
+            X = i => MapX(numericX[i]);
+        }
+        else
+        {
+            double band = (double)plotW / n;
+            int labelEvery = Math.Max(1, (int)Math.Ceiling(n / 20.0));
+            for (int i = 0; i < n; i++)
+            {
+                if (i % labelEvery != 0) continue;
+                double cx = Left + band * (i + 0.5);
+                sb.Append("<text x=\"").Append(F(cx)).Append("\" y=\"").Append(Height - Bottom + 18).Append("\" text-anchor=\"middle\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"11\" fill=\"#4B5563\">")
+                  .Append(Escape(Trunc(spec.Labels[i], MaxLabelCharacters))).Append("</text>\n");
+            }
+            X = i => Left + band * (i + 0.5);
+        }
+
+        for (int s = 0; s < spec.Series.Count; s++)
+        {
+            string color = Palette[s % Palette.Length];
+            for (int i = 0; i < n; i++)
+            {
+                sb.Append("<circle cx=\"").Append(F(X(i))).Append("\" cy=\"").Append(F(Y(spec.Series[s].Values[i])))
+                  .Append("\" r=\"4.5\" fill=\"").Append(color).Append("\"/>\n");
+            }
+        }
+        sb.Append("<line x1=\"").Append(Left).Append("\" x2=\"").Append(Width - Right).Append("\" y1=\"").Append(F(Y(Math.Max(loY, Math.Min(0, hiY))))).Append("\" y2=\"").Append(F(Y(Math.Max(loY, Math.Min(0, hiY))))).Append("\" stroke=\"#6B7280\"/>\n");
     }
 
     private static void Pie(StringBuilder sb, ChartSpec spec)

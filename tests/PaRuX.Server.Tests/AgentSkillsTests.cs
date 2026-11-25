@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using PaRuX.Contracts;
 using PaRuX.Server;
 using PaRuX.Server.AgentSkills;
+using PaRuX.Server.ArtifactWorkspace;
 using PaRuX.Server.DesktopIntegration;
 using Xunit;
 
@@ -72,6 +73,14 @@ public sealed class AgentSkillsTests : IDisposable
     [InlineData("SELECT readfile('C:/Windows/win.ini')")]
     [InlineData("SELECT zeroblob(1000000000)")]
     [InlineData("-- hidden\nCREATE TABLE t(x)")]
+    [InlineData("EXPLAIN")]
+    [InlineData("EXPLAIN DELETE FROM sales")]
+    [InlineData("EXPLAIN QUERY PLAN INSERT INTO sales VALUES (1,'a',1)")]
+    [InlineData("EXPLAIN ATTACH DATABASE 'x.db' AS other")]
+    [InlineData("REINDEX")]
+    [InlineData("ANALYZE")]
+    [InlineData("COMMIT")]
+    [InlineData("ROLLBACK")]
     [InlineData("")]
     [InlineData("   ")]
     public void Guard_refuses_anything_but_one_select(string sql) =>
@@ -81,12 +90,24 @@ public sealed class AgentSkillsTests : IDisposable
     [InlineData("SELECT * FROM sales")]
     [InlineData("select region, sum(amount) from sales group by region;")]
     [InlineData("WITH t AS (SELECT 1 AS n) SELECT n FROM t")]
+    [InlineData("EXPLAIN SELECT * FROM sales")]
+    [InlineData("EXPLAIN QUERY PLAN SELECT region, SUM(amount) FROM sales GROUP BY region")]
+    [InlineData("EXPLAIN QUERY PLAN WITH t AS (SELECT 1 AS n) SELECT n FROM t")]
     [InlineData("SELECT 'DELETE FROM sales; DROP TABLE x' AS text")]
     [InlineData("SELECT CASE WHEN amount > 1 THEN 'big' ELSE 'small' END FROM sales -- DELETE")]
     [InlineData("SELECT replace(region, 'n', 'N') FROM sales")]
     [InlineData("SELECT \"update\" FROM sales")]
     public void Guard_accepts_plain_selects(string sql) =>
         Assert.Null(SqlStatementGuard.Validate(sql));
+
+    [Fact]
+    public void Default_sql_timeout_is_five_seconds_and_explain_query_plan_runs()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), ReadOnlySqlQueryService.DefaultTimeout);
+        string name = MakeSqlite();
+        SqlQueryResult plan = _sql.Query(name, "EXPLAIN QUERY PLAN SELECT * FROM sales", 20, null, CancellationToken.None);
+        Assert.NotEmpty(plan.Rows);
+    }
 
     [Fact]
     public void Guard_refuses_unterminated_text_and_oversized_statements()
@@ -306,6 +327,7 @@ public sealed class AgentSkillsTests : IDisposable
     [Theory]
     [InlineData("line")]
     [InlineData("bar")]
+    [InlineData("scatter")]
     public void Chart_text_is_escaped_and_no_active_content_is_emitted(string type)
     {
         string svg = ChartRenderer.RenderSvg(SampleChart(type));
@@ -314,6 +336,24 @@ public sealed class AgentSkillsTests : IDisposable
         Assert.DoesNotContain("<script", svg, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("href", svg, StringComparison.OrdinalIgnoreCase);
         System.Xml.Linq.XDocument.Parse(svg);   // well-formed
+    }
+
+    [Fact]
+    public void Scatter_renders_numeric_and_categorical_axes_deterministically()
+    {
+        var numeric = new ChartSpec
+        {
+            Type = "scatter",
+            Title = "Latency vs Load",
+            Labels = { "10", "25.5", "50" },
+            Series = { new ChartSeries { Name = "p95", Values = { 12.5, 30.0, 88.2 } } }
+        };
+        string svg1 = ChartRenderer.RenderSvg(numeric);
+        string svg2 = ChartRenderer.RenderSvg(numeric);
+        Assert.Equal(svg1, svg2);
+        Assert.Contains("<circle", svg1);
+        Assert.DoesNotContain("<script", svg1, StringComparison.OrdinalIgnoreCase);
+        System.Xml.Linq.XDocument.Parse(svg1);
     }
 
     [Fact]
@@ -328,7 +368,7 @@ public sealed class AgentSkillsTests : IDisposable
     [Fact]
     public void Chart_validation_rejects_bad_specs()
     {
-        ChartSpec bad = SampleChart(); bad.Type = "scatter";
+        ChartSpec bad = SampleChart(); bad.Type = "radar";
         Assert.Throws<InvalidDataException>(() => ChartRenderer.RenderSvg(bad));
         ChartSpec mismatch = SampleChart(); mismatch.Series[0].Values.Add(1);
         Assert.Throws<InvalidDataException>(() => ChartRenderer.RenderSvg(mismatch));
@@ -404,6 +444,31 @@ public sealed class AgentSkillsTests : IDisposable
         Assert.StartsWith(AgentSkillTools.FailurePrefix, traversal);
         Assert.False(File.Exists(Path.Combine(_root, "evil.svg")));
         Assert.StartsWith(AgentSkillTools.FailurePrefix, Call(tools, AgentSkillTools.ChartToolName, new { fileName = "x", type = "bar", labels = new[] { "a" }, series = new[] { new { name = "s", values = new[] { 1.0, 2.0 } } } }));
+    }
+
+    [Fact]
+    public void Chart_tool_registers_saved_svg_in_artifact_store()
+    {
+        string state = Path.Combine(_root, "state-artifacts");
+        var documents = new DocumentWriteService(state);
+        documents.SetOutputFolder(Directory.CreateDirectory(Path.Combine(_root, "docs-artifacts")).FullName);
+        var artifacts = new ArtifactStore(state);
+        var tools = new AgentSkillTools(_sql, documents, artifacts);
+
+        string reply = Call(tools, AgentSkillTools.ChartToolName, new
+        {
+            fileName = "scatter_demo",
+            type = "scatter",
+            title = "Scatter Demo",
+            labels = new[] { "1", "2", "3" },
+            series = new[] { new { name = "s", values = new[] { 2.0, 4.0, 6.0 } } }
+        });
+        Assert.Contains("Artifact Workspace", reply);
+        IReadOnlyList<ArtifactDto> list = artifacts.List(artifactType: "chart");
+        ArtifactDto created = Assert.Single(list);
+        Assert.Equal("Scatter Demo", created.Title);
+        Assert.Equal("skill:charts", created.Source);
+        Assert.True(File.Exists(Path.Combine(documents.OutputFolder, "scatter_demo.svg")));
     }
 
     [Fact]

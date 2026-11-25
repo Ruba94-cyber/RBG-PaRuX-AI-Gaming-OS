@@ -46,16 +46,16 @@ public sealed class AgentSkillTools
                 new JsonObject
                 {
                     ["source"] = new JsonObject { ["type"] = "string", ["description"] = "File name of an attached data source, e.g. sales.csv" },
-                    ["sql"] = new JsonObject { ["type"] = "string", ["description"] = "A single SELECT (or WITH ... SELECT) statement" },
+                    ["sql"] = new JsonObject { ["type"] = "string", ["description"] = "A single SELECT, WITH ... SELECT, or EXPLAIN SELECT statement" },
                     ["maxRows"] = new JsonObject { ["type"] = "integer", ["description"] = "Row cap, at most " + ReadOnlySqlQueryService.HardMaxRows }
                 }, "source"));
         if (ContextEngineService.ToolNameAllowed(ChartToolName, allowedTools))
             schemas.Add(Function(ChartToolName,
-                "Draw a bar, line or pie chart as an SVG file saved in PaRuX's documents folder and the Artifact Workspace. Returns the saved path.",
+                "Draw a bar, line, scatter or pie chart as an SVG file saved in PaRuX's documents folder and the Artifact Workspace. Returns the saved path.",
                 new JsonObject
                 {
                     ["fileName"] = new JsonObject { ["type"] = "string" },
-                    ["type"] = new JsonObject { ["type"] = "string", ["description"] = "bar | line | pie" },
+                    ["type"] = new JsonObject { ["type"] = "string", ["description"] = "bar | line | scatter | pie" },
                     ["title"] = new JsonObject { ["type"] = "string" },
                     ["labels"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
                     ["series"] = new JsonObject

@@ -345,6 +345,8 @@ internal sealed class KnowledgeWebPanel : StackPanel
         "timeout" => T("the site did not answer in time", "il sito non ha risposto in tempo"),
         "unreachable" => T("the site could not be reached", "il sito non è raggiungibile"),
         "nothing_to_import" => T("no readable text was found", "non è stato trovato testo leggibile"),
+        "too_large" => T("the source is larger than the safety limit; choose a smaller sub-folder", "la fonte supera il limite di sicurezza; scegli una sottocartella più piccola"),
+        "unreadable_response" => T("the site returned data that could not be read", "il sito ha restituito dati non leggibili"),
         _ => string.IsNullOrEmpty(s.Notice) ? (s.Error ?? string.Empty) : s.Notice
     };
 

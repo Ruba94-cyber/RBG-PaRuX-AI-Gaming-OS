@@ -29,7 +29,7 @@ public sealed class ReadOnlySqlQueryService
     public const int MaxOutputCharacters = 16_000;
     public const int MaxCsvRows = 100_000;
     public const int MaxCsvColumns = 256;
-    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
     private readonly AttachedDataSources _sources;
     public ReadOnlySqlQueryService(AttachedDataSources sources) => _sources = sources;
