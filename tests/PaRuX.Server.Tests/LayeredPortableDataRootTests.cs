@@ -168,4 +168,18 @@ public sealed class LayeredPortableDataRootTests : IDisposable
         Assert.Equal(Path.Combine(flat, "PaRuX.exe"), PaRuXDataRoot.LaunchTargetFor(Path.Combine(flat, "PaRuX.exe")));
         Assert.Null(PaRuXDataRoot.LaunchTargetFor(null));
     }
+
+    [Fact]
+    public void User_content_stays_inside_PaRuXData_for_the_portable_and_in_Documents_otherwise()
+    {
+        string app = Dir("ucpkg", "app");
+        string data = Dir("ucpkg", "PaRuXData");
+        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        string docs = Dir("docs");
+
+        Assert.Equal(Path.Combine(data, "user-content", "Meeting notes"),
+            PaRuXDataRoot.ResolveUserContentRoot("Meeting notes", app, data, docs));
+        Assert.Equal(Path.Combine(docs, "PaRuX", "Web knowledge"),
+            PaRuXDataRoot.ResolveUserContentRoot("Web knowledge", Dir("plain-install"), data, docs));
+    }
 }

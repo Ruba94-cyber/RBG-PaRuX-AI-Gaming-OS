@@ -190,6 +190,12 @@ if (-not $SkipPublish) {
     & dotnet publish $winMlWorkerProject -c Release -r win-x64 --self-contained true -o $winMlPublishDir $commonVersionArgs
     if ($LASTEXITCODE -ne 0) { throw "PaRuX Windows ML worker dotnet publish failed with exit code $LASTEXITCODE." }
 
+    # The Desktop, the Core, the .NET host and llama.cpp import the Visual C++ runtime, which a clean Windows PC is not
+    # guaranteed to have (the portable editions and the MSIX already ship it app-local). stage-msi-runtime.ps1 copies
+    # these files next to every staged llama-server.exe before inventorying them.
+    . (Join-Path $PSScriptRoot "portable-offline-assets.ps1")
+    Copy-PaRuXVcRuntime -Destinations @($publishDir, $corePublishDir) | Out-Null
+
     Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $publishDir "LICENSE.txt") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot "NVIDIA_CUDA_NOTICE.txt") -Destination (Join-Path $publishDir "NVIDIA_CUDA_NOTICE.txt") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $publishDir "LICENSE-llama.cpp.txt") -Force

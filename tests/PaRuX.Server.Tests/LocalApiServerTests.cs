@@ -151,6 +151,10 @@ public sealed class LocalApiServerTests : IClassFixture<ApiSecurityTests.PaRuXFa
 
         Assert.Equal(400, result.StatusCode);
         Assert.Contains("Unknown model", result.Body);
+        // Each known id is listed once (roles share ids with the virtual aliases).
+        string known = result.Body[(result.Body.IndexOf("Known models:", StringComparison.Ordinal) + 13)..];
+        string[] ids = known.Split(new[] { ',', ' ', '.', '"', '}' }, StringSplitOptions.RemoveEmptyEntries).Where(t => t.StartsWith("parux-", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(ids.Length, ids.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Theory]

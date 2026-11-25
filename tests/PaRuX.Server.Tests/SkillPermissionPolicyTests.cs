@@ -286,4 +286,15 @@ INSERT INTO user_skills (id, manifest_json, created_utc, updated_utc) VALUES ($i
         ComputerUse = true,
         ExternalProcesses = true
     };
+
+    [Theory]
+    [InlineData("../../x", false)]
+    [InlineData("a/b", false)]
+    [InlineData("a b", false)]
+    [InlineData("..x", false)]
+    [InlineData("a..b", false)]
+    [InlineData("", false)]
+    [InlineData("my-skill_1.2", true)]
+    public void User_skill_ids_must_be_addressable(string id, bool valid) =>
+        Assert.Equal(valid, SkillRegistryService.IsValidUserSkillId(id));
 }

@@ -296,6 +296,8 @@ ON CONFLICT(id) DO UPDATE SET permissions_json = excluded.permissions_json;";
 
         if (string.IsNullOrWhiteSpace(manifest.Id))
             manifest.Id = "user-" + Guid.NewGuid().ToString("N")[..12];
+        if (!IsValidUserSkillId(manifest.Id))
+            throw new InvalidDataException("A skill id must be 1-64 characters: letters, digits, '.', '_' or '-', starting with a letter or digit.");
         manifest.Source = isImport ? "imported" : "user";
         manifest.UpdatedUtc = DateTime.UtcNow;
         if (manifest.CreatedUtc == default) manifest.CreatedUtc = DateTime.UtcNow;
@@ -318,6 +320,11 @@ ON CONFLICT(id) DO UPDATE SET manifest_json = excluded.manifest_json, updated_ut
         }
         return manifest;
     }
+
+    /// <summary>Ids are used in URLs and slash commands; anything else could never be addressed (or deleted) again.</summary>
+    internal static bool IsValidUserSkillId(string id) =>
+        System.Text.RegularExpressions.Regex.IsMatch(id ?? string.Empty, @"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
+        && !id!.Contains("..", StringComparison.Ordinal);
 
     public bool DeleteUserSkill(string id)
     {

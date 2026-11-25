@@ -115,7 +115,7 @@ public sealed class MeetingAssistantService
         _unregisterKnowledge = unregisterKnowledge;
     }
 
-    public static string DefaultRoot() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PaRuX", "Meeting notes");
+    public static string DefaultRoot() => PaRuX.Contracts.PaRuXDataRoot.UserContentRoot("Meeting notes");
 
     public MeetingSettingsStore Settings => _settings;
 

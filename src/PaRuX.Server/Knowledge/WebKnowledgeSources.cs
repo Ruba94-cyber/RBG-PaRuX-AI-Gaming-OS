@@ -81,7 +81,7 @@ public sealed class WebKnowledgeSources
         !string.IsNullOrEmpty(filePath) && Shared?.TryGetUrl(filePath) != null;
 
     public static string DefaultContentRoot() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PaRuX", "Web knowledge");
+        PaRuX.Contracts.PaRuXDataRoot.UserContentRoot("Web knowledge");
 
     // ------------------------------------------------------------------ add / resync / remove
 

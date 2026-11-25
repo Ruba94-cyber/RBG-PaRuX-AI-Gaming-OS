@@ -271,6 +271,16 @@ foreach ($engineExe in @(Get-ChildItem -LiteralPath $baselineDir -Recurse -File 
     Copy-Item -LiteralPath $llamaLicenseSource -Destination (Join-Path $engineExe.DirectoryName "LICENSE-llama.cpp.txt") -Force
 }
 
+# llama.cpp imports the Visual C++ runtime and Windows does not search PaRuX.Server for it: when the build staged the
+# redistributable app-local (build-msi.ps1), give every engine folder its own copy so a clean PC can start it.
+foreach ($vcName in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atomic_wait.dll", "msvcp140_codecvt_ids.dll")) {
+    $vcSource = Join-Path $serverDir $vcName
+    if (-not (Test-Path -LiteralPath $vcSource -PathType Leaf)) { continue }
+    foreach ($engineExe in @(Get-ChildItem -LiteralPath $baselineDir -Recurse -File -Filter "llama-server.exe")) {
+        Copy-Item -LiteralPath $vcSource -Destination (Join-Path $engineExe.DirectoryName $vcName) -Force
+    }
+}
+
 $manifestPath = Join-Path $baselineDir "staging-manifest.json"
 $lockHash = Get-Sha256 $stagedLockPath
 $manifestFiles = @()

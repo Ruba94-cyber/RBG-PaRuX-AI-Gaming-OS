@@ -589,7 +589,8 @@ public sealed class LocalApiServerService
         if (alias == null)
         {
             string knownIds = string.Join(", ", PaRuX.Server.Gateway.GatewayModelAliases.Virtual.Select(v => v.Id)
-                .Concat(ModelRoleCatalog.TextRoles.Select(ModelIdForRole)));
+                .Concat(ModelRoleCatalog.TextRoles.Select(ModelIdForRole))
+                .Distinct(StringComparer.Ordinal));
             return (null, LocalApiCompletionResult.BadRequest(
                 "Unknown model \"" + requestedModel + "\". Known models: " + knownIds + "."));
         }

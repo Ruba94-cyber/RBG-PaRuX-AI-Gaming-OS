@@ -42,6 +42,17 @@ public static class PaRuXDataRoot
         return System.IO.Path.Combine(all);
     }
 
+    /// <summary>Folder for user-visible content (meeting notes, saved web pages). A normal install keeps it under
+    /// Documents\PaRuX\<paramref name="leaf"/>; the Portable and Corporate packages keep it inside PaRuXData so that
+    /// deleting the package folder leaves nothing behind in the host user's profile.</summary>
+    public static string UserContentRoot(string leaf) => ResolveUserContentRoot(
+        leaf, AppContext.BaseDirectory, Path, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+
+    internal static string ResolveUserContentRoot(string leaf, string baseDirectory, string dataRoot, string documents) =>
+        FindPortableDataRoot(baseDirectory) is { } portable
+            ? System.IO.Path.Combine(portable, "user-content", leaf)
+            : System.IO.Path.Combine(documents, "PaRuX", leaf);
+
     /// <summary>Test seam: forces the next <see cref="Path"/> access to resolve again.</summary>
     internal static void ResetForTests() { lock (Gate) { _resolved = null; } }
 
