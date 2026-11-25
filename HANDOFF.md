@@ -1,3 +1,5 @@
+**2026-11-25 - RESUME HERE: see docs/HANDOFF_2026-11-25.md (state, unmerged branches, 4.5.2 plan, open work).**
+
 ## 2026-11-24 (16:50) — CORPORATE LITE FINAL PACKAGE FOR THE USB TEST; OPEN ITEM: AUTOMATIC SMALL-MODEL FALLBACK
 
 - Package on the owner's USB (`D:\PaRuX-Corporate-Test`): `PaRuX-Corporate-Lite-Offline-win-x64.zip`, 3,615,175,476 bytes, SHA-256 `3d5abd76b5c25c32fbfd0030bba62d3386f522abf455172156fd552d1ff6cfe5` (hash re-read from the USB: identical), built from `main` b005c4e3 + builder fixes. Contains Qwen3-4B + Qwen3-0.6B, multilingual E5 embedding + mmarco reranker (+ MiniLM/MS-MARCO fallbacks), CPU and pinned Vulkan runtimes, `LEGGIMI-LOG.txt`. Corporate refuses FAT/exFAT (ACL-protected token): the ZIP must be extracted on an NTFS folder.
