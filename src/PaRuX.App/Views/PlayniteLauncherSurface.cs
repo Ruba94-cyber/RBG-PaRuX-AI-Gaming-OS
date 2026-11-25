@@ -447,7 +447,7 @@ namespace PaRuX.Views
             {
                 long? beforeCounter = _status?.Session.PaRuXLaunchedClosedCounter;
                 bool wasOwned = _status?.Session.PaRuXLaunchedPlaynite == true;
-                var result = await PlayniteClient.Current.LaunchAsync(mode, MainWindow.PlayniteDisplayId(), _lifetime.Token);
+                var result = await PlayniteClient.Current.LaunchAsync(mode, MainWindow.PlayniteDisplayId(), _lifetime.Token, explicitRequest: true);
                 bool ok = result.Succeeded && result.Value is { Ok: true };
                 SetMessage(result.Error ?? result.Value?.Message ?? (ok ? T("Playnite started.", "Playnite avviato.") : T("Playnite was not started.", "Playnite non è stato avviato.")));
                 if (ok && (result.Value?.Outcome == "started" || wasOwned))

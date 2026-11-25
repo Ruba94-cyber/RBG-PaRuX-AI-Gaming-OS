@@ -186,7 +186,6 @@ public sealed class ConsoleAndLanguageUiTests
         {
             Assert.Equal(initial.DataRoot, restarted.DataRoot);
             Assert.Equal(false, ReadBool(restarted.SettingsPath, "RouteVerifiedWindowedGamesToTv"));
-            Assert.Equal(string.Empty, ReadString(restarted.SettingsPath, "ConsoleTargetDisplayId") ?? string.Empty);
 
             OpenGamingDisplaySettings(restarted);
             var routeAfter = UiWait.ById(restarted.MainWindow, RouteToggleId, ControlType.Button);
@@ -244,9 +243,9 @@ public sealed class ConsoleAndLanguageUiTests
     }
 
     [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI"), Trait("Category", "Settings"), Trait("Category", "Persistence")]
-    public void Gaming_display_role_persists_across_restart_and_never_selects_a_console_target()
+    public void Gaming_display_role_persists_across_restart_in_the_tv_list()
     {
-        const string testName = nameof(Gaming_display_role_persists_across_restart_and_never_selects_a_console_target);
+        const string testName = nameof(Gaming_display_role_persists_across_restart_in_the_tv_list);
         using var initial = new UiTestApplication(testName);
         OpenGamingDisplaySettings(initial);
 
@@ -284,8 +283,9 @@ public sealed class ConsoleAndLanguageUiTests
             tvItem!.Patterns.SelectionItem.Pattern.Select();
 
             UiWait.For(() => HasTvAssignment(initial.SettingsPath), "TV display role persisted to settings.json");
-            // Classifying a display as TV must not also select it as the Console destination.
-            Assert.Equal(string.Empty, ReadString(initial.SettingsPath, "ConsoleTargetDisplayId") ?? string.Empty);
+            // The TV choice is remembered by monitor identity in the persistent TV list as well.
+            UiWait.For(() => ReadProperty(initial.SettingsPath, "ConsoleTvs") is { } tvs && tvs.ToString().Contains("\"Selected\": true", StringComparison.Ordinal),
+                "TV selection persisted in the monitor history");
         }
         catch (Exception ex)
         {
@@ -298,7 +298,6 @@ public sealed class ConsoleAndLanguageUiTests
         {
             Assert.Equal(initial.DataRoot, restarted.DataRoot);
             Assert.True(HasTvAssignment(restarted.SettingsPath), "TV display role must survive restart.");
-            Assert.Equal(string.Empty, ReadString(restarted.SettingsPath, "ConsoleTargetDisplayId") ?? string.Empty);
 
             OpenGamingDisplaySettings(restarted);
             var comboAfter = UiWait.ById(restarted.MainWindow, "Settings_ConsoleDisplay_0_Role", ControlType.ComboBox);
@@ -311,12 +310,12 @@ public sealed class ConsoleAndLanguageUiTests
                     && string.Equals(selected[0].Properties.Name.ValueOrDefault, "TV", StringComparison.Ordinal);
             }, "the persisted TV role is selected for the display after restart");
 
-            // Entering Console with a TV classified but none chosen opens on the current screen: no blocking dialog.
+            // Entering Console with the chosen TV connected opens Console on it: no blocking dialog.
             var button = UiWait.ById(restarted.MainWindow, ConsoleButtonId, ControlType.Button);
             string desktopName = button.Name;
             button.Patterns.Invoke.Pattern.Invoke();
             UiWait.For(() => UiWait.ById(restarted.MainWindow, ConsoleButtonId, ControlType.Button).Name != desktopName,
-                "Console opens on the current screen when no TV target is chosen");
+                "Console opens with the chosen TV connected");
         }
         catch (Exception ex)
         {

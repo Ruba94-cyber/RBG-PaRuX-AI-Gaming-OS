@@ -349,6 +349,26 @@ public sealed class PlayniteLauncherTests
     }
 
     [Fact]
+    public void An_explicit_console_request_starts_fullscreen_even_with_no_tv_connected()
+    {
+        // "Console always starts": the owner asked for it now, so the "only when the TV is connected" rule does not apply.
+        var (l, h, _, c, _) = Make(displayConnected: false);
+        var s = new PlayniteSettingsDto { ConsoleOnlyWhenTargetConnected = true, TargetDisplayId = "TV1" };
+        var r = l.Launch(c, s, PlayniteModes.Console, null, explicitRequest: true);
+        Assert.Equal(PlayniteModes.Console, r.Mode);
+        Assert.EndsWith("Playnite.FullscreenApp.exe", h.Starts.Single().Exe);
+    }
+
+    [Fact]
+    public void An_explicit_console_request_with_no_display_chosen_at_all_still_starts_fullscreen()
+    {
+        var (l, h, _, c, _) = Make(displayConnected: false);
+        var s = new PlayniteSettingsDto { ConsoleOnlyWhenTargetConnected = true };
+        Assert.Equal(PlayniteModes.Console, l.Launch(c, s, PlayniteModes.Console, null, explicitRequest: true).Mode);
+        Assert.Single(h.Starts);
+    }
+
+    [Fact]
     public void Console_when_the_display_is_connected_starts_fullscreen()
     {
         var (l, h, _, c, _) = Make(displayConnected: true);

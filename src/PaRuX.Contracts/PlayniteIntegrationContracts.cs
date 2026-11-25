@@ -161,6 +161,9 @@ public sealed class PlayniteLaunchRequest
     /// <summary>"desktop" | "console"; null = the saved start mode.</summary>
     public string? Mode { get; set; }
     public string? DisplayId { get; set; }
+    /// <summary>True when the owner asked for Console right now (--playnite-console, "always start in Console mode", a launcher button):
+    /// the "only when the TV is connected" rule is then not applied, so Console can always be started, with or without a TV.</summary>
+    public bool Explicit { get; set; }
 }
 
 public sealed class PlayniteLaunchResultDto

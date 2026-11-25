@@ -113,7 +113,7 @@ public static class PlayniteEndpoints
             // since shortcuts and controller hotkeys also reach this endpoint.
             PlayniteLaunchResultDto? blocked = PlayniteForegroundAdmission.Check(session.GameRunning, runtime.GamingMode);
             if (blocked is not null) return Results.Conflict(blocked);
-            PlayniteLaunchResultDto result = launcher.Launch(session.Component(true), settings.Get(), request?.Mode, request?.DisplayId);
+            PlayniteLaunchResultDto result = launcher.Launch(session.Component(true), settings.Get(), request?.Mode, request?.DisplayId, request?.Explicit == true);
             return result.Outcome == "refused" ? Results.Conflict(result) : Results.Ok(result);
         }).RequireDesktopOwner();
 

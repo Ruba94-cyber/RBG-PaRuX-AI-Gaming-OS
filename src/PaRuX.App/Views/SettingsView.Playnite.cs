@@ -349,7 +349,7 @@ namespace PaRuX.Views
                 return;
             }
             SetPlayniteStatus(T("Starting Playnite Fullscreen. Close it (Playnite menu > Exit) and PaRuX comes back.", "Avvio Playnite Fullscreen. Chiudilo (menu di Playnite > Esci) e PaRuX torna in primo piano."));
-            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, MainWindow.PlayniteDisplayId());
+            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, MainWindow.PlayniteDisplayId(), default, explicitRequest: true);
             if (result.Error is { } error) { SetPlayniteStatus(error); return; }
             SetPlayniteStatus(result.Value?.Message ?? (result.Value?.Outcome == "started"
                 ? T("Playnite Fullscreen started. Close it and PaRuX comes back.", "Playnite Fullscreen avviato. Chiudilo e PaRuX torna in primo piano.")

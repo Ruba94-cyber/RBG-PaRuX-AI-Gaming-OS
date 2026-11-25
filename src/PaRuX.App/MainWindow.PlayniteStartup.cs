@@ -59,9 +59,11 @@ public sealed partial class MainWindow
                 return ConsolePlayniteStartResult.Unavailable;
             var before = await PlayniteClient.Current.GetStatusAsync();
             if (!before.Succeeded || before.Value is not { } status) return ConsolePlayniteStartResult.Unavailable;
+            // The TV's Windows display name may have moved since the last run; Console itself never depends on a TV being found.
+            RefreshTvSettingsFromSnapshot(await GamingCoreTopologyProvider.Provider.ReadAsync(default));
             if (!ConsoleModeReadiness.ShouldStartWithConsole(status.Settings, status.Component, explicitRequest)) return ConsolePlayniteStartResult.Unavailable;
 
-            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, PlayniteDisplayId());
+            var result = await PlayniteClient.Current.LaunchAsync(PlayniteModes.Console, PlayniteDisplayId(), default, explicitRequest);
             Log.Write("Playnite-first Console handoff: " + (result.Value?.Outcome ?? result.Error ?? "no answer"));
             ConsolePlayniteStartResult outcome = result.Succeeded
                 ? ConsoleModeReadiness.ClassifyStart(result.Value)
