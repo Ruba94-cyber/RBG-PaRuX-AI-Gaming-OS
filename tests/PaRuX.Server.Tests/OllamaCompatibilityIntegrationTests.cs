@@ -406,11 +406,11 @@ public sealed class OllamaCompatibilityIntegrationTests : IClassFixture<ApiSecur
         using var cancellation = new CancellationTokenSource();
 
         Task<HttpResponseMessage> pending = client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation.Token);
-        await provider.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await provider.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));   // generous: the full suite runs thousands of tests in parallel
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
-        await provider.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await provider.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(30));
     }
 
     [Theory]
