@@ -740,8 +740,6 @@ DENY PUT /api/v2/semantic-index/repositories
 DENY PUT /api/v2/steam/credentials
 DENY GET /api/v1/gaming/sign-in-apps
 DENY POST /api/v1/gaming/sign-in-apps/cancel
-DENY POST /api/v1/gaming/sign-in-apps/import
-DENY POST /api/v1/gaming/sign-in-apps/import-preview
 DENY POST /api/v1/gaming/sign-in-apps/run
 DENY POST /api/v1/gaming/sign-in-apps/shell-state
 DENY POST /api/v1/gaming/sign-in-apps/trigger
@@ -834,3 +832,10 @@ DENY POST /api/v1/gaming/mods/changesets/apply
 DENY POST /api/v1/gaming/mods/changesets/prompt
 DENY POST /api/v1/gaming/mods/changesets/restore
 DENY POST /api/v1/runtime/components/{id}/remove-managed
+DENY GET /api/v1/gaming/support-apps
+DENY GET /api/v1/gaming/support-apps/catalog
+DENY POST /api/v1/gaming/support-apps/install
+DENY POST /api/v1/gaming/support-apps/remove
+DENY POST /api/v1/gaming/support-apps/start
+DENY POST /api/v1/gaming/support-apps/stop
+DENY PUT /api/v1/gaming/support-apps

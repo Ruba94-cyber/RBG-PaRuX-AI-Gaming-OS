@@ -82,30 +82,6 @@ public sealed class SignInAppListStore
         }
     }
 
-    /// <summary>
-    /// Applies an already validated import. The result is ALWAYS disabled until the owner opts in again; with
-    /// <paramref name="append"/> the existing entries stay and entries with an existing name are not duplicated.
-    /// </summary>
-    public (SignInAppListState? State, string? Error) ApplyImport(SignInAppList imported, bool append)
-    {
-        lock (_gate)
-        {
-            SignInAppListState current = ReadLocked();
-            var apps = new List<SignInAppEntry>();
-            SignInAppListSettings settings = imported.Settings;
-            if (append)
-            {
-                apps.AddRange(current.List.Apps);
-                settings = current.List.Settings;
-                foreach (SignInAppEntry e in imported.Apps)
-                    if (!apps.Any(x => string.Equals(x.Name, e.Name, StringComparison.OrdinalIgnoreCase))) apps.Add(e);
-            }
-            else apps.AddRange(imported.Apps);
-            if (apps.Count > SignInAppListPolicy.MaxApps) return (null, "Too many apps (maximum 50).");
-            return TryWrite(new SignInAppList(false, settings, apps), current.LastRunSessionKey, current);
-        }
-    }
-
     private static SignInAppEntry Normalize(SignInAppEntry e) => e with
     {
         Name = (e.Name ?? string.Empty).Trim(),

@@ -46,9 +46,9 @@
     <Compile Include="..\..\src\PaRuX.App\Services\RawPadEdgeTranslator.cs" Link="Linked\RawPadEdgeTranslator.cs" />
     <Compile Include="..\..\src\PaRuX.App\Models\ComputerAppShortcut.cs" Link="Linked\ComputerAppShortcut.cs" />
     <Compile Include="..\..\src\PaRuX.App\Models\AppSettings.cs" Link="Linked\AppSettings.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\PresentDisplayAdapters.cs" Link="Linked\PresentDisplayAdapters.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PadActionModel.cs" Link="Linked\PadActionModel.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PadLogicalButtons.cs" Link="Linked\PadLogicalButtons.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\LauncherConfigImporter.cs" Link="Linked\LauncherConfigImporter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PadActionEngine.cs" Link="Linked\PadActionEngine.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PadActionPolicy.cs" Link="Linked\PadActionPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\PadActionPoller.cs" Link="Linked\PadActionPoller.cs" />

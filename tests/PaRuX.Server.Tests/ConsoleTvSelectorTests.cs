@@ -165,39 +165,6 @@ public sealed class ConsoleTvSelectorTests
     }
 
     [Fact]
-    public void Legacy_launcher_tv_names_select_matching_remembered_monitors_only()
-    {
-        var tv = Monitor(@"\\.\DISPLAY2", false, "BBB0002-bbbbbbbbbbbb", "Living room TV", "BBB0002", x: 1920);
-        var pc = Monitor(@"\\.\DISPLAY1", true, "AAA0001-aaaaaaaaaaaa", "Desk monitor", "AAA0001");
-        var history = ConsoleTvRegistry.RecordSeen(null, Snapshot(pc, tv), Now);
-        var (list, count) = ConsoleTvRegistry.SelectByNameHints(history, new[] { "living room", "x", "Unknown TV" });
-        Assert.Equal(1, count);
-        Assert.True(list.Single(e => e.Name == "Living room TV").Selected);
-        Assert.False(list.Single(e => e.Name == "Desk monitor").Selected);
-    }
-
-    [Fact]
-    public void The_import_preview_lists_what_would_be_selected_what_is_already_chosen_and_what_matches_nothing()
-    {
-        var tv = Monitor(@"\\.\DISPLAY2", false, "BBB0002-bbbbbbbbbbbb", "Living room TV", "BBB0002", x: 1920);
-        var den = Monitor(@"\\.\DISPLAY3", false, "CCC0003-cccccccccccc", "Den TV", "CCC0003", x: 3840);
-        var pc = Monitor(@"\\.\DISPLAY1", true, "AAA0001-aaaaaaaaaaaa", "Desk monitor", "AAA0001");
-        var history = ConsoleTvRegistry.SetSelected(ConsoleTvRegistry.RecordSeen(null, Snapshot(pc, tv, den), Now), den.StableId!, true);
-        var hints = new[] { "living room", "den tv", "Bedroom TV", "x" };
-
-        var preview = ConsoleTvRegistry.PreviewNameHints(history, hints);
-        Assert.Equal("Living room TV", Assert.Single(preview.WouldSelect).Name);
-        Assert.Equal("Den TV", Assert.Single(preview.AlreadySelected).Name);
-        Assert.Contains("Bedroom TV", preview.NoMatch);
-        Assert.Contains("x", preview.NoMatch);                       // too short to match anything: reported, never applied
-        Assert.DoesNotContain(history, e => e.Name == "Living room TV" && e.Selected);   // previewing changes nothing
-
-        var (applied, count) = ConsoleTvRegistry.SelectByNameHints(history, hints);
-        Assert.Equal(1, count);
-        Assert.False(applied.Single(e => e.Name == "Desk monitor").Selected);
-    }
-
-    [Fact]
     public void The_native_console_button_never_blocks_on_a_missing_tv()
     {
         // Contract: the explicit start has no blocking dialog; it uses a discreet bilingual notice and leaves the window where it is.

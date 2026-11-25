@@ -34,9 +34,13 @@ Optional component `playnite` (SYSTEM_DETECTED, USER_MANAGED once located): `Orc
 
 Merged: universal pad logical buttons + launcher import UI (PARTIAL: non-Stadia Guide indexes are unverified presets); after-sign-in app list wired (PARTIAL: no real sign-in/launch, Settings UI never opened); streaming/display journal + Windows adapters + API (PARTIAL: no real monitor/Sunshine, HDR MISSING); VRAM release verifier + Guard retry + CUDA 13 floors + load-log parser (real RTX 5080: 37/37 layers, ~179 tok/s, VRAM 891->4190->867 MiB; TextLoad needs -lv 4 not yet passed by PaRuX; Ollama NOT RUN); Gaming Home hero banner (GameArtStore), hero follows focus, shelves view, focus states (PARTIAL: no Console/TV, high-contrast, IT or 5,000-game real-app checks). NOT RUN: PresentMon overhead, MSI/Portable install, signing, release. Next: wire -lv 4/TextLoad, Console/TV + HC visual pass, per-game settings slice 6, real-game launch/return tests.
 
-## 2026-11-22 - Owner launcher (ConsoleMode.exe) audit + importer
+## 2026-11-22 - Reference launcher audit (historical)
 
-Audit: `docs/LAUNCHER_CONSOLEMODE_AUDIT_2026-11-22.md`. `LauncherConfigImporter` (pure, read-only parser of the legacy `console-config.json`: Stadia buttons -> PadButtonBinding, TV names as hints, every other key reported) is **PARTIAL**: 8 xUnit pass; NO Settings UI/apply step, NO real-app run yet. Next: delayed logon apps list (MISSING), overlay hotkey, streaming-mode restore check.
+Audit: `docs/LAUNCHER_AUDIT_2026-11-22.md` (internal, historical; prescribes no public feature). The launcher-specific config importers were removed from the product on 2026-11-25; only generic features remain (universal `PadLogicalButtons`, TV selector with monitor history, after-sign-in apps list).
+
+## 2026-11-25 - Sign-in start orchestrator, support apps, never-pause list (PARTIAL)
+
+Guide: `docs/guides/STARTUP_AND_SUPPORT_APPS.md`. Code: `LogonStartup.cs` (pure decision, timing recorder/file, reversible HKCU Run registration with journal), `MainWindow.LogonStartup.cs` (executor + dry run), `SupportApps.cs` + `Orchestration/Gaming/SupportApp*.cs` (USER_MANAGED list, runner, pinned-hash downloader into the PARUX_MANAGED folder, routes DENY for web sessions, process launch listed in the Gaming hard-off allow-list), `PadFreezeExclusion.cs`, Settings > Gaming & AI Sharing. DONE in code with pure tests and fakes (registry, process host, HTTP): `LogonStartupTests`, `SupportAppTests`. NOT verified on a real sign-in, with a real helper, a real download or a real Console session. Real dry run on the development PC: Desktop (Console not turned on). Catalog: only one entry has a pinned download; the others are Locate-only. Launcher-specific importers were removed from the product.
 
 ## 2026-11-21 (session 3) - Verified open queue on main 17da2916 (supersedes older queues)
 

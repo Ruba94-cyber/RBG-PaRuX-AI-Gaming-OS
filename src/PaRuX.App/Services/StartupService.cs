@@ -21,6 +21,9 @@ namespace PaRuX.Services
             }
         }
 
+        /// <summary>The executable the sign-in entry points at (null when it cannot be determined).</summary>
+        internal static string? LaunchExecutable => ExecutablePath;
+
         public static bool IsEnabled()
         {
             try

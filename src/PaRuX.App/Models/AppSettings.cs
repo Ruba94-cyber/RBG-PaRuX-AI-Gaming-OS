@@ -119,6 +119,14 @@ namespace PaRuX.Models
         /// <see cref="ConsolePowerPlanId"/> (an existing plan) and put the previous one back afterwards. Off by default; the Core keeps a
         /// crash-safe restore point and never overrides a plan the owner picked meanwhile.</summary>
         public bool ConsolePowerProfileEnabled { get; set; } = false;
+
+        /// <summary>Optional rule for the sign-in start: a graphics card name fragment (case-insensitive, <c>*</c> wildcards) that must be present
+        /// for Console to open (for example an external GPU). Empty = no rule. Only read; nothing about the GPU is ever changed.</summary>
+        public string LogonGpuNamePattern { get; set; } = string.Empty;
+
+        /// <summary>Game names (or executable names) the controller "pause / resume" button never pauses, on top of the built-in anti-cheat
+        /// refusal. Matched case-insensitively against the running game's profile name and process name. Empty by default.</summary>
+        public List<string> PadFreezeExcludedGames { get; set; } = new();
         public string ConsolePowerPlanId { get; set; } = string.Empty;
 
         /// <summary>Block the Xbox Game Bar (controller Guide button, startup panel, Game DVR capture) for this Windows user while Console

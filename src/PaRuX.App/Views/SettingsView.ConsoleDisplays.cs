@@ -155,84 +155,6 @@ public sealed partial class SettingsView
         ApplyConsoleTvSelection(_lastConsoleDisplaySnapshot);
     }
 
-    private bool _consoleTvImporting;
-
-    /// <summary>
-    /// Imports the TV names of the old Console Mode (<c>console-config.json</c>): the file is only read, the preview lists which already-seen
-    /// monitors would become TVs and which names match nothing, and nothing is saved until the owner confirms.
-    /// </summary>
-    private async void ConsoleDisplaysImport_Click(object sender, RoutedEventArgs e)
-    {
-        if (_consoleTvImporting) return;
-        _consoleTvImporting = true;
-        try
-        {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary };
-            picker.FileTypeFilter.Add(".json");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
-            Windows.Storage.StorageFile? file = await picker.PickSingleFileAsync();
-            if (file is null) return;
-            if (new System.IO.FileInfo(file.Path).Length > LauncherConfigImporter.MaxBytes)
-            {
-                ConsoleDisplaysStatus.Text = TvT("Cannot import: the file is larger than 256 KB.", "Impossibile importare: il file supera i 256 KB.");
-                return;
-            }
-            LauncherImportResult parsed = LauncherConfigImporter.Parse(await System.IO.File.ReadAllTextAsync(file.Path));
-            if (!parsed.Parsed)
-            {
-                ConsoleDisplaysStatus.Text = TvT("Cannot import: ", "Impossibile importare: ") + string.Join(" ", parsed.NotImported);
-                return;
-            }
-            if (parsed.TvNames.Count == 0)
-            {
-                ConsoleDisplaysStatus.Text = TvT("The file has no TV names.", "Il file non contiene nomi di TV.");
-                return;
-            }
-            var data = SettingsStore.Current.Data;
-            var preview = ConsoleTvRegistry.PreviewNameHints(data.ConsoleTvs, parsed.TvNames);
-
-            var content = new StackPanel { Spacing = 8 };
-            void Section(string title, IEnumerable<string> lines, string empty)
-            {
-                var list = lines.ToList();
-                content.Children.Add(new TextBlock { Text = title + " (" + list.Count + ")", Style = (Style)Application.Current.Resources["PaRuXBodyStrongTextStyle"] });
-                content.Children.Add(new TextBlock { Text = list.Count == 0 ? empty : string.Join(Environment.NewLine, list), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-            }
-            Section(TvT("Will be selected as TV", "Verranno selezionate come TV"), preview.WouldSelect.Select(t => t.Name),
-                TvT("None of the monitors PaRuX has seen.", "Nessuno dei monitor già visti da PaRuX."));
-            Section(TvT("Already selected", "Già selezionate"), preview.AlreadySelected.Select(t => t.Name), TvT("None.", "Nessuna."));
-            Section(TvT("No matching monitor seen yet", "Nessun monitor corrispondente già visto"), preview.NoMatch,
-                TvT("Every name matched.", "Ogni nome ha una corrispondenza."));
-            content.Children.Add(new TextBlock
-            {
-                Text = TvT("Names are matched against the monitors PaRuX has already seen. Connect the TV and press Detect, then import again for names without a match. The file you picked is never changed.",
-                           "I nomi vengono confrontati con i monitor già visti da PaRuX. Collega la TV e premi Rileva, poi importa di nuovo per i nomi senza corrispondenza. Il file scelto non viene mai modificato."),
-                TextWrapping = TextWrapping.Wrap, Opacity = 0.75
-            });
-            AutomationProperties.SetAutomationId(content, "Settings_ConsoleDisplays_ImportTvNames_Preview");
-
-            var dialog = new ContentDialog
-            {
-                XamlRoot = XamlRoot,
-                Title = TvT("Import TVs from the old Console Mode", "Importa le TV dal vecchio Console Mode"),
-                Content = new ScrollViewer { Content = content, MaxHeight = 420 },
-                PrimaryButtonText = TvT("Apply", "Applica"),
-                CloseButtonText = TvT("Cancel", "Annulla"),
-                DefaultButton = ContentDialogButton.Close,
-                IsPrimaryButtonEnabled = preview.WouldSelect.Count > 0
-            };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-            var (updated, count) = ConsoleTvRegistry.SelectByNameHints(data.ConsoleTvs, parsed.TvNames);
-            data.ConsoleTvs = updated;
-            data.ConsoleTvsMigrated = true;
-            ApplyConsoleTvSelection(_lastConsoleDisplaySnapshot);
-            ConsoleDisplaysStatus.Text = TvT($"Selected {count} monitor(s) as TV from the old Console Mode.", $"Selezionati {count} monitor come TV dal vecchio Console Mode.");
-        }
-        catch (Exception ex) { ConsoleDisplaysStatus.Text = TvT("Import failed: ", "Importazione non riuscita: ") + ex.Message; }
-        finally { _consoleTvImporting = false; }
-    }
-
     /// <summary>Re-derives the older single-target fields from the TV list, saves, and redraws.</summary>
     private void ApplyConsoleTvSelection(GamingDisplaySnapshotDto? snapshot)
     {
@@ -260,7 +182,6 @@ public sealed partial class SettingsView
         ConsoleDisplaysRefresh.Content = TvT("Detect connected displays", "Rileva schermi collegati");
         ConsoleDisplaysUseCurrent.Content = TvT("Use the current monitor as TV", "Usa il monitor attuale come TV");
         ConsoleDisplaysClear.Content = TvT("Clear TV choice", "Azzera la scelta TV");
-        ConsoleDisplaysImport.Content = TvT("Import TVs from the old Console Mode", "Importa le TV dal vecchio Console Mode");
         ConsoleRouteOwnedGamesSwitch.Header = TvT(
             "Prefer selected TV for directly launched windowed games (never force fullscreen or third-party launchers)",
             "Preferisci la TV scelta per i giochi in finestra avviati direttamente (mai forzare fullscreen o launcher esterni)");

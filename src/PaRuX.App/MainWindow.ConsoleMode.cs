@@ -291,6 +291,7 @@ public sealed partial class MainWindow
             StartConsoleRawPad();
             _ = ApplyConsolePowerProfileAsync();
             _ = ApplyConsoleGameBarBlockAsync();
+            _ = StartConsoleSupportAppsAsync();
         }
         catch
         {
@@ -330,6 +331,7 @@ public sealed partial class MainWindow
         StopConsoleRawPad();
         _ = RestoreConsolePowerProfileAsync();
         _ = RestoreConsoleGameBarBlockAsync();
+        _ = StopConsoleSupportAppsAsync();
         AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         _consoleModeActive = false;
         GameLibraryPageIfCreated?.ApplyConsoleMode(false);

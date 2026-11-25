@@ -251,38 +251,6 @@ public static class ConsoleTvRegistry
         return SetSelected(list, ConsoleMonitorIdentity.IdOf(primary), true);
     }
 
-    /// <summary>
-    /// Owner-supplied name hints (the legacy launcher's <c>tvNames</c>): selects every remembered monitor whose name contains a hint.
-    /// Returns the updated list and how many entries it newly selected. Nothing is created from a bare name.
-    /// </summary>
-    public static (List<ConsoleTvEntry> Tvs, int Selected) SelectByNameHints(IEnumerable<ConsoleTvEntry?>? history, IEnumerable<string>? hints)
-    {
-        List<ConsoleTvEntry> list = Sanitize(history);
-        string[] needles = (hints ?? Array.Empty<string>()).Select(h => h?.Trim() ?? string.Empty).Where(h => h.Length >= 2).ToArray();
-        int count = 0;
-        foreach (ConsoleTvEntry e in list)
-            if (!e.Selected && needles.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase)))
-            { e.Selected = true; count++; }
-        return (list, count);
-    }
-
-    /// <summary>What importing legacy <c>tvNames</c> would do, computed without changing anything: remembered monitors that would become
-    /// TVs, ones already chosen, and hint names that match no remembered monitor (listed honestly so the owner can see them).</summary>
-    public sealed record NameHintPreview(IReadOnlyList<ConsoleTvEntry> WouldSelect, IReadOnlyList<ConsoleTvEntry> AlreadySelected,
-        IReadOnlyList<string> NoMatch);
-
-    public static NameHintPreview PreviewNameHints(IEnumerable<ConsoleTvEntry?>? history, IEnumerable<string>? hints)
-    {
-        List<ConsoleTvEntry> list = Sanitize(history);
-        string[] needles = (hints ?? Array.Empty<string>()).Select(h => h?.Trim() ?? string.Empty).Where(h => h.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        bool Matches(ConsoleTvEntry e, string n) => n.Length >= 2 && e.Name.Contains(n, StringComparison.OrdinalIgnoreCase);
-        var would = list.Where(e => !e.Selected && needles.Any(n => Matches(e, n))).ToList();
-        var already = list.Where(e => e.Selected && needles.Any(n => Matches(e, n))).ToList();
-        var none = needles.Where(n => !list.Any(e => Matches(e, n))).ToList();
-        return new NameHintPreview(would, already, none);
-    }
-
     public static GamingDisplayModeDto? PrimaryOf(GamingDisplaySnapshotDto? snapshot) =>
         snapshot is { Supported: true }
             ? snapshot.Displays.Where(d => d.Width > 0 && d.Height > 0 && ConsoleDisplaySelectionPolicy.ValidDisplayId(d.DisplayId))

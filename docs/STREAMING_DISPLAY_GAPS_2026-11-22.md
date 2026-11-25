@@ -1,6 +1,6 @@
 # Streaming / display gap table (2026-11-22)
 
-Source of the requirement: the legacy launcher's Sunshine/Moonlight streaming mode (see `docs/LAUNCHER_CONSOLEMODE_AUDIT_2026-11-22.md` on main).
+Source of the requirement: a reference launcher's Sunshine/Moonlight streaming mode (see `docs/LAUNCHER_AUDIT_2026-11-22.md`).
 Status words: DONE / PARTIAL / MISSING / BLOCKED-EXTERNAL. File:line refers to this branch before the new files were added.
 
 | Legacy capability | PaRuX today | Evidence | Status |

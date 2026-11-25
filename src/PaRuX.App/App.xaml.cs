@@ -114,6 +114,7 @@ namespace PaRuX
             // preserve the full diagnostic and terminate instead of creating a zombie instance.
             // Start-up resolution input for this (first) instance: the explicit argument, else Ctrl/Shift held right now (read-only).
             StartupLauncherRequest = launcherRequest;
+            StartupLogonRequest = PaRuX.Contracts.LogonStartupArguments.Parse(Environment.GetCommandLineArgs());
             if (!launcherRequest.HasAction && !hasPlayRequest)
             {
                 (StartupCtrlHeld, StartupShiftHeld) = PaRuX.Services.LauncherModifierKeys.Sample(TimeSpan.Zero);
@@ -200,6 +201,7 @@ namespace PaRuX
 
         /// <summary>What this process was asked at start (argument) and which modifiers were held; read once by the start-up sequence.</summary>
         internal static PaRuX.Contracts.PlayniteLauncherRequest StartupLauncherRequest { get; private set; } = PaRuX.Contracts.PlayniteLauncherRequest.Nothing;
+        internal static PaRuX.Contracts.LogonStartupRequest StartupLogonRequest { get; private set; } = PaRuX.Contracts.LogonStartupRequest.None;
         internal static bool StartupCtrlHeld { get; private set; }
         internal static bool StartupShiftHeld { get; private set; }
 
