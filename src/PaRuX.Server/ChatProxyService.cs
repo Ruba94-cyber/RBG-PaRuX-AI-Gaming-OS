@@ -85,6 +85,14 @@ public sealed class ChatProxyService
 
     public async Task ProxyAsync(ChatCompletionRequest request, HttpResponse downstream, CancellationToken cancellationToken)
     {
+        ChatPhaseTrace? trace = ChatPhaseTrace.Start();
+        if (trace != null) downstream.HttpContext.Items[nameof(ChatPhaseTrace)] = trace;
+        try { await ProxyCoreAsync(request, downstream, trace, cancellationToken).ConfigureAwait(false); }
+        finally { trace?.Flush(); }
+    }
+
+    private async Task ProxyCoreAsync(ChatCompletionRequest request, HttpResponse downstream, ChatPhaseTrace? trace, CancellationToken cancellationToken)
+    {
         if (!string.IsNullOrWhiteSpace(request.PresetId) && !SamplingPresetStore.Default.TryApply(request, request.PresetId))
         {
             downstream.StatusCode = StatusCodes.Status400BadRequest;
@@ -107,6 +115,7 @@ public sealed class ChatProxyService
 
         // Audio / tool-use / computer-use turns are routed before any text runtime is touched. A handled turn is already
         // answered (or refused with a typed error); tool use continues below pinned to a model with verified tool calling.
+        trace?.Mark("validated");
         ModalityChatResult modality = await ModalityChatGate.TryHandleAsync(request, _modality, downstream, cancellationToken);
         if (modality.Handled) return;
 
@@ -133,6 +142,7 @@ public sealed class ChatProxyService
             }
         }
 
+        trace?.Mark("modality");
         bool hasVisualInput = ContainsVisualInput(request);
         string? forcedRouteIneligibility = GetForcedRouteIneligibility(
             request.ForcedModelRoute, _runtime.UsesExternalProvider, hasVisualInput);
@@ -203,6 +213,7 @@ public sealed class ChatProxyService
             }
         }
 
+        trace?.Mark("runtime_ready");
         if (request.ContinueFinalMessage)
             ApplyContinuation(new JsonObject(), request, _runtime.UsesExternalProvider);
 
@@ -245,7 +256,9 @@ public sealed class ChatProxyService
             return;
         }
 
+        trace?.Mark("skills_shortcuts");
         AiProfileStatus profile = await _profiles.GetStatusAsync(cancellationToken);
+        trace?.Mark("profile");
         ChatRoutingPreferenceStore.Preference routingPreference = ChatRoutingPreferenceStore.ResolveAndPersist(request.Model);
         RouteDecisionDto? modelRoute = null;
         bool scopedForce = false;
@@ -277,6 +290,7 @@ public sealed class ChatProxyService
                         ? " [" + routeFailureCode + "]" : string.Empty) + ": " + modelRoute.Message);
         }
 
+        trace?.Mark("route");
         request.Model = ResolveProviderModel(modelRoute);
 
         bool manualModelLock = routingPreference.Mode == RouteMode.Manual || scopedForce;
@@ -304,10 +318,12 @@ public sealed class ChatProxyService
             int windowForContext = await ChatContextWindowSnapshot.CaptureAsync(
                 Http, _runtime.ProviderEndpoint, modelRoute, cancellationToken).ConfigureAwait(false);
             capturedWindow = windowForContext;
+            trace?.Mark("ctx_window");
             ChatContextResult context = await _context.BuildForChatAsync(
                 lastUser?.Content ?? string.Empty, routed.Skill, request.ConversationId,
                 request.IncludeConversationHistory, cancellationToken, request.Documents,
                 ContextEngineService.CharactersForContextWindow(windowForContext, ReplyReserveTokens));
+            trace?.Mark("retrieval");
             ApplyContextPack(request, context.Pack);
             if (documentMode) PaRuX.Server.Knowledge.DocumentChatPlanner.ApplyGrounding(request);
             sources = DisplaySources(context.Pack);
@@ -333,6 +349,7 @@ public sealed class ChatProxyService
             ?? await ChatContextWindowSnapshot.CaptureAsync(
                 Http, _runtime.ProviderEndpoint, modelRoute, cancellationToken).ConfigureAwait(false);
 
+        trace?.Mark("context_applied");
         LocalInferenceChatPreparation enginePreparation;
         try
         {
@@ -355,10 +372,12 @@ public sealed class ChatProxyService
             throw;
         }
 
+        trace?.Mark("engine_prepare");
         ConversationWindowPlanner.WindowPlan? window = await FitConversationWindowAsync(
             request, mcpTools, structuredOutput, contextWindowSnapshot, enginePreparation, cancellationToken, modelRoute?.ModelPath)
             .ConfigureAwait(false);
 
+        trace?.Mark("window_fit");
         HashSet<string> advertisedToolNames = mcpTools
             .Select(tool => tool?["function"]?["name"]?.GetValue<string>())
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -372,7 +391,9 @@ public sealed class ChatProxyService
                 request, mcpTools, advertisedToolNames, contextWindowSnapshot, downstream, cancellationToken)
                 .ConfigureAwait(false);
             // Opened before the response starts so growth / transport failures keep their real status code.
+            trace?.Mark("toolloop_created");
             toolLoopFirstTurn = await toolLoop.OpenFirstAsync(cancellationToken).ConfigureAwait(false);
+            trace?.Mark("upstream_headers");
         }
 
         downstream.StatusCode = StatusCodes.Status200OK;
@@ -439,6 +460,7 @@ public sealed class ChatProxyService
             await downstream.Body.FlushAsync(cancellationToken);
         }
 
+        trace?.Mark("events_sent");
         if (toolLoop != null && toolLoopFirstTurn != null)
         {
             bool succeeded = await toolLoop.RunAsync(toolLoopFirstTurn, cancellationToken).ConfigureAwait(false);
@@ -483,7 +505,7 @@ public sealed class ChatProxyService
         }
 
         HttpResponseMessage upstream;
-        try { upstream = await OpenUpstreamAsync(request, cancellationToken); }
+        try { upstream = await OpenUpstreamAsync(request, cancellationToken); trace?.Mark("upstream_headers"); }
         catch (OperationCanceledException) { throw; }
         catch (Exception localFailure)
         {
@@ -1055,6 +1077,7 @@ public sealed class ChatProxyService
                     int maximum = contextTokens - ReplyReserveTokens;
                     PromptExceedsContextException? growth = ChatProxyFailureResponse.CreateToolLoopGrowthFailure(exact, maximum);
                     if (growth is not null) throw growth;
+                    ChatPhaseTrace.Current?.MarkOnce("toolloop_count");
                 }
                 using var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, _runtime.ProviderEndpoint + "/v1/chat/completions")
                 {
@@ -1067,6 +1090,7 @@ public sealed class ChatProxyService
                 DesktopOwnerRouteExtensions.IsDesktopOwner(downstream.HttpContext) && !_runtime.UsesExternalProvider ? request.ConversationId : null, downstream.HttpContext.Items["WorkbookTurnId"] as string),
             writeFrame: async (frame, ct) =>
             {
+                if (ChatPhaseTrace.Enabled) (downstream.HttpContext.Items[nameof(ChatPhaseTrace)] as ChatPhaseTrace)?.MarkOnce("first_frame");
                 await downstream.WriteAsync(frame, ct).ConfigureAwait(false);
                 await downstream.Body.FlushAsync(ct).ConfigureAwait(false);
             },
@@ -1416,6 +1440,7 @@ public sealed class ChatProxyService
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (ChatPhaseTrace.Enabled) (downstream.HttpContext.Items[nameof(ChatPhaseTrace)] as ChatPhaseTrace)?.MarkOnce("first_frame");
             await downstream.WriteAsync(line + "\n", cancellationToken);
             if (line.Length == 0) await downstream.Body.FlushAsync(cancellationToken);
         }

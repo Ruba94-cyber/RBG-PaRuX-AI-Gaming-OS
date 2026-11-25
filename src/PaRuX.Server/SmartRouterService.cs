@@ -120,7 +120,9 @@ public sealed class SmartRouterService : IRoleRouter
             paths = ManagedLibraryCandidateExpander.Expand(paths, ModelDownloadService.ModelsDirectory);
 
         string? currentAssignment = LocalAiPaths.GetRoleModelPathOrNull(normalizedRole);
-        RuntimeManagerStatus status = await _runtimeManager.GetStatusAsync(ct);
+        ChatPhaseTrace.Current?.Mark("r.paths");
+        TextRuntimeResidency status = await _runtimeManager.GetTextResidencyAsync(ct, probeHealth: false).ConfigureAwait(false);
+        ChatPhaseTrace.Current?.Mark("r.status");
         // The existing no-heavy-GPU fallback is an AUTO candidate, never a persisted role
         // replacement. Otherwise a fresh iGPU installation can only rank its 27B default,
         // load it into shared RAM, and then reject Chat for exceeding the execution budget.
@@ -187,6 +189,7 @@ public sealed class SmartRouterService : IRoleRouter
                 AvailableMib = fit?.AvailableMib
             });
         }
+        ChatPhaseTrace.Current?.Mark("r.fits");
         // One bounded memory-recovery pass before declaring every AUTO model
         // unusable. Only idle ONNX sessions owned by this PaRuX Core may be
         // disposed. Never touch an in-progress index, an external application
@@ -351,6 +354,7 @@ public sealed class SmartRouterService : IRoleRouter
             && (!exactManagedForced || exactRegisteredForced)
             ? await GetCandidateEvidenceAsync(normalizedTextRole, managedLibraryExpanded, ct, allowRetrievalReclaim: true)
             : new List<CandidateEvidenceDto>();
+        ChatPhaseTrace.Current?.Mark("r.evidence");
         int candidatesConsidered = candidates.Count;
         CandidateEvidenceDto? selectedEvidence = null;
         RuntimeLoadResult result;
@@ -447,7 +451,7 @@ public sealed class SmartRouterService : IRoleRouter
                     }
                     catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException) { }
                 }
-                bool gaming = (await _runtimeManager.GetStatusAsync(ct).ConfigureAwait(false)).GamingActive;
+                bool gaming = (await _runtimeManager.GetTextResidencyAsync(ct, probeHealth: false).ConfigureAwait(false)).GamingActive;
                 string profile = normalizedTextRole == "uncensored"
                     ? ModelContentProfileIds.Uncensored : ModelContentProfileIds.Standard;
                 var facts = pool.Select(c => new CapabilityRouteCandidate(c.FileName, new[] { capabilityId },
@@ -798,17 +802,20 @@ public sealed class SmartRouterService : IRoleRouter
             AutoEscalationPolicy.Outcome escalation = AutoEscalationPolicy.Outcome.Unchanged(pool);
             if (AutoEscalationPolicy.AppliesTo(mode) && pool.Any(candidate => candidate.IsCurrentlyLoaded))
             {
-                bool constrained = CorporateMode.IsActive || !(await _runtimeManager.GetStatusAsync(ct).ConfigureAwait(false)).GpuDetected;
+                bool constrained = CorporateMode.IsActive || !await _runtimeManager.IsHeavyGpuDetectedAsync(ct).ConfigureAwait(false);
                 escalation = AutoEscalationPolicy.Apply(pool, autoProfile, constrained);
                 pool = escalation.Pool;
             }
+            ChatPhaseTrace.Current?.Mark("r.escalation");
             CandidateEvidenceDto? selected = CandidatePoolRanker.Rank(
                 pool, mode, rankingRole, promptText, autoProfile, autoTuning);
             capture(selected);
             explainEscalation?.Invoke(escalation.Describe(selected));
             if (selected != null)
             {
+                ChatPhaseTrace.Current?.Mark("r.rank");
                 RuntimeLoadResult loaded = await _runtimeManager.EnsureExactCandidateLoadedAsync(normalizedTextRole, selected.FilePath, ct);
+                ChatPhaseTrace.Current?.Mark("r.ensure_loaded");
                 if (corporateAllCandidates != null) RecordCorporateAutoMemoryFallback(corporateAllCandidates, selected, loaded);
                 return loaded;
             }

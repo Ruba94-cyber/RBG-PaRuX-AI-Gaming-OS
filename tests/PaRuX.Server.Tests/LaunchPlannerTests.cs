@@ -88,7 +88,8 @@ public sealed class LaunchPlannerTests
     [
         "--ctx-size", "--batch-size", "--ubatch-size", "--cache-type-k", "--cache-type-v", "--flash-attn", "--gpu-layers", "--fit",
         "--fit-target", "--cont-batching", "--slot-prompt-similarity", "--reasoning-effort", "--reasoning-budget", "--load-mode", "--prio",
-        "--poll", "--parallel", "--threads", "--threads-batch", "--split-mode", "--main-gpu", "--device", "--n-cpu-moe", "--override-tensor"
+        "--poll", "--parallel", "--threads", "--threads-batch", "--split-mode", "--main-gpu", "--device", "--n-cpu-moe", "--override-tensor",
+        "--cache-ram", "--kv-unified", "--kv-unified-per-slot"
     ];
 
     [Theory]

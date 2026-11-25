@@ -58,6 +58,23 @@ public sealed class LlamaPerformanceProfileDto
     public double RopeScale { get; set; } = 1.0;
 
     /// <summary>
+    /// llama-server host-RAM prompt cache (<c>--cache-ram</c>, MiB). -1 = not emitted (the engine default, 8192 MiB on the
+    /// pinned builds); 0 = disabled. Set only by the launch planner and only when the runtime's own --help lists the flag.
+    /// Launch-only, never persisted as a tuning winner.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int HostPromptCacheMib { get; set; } = -1;
+
+    /// <summary>
+    /// Adaptive parallel slots: when &gt; 0, the <see cref="ParallelSlots"/> slots share ONE KV pool of ParallelSlots x this many
+    /// tokens (<c>--kv-unified --kv-unified-per-slot N --ctx-size slots*N</c>), so every request keeps its full window and the
+    /// pool can never be oversubscribed. 0 = classic launch. Launch-only; set only by the launch planner and only when the
+    /// runtime's --help lists both flags.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int UnifiedKvPerSlotTokens { get; set; }
+
+    /// <summary>
     /// True when <see cref="ContextSize"/> is the user's explicit PER-INFERENCE window, taken from
     /// ContextPreferenceStore - the quantity Runtime Manager describes as "how many tokens the
     /// selected model can attend to simultaneously in one inference". False when it is only an
