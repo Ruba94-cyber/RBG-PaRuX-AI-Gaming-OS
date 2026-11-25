@@ -52,7 +52,7 @@ namespace PaRuX.Views
         {
             if (_timer != null) return;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-            _timer.Tick += async (_, _) => await RefreshAsync();
+            _timer.Tick += async (_, _) => { if (!UiPollCadence.IsWindowHidden()) await RefreshAsync(); };
             _timer.Start();
             _ = RefreshAsync();
         }

@@ -419,6 +419,23 @@ public static class RuntimeLaunchOptimizer
 
     internal const int MaximumParallelSlots = 8;
 
+    /// <summary>True for an adaptive pooled-slot launch (see <see cref="LlamaPerformanceProfileDto.UnifiedKvPerSlotTokens"/>).</summary>
+    internal static bool UsesPooledSlots(LlamaPerformanceProfileDto profile) =>
+        profile.UnifiedKvPerSlotTokens > 0 && profile.ParallelSlots > 1;
+
+    /// <summary>
+    /// Total <c>--ctx-size</c> and slot count of the real launch. A pooled-slot launch shares one KV pool of exactly
+    /// slots x per-slot window (each request keeps its whole window, the pool cannot be oversubscribed); every other
+    /// launch keeps <see cref="ResolveContextAndSlots"/>.
+    /// </summary>
+    internal static (int TotalContext, int Slots) ResolveLaunchContextAndSlots(LlamaPerformanceProfileDto profile)
+    {
+        if (!UsesPooledSlots(profile))
+            return ResolveContextAndSlots(profile.ContextSize, profile.ParallelSlots, profile.ContextIsPerRequest);
+        int slots = Math.Clamp(profile.ParallelSlots, 2, MaximumParallelSlots);
+        return ((int)Math.Min(int.MaxValue, (long)profile.UnifiedKvPerSlotTokens * slots), slots);
+    }
+
     internal static int TotalContextFor(int contextSize, int parallelSlots, bool contextIsPerRequest = false) =>
         ResolveContextAndSlots(contextSize, parallelSlots, contextIsPerRequest).TotalContext;
 
@@ -441,7 +458,7 @@ public static class RuntimeLaunchOptimizer
             // context returned zero content tokens - a silent empty answer from a 4B model that
             // advertises 262,144 context. The comment above about auto slots "keeping the full
             // per-slot context" does not hold for the pinned baseline build.
-            "--ctx-size", ResolveContextAndSlots(profile.ContextSize, profile.ParallelSlots, profile.ContextIsPerRequest).TotalContext.ToString(),
+            "--ctx-size", ResolveLaunchContextAndSlots(profile).TotalContext.ToString(),
             "--batch-size", Math.Max(32, profile.BatchSize).ToString(),
             "--ubatch-size", Math.Max(16, Math.Min(profile.UBatchSize, profile.BatchSize)).ToString(),
             "--cache-type-k", NormalizeCache(profile.CacheTypeK),
@@ -482,9 +499,14 @@ public static class RuntimeLaunchOptimizer
         // profile's per-request window (see ResolveContextAndSlots). In that case auto must not be
         // allowed to re-divide --ctx-size behind PaRuX's back: the context arithmetic and the slot
         // count have to agree, or the window the user selected silently shrinks again.
-        int resolvedSlots = ResolveContextAndSlots(profile.ContextSize, profile.ParallelSlots, profile.ContextIsPerRequest).Slots;
+        int resolvedSlots = ResolveLaunchContextAndSlots(profile).Slots;
         if (profile.ParallelSlots > 0 || resolvedSlots != AssumedAutoParallelSlots)
             args.AddRange(["--parallel", Math.Clamp(resolvedSlots, 1, MaximumParallelSlots).ToString()]);
+
+        // Only the launch planner sets these, and only for a runtime whose --help lists the flag (LlamaServerCapabilities).
+        if (UsesPooledSlots(profile))
+            args.AddRange(["--kv-unified", "--kv-unified-per-slot", profile.UnifiedKvPerSlotTokens.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        if (profile.HostPromptCacheMib >= 0) args.AddRange(["--cache-ram", profile.HostPromptCacheMib.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
 
         if (profile.Threads > 0) args.AddRange(["--threads", profile.Threads.ToString()]);
         if (profile.ThreadsBatch > 0) args.AddRange(["--threads-batch", profile.ThreadsBatch.ToString()]);

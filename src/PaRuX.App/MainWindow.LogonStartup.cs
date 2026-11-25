@@ -12,7 +12,8 @@ namespace PaRuX;
 /// Sign-in start orchestrator. When Windows starts PaRuX through the optional sign-in entry (<c>--logon</c>), it applies ONE decision
 /// (<see cref="LogonStartupPolicy"/>): Console or Desktop, from the owner's saved choices, the chosen TV(s), an optional graphics card
 /// rule and Ctrl/Shift/arguments. Console starts the helpers the owner configured (through the existing Console hooks), Playnite
-/// Fullscreen when available, the optional power plan and Game Bar block; the Desktop side stays minimised and never takes the screen.
+/// Fullscreen when available, the optional power plan and Game Bar block; the Desktop side follows the owner's "without TV" choice
+/// (normal window in front by default, minimised only when chosen).
 /// Every phase is timed into StartupTiming.log. The same decision is available as a dry run that starts nothing. It never needs a
 /// TV or a monitor: with nothing connected the Desktop side simply starts.
 /// </summary>
@@ -88,6 +89,7 @@ public sealed partial class MainWindow
         try
         {
             timing.Mark("start sequence begins");
+            RecordLogonStart();
             var (settings, probe) = await GatherLogonInputsAsync(request, resolution, quick: false);
             timing.Mark("inputs read (TV " + (probe.TvPresent ? "present" : probe.TvSelected ? "absent" : "not chosen") + ", GPU rule " + (probe.GpuPresent?.ToString() ?? "off") + ")");
             if (App.IsShuttingDown) return true;
@@ -103,8 +105,17 @@ public sealed partial class MainWindow
                 case LogonMode.Launcher: ShowPlayniteLauncher(PlayniteLauncherAction.Open, App.StartupLauncherRequest.Gamepad, fromRequest: true); break;
                 case LogonMode.Console: await StartLogonConsoleAsync(settings.StartInConsoleMode || request.Force || resolution.Action == PlayniteLauncherAction.Console); break;
                 default:
-                    if (plan.Window == LogonWindow.Minimized && AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter overlapped)
-                        overlapped.Minimize();
+                    // The owner's "without TV" choice: minimised only when chosen; otherwise the window opens normally and comes to the front.
+                    if (plan.Window == LogonWindow.Minimized)
+                    {
+                        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter overlapped) overlapped.Minimize();
+                    }
+                    else
+                    {
+                        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } shown)
+                            shown.Restore();
+                        App.ShowMainWindow();
+                    }
                     break;
             }
             timing.Mark("start action requested: " + plan.Mode);
@@ -119,6 +130,15 @@ public sealed partial class MainWindow
             _consoleRoutingInProgress = false;
         }
         return true;
+    }
+
+    /// <summary>Records this sign-in start (process start time) for the Settings check "did PaRuX start at the last sign-in?".</summary>
+    private static void RecordLogonStart()
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        try { using Process me = Process.GetCurrentProcess(); started = new DateTimeOffset(me.StartTime.ToUniversalTime(), TimeSpan.Zero); }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
+        LogonStartMarker.Write(RegistryRunKeyStore.LogonStartMarkerPath, started, null);
     }
 
     private async Task StartLogonConsoleAsync(bool playniteOnly)

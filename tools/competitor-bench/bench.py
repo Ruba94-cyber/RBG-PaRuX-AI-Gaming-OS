@@ -26,6 +26,7 @@ PROMPTS = {
     "gen": lambda n: "Write a detailed 400-word explanation of how a hash table works, with an example. (ref %s)" % n,
     "1k": lambda n: make_text(1000, n) + "\n\nSummarize the notes above in exactly two sentences.",
     "4k": lambda n: make_text(4000, n) + "\n\nSummarize the notes above in exactly two sentences.",
+    "big": lambda n: make_text(13000, n) + "\n\nSummarize the notes above in exactly two sentences.",
 }
 
 def one(url, token, model, prompt, max_tokens, extra):

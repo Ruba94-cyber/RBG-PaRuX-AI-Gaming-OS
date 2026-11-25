@@ -198,7 +198,7 @@ public sealed partial class SettingsView
         ConsoleStartOnTvExplanation.Text = TvT(
             "When PaRuX starts and the TV chosen above is connected, it starts Console mode: Playnite Fullscreen (with your theme) on that TV, and PaRuX stays available for AI. If Playnite is missing or skipped, PaRuX simply opens in its normal window.",
             "All'avvio, se la TV scelta sopra è collegata, PaRuX avvia la modalità Console: Playnite a schermo intero (con il tuo tema) su quella TV, e PaRuX resta disponibile per l'IA. Se Playnite manca o è stato saltato, PaRuX si apre semplicemente nella finestra normale.");
-        ConsoleStartWithoutTvCombo.Header = TvT("When no chosen TV is connected, start", "Se nessuna TV scelta è collegata, avvia");
+        ConsoleStartWithoutTvCombo.Header = TvT("When PaRuX starts (also at sign-in) and no chosen TV is connected, the window", "Quando PaRuX parte (anche all'accesso) e nessuna TV scelta è collegata, la finestra");
         ConsoleAutoReturnExplanation.Text = TvT(
             "Only a verified directly launched process exit and completed AI recovery can trigger this. Manual Return, store handoffs and unknown child processes are ignored. Windows may deny foreground activation.",
             "Si attiva soltanto dopo la chiusura verificata di un processo avviato direttamente e il ripristino dell'AI. Il ritorno manuale, gli store e i processi secondari sconosciuti sono esclusi. Windows può impedire l'attivazione in primo piano.");

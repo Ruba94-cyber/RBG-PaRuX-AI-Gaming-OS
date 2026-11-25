@@ -13,13 +13,16 @@ namespace PaRuX.Server;
 /// (2) a short table of builds whose <c>--help</c> was read by hand. Anything else is "unverified"
 /// and gets no optional flags. The table currently holds b10549 only, the pinned baseline build
 /// (packaging/windows-baseline-runtime.lock.json): its help text lists --n-cpu-moe, --cpu-moe,
-/// --override-tensor and --load-mode in both the Vulkan and the CUDA 12.4 packages.
+/// --override-tensor and --load-mode in both the Vulkan and the CUDA 12.4 packages, and (re-read 2026-11-25) --cache-ram and --kv-unified.
 /// </summary>
 public sealed record LlamaServerCapabilities(
     bool NCpuMoe,
     bool OverrideTensor,
     bool LoadMode,
-    string Source)
+    string Source,
+    bool CacheRam = false,
+    bool KvUnified = false,
+    bool KvUnifiedPerSlot = false)
 {
     /// <summary>Builds whose <c>llama-server --help</c> was read and found to list every flag above.</summary>
     internal static readonly IReadOnlySet<int> HandVerifiedBuilds = new HashSet<int> { 10549 };
@@ -29,7 +32,7 @@ public sealed record LlamaServerCapabilities(
     /// <summary>Capabilities of a build that has no probe result: the hand-verified table or nothing.</summary>
     public static LlamaServerCapabilities FromBuild(int? build) =>
         build is int number && HandVerifiedBuilds.Contains(number)
-            ? new LlamaServerCapabilities(true, true, true, "verified-help-b" + number)
+            ? new LlamaServerCapabilities(true, true, true, "verified-help-b" + number, CacheRam: true, KvUnified: true)
             : Unverified;
 
     /// <summary>Reads the capabilities straight out of a build's own <c>--help</c> text.</summary>
@@ -40,7 +43,10 @@ public sealed record LlamaServerCapabilities(
             NCpuMoe: HasOption(help, "--n-cpu-moe"),
             OverrideTensor: HasOption(help, "--override-tensor"),
             LoadMode: HasOption(help, "--load-mode"),
-            Source: source);
+            Source: source,
+            CacheRam: HasOption(help, "--cache-ram"),
+            KvUnified: HasOption(help, "--kv-unified"),
+            KvUnifiedPerSlot: HasOption(help, "--kv-unified-per-slot"));
     }
 
     /// <summary>"b10549", "llama.cpp-b10549-cuda12.4" or "10549" to 10549; null when no build number is present.</summary>

@@ -39,7 +39,7 @@ public sealed class GamingDownloadPauseTests : IDisposable
     /// <summary>Loopback HTTP server: HEAD length, GET with optional Range, 8 KiB chunks 15 ms apart.</summary>
     private sealed class ThrottledServer : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        private HttpListener _listener = new();
         private readonly byte[] _content;
         private readonly CancellationTokenSource _stop = new();
         public readonly List<long?> RangeStarts = new();
@@ -53,7 +53,8 @@ public sealed class GamingDownloadPauseTests : IDisposable
                 int port = Random.Shared.Next(20000, 60000);
                 try
                 {
-                    _listener.Prefixes.Clear();
+                    // A failed Start() (port already taken) closes the HttpListener, so every attempt needs a fresh one.
+                    if (attempt > 0) _listener = new HttpListener();
                     _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
                     _listener.Start();
                     Port = port;

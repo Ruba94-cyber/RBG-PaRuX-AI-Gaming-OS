@@ -655,8 +655,32 @@ public sealed class LocalAiProcessManager
     /// per-launch key; key acceptance is proven by the keyed output-sanity request (and, for the hot pool, the keyed route
     /// self-test) that every launch runs after this check.
     /// </summary>
-    public Task<bool> IsTextHealthyAsync(CancellationToken ct) =>
-        IsTextHealthyAsync(ct, static (url, token) => Http.GetAsync(url, token));
+    public async Task<bool> IsTextHealthyAsync(CancellationToken ct)
+    {
+        // A routed chat asks this up to three times within a few milliseconds (router evidence, exact-candidate check and
+        // its re-check). A positive answer is reused for one second for the SAME launch while the port still listens; a
+        // new launch, a stopped runtime (port closed) or any negative answer always probes again.
+        LaunchIdentityBox? launch = Volatile.Read(ref _textLaunchIdentity);
+        TextHealthyMemo? memo = Volatile.Read(ref _textHealthyMemo);
+        if (TextHealthProbeForTests is null && memo is not null
+            && IsTextHealthyMemoReusable(launch, memo.Launch, memo.Ticks, Stopwatch.GetTimestamp())
+            && IsPortListening(TextPort))
+            return true;
+        bool healthy = await IsTextHealthyAsync(ct, static (url, token) => Http.GetAsync(url, token)).ConfigureAwait(false);
+        Volatile.Write(ref _textHealthyMemo,
+            healthy && launch is not null && ReferenceEquals(launch, Volatile.Read(ref _textLaunchIdentity))
+                ? new TextHealthyMemo(launch, Stopwatch.GetTimestamp()) : null);
+        return healthy;
+    }
+
+    private sealed record TextHealthyMemo(LaunchIdentityBox Launch, long Ticks);
+    private static TextHealthyMemo? _textHealthyMemo;
+    internal static readonly TimeSpan TextHealthyMemoTtl = TimeSpan.FromSeconds(1);
+
+    internal static bool IsTextHealthyMemoReusable(object? currentLaunch, object? memoLaunch, long memoTicks, long nowTicks) =>
+        currentLaunch is not null
+        && ReferenceEquals(currentLaunch, memoLaunch)
+        && Stopwatch.GetElapsedTime(memoTicks, nowTicks) < TextHealthyMemoTtl;
 
     internal async Task<bool> IsTextHealthyAsync(
         CancellationToken ct,
@@ -786,8 +810,7 @@ public sealed class LocalAiProcessManager
         {
             Process? process = GetManagedProcess(LocalAiPaths.TextPidFile, "llama-server");
             if (process == null) return 0;
-            process.Refresh();
-            return Math.Max(0, process.WorkingSet64);
+            return Math.Max(0, ProcessWorkingSet.Read(process));
         }
         catch { return 0; }
     }

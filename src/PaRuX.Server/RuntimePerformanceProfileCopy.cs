@@ -46,6 +46,8 @@ public static class RuntimePerformanceProfileCopy
         ContextPolicyApplied = value.ContextPolicyApplied,
         DisableKvOffload = value.DisableKvOffload,
         RopeScale = value.RopeScale,
+        HostPromptCacheMib = value.HostPromptCacheMib,
+        UnifiedKvPerSlotTokens = value.UnifiedKvPerSlotTokens,
         CpuMoeLayers = value.CpuMoeLayers,
         OverrideTensor = value.OverrideTensor
     };

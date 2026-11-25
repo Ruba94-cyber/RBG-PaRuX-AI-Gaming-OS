@@ -41,14 +41,14 @@ internal sealed record TextLaunchDescriptor(
         "--cpu-strict", "--cpu-strict-batch", "--numa", "--split-mode", "--main-gpu", "--device",
         "--tensor-split", "--spec-type", "--spec-draft-n-max", "--spec-draft-device",
         "--sleep-idle-seconds", "--temp", "--top-p", "--top-k", "--min-p", "--presence-penalty",
-        "--repeat-penalty", "--image-min-tokens", "--image-max-tokens"
+        "--repeat-penalty", "--image-min-tokens", "--image-max-tokens", "--cache-ram", "--kv-unified-per-slot"
     };
 
     /// <summary>Boolean flags that change inference/residency.</summary>
     private static readonly HashSet<string> SemanticSwitches = new(StringComparer.Ordinal)
     {
         "--jinja", "--cont-batching", "--no-cont-batching", "--no-kv-offload", "--backend-sampling",
-        "--reasoning-preserve"
+        "--reasoning-preserve", "--kv-unified"
     };
 
     /// <summary>Ephemeral per-launch values; excluded from the identity (model bytes are bound separately).</summary>

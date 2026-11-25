@@ -219,6 +219,82 @@ public sealed class RuntimeManagerService
         return result;
     }
 
+    /// <summary>
+    /// What the chat hot path needs to know about the text runtime: is a PaRuX text runtime resident and healthy, which
+    /// model/role does it serve, and is a heavy GPU present. Same verdicts as <see cref="GetStatusAsync(CancellationToken)"/>
+    /// ("some text-* backend is Running and Healthy", ActiveRole/ActiveModelPath read the same files, GpuDetected uses the
+    /// same cached VRAM probe), without the work only the status page needs: no GPU telemetry sample (an nvidia-smi spawn
+    /// whenever the 1 s cache expired), no per-backend executable/version reads, no media/ComfyUI probe, no load report.
+    /// Measured on the RTX 5080 bench PC: a routed short chat called the full status four times, 60 ms median and
+    /// 250 ms p90 before the first token (docs/validation/COMPETITOR_BENCH_2026-11-25.md).
+    /// </summary>
+    /// <param name="probeHealth">False skips the /health round trip for callers that only need residency and the active model;
+    /// <see cref="TextRuntimeResidency.Healthy"/> is then always false and must not be read.</param>
+    internal async Task<TextRuntimeResidency> GetTextResidencyAsync(CancellationToken ct, bool probeHealth = true)
+    {
+        int vramMib = CorporateMode.IsActive ? 0 : await _process.GetVramMibAsync(ct).ConfigureAwait(false);
+        int? textPid = _process.GetTextProcessId();
+        bool inProcessManaged = textPid == null
+            && OperatingSystem.IsWindows()
+            && ManagedListenerOwnership.IsOwnedByThisProcess(LocalAiPaths.TextPort);
+        bool textResident = textPid != null || inProcessManaged;
+        bool runningFromTextBackend = probeHealth && inProcessManaged
+            || probeHealth && (textPid is int pid && TextBackendDirectories().Any(directory => ProcessRunsFromCached(pid, directory)));
+        bool healthy = runningFromTextBackend && await _process.IsTextHealthyAsync(ct).ConfigureAwait(false);
+        return new TextRuntimeResidency(
+            textResident,
+            healthy,
+            textResident ? ReadActiveRoleRaw() : null,
+            textResident ? ReadActiveModelPathRaw() : null,
+            vramMib >= LocalAiProcessManager.HeavyGpuVramThresholdMib,
+            _process.GamingActive);
+    }
+
+    /// <summary>The <see cref="RuntimeManagerStatus.GpuDetected"/> verdict alone (cached VRAM probe; Corporate never scans the GPU).</summary>
+    internal async Task<bool> IsHeavyGpuDetectedAsync(CancellationToken ct) =>
+        !CorporateMode.IsActive
+        && await _process.GetVramMibAsync(ct).ConfigureAwait(false) >= LocalAiProcessManager.HeavyGpuVramThresholdMib;
+
+    /// <summary>The text backend folders <see cref="GetStatusAsync(CancellationToken, SystemRamSnapshot?)"/> reports, in the same edition rules.</summary>
+    private static IEnumerable<string> TextBackendDirectories()
+    {
+        if (CorporateMode.IsActive)
+        {
+            yield return LocalAiPaths.FindBundledCpuRuntime() ?? Path.Combine(LocalAiPaths.RuntimeRoot, "missing-cpu-runtime");
+            yield return LocalAiPaths.RuntimeVulkanPath;
+            yield break;
+        }
+        yield return LocalAiPaths.RuntimeCudaPath;
+        yield return LocalAiPaths.RuntimeVulkanPath;
+        if (PaRuXDataRoot.FindPortableDataRoot(AppContext.BaseDirectory) != null)
+            yield return LocalAiPaths.FindBundledCpuRuntime() ?? Path.Combine(LocalAiPaths.RuntimeRoot, "missing-cpu-runtime");
+    }
+
+    // The executable of one process never changes, so its path is read once per (pid, start time) instead of enumerating
+    // the process modules on every chat request. A reused PID has a different start time and is read again.
+    private sealed record TextModuleCacheEntry(int Pid, long StartTicks, string? Path);
+    private static TextModuleCacheEntry? _textModuleCache;
+
+    private static bool ProcessRunsFromCached(int pid, string runtimePath)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(pid);
+            long start = process.StartTime.ToUniversalTime().Ticks;
+            TextModuleCacheEntry? cached = Volatile.Read(ref _textModuleCache);
+            string? modulePath;
+            if (cached is not null && cached.Pid == pid && cached.StartTicks == start) modulePath = cached.Path;
+            else
+            {
+                modulePath = process.MainModule?.FileName;
+                if (modulePath != null) modulePath = Path.GetFullPath(modulePath);
+                Volatile.Write(ref _textModuleCache, new TextModuleCacheEntry(pid, start, modulePath));
+            }
+            return modulePath != null && modulePath.StartsWith(Path.GetFullPath(runtimePath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     public async Task<RuntimeDiagnosticsReport> GetDiagnosticsAsync(CancellationToken ct)
     {
         var issues = new List<RuntimeDiagnosticIssue>();
@@ -866,7 +942,7 @@ public sealed class RuntimeManagerService
         {
             if (_process.GetTextProcessId() is not int pid) return 0;
             using Process resident = Process.GetProcessById(pid);
-            return Math.Max(0, resident.WorkingSet64);
+            return Math.Max(0, ProcessWorkingSet.Read(resident));
         }
         catch { return 0; }
     }
@@ -1039,15 +1115,15 @@ public sealed class RuntimeManagerService
 
     private async Task<bool> IsRoleActiveAsync(string normalizedRole, CancellationToken ct)
     {
-        RuntimeManagerStatus status = await GetStatusAsync(ct).ConfigureAwait(false);
+        TextRuntimeResidency status = await GetTextResidencyAsync(ct).ConfigureAwait(false);
         string? assignedPath = LocalAiPaths.GetRoleModelPathOrNull(normalizedRole);
-        bool healthyText = status.Backends.Any(b => b.Backend.StartsWith("text-", StringComparison.Ordinal) && b.Running && b.Healthy);
+        bool healthyText = status.Healthy;
         if (ActiveRoleResidentMatchesAssignment(status.ActiveRole, status.ActiveModelPath, normalizedRole, assignedPath, healthyText))
             return true;
 
         if (assignedPath != null && status.ActiveModelPath != null
             && PathsEqualLocal(status.ActiveModelPath, assignedPath)
-            && status.Backends.Any(b => b.Backend.StartsWith("text-", StringComparison.Ordinal) && b.Running && b.Healthy))
+            && status.Healthy)
         {
             WriteActiveRole(normalizedRole);
             return true;
@@ -1057,10 +1133,10 @@ public sealed class RuntimeManagerService
 
     private async Task<bool> IsExactCandidateActiveAsync(string normalizedRole, string filePath, CancellationToken ct)
     {
-        RuntimeManagerStatus status = await GetStatusAsync(ct).ConfigureAwait(false);
+        TextRuntimeResidency status = await GetTextResidencyAsync(ct).ConfigureAwait(false);
         if (status.ActiveModelPath != null
             && PathsEqualLocal(status.ActiveModelPath, filePath)
-            && status.Backends.Any(b => b.Backend.StartsWith("text-", StringComparison.Ordinal) && b.Running && b.Healthy))
+            && status.Healthy)
         {
             if (status.ActiveRole == null || !string.Equals(status.ActiveRole, normalizedRole, StringComparison.OrdinalIgnoreCase))
             {
@@ -1308,3 +1384,7 @@ public sealed class RuntimeManagerService
         ["video"] = "video"
     };
 }
+
+/// <summary>Hot-path view of the managed text runtime (see RuntimeManagerService.GetTextResidencyAsync).</summary>
+internal sealed record TextRuntimeResidency(
+    bool Resident, bool Healthy, string? ActiveRole, string? ActiveModelPath, bool GpuDetected, bool GamingActive);

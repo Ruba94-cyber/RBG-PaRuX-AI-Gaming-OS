@@ -106,6 +106,20 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" ExtendedPathValidation="yes" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
 
+    <!-- On a full uninstall (never on a major upgrade), ask this installation's own PaRuX.exe to remove the
+         "PaRuX at sign-in" scheduled task and HKCU Run\PaRuX value ONLY when they point to this executable.
+         Run twice before RemoveFiles: once impersonating the user (HKCU Run + user-owned task) and once
+         elevated/SYSTEM (task created with admin rights). Return="ignore" guarantees uninstall never fails. -->
+    <CustomAction Id="PaRuXLogonCleanupUser" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="yes" Return="ignore"
+        ExeCommand="&quot;[INSTALLFOLDER]PaRuX.exe&quot; --uninstall-logon-cleanup" />
+    <CustomAction Id="PaRuXLogonCleanupElevated" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+        ExeCommand="&quot;[INSTALLFOLDER]PaRuX.exe&quot; --uninstall-logon-cleanup" />
+
+    <InstallExecuteSequence>
+      <Custom Action="PaRuXLogonCleanupUser" Before="PaRuXLogonCleanupElevated" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="PaRuXLogonCleanupElevated" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
     <!-- WiX v5+ creates a single default feature and assigns the harvested/component resources.
          Without -NoRedist an explicit "Main" feature (everything above) sits beside two OPTIONAL features that are NOT installed by
          default (Level 2 > INSTALLLEVEL 1): the controller drivers and the Sunshine portable package. -->
@@ -132,6 +146,16 @@
          selected feature carries, and on removal only on what PaRuX itself recorded as installed. -->
     <ComponentGroup Id="PaRuXRedistBase" Directory="REDISTDIR">
       <Files Include="$(var.RedistDir)\Base\**" />
+      <!-- The Redist folder (and its two optional sub-folders) can be left behind EMPTY after removal: the post-setup helper and
+           the optional-feature steps touch it at run time, so Windows Installer did not create it from a component and would not
+           remove it. RemoveFolder On="uninstall" deletes each one if (and only if) it is empty by then; the helper repeats the
+           same empty-only cleanup after the setup has ended (Invoke-PaRuXRedist.ps1, Remove-RedistEmptyFolders). -->
+      <Component Id="PaRuXRedistFolderCleanup" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Ruba94-cyber\PaRuX\Features" Name="PaRuXRedistFolder" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemovePaRuXRedistDriversDir" Directory="REDISTDRIVERSDIR" On="uninstall" />
+        <RemoveFolder Id="RemovePaRuXRedistSunshineDir" Directory="REDISTSUNSHINEDIR" On="uninstall" />
+        <RemoveFolder Id="RemovePaRuXRedistDir" Directory="REDISTDIR" On="uninstall" />
+      </Component>
     </ComponentGroup>
 
     <!-- Feature markers (HKLM, written by the feature's own component): a rolled-back or cancelled setup leaves none, so the

@@ -39,7 +39,7 @@ internal sealed class PlayniteGameSessionTracker
     internal const int MaxTracked = 128;
     private static readonly TimeSpan WindowlessAdoptionLimit = TimeSpan.FromMinutes(2);
 
-    private static readonly HashSet<string> PlayniteNames = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> PlayniteNames = new(StringComparer.OrdinalIgnoreCase)
     { "Playnite.DesktopApp", "Playnite.FullscreenApp" };
 
     /// <summary>Store launchers whose windowed, non-helper children are games started on behalf of Playnite.</summary>

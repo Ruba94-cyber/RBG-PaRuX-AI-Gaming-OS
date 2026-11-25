@@ -12,7 +12,33 @@ public static class CorporateMode
     public const string ModelDownloadsEnvironmentVariable = "PARUX_CORPORATE_MODEL_DOWNLOADS";
     public const string MarkerFileName = "parux.corporate";
 
-    public static bool IsActive => Evaluate(Environment.GetEnvironmentVariable(EnvironmentVariable), AppContext.BaseDirectory);
+    /// <summary>The environment switch is read on every call; the marker-file probe (up to four File.Exists lookups) runs on
+    /// every HTTP request in the Core, so its answer is reused for <see cref="MarkerProbeTtl"/>. The marker is a file shipped
+    /// beside the program, so a later change is still noticed within that time (and at the next start).</summary>
+    public static bool IsActive
+    {
+        get
+        {
+            string? env = Environment.GetEnvironmentVariable(EnvironmentVariable);
+            if (string.Equals(env?.Trim(), "1", StringComparison.Ordinal)
+                || string.Equals(env?.Trim(), "true", StringComparison.OrdinalIgnoreCase)) return true;   // no file probe at all
+            long now = Environment.TickCount64;
+            lock (MarkerGate)
+            {
+                if (_markerProbeAt == 0 || now - _markerProbeAt >= (long)MarkerProbeTtl.TotalMilliseconds)
+                {
+                    _markerProbe = Evaluate(null, AppContext.BaseDirectory);
+                    _markerProbeAt = now == 0 ? 1 : now;
+                }
+                return _markerProbe;
+            }
+        }
+    }
+
+    internal static readonly TimeSpan MarkerProbeTtl = TimeSpan.FromSeconds(10);
+    private static readonly object MarkerGate = new();
+    private static long _markerProbeAt;
+    private static bool _markerProbe;
 
     /// <summary>True only for a Corporate session explicitly launched with model downloads enabled.
     /// This is intentionally not the global Internet toggle: Gaming, automatic updates, cloud

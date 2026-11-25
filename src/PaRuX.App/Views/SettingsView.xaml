@@ -1296,11 +1296,11 @@
                             Text="When PaRuX starts and the TV chosen above is connected, it starts Console mode: Playnite Fullscreen (with your theme) on that TV, and PaRuX stays available for AI. If Playnite is missing or skipped, PaRuX simply opens in its normal window."
                             loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX avvia la modalità Console: Playnite a schermo intero (con il tuo tema) su quella TV, e PaRuX resta disponibile per l'IA. Se Playnite manca o è stato saltato, PaRuX si apre semplicemente nella finestra normale." />
                         <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
-                            Header="When no chosen TV is connected, start" loc:Loc.ItHeader="Se nessuna TV scelta è collegata, avvia"
+                            Header="When PaRuX starts (also at sign-in) and no chosen TV is connected, the window" loc:Loc.ItHeader="Quando PaRuX parte (anche all'accesso) e nessuna TV scelta è collegata, la finestra"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"
                             SelectionChanged="ConsoleStartWithoutTvCombo_SelectionChanged">
-                            <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />
-                            <ComboBoxItem Content="Minimized" loc:Loc.ItContent="Ridotto a icona" Tag="minimized" />
+                            <ComboBoxItem Content="Opens normally, in front (AI, desktop mode)" loc:Loc.ItContent="Si apre normalmente, in primo piano (AI, modalità desktop)" Tag="normal" />
+                            <ComboBoxItem Content="Starts minimized on the taskbar" loc:Loc.ItContent="Parte ridotta a icona sulla barra delle applicazioni" Tag="minimized" />
                         </ComboBox>
                         <ToggleSwitch x:Name="ConsolePowerSwitch" Header="Use a Windows power plan while Console is in use" loc:Loc.ItHeader="Usa un piano di alimentazione Windows mentre la Console è in uso"
                             IsOn="False" AutomationProperties.AutomationId="Settings_ConsolePower_Toggle" Toggled="ConsolePowerSwitch_Toggled" />
@@ -2110,7 +2110,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
-                                       Text="Keep runtimes up to date (downloads in the background; checks online catalogs)" loc:Loc.ItText="Mantieni i runtime aggiornati (scarica in background e consulta i cataloghi online)"
+                                       Text="Keep runtimes up to date in the background (off by default)" loc:Loc.ItText="Mantieni i runtime aggiornati in background (spento per impostazione predefinita)"
                                        Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                             <ToggleSwitch x:Name="Settings_AutoCheck_RuntimeUpdate_Toggle"
                                           Grid.Column="1" IsOn="False"
@@ -2118,6 +2118,9 @@
                                           AutomationProperties.Name="Keep runtimes up to date (downloads in the background)" loc:Loc.ItName="Mantieni i runtime aggiornati (scarica in background)"
                                           Toggled="AutoCheckRuntimeUpdateToggle_Toggled" />
                         </Grid>
+                        <TextBlock x:Name="Settings_AutoCheck_RuntimeUpdate_Explanation_Text" TextWrapping="Wrap"
+                                   AutomationProperties.AutomationId="Settings_AutoCheck_RuntimeUpdate_Explanation_Text"
+                                   Style="{StaticResource PaRuXCaptionTextStyle}" Margin="0,0,0,8" />
                         <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

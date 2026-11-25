@@ -57,7 +57,7 @@ internal sealed class PausedGameBanner : StackPanel
 
         Loaded += async (_, _) => { _timer.Start(); await RefreshAsync(); };
         Unloaded += (_, _) => _timer.Stop();
-        _timer.Tick += async (_, _) => { if (IsLoaded && XamlRoot is not null) await RefreshAsync(); };
+        _timer.Tick += async (_, _) => { if (IsLoaded && XamlRoot is not null && !UiPollCadence.IsWindowHidden()) await RefreshAsync(); };
     }
 
     /// <summary>True while a paused app is offered.</summary>

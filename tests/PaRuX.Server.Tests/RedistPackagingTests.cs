@@ -224,7 +224,9 @@ public sealed class RedistPackagingTests : IDisposable
         string withoutBlock = Regex.Replace(Wxs(), @"<\?if \$\(IncludeRedist\) = 1\?>.*?<\?endif\?>", string.Empty, RegexOptions.Singleline);
         withoutBlock = Regex.Replace(withoutBlock, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
         Assert.DoesNotContain("Redist", withoutBlock.Replace("IncludeRedist", string.Empty));
-        Assert.DoesNotContain("<CustomAction", withoutBlock);
+        Assert.DoesNotContain("Invoke-PaRuXRedist", withoutBlock);
+        foreach (Match ca in Regex.Matches(withoutBlock, @"<CustomAction .*?/>", RegexOptions.Singleline))
+            Assert.Contains("Id=\"PaRuXLogonCleanup", ca.Value);
         Assert.DoesNotContain("PARUX_ADD_", withoutBlock);
         Assert.DoesNotContain("<Feature", withoutBlock);
     }
@@ -269,6 +271,26 @@ public sealed class RedistPackagingTests : IDisposable
         // The main harvest must not swallow the optional payload.
         Assert.DoesNotContain("Redist", Regex.Match(Wxs(), @"<ComponentGroup Id=""PaRuXAppFiles"".*?</ComponentGroup>", RegexOptions.Singleline).Value);
     }
+
+    [Fact]
+    public void Uninstall_leaves_no_empty_Redist_folder_behind_in_the_setup_or_in_the_helper()
+    {
+        string block = RedistBlock();
+        // Declarative cleanup: every runtime-touched folder has an On="uninstall" RemoveFolder, in an always-installed feature.
+        foreach (string dir in new[] { "REDISTDIR", "REDISTDRIVERSDIR", "REDISTSUNSHINEDIR" })
+            Assert.Matches($@"<RemoveFolder Id=""\w+"" Directory=""{dir}"" On=""uninstall"" />", block);
+        Match baseGroup = Regex.Match(block, @"<ComponentGroup Id=""PaRuXRedistBase"".*?</ComponentGroup>", RegexOptions.Singleline);
+        Assert.Contains("PaRuXRedistFolderCleanup", baseGroup.Value);
+        // Belt and braces: the post-setup helper removes only EMPTY folders under a folder named Redist, after the uninstall work.
+        string helper = Read("scripts", "redist", "Invoke-PaRuXRedist.ps1");
+        Assert.Contains("function Remove-RedistEmptyFolders", helper);
+        Assert.Contains("Invoke-RedistUninstall $lock; Remove-RedistEmptyFolders $RedistRoot", helper);
+        Assert.Contains("-ne 'Redist'", helper);
+        Assert.Contains(".Count -eq 0", helper);
+        string cleanup = Regex.Match(helper, @"function Remove-RedistEmptyFolders.*?\n}", RegexOptions.Singleline).Value;
+        Assert.NotEmpty(cleanup);
+        Assert.DoesNotContain("-Recurse -Force -ErrorAction Stop", cleanup);   // removes empty directories only, never a tree
+        Assert.DoesNotMatch(@"Remove-Item[^\r\n]*-Recurse", cleanup);    }
 
     [Fact]
     public void The_lock_feature_ids_match_the_wix_features()

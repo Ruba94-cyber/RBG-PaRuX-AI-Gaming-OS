@@ -304,6 +304,12 @@ public static class LaunchPlanner
         // ---- load mode: mlock only with proven RAM headroom ----
         PlanLoadMode(profile, baseline, hw, placement, input.Capabilities, decisions);
 
+        // ---- host-RAM prompt cache: off where re-prefill is cheaper than saving slot state ----
+        PlanHostPromptCache(profile, hw, placement, input.Capabilities, decisions);
+
+        // ---- adaptive parallel slots: a pooled KV of slots x full window, only with proven free VRAM ----
+        if (fits) PlanPooledParallelSlots(profile, model, hw, placement, input.Capabilities, baseline, slots, pinned, decisions);
+
         // ---- batch sizes by remaining accelerator memory ----
         if (hw.AcceleratorEligible)
         {
@@ -356,9 +362,108 @@ public static class LaunchPlanner
             + (AdaptiveKvMaxShareOfDedicated * 100).ToString("0", CultureInfo.InvariantCulture) + "% of the card; f16 decodes faster than q8_0 (measured); the baseline stays q8_0";
     }
 
+
+    /// <summary>Owner override for <c>--cache-ram</c> in MiB (0 disables, -1 no limit); unset = the planner decides.</summary>
+    internal const string HostPromptCacheOverrideVariable = "PARUX_LLAMA_CACHE_RAM_MIB";
+
+    /// <summary>
+    /// llama-server keeps a host-RAM prompt cache (<c>--cache-ram</c>, 8192 MiB by default). Before every request whose
+    /// prompt does not extend the slot's current one, it copies the whole slot state to that cache, synchronously, ahead of
+    /// prefill. Measured on the RTX 5080 (Qwen3-4B Q4_K_M, f16 KV, b11871, 2026-11-25): "prompt cache update took 762 ms"
+    /// to 1659 ms for a 5.6k-token slot (788 MiB of state), so time to first token at 4k was 706 ms with the cache and
+    /// 441 ms with <c>--cache-ram 0</c> (1k: 216 vs 129 ms), while switching between three 2.3k-token conversations cost
+    /// 230-246 ms of re-prefill without the cache against 245-310 ms of save/restore with it. On a fully offloaded CUDA
+    /// launch prefill (about 11k tokens/s) is therefore cheaper than the cache, and the up-to-8 GiB of host RAM stays free.
+    /// CPU, shared-memory and partially offloaded launches (slow prefill) keep the engine default, where the cache pays.
+    /// </summary>
+    internal static void PlanHostPromptCache(LlamaPerformanceProfileDto profile, LaunchHardware hw, Placement placement,
+        LlamaServerCapabilities caps, List<LaunchPlanDecision> decisions)
+    {
+        if (!caps.CacheRam) return;
+        string? overrideText = Environment.GetEnvironmentVariable(HostPromptCacheOverrideVariable);
+        if (int.TryParse(overrideText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int forced) && forced >= -1)
+        {
+            profile.HostPromptCacheMib = forced;
+            decisions.Add(new("--cache-ram", forced.ToString(CultureInfo.InvariantCulture), "owner override (" + HostPromptCacheOverrideVariable + ")"));
+            return;
+        }
+        bool fastPrefill = hw.AcceleratorEligible && !hw.SharedMemoryPrimary
+            && string.Equals(hw.Backend, "text-cuda", StringComparison.OrdinalIgnoreCase)
+            && placement.GpuLayers < 0 && placement.CpuMoeLayers == 0 && placement.HostBytes == 0;
+        if (!fastPrefill)
+        {
+            decisions.Add(new("--cache-ram", "default", "kept: prefill is not fully on a CUDA GPU here, so the host-RAM prompt cache can save more time than it costs"));
+            return;
+        }
+        profile.HostPromptCacheMib = 0;
+        decisions.Add(new("--cache-ram", "0", "host-RAM prompt cache off: every model layer and the KV cache are on a CUDA GPU, where re-prefilling a prompt costs less than the synchronous slot-state copy the cache makes before each new conversation (bench evidence: docs/validation/COMPETITOR_BENCH_2026-11-25.md); up to 8 GiB of system RAM stays free"));
+    }
+    /// <summary>Owner switch for adaptive parallel slots: "off" (or 0/1) keeps one slot, 2-4 caps the count, unset = adaptive.</summary>
+    internal const string ParallelSlotsVariable = "PARUX_PARALLEL_SLOTS";
+
+    /// <summary>Largest slot count adaptive planning will choose.</summary>
+    internal const int MaximumAdaptiveSlots = 4;
+
+    /// <summary>
+    /// Adaptive parallel slots. The baseline's slot wish (RecommendParallelSlots: 2 for chat with a large card, 1 for
+    /// coding/long-context) used to collapse to a single slot whenever the context envelope could not give every slot a
+    /// 16k window, so concurrent requests queued (measured: 3 clients, 184 tok/s aggregate, last first token after 2.9 s).
+    /// Here the slots share ONE KV pool sized slots x the per-request window (<c>--kv-unified --kv-unified-per-slot W
+    /// --ctx-size slots*W</c>): every request keeps its whole window and the pool can never be oversubscribed (measured on
+    /// b11871: a 16k pool shared by 4 uncapped slots returned HTTP 500 to concurrent 4.6k prompts; the capped pool served
+    /// the same load with no error). The extra KV is admitted only on a fully offloaded CUDA launch whose weights, pool and
+    /// reserve stay within the same share of the card and free headroom as the adaptive f16 KV rule; otherwise one slot.
+    /// Prompt reuse across slots and the reasoning-history answers were checked with tools/competitor-bench/slots_cache.py.
+    /// </summary>
+    internal static void PlanPooledParallelSlots(LlamaPerformanceProfileDto profile, GgufModelInfo model, LaunchHardware hw,
+        Placement placement, LlamaServerCapabilities caps, LlamaPerformanceProfileDto baseline, int baselineSlots, bool pinned,
+        List<LaunchPlanDecision> decisions)
+    {
+        int wanted = Math.Min(MaximumAdaptiveSlots, Math.Max(1, baselineSlots));
+        string? setting = Environment.GetEnvironmentVariable(ParallelSlotsVariable)?.Trim();
+        if (string.Equals(setting, "off", StringComparison.OrdinalIgnoreCase)) wanted = 1;
+        else if (int.TryParse(setting, NumberStyles.Integer, CultureInfo.InvariantCulture, out int capped))
+            wanted = Math.Clamp(capped, 1, MaximumAdaptiveSlots);
+        if (wanted < 2) return;
+
+        string? refusal =
+            !caps.KvUnified || !caps.KvUnifiedPerSlot ? "this runtime build does not list --kv-unified-per-slot"
+            : !hw.AcceleratorEligible || hw.SharedMemoryPrimary || hw.GpuDedicatedTotalBytes <= 0
+                || !string.Equals(hw.Backend, "text-cuda", StringComparison.OrdinalIgnoreCase) ? "only planned on a dedicated CUDA GPU"
+            : placement.GpuLayers >= 0 || placement.CpuMoeLayers > 0 || placement.HostBytes > 0 ? "the model is not fully on the GPU"
+            : profile.DisableKvOffload ? "the KV cache is kept in system RAM"
+            : null;
+        int window = RuntimeLaunchOptimizer.ResolveContextAndSlots(profile.ContextSize, 1, pinned).TotalContext;
+        int slotsNow = RuntimeLaunchOptimizer.ResolveContextAndSlots(profile.ContextSize, baselineSlots, pinned).Slots;
+        if (refusal == null && slotsNow > 1) refusal = "the launch already has " + slotsNow + " slots";
+        if (refusal != null)
+        {
+            decisions.Add(new("--parallel", "1", "adaptive parallel slots not used: " + refusal));
+            return;
+        }
+
+        long reserve = (Math.Max(1024, baseline.FitTargetMib) * MiB) + ComputeBufferReserveBytes;
+        long ceiling = (long)(hw.GpuDedicatedTotalBytes * AdaptiveKvMaxShareOfDedicated);
+        for (int slots = wanted; slots >= 2; slots--)
+        {
+            long? pool = KvCacheSizeEstimator.Estimate(model, (long)window * slots, NormalizeCache(profile.CacheTypeK));
+            if (pool == null) break;
+            long needed = model.SizeBytes + pool.Value + reserve;
+            if (needed + AdaptiveKvFreeHeadroomBytes > hw.GpuMemoryBytes || needed > ceiling) continue;
+            profile.ParallelSlots = slots;
+            profile.UnifiedKvPerSlotTokens = window;
+            decisions.Add(new("--parallel", slots.ToString(CultureInfo.InvariantCulture),
+                slots + " slots share one " + NormalizeCache(profile.CacheTypeK) + " KV pool of " + slots + " x " + window
+                + " tokens (--kv-unified-per-slot " + window + "): each request keeps its whole window; weights + pool + reserve need "
+                + Gib(needed) + " of " + Gib(hw.GpuMemoryBytes) + " free, at least " + Gib(AdaptiveKvFreeHeadroomBytes)
+                + " stays free; concurrent requests are served side by side instead of queueing"));
+            return;
+        }
+        decisions.Add(new("--parallel", "1", "adaptive parallel slots not used: a second " + window + "-token KV window does not fit the free VRAM and card-share limits"));
+    }
     // ---------------------------------------------------------------- placement
 
-    private sealed record Placement(bool Fits, int GpuLayers, int CpuMoeLayers, long GpuBytes, long HostBytes);
+    internal sealed record Placement(bool Fits, int GpuLayers, int CpuMoeLayers, long GpuBytes, long HostBytes);
 
     private static Placement Place(
         GgufModelInfo model, LaunchHardware hw, bool kvOnHost, long kv, long blocks,

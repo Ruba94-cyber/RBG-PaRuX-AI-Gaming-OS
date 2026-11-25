@@ -22,7 +22,9 @@ public sealed class PortableStandaloneSourceContractTests
         Assert.Contains("AppContext.BaseDirectory", data, StringComparison.Ordinal);
         Assert.Contains("FindPortableDataRoot(baseDirectory)", data, StringComparison.Ordinal);
         Assert.Contains("CorporateMode.MarkerFileName", data, StringComparison.Ordinal);
-        Assert.Contains("Resolve(AppContext.BaseDirectory", state, StringComparison.Ordinal);
+        // Path caches the answer for 2 s (idle CPU, 2026-11-25) but still resolves from the program's own directory.
+        Assert.Contains("string baseDirectory = AppContext.BaseDirectory;", state, StringComparison.Ordinal);
+        Assert.Contains("Resolve(baseDirectory, overrideRoot", state, StringComparison.Ordinal);
         Assert.Contains("FindPortableDataRoot(baseDirectory)", state, StringComparison.Ordinal);
         Assert.Contains("FindPortableDataRoot(AppContext.BaseDirectory)", desktop, StringComparison.Ordinal);
         Assert.Contains("FindPortableDataRoot(AppContext.BaseDirectory)", core, StringComparison.Ordinal);
