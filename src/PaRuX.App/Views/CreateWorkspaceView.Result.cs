@@ -103,8 +103,9 @@ namespace PaRuX.Views
                 if (_resultPath == null || !IsImageFile(_resultPath)) return;
                 _threedSourcePath = _resultPath;
                 _threedSourceLabel.Text = _resultPath;
+                SelectThreedMode("image-to-3d");
                 SelectMode("3D");
-                _status.Text = T("Result set as the source image in IMAGE → 3D.", "Risultato impostato come immagine di origine in IMMAGINE → 3D.");
+                _status.Text = T("Result set as the source image in 3D STUDIO (Image → 3D).", "Risultato impostato come immagine di origine in STUDIO 3D (Immagine → 3D).");
             }));
             foreach (Button b in _imageOnlyResultButtons) _resultActions.Children.Add(b);
             panel.Children.Add(_resultActions);

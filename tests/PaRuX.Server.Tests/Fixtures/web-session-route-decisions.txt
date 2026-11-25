@@ -640,7 +640,9 @@ DENY POST /api/v1/system/localai-root
 DENY POST /api/v1/system/resume-automations
 DENY POST /api/v1/system/stop-all
 DENY POST /api/v1/threed/engine/install
+DENY POST /api/v1/threed/export
 DENY POST /api/v1/threed/generate
+DENY POST /api/v1/threed/text-to-3d
 DENY POST /api/v1/training/engine/install
 DENY POST /api/v1/training/jobs
 DENY POST /api/v1/training/jobs/{id}/cancel

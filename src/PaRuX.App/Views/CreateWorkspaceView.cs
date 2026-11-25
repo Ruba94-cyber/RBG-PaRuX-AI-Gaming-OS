@@ -59,8 +59,19 @@ namespace PaRuX.Views
         private readonly NumberBox _editStrength = new NumberBox { Minimum = 0.05, Maximum = 1, Value = 0.6, SmallChange = 0.05, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
         private string? _editSourcePath;
 
+        private readonly ComboBox _threedMode = new ComboBox { MinWidth = 220 };
+        private readonly TextBlock _threedModeDescription = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
+        private readonly StackPanel _threedImagePanel = new StackPanel { Spacing = 8 };
+        private readonly StackPanel _threedTextPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
+        private readonly TextBox _threedPrompt = new TextBox { PlaceholderText = T("Describe the 3D object to create", "Descrivi l'oggetto 3D da creare"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 72 };
+        private readonly Button _threedRunButton = new Button { Content = T("Generate 3D model", "Genera il modello 3D") };
         private readonly TextBlock _threedSourceLabel = new TextBlock { Text = T("No source image selected", "Nessuna immagine di origine selezionata"), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
+        private readonly TextBlock _threedExportSourceLabel = new TextBlock { Text = T("No GLB model ready to export yet.", "Nessun modello GLB pronto per l'esportazione."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
+        private readonly Button _threedExportObjButton = new Button { Content = T("Export OBJ", "Esporta OBJ"), IsEnabled = false };
+        private readonly Button _threedExportStlButton = new Button { Content = T("Export STL", "Esporta STL"), IsEnabled = false };
+        private readonly Button _threedExportUsdzButton = new Button { Content = T("Export USDZ", "Esporta USDZ"), IsEnabled = false };
         private string? _threedSourcePath;
+        private string? _threedLastGlbPath;
 
         private readonly TextBox _ttsText = new TextBox { PlaceholderText = T("Text to synthesize locally", "Testo da sintetizzare in locale"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 72 };
         private readonly TextBox _ttsVoice = new TextBox { PlaceholderText = T("Voice id (optional, e.g. if_sara)", "ID della voce (facoltativo, ad es. if_sara)") };
@@ -166,7 +177,7 @@ namespace PaRuX.Views
                 ("Video", Section("VIDEO", BuildVideoPanel())),
                 ("Music", Section("MUSIC", BuildMusicPanel())),
                 ("Edit", Section("IMAGE EDIT", BuildEditPanel())),
-                ("3D", Section("IMAGE → 3D", ThreedWithSetup())),
+                ("3D", Section("3D STUDIO", ThreedWithSetup())),
                 ("Speech", speech),
                 ("Workflows", Section("COMFYUI WORKFLOWS AND LORAS", BuildWorkflowLoraPanel())),
                 ("Gallery", gallery)
@@ -428,23 +439,130 @@ namespace PaRuX.Views
             var panel = new StackPanel { Spacing = 8 };
             panel.Children.Add(new TextBlock
             {
-                Text = T("Uses the managed local 3D engine. If the engine is not installed, Runtime/Settings can install it before generation.", "Usa il motore 3D locale gestito. Se il motore non è installato, Runtime/Impostazioni possono installarlo prima della generazione."),
+                Text = T("Uses the managed local 3D engine. Text → 3D runs a two-stage local pipeline (reference image → 3D GLB mesh) and respects Gaming hard-off and model consent.", "Usa il motore 3D locale gestito. Testo → 3D esegue una pipeline locale a due stadi (immagine di riferimento → mesh 3D GLB) e rispetta Gaming hard-off e consenso modelli."),
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.72
             });
+
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedMode, "Create_Threed_Mode_ComboBox");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_threedMode, T("3D mode", "Modalità 3D"));
+            var imageTo3d = new ComboBoxItem { Content = T("Image → 3D", "Immagine → 3D"), Tag = "image-to-3d" };
+            var textTo3d = new ComboBoxItem { Content = T("Text → 3D", "Testo → 3D"), Tag = "text-to-3d" };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(imageTo3d, "Create_Threed_Mode_Image_Item");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(textTo3d, "Create_Threed_Mode_Text_Item");
+            _threedMode.Items.Add(imageTo3d);
+            _threedMode.Items.Add(textTo3d);
+            _threedMode.SelectionChanged += (_, _) => UpdateThreedModeUi();
+            _threedMode.SelectedIndex = 0;
+            panel.Children.Add(Labeled(T("3D mode", "Modalità 3D"), _threedMode));
+
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedModeDescription, "Create_Threed_Mode_Description_Text");
+            panel.Children.Add(_threedModeDescription);
+
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedImagePanel, "Create_Threed_Image_Panel");
             var choose = new Button { Content = T("Choose source image…", "Scegli l'immagine di origine…") };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(choose, "Create_Threed_ChooseSource_Button");
             choose.Click += async (_, _) =>
             {
                 _threedSourcePath = await PickFileAsync(new[] { ".png", ".jpg", ".jpeg", ".webp" });
                 _threedSourceLabel.Text = _threedSourcePath ?? T("No source image selected", "Nessuna immagine di origine selezionata");
             };
-            panel.Children.Add(choose);
-            panel.Children.Add(_threedSourceLabel);
-            var run = new Button { Content = T("Generate 3D model", "Genera il modello 3D") };
-            run.Click += async (_, _) => await GenerateThreedAsync();
-            _runButtons.Add(run);
-            panel.Children.Add(run);
+            _threedImagePanel.Children.Add(choose);
+            _threedImagePanel.Children.Add(_threedSourceLabel);
+            panel.Children.Add(_threedImagePanel);
+
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedTextPanel, "Create_Threed_Text_Panel");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedPrompt, "Create_Threed_Prompt_Box");
+            _threedTextPanel.Children.Add(_threedPrompt);
+            panel.Children.Add(_threedTextPanel);
+
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedRunButton, "Create_Threed_Run_Button");
+            _threedRunButton.Click += async (_, _) => await GenerateThreedAsync();
+            _runButtons.Add(_threedRunButton);
+            panel.Children.Add(_threedRunButton);
+
+            var exportPanel = new StackPanel { Spacing = 6, Margin = new Thickness(0, 8, 0, 0) };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(exportPanel, "Create_Threed_Export_Panel");
+            exportPanel.Children.Add(new TextBlock
+            {
+                Text = T("Local 3D export (OBJ / STL / USDZ)", "Esportazione 3D locale (OBJ / STL / USDZ)"),
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Opacity = 0.8
+            });
+            var chooseGlb = new Button { Content = T("Choose GLB from generated/3d…", "Scegli un GLB da generated/3d…") };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(chooseGlb, "Create_Threed_ChooseGlb_Button");
+            chooseGlb.Click += async (_, _) =>
+            {
+                string? picked = await PickFileAsync(new[] { ".glb" });
+                if (!string.IsNullOrWhiteSpace(picked)) SetThreedExportSource(picked);
+            };
+            exportPanel.Children.Add(chooseGlb);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedExportSourceLabel, "Create_Threed_ExportSource_Text");
+            exportPanel.Children.Add(_threedExportSourceLabel);
+
+            var exportButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedExportObjButton, "Create_Threed_Export_Obj_Button");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedExportStlButton, "Create_Threed_Export_Stl_Button");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_threedExportUsdzButton, "Create_Threed_Export_Usdz_Button");
+            _threedExportObjButton.Click += async (_, _) => await ExportThreedAsync("obj");
+            _threedExportStlButton.Click += async (_, _) => await ExportThreedAsync("stl");
+            _threedExportUsdzButton.Click += async (_, _) => await ExportThreedAsync("usdz");
+            exportButtons.Children.Add(_threedExportObjButton);
+            exportButtons.Children.Add(_threedExportStlButton);
+            exportButtons.Children.Add(_threedExportUsdzButton);
+            exportPanel.Children.Add(exportButtons);
+            panel.Children.Add(exportPanel);
+
+            UpdateThreedModeUi();
             return panel;
+        }
+
+        private string SelectedThreedMode() =>
+            (_threedMode.SelectedItem as ComboBoxItem)?.Tag as string == "text-to-3d" ? "text-to-3d" : "image-to-3d";
+
+        private void SelectThreedMode(string tag)
+        {
+            foreach (object item in _threedMode.Items)
+            {
+                if (item is ComboBoxItem cbi && string.Equals(cbi.Tag as string, tag, StringComparison.Ordinal))
+                {
+                    _threedMode.SelectedItem = cbi;
+                    break;
+                }
+            }
+            UpdateThreedModeUi();
+        }
+
+        private void UpdateThreedModeUi()
+        {
+            bool textMode = SelectedThreedMode() == "text-to-3d";
+            _threedImagePanel.Visibility = textMode ? Visibility.Collapsed : Visibility.Visible;
+            _threedTextPanel.Visibility = textMode ? Visibility.Visible : Visibility.Collapsed;
+            _threedRunButton.Content = textMode
+                ? T("Generate 3D from text", "Genera 3D da testo")
+                : T("Generate 3D model", "Genera il modello 3D");
+            _threedModeDescription.Text = textMode
+                ? T("Stage 1 generates a local reference image from your prompt; Stage 2 turns it into a local GLB 3D model.", "La fase 1 genera un'immagine di riferimento locale dal prompt; la fase 2 la trasforma in un modello 3D GLB locale.")
+                : T("Turn an existing local image into a 3D GLB model using the managed local 3D engine.", "Trasforma un'immagine locale esistente in un modello 3D GLB usando il motore 3D locale gestito.");
+        }
+
+        private void SetThreedExportSource(string? glbPath)
+        {
+            _threedLastGlbPath = string.IsNullOrWhiteSpace(glbPath) ? null : glbPath;
+            bool hasGlb = _threedLastGlbPath != null;
+            _threedExportSourceLabel.Text = hasGlb
+                ? T("Ready to export: ", "Pronto per l'esportazione: ") + _threedLastGlbPath
+                : T("No GLB model ready to export yet.", "Nessun modello GLB pronto per l'esportazione.");
+            UpdateThreedExportButtonsEnabled();
+        }
+
+        private void UpdateThreedExportButtonsEnabled()
+        {
+            bool enabled = !_operations.IsBusy && !string.IsNullOrWhiteSpace(_threedLastGlbPath);
+            _threedExportObjButton.IsEnabled = enabled;
+            _threedExportStlButton.IsEnabled = enabled;
+            _threedExportUsdzButton.IsEnabled = enabled;
         }
 
         private UIElement BuildTtsPanel()
@@ -686,20 +804,121 @@ namespace PaRuX.Views
 
         private async Task GenerateThreedAsync()
         {
+            if (SelectedThreedMode() == "text-to-3d")
+            {
+                await GenerateTextToThreedAsync();
+                return;
+            }
+
             string source = _threedSourcePath ?? string.Empty;
             if (source.Length == 0) { _status.Text = T("Choose a source image first.", "Scegli prima un'immagine di origine."); return; }
-            CreateOperationTicket? ticket = BeginOperation("Generating local 3D model…");
+            CreateOperationTicket? ticket = BeginOperation(T("Generating local 3D model…", "Generazione del modello 3D locale…"));
             if (ticket == null) return;
             try
             {
                 ThreedGenerateResponse result = await ThreedClient.Current.GenerateAsync(source, ticket.Token);
+                if (!string.IsNullOrWhiteSpace(result.SavedPath))
+                {
+                    SetThreedExportSource(result.SavedPath);
+                    ShowResult(result.SavedPath);
+                }
                 _status.Text = T("3D generation completed and registered in Artifact Workspace.", "Generazione 3D completata e registrata nell'area di lavoro degli artefatti.");
-                _lastOutput.Text = T("Generated: ", "Generato: ") + (string.IsNullOrWhiteSpace(result.FileName) ? "model.glb" : result.FileName)
+                _lastOutput.Text = T("Generated: ", "Generato: ") + (result.SavedPath ?? (string.IsNullOrWhiteSpace(result.FileName) ? "model.glb" : result.FileName))
                     + " · " + result.DurationSeconds.ToString("0.0") + "s";
                 FinishOperation(ticket);
             }
-            catch (OperationCanceledException) { FinishOperation(ticket, "3D generation cancelled."); }
-            catch (Exception ex) { FinishOperation(ticket, "3D generation failed: " + ex.Message); }
+            catch (OperationCanceledException) { FinishOperation(ticket, T("3D generation cancelled.", "Generazione 3D annullata.")); }
+            catch (Exception ex) { FinishOperation(ticket, T("3D generation failed: ", "Generazione 3D non riuscita: ") + ex.Message); }
+        }
+
+        private async Task GenerateTextToThreedAsync()
+        {
+            string prompt;
+            try { prompt = RequireText(_threedPrompt.Text, T("Describe the 3D object first.", "Descrivi prima l'oggetto 3D.")); }
+            catch (Exception ex) { _status.Text = ex.Message; return; }
+
+            CreateOperationTicket? ticket = BeginOperation(T("Checking local 3D engine…", "Verifica del motore 3D locale…"));
+            if (ticket == null) return;
+            try
+            {
+                _progress.Value = 5;
+                ThreedEngineStatus engineStatus = await ThreedClient.Current.GetStatusAsync(ticket.Token);
+                if (!engineStatus.Installed)
+                {
+                    string reason = string.IsNullOrWhiteSpace(engineStatus.LastError)
+                        ? T("The local 3D engine is not installed yet. Install it above before running Text → 3D.", "Il motore 3D locale non è ancora installato. Installalo qui sopra prima di eseguire Testo → 3D.")
+                        : T("The local 3D engine is not installed: ", "Il motore 3D locale non è installato: ") + engineStatus.LastError;
+                    FinishOperation(ticket, reason);
+                    return;
+                }
+
+                _status.Text = T("Stage 1/2: Generating local reference image…", "Fase 1/2: Generazione dell'immagine di riferimento locale…");
+                _progress.Value = 10;
+                var imageRequest = new MediaJobRequest
+                {
+                    Type = "image",
+                    Prompt = prompt,
+                    Width = 1024,
+                    Height = 1024,
+                    Seed = -1
+                };
+                var stage1Progress = new Progress<MediaJobStatus>(job =>
+                {
+                    int scaled = 10 + (int)(0.45 * Math.Clamp(job.ProgressPercent, 0, 100));
+                    _progress.Value = scaled;
+                    _status.Text = T("Stage 1/2 (reference image): ", "Fase 1/2 (immagine di riferimento): ") + job.Stage + " · " + job.ProgressPercent + "%";
+                });
+                MediaAsset referenceImage = await RunWithCompanionConsentAsync(imageRequest, "image", stage1Progress, ticket.Token);
+                if (string.IsNullOrWhiteSpace(referenceImage.Base64Data))
+                    throw new InvalidOperationException(T("Local image generation returned no reference image.", "La generazione locale di immagini non ha restituito alcuna immagine di riferimento."));
+
+                ticket.Token.ThrowIfCancellationRequested();
+                _progress.Value = 60;
+                _status.Text = T("Stage 2/2: Generating local 3D GLB mesh from reference image…", "Fase 2/2: Generazione del mesh 3D GLB locale dall'immagine di riferimento…");
+                ThreedGenerateResponse mesh = await ThreedClient.Current.GenerateFromBase64Async(
+                    referenceImage.Base64Data,
+                    string.IsNullOrWhiteSpace(referenceImage.FileName) ? "reference.png" : referenceImage.FileName,
+                    mode: "text-to-3d",
+                    prompt: prompt,
+                    ticket.Token);
+
+                _progress.Value = 100;
+                if (!string.IsNullOrWhiteSpace(mesh.SavedPath))
+                {
+                    SetThreedExportSource(mesh.SavedPath);
+                    ShowResult(mesh.SavedPath);
+                }
+                _status.Text = T("Text → 3D completed locally and registered in Artifact Workspace.", "Testo → 3D completato in locale e registrato nell'area di lavoro degli artefatti.");
+                _lastOutput.Text = T("Generated: ", "Generato: ") + (mesh.SavedPath ?? (string.IsNullOrWhiteSpace(mesh.FileName) ? "model.glb" : mesh.FileName))
+                    + " · " + mesh.DurationSeconds.ToString("0.0") + "s";
+                FinishOperation(ticket);
+            }
+            catch (OperationCanceledException) { FinishOperation(ticket, T("Text → 3D cancelled.", "Testo → 3D annullato.")); }
+            catch (MediaDependencyJobException ex) { FinishOperation(ticket, T("Text → 3D image stage failed: ", "Fase immagine di Testo → 3D non riuscita: ") + ex.Message); }
+            catch (Exception ex) { FinishOperation(ticket, T("Text → 3D failed: ", "Testo → 3D non riuscito: ") + ex.Message); }
+        }
+
+        private async Task ExportThreedAsync(string format)
+        {
+            string source = _threedLastGlbPath ?? string.Empty;
+            if (source.Length == 0)
+            {
+                _status.Text = T("Generate or choose a GLB model in generated/3d first.", "Genera o scegli prima un modello GLB in generated/3d.");
+                return;
+            }
+            string upper = format.ToUpperInvariant();
+            CreateOperationTicket? ticket = BeginOperation(T($"Exporting 3D model to {upper}…", $"Esportazione del modello 3D in {upper}…"));
+            if (ticket == null) return;
+            try
+            {
+                ThreedExportResponse exported = await ThreedClient.Current.ExportAsync(source, format, ticket.Token);
+                ShowResult(exported.OutputPath);
+                _status.Text = T($"Exported {upper} locally ({exported.VertexCount} vertices, {exported.TriangleCount} triangles).", $"Esportato {upper} in locale ({exported.VertexCount} vertici, {exported.TriangleCount} triangoli).");
+                _lastOutput.Text = T("Exported: ", "Esportato: ") + exported.OutputPath;
+                FinishOperation(ticket);
+            }
+            catch (OperationCanceledException) { FinishOperation(ticket, T("3D export cancelled.", "Esportazione 3D annullata.")); }
+            catch (Exception ex) { FinishOperation(ticket, T("3D export failed: ", "Esportazione 3D non riuscita: ") + ex.Message); }
         }
 
         private async Task SynthesizeAsync()
@@ -817,6 +1036,7 @@ namespace PaRuX.Views
             {
                 button.IsEnabled = enabled;
             }
+            UpdateThreedExportButtonsEnabled();
         }
 
         private void UpdateCancelJobVisibility() =>
@@ -864,7 +1084,7 @@ namespace PaRuX.Views
             "VIDEO" => "VIDEO",
             "MUSIC" => "MUSICA",
             "IMAGE EDIT" => "MODIFICA IMMAGINE",
-            "IMAGE → 3D" => "IMMAGINE → 3D",
+            "3D STUDIO" => "STUDIO 3D",
             "TEXT TO SPEECH" => "DA TESTO A VOCE",
             "SPEECH TO TEXT" => "DA VOCE A TESTO",
             "COMFYUI WORKFLOWS AND LORAS" => "WORKFLOW COMFYUI E LORA",

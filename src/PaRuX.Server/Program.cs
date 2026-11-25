@@ -315,6 +315,8 @@ builder.Services.AddHostedService(services => services.GetRequiredService<Candid
 builder.Services.AddSingleton<ModelCompareService>();
 builder.Services.AddSingleton<GroupChatService>();
 builder.Services.AddSingleton<ThreedService>();
+builder.Services.AddSingleton<ThreedExportService>();
+builder.Services.AddSingleton<ThreedTextTo3dPipeline>();
 builder.Services.AddSingleton<CutoutService>();
 builder.Services.AddSingleton<MusicService>();
 builder.Services.AddSingleton<TaskStore>();
@@ -4335,6 +4337,48 @@ app.MapPost("/api/v1/threed/generate", async (ThreedGenerateRequest request, Thr
         return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 });
+
+app.MapPost("/api/v1/threed/text-to-3d", async (ThreedTextTo3dRequest request, ThreedTextTo3dPipeline pipeline, LocalRuntimeService runtime, CancellationToken ct) =>
+{
+    try
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, runtime.GamingCancellationToken);
+        return Results.Ok(await pipeline.GenerateAsync(request, null, linked.Token));
+    }
+    catch (InvalidDataException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (UnavailableDuringGamingException gaming) { return GamingHardOff.Conflict(gaming); }
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+        return Results.Conflict(new { error = "Gaming Mode activated; Text-to-3D generation was stopped." });
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}).RequireDesktopOwner();
+
+app.MapPost("/api/v1/threed/export", async (ThreedExportRequest request, ThreedExportService exporter, CancellationToken ct) =>
+{
+    try
+    {
+        return Results.Ok(await exporter.ExportAsync(request, ct));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
+    catch (InvalidDataException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status500InternalServerError);
+    }
+}).RequireDesktopOwner();
 
 // Local background removal (BiRefNet-lite ONNX in a managed Python runtime): returns a transparent PNG as a MediaAsset.
 app.MapGet("/api/v1/cutout/engine", async (CutoutService cutout, CancellationToken ct) =>

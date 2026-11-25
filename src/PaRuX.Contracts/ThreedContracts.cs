@@ -33,4 +33,48 @@ public sealed class ThreedGenerateResponse
     public string MediaType { get; set; } = "model/gltf-binary";
     public string Base64Data { get; set; } = string.Empty;
     public double DurationSeconds { get; set; }
+    /// <summary>Managed path under generated/3d when persisted locally.</summary>
+    public string? SavedPath { get; set; }
+}
+
+public sealed class ThreedTextTo3dRequest
+{
+    public string Prompt { get; set; } = string.Empty;
+    public int Width { get; set; } = 1024;
+    public int Height { get; set; } = 1024;
+    public int Seed { get; set; } = -1;
+}
+
+public sealed class ThreedTextTo3dResponse
+{
+    public string FileName { get; set; } = string.Empty;
+    public string MediaType { get; set; } = "model/gltf-binary";
+    public string Base64Data { get; set; } = string.Empty;
+    public string SavedPath { get; set; } = string.Empty;
+    public string ReferenceImageFileName { get; set; } = string.Empty;
+    public double ImageDurationSeconds { get; set; }
+    public double MeshDurationSeconds { get; set; }
+    public double TotalDurationSeconds { get; set; }
+}
+
+public sealed class ThreedExportRequest
+{
+    /// <summary>Path to an existing .glb artifact inside generated/3d.</summary>
+    public string SourcePath { get; set; } = string.Empty;
+    /// <summary>Target format: "obj", "stl", or "usdz".</summary>
+    public string Format { get; set; } = string.Empty;
+    /// <summary>Optional base file name override (sanitized, without directory segments).</summary>
+    public string? OutputFileName { get; set; }
+}
+
+public sealed class ThreedExportResponse
+{
+    public string Format { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string MediaType { get; set; } = string.Empty;
+    public string OutputPath { get; set; } = string.Empty;
+    public string Base64Data { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public int VertexCount { get; set; }
+    public int TriangleCount { get; set; }
 }
