@@ -64,6 +64,18 @@ internal sealed class PlayniteSessionService : BackgroundService
     private string? _lastError;
     private DateTime? _sessionStartedUtc, _lastEndedUtc;
     private PlayniteTrackerResult? _last;
+    private DateTime _boostUntil = DateTime.MinValue;
+    private bool _lastTickFailed;
+
+    /// <summary>How long the watcher waits before its next snapshot (see <see cref="PlayniteWatchCadence"/>).</summary>
+    internal TimeSpan NextDelay => ComputeNextDelay();
+
+    /// <summary>Asks for the fast tick for <see cref="PlayniteWatchCadence.BoostWindow"/>: PaRuX is launching Playnite, or the UI is
+    /// actively watching the session. Never slows anything down; the idle tick resumes by itself afterwards.</summary>
+    internal void Boost()
+    {
+        lock (_gate) _boostUntil = _clock() + PlayniteWatchCadence.BoostWindow;
+    }
 
     public PlayniteSessionService(PlayniteSettingsStore settings, PlayniteLocator locator, PlayniteLauncher launcher,
         IProcessSnapshotSource source, IPlayniteYieldTarget target, PlayniteGameSessionTracker? tracker = null,
@@ -123,16 +135,34 @@ internal sealed class PlayniteSessionService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await TickAsync(stoppingToken).ConfigureAwait(false); }
+            try { await TickAsync(stoppingToken).ConfigureAwait(false); lock (_gate) _lastTickFailed = false; }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 // The watcher must survive any single failure; it reports it instead of dying silently.
-                lock (_gate) _lastError = "The Playnite watcher failed once: " + ex.GetType().Name;
+                lock (_gate) { _lastError = "The Playnite watcher failed once: " + ex.GetType().Name; _lastTickFailed = true; }
                 _logger?.LogWarning("Playnite watcher tick failed: {Type}", ex.GetType().Name);
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false); }
+            try { await Task.Delay(ComputeNextDelay(), stoppingToken).ConfigureAwait(false); }
             catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private TimeSpan ComputeNextDelay()
+    {
+        PlayniteSettingsDto settings = _settings.Get();
+        lock (_gate)
+        {
+            bool driving = _drivenVersion.HasValue || _pendingYield || _pendingExit;
+            var signals = new PlayniteWatchSignals(
+                IntegrationEnabled: !settings.Skipped && settings.AiYieldEnabled,
+                PlayniteAlive: _last?.PlayniteAlive ?? false,
+                GameCandidateOrActive: (_last?.GameActive ?? false) || (_last?.Game.Count ?? 0) > 0,
+                Driving: driving,
+                PaRuXLaunchedPlaynite: _launcher.PaRuXLaunched,
+                BoostActive: _clock() < _boostUntil,
+                LastTickFailed: _lastTickFailed);
+            return PlayniteWatchCadence.Next(signals);
         }
     }
 
@@ -157,7 +187,17 @@ internal sealed class PlayniteSessionService : BackgroundService
 
         DateTime now = _clock();
         PlayniteComponentDto component = Component();
-        PlayniteTrackerResult result = _tracker.Sample(_source.Capture(), now, _source.Identify, component.Folder);
+        PlayniteTrackerResult result;
+        bool nothingTracked;
+        lock (_gate) nothingTracked = !driving && !(_last?.GameActive ?? false) && (_last?.Game.Count ?? 0) == 0 && !_tracker.GameActive;
+        if (nothingTracked && !_source.AnyProcessNamed(PlayniteGameSessionTracker.PlayniteNames))
+        {
+            // No Playnite process exists and nothing is tracked, so a full sample could only return "nothing": skip the process table.
+            // Reset drops any per-process cache so no stale id (Windows reuses them) survives into the next real sample.
+            _tracker.Reset();
+            result = new PlayniteTrackerResult(PlayniteTrackerEvent.None, false, false, Array.Empty<TrackedProcess>(), null);
+        }
+        else result = _tracker.Sample(_source.Capture(), now, _source.Identify, component.Folder);
         lock (_gate) _last = result;
 
         switch (result.Event)

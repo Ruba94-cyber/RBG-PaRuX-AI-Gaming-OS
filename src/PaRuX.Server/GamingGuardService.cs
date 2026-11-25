@@ -11,6 +11,9 @@ public sealed class GamingGuardService : BackgroundService
     /// <summary>The wait between shutdown attempts while a hard-off is pending. The same policy drives the retry loop and the runtime status.</summary>
     internal static readonly TimeSpan ReleaseRetryInterval = GamingShutdownRetry.RetryInterval;
 
+    /// <summary>How often the safety-net reopen retry runs while Gaming is off (the marker itself is still polled every 250 ms).</summary>
+    internal static readonly TimeSpan ReopenRetryInterval = TimeSpan.FromSeconds(2);
+
     private readonly LocalRuntimeService _runtime;
     private readonly MediaJobService _jobs;
     private readonly SpeechService _speech;
@@ -80,9 +83,15 @@ public sealed class GamingGuardService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        DateTime lastReopenRetryUtc = DateTime.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
-            await TickAsync(DateTime.UtcNow, stoppingToken).ConfigureAwait(false);
+            DateTime now = DateTime.UtcNow;
+            // The marker is still read every 250 ms (a game must stop AI promptly), but the "retry a failed reopen" sweep over every
+            // participant is only a safety net while Gaming is off, so it runs every ReopenRetryInterval instead of 4 times a second.
+            bool retryReopen = now - lastReopenRetryUtc >= ReopenRetryInterval;
+            if (retryReopen) lastReopenRetryUtc = now;
+            await TickAsync(now, stoppingToken, retryReopen).ConfigureAwait(false);
             await Task.Delay(250, stoppingToken).ConfigureAwait(false);
         }
     }
@@ -93,7 +102,7 @@ public sealed class GamingGuardService : BackgroundService
     /// failure never escapes: an unhandled exception here would stop the host. Nothing here ever starts or reloads AI
     /// when the marker disappears.
     /// </summary>
-    internal async Task TickAsync(DateTime nowUtc, CancellationToken ct)
+    internal async Task TickAsync(DateTime nowUtc, CancellationToken ct, bool retryReopen = true)
     {
         bool active = _gamingMode();
         if (_lastState != active)
@@ -116,7 +125,7 @@ public sealed class GamingGuardService : BackgroundService
                 _runtime.HardOff.ReopenAll();
             }
         }
-        else if (!active)
+        else if (!active && retryReopen)
         {
             // A reopen that failed once (marker flap, child not yet exited, disposed process) must not leave AI denied
             // until restart: retry on every tick while Gaming is off. Both calls are idempotent and cheap when open.

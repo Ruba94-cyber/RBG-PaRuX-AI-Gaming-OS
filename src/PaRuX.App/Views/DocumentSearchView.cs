@@ -165,7 +165,7 @@ namespace PaRuX.Views
             root.Children.Add(_results);
 
             Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            _poll.Tick += async (_, _) => await RefreshFoldersAsync(false);
+            _poll.Tick += async (_, _) => { if (!UiPollCadence.IsWindowHidden()) await RefreshFoldersAsync(false); };
             Unloaded += (_, _) => { _shown = false; _poll.Stop(); _folderFilterDelay.Stop(); };
         }
 
