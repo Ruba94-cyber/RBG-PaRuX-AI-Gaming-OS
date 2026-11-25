@@ -140,4 +140,39 @@ public sealed class TrainingLabServiceTests : IDisposable
         Assert.Equal("line 10", tailLines[0]);
         Assert.Equal("line " + (total - 1), tailLines[^1]);
     }
+
+    [Fact]
+    public void RecordOutputLine_assigns_progressive_history_steps_even_when_tqdm_reaches_final_step_first()
+    {
+        var status = new TrainingJobStatus { TotalSteps = 5 };
+
+        // Real-world stderr/stdout ordering observed on RTX 5080: tqdm on stderr advances
+        // CurrentStep to 5/5 before stdout metric dicts are processed.
+        TrainingLabService.RecordOutputLine(status, "100%|██████████| 5/5 [00:04<00:00, 1.12it/s]");
+        Assert.Equal(5, status.CurrentStep);
+
+        TrainingLabService.RecordOutputLine(status, "{'loss': 2.5, 'grad_norm': 1.1, 'learning_rate': 0.0002, 'epoch': 0.2}");
+        TrainingLabService.RecordOutputLine(status, "{'loss': 2.1, 'grad_norm': 0.9, 'learning_rate': 0.00015, 'epoch': 0.4}");
+        TrainingLabService.RecordOutputLine(status, "{'loss': 1.8, 'grad_norm': 0.8, 'learning_rate': 0.0001, 'epoch': 0.6}");
+        TrainingLabService.RecordOutputLine(status, "{'loss': 1.5, 'grad_norm': 0.7, 'learning_rate': 0.00005, 'epoch': 0.8}");
+        TrainingLabService.RecordOutputLine(status, "{'loss': 1.2, 'grad_norm': 0.6, 'learning_rate': 0.0, 'epoch': 1.0}");
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, status.History.Select(sample => sample.Step).ToArray());
+        Assert.Equal(new[] { 2.5, 2.1, 1.8, 1.5, 1.2 }, status.History.Select(sample => sample.Loss!.Value).ToArray());
+    }
+
+    [Fact]
+    public void RecordOutputLine_ignores_trainer_summary_rows_without_loss_in_history()
+    {
+        var status = new TrainingJobStatus { TotalSteps = 2 };
+
+        TrainingLabService.RecordOutputLine(status, "{'loss': 2.4, 'grad_norm': 1.0, 'learning_rate': 0.0002, 'epoch': 0.5}");
+        TrainingLabService.RecordOutputLine(status, "{'loss': 1.9, 'grad_norm': 0.8, 'learning_rate': 0.0001, 'epoch': 1.0}");
+        TrainingLabService.RecordOutputLine(status, "{'train_runtime': 4.12, 'train_samples_per_second': 1.94, 'train_steps_per_second': 0.48, 'train_loss': 2.15, 'epoch': 1.0}");
+
+        Assert.Equal(2, status.History.Count);
+        Assert.DoesNotContain(status.History, sample => !sample.Loss.HasValue);
+        Assert.Equal(1.9, status.LastLoss);
+        Assert.Equal(1.0, status.LastEpoch);
+    }
 }

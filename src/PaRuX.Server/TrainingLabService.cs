@@ -369,6 +369,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        psi.Environment["PYTHONUNBUFFERED"] = "1";
         if (cudaVisible != null)
             psi.Environment["CUDA_VISIBLE_DEVICES"] = cudaVisible;
 
@@ -468,26 +469,9 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
 
     public async Task<string> InstallEngineAsync(CancellationToken ct)
     {
-        TrainingRuntimeLock.Validate(TrainingRuntimeLock.DefaultPath);
-        Directory.CreateDirectory(RuntimeRoot);
-        var log = new System.Text.StringBuilder();
-        TorchHardwareProfile torchHardware = await TorchInstallHardwareDetector.DetectAsync(ct).ConfigureAwait(false);
-        TorchInstallChannelPlan torchPlan = TorchInstallChannelPolicy.Select(torchHardware);
-        if (!torchPlan.CanInstall) throw new InvalidOperationException(torchPlan.Reason);
-        TrainingRuntimeLock.Validate(TrainingRuntimeLock.TorchLockPath(torchPlan.Channel));
-
-        await ManagedPythonRuntime.EnsureVenvAsync(VenvRoot, ManagedPythonRuntime.DefaultPythonVersion, ct).ConfigureAwait(false);
-        log.AppendLine(torchPlan.Reason);
-        // torch/torchvision are hash-locked per hardware channel (no unpinned wheel install); their pure-Python
-        // dependencies are part of the main lock below, which is why both installs use --no-deps.
-        log.Append(await TrainingRuntimeLock.InstallAsync(
-            TrainingRuntimeLock.TorchLockPath(torchPlan.Channel),
-            args => ManagedPythonRuntime.PipInstallAsync(VenvRoot, args, ct, TimeSpan.FromMinutes(20)),
-            TrainingRuntimeLock.TorchIndexUrl(torchPlan.Channel)).ConfigureAwait(false));
-        log.Append(await TrainingRuntimeLock.InstallAsync(TrainingRuntimeLock.DefaultPath,
-            args => ManagedPythonRuntime.PipInstallAsync(VenvRoot, args, ct, TimeSpan.FromMinutes(25))).ConfigureAwait(false));
+        string log = await TrainingRuntimeCatalog.InstallAsync(RuntimeRoot, VenvRoot, ct).ConfigureAwait(false);
         WriteTrainScript();
-        return log.ToString();
+        return log;
     }
 
     public TrainingJobStatus CreateJob(TrainingJobRequest request)
@@ -1170,15 +1154,10 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             TrainingMetricsParser.Sample sample = TrainingMetricsParser.Parse(line);
             if (sample.HasAnything)
             {
+                (double? GpuUtilPercent, double? VramMib)? resources = sample.Loss.HasValue ? ReadResources() : null;
                 lock (entry.Gate)
                 {
-                    if (sample.Loss.HasValue) entry.Status.LastLoss = sample.Loss.Value;
-                    if (sample.GradientNorm.HasValue) entry.Status.LastGradientNorm = sample.GradientNorm.Value;
-                    if (sample.LearningRate.HasValue) entry.Status.LastLearningRate = sample.LearningRate.Value;
-                    if (sample.Epoch.HasValue) entry.Status.LastEpoch = sample.Epoch.Value;
-                    AppendHistory(entry.Status, sample, ReadResources());
-                    entry.Status.Stage = "Training";
-                    entry.Status.UpdatedUtc = DateTime.UtcNow;
+                    ApplyMetricSample(entry.Status, sample, resources);
                 }
                 continue;
             }
@@ -1187,11 +1166,45 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             {
                 lock (entry.Gate)
                 {
-                    entry.Status.CurrentStep = step;
+                    entry.Status.CurrentStep = Math.Max(entry.Status.CurrentStep, step);
                     entry.Status.UpdatedUtc = DateTime.UtcNow;
                 }
             }
         }
+    }
+
+    internal static void RecordOutputLine(
+        TrainingJobStatus status,
+        string line,
+        (double? GpuUtilPercent, double? VramMib)? resources = null)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        TrainingMetricsParser.Sample sample = TrainingMetricsParser.Parse(line);
+        if (sample.HasAnything)
+        {
+            ApplyMetricSample(status, sample, resources);
+            return;
+        }
+        Match stepMatch = StepProgress.Match(line);
+        if (stepMatch.Success && int.TryParse(stepMatch.Groups["step"].Value, out int step))
+        {
+            status.CurrentStep = Math.Max(status.CurrentStep, step);
+            status.UpdatedUtc = DateTime.UtcNow;
+        }
+    }
+
+    private static void ApplyMetricSample(
+        TrainingJobStatus status,
+        TrainingMetricsParser.Sample sample,
+        (double? GpuUtilPercent, double? VramMib)? resources)
+    {
+        if (sample.Loss.HasValue) status.LastLoss = sample.Loss.Value;
+        if (sample.GradientNorm.HasValue) status.LastGradientNorm = sample.GradientNorm.Value;
+        if (sample.LearningRate.HasValue) status.LastLearningRate = sample.LearningRate.Value;
+        if (sample.Epoch.HasValue) status.LastEpoch = sample.Epoch.Value;
+        AppendHistory(status, sample, resources);
+        status.Stage = "Training";
+        status.UpdatedUtc = DateTime.UtcNow;
     }
 
     internal const int MaximumHistorySamples = 500;
@@ -1231,12 +1244,14 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         }, null);
     }
 
-    private static void AppendHistory(TrainingJobStatus status, TrainingMetricsParser.Sample sample,
+    internal static void AppendHistory(TrainingJobStatus status, TrainingMetricsParser.Sample sample,
         (double? GpuUtilPercent, double? VramMib)? resources = null)
     {
+        if (!sample.Loss.HasValue) return;
+        int step = status.History.Count > 0 ? status.History[^1].Step + 1 : 1;
         status.History.Add(new TrainingMetricSample
         {
-            Step = status.CurrentStep,
+            Step = step,
             Loss = sample.Loss,
             GradientNorm = sample.GradientNorm,
             LearningRate = sample.LearningRate,
@@ -1245,6 +1260,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             GpuUtilPercent = resources?.GpuUtilPercent,
             VramMib = resources?.VramMib
         });
+        status.CurrentStep = Math.Max(status.CurrentStep, step);
         if (status.History.Count <= MaximumHistorySamples) return;
         var thinned = new List<TrainingMetricSample>(status.History.Count / 2 + 1);
         for (int index = 0; index < status.History.Count; index += 2) thinned.Add(status.History[index]);

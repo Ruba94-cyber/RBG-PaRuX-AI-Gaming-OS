@@ -2588,7 +2588,8 @@ app.MapPost("/api/v1/training/engine/install", async (TrainingLabService trainin
     {
         return Results.Json(new { error = exception.Message, code = exception.Code }, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
-    catch (InvalidOperationException exception)
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+        or InvalidDataException or InvalidOperationException or TimeoutException)
     {
         return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
     }

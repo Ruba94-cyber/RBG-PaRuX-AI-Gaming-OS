@@ -135,22 +135,26 @@ public sealed class TorchInstallChannelPolicyTests
     public void Training_install_site_uses_the_policy_channel_and_only_hash_locked_installs()
     {
         string root = FindRepositoryRoot();
-        string source = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "TrainingLabService.cs"));
+        string serviceSource = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "TrainingLabService.cs"));
+        string catalogSource = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "TrainingRuntimeCatalog.cs"));
         string lockSource = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "TrainingRuntimeLock.cs"));
 
-        Assert.Contains("TorchInstallChannelPolicy.Select(torchHardware)", source);
-        Assert.Contains("if (!torchPlan.CanInstall)", source);
-        Assert.Contains("TrainingRuntimeLock.TorchLockPath(torchPlan.Channel)", source);
-        Assert.Contains("TrainingRuntimeLock.InstallAsync(", source);
-        Assert.DoesNotContain("torchPlan.PipArguments", source);
+        Assert.Contains("TrainingRuntimeCatalog.InstallAsync(", serviceSource);
+        Assert.DoesNotContain("PipInstallAsync", serviceSource);
+        Assert.Contains("TorchInstallChannelPolicy.Select(", catalogSource);
+        Assert.Contains("if (!torchPlan.CanInstall)", catalogSource);
+        Assert.Contains("TrainingRuntimeLock.TorchLockPath", catalogSource);
+        Assert.Contains("TrainingRuntimeLock.InstallAsync(", catalogSource);
+        Assert.DoesNotContain("torchPlan.PipArguments", catalogSource);
+        Assert.DoesNotContain("torchPlan.PipArguments", serviceSource);
         Assert.Contains("\"--require-hashes\", \"--no-deps\"", lockSource);
-        // Every pip call in the training service goes through a TrainingRuntimeLock.InstallAsync callback.
-        foreach (Match call in Regex.Matches(source, @"PipInstallAsync\("))
+        // Every pip call in the training catalog goes through a TrainingRuntimeLock.InstallAsync callback.
+        foreach (Match call in Regex.Matches(catalogSource, @"PipInstallAsync\("))
         {
-            string before = source[Math.Max(0, call.Index - 160)..call.Index];
-            Assert.Contains("args =>", before);
+            string before = catalogSource[Math.Max(0, call.Index - 160)..call.Index];
+            Assert.Contains("=>", before);
         }
-        Assert.Matches(@"PipInstallAsync\(\s*VenvRoot\s*,\s*args\b", source);
+        Assert.Matches(@"PipInstallAsync\(\s*venv\s*,\s*args\b", catalogSource);
     }
 
     /// <summary>
