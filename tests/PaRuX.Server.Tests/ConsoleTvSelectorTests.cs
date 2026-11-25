@@ -176,6 +176,44 @@ public sealed class ConsoleTvSelectorTests
         Assert.False(list.Single(e => e.Name == "Desk monitor").Selected);
     }
 
+    [Fact]
+    public void The_import_preview_lists_what_would_be_selected_what_is_already_chosen_and_what_matches_nothing()
+    {
+        var tv = Monitor(@"\\.\DISPLAY2", false, "BBB0002-bbbbbbbbbbbb", "Living room TV", "BBB0002", x: 1920);
+        var den = Monitor(@"\\.\DISPLAY3", false, "CCC0003-cccccccccccc", "Den TV", "CCC0003", x: 3840);
+        var pc = Monitor(@"\\.\DISPLAY1", true, "AAA0001-aaaaaaaaaaaa", "Desk monitor", "AAA0001");
+        var history = ConsoleTvRegistry.SetSelected(ConsoleTvRegistry.RecordSeen(null, Snapshot(pc, tv, den), Now), den.StableId!, true);
+        var hints = new[] { "living room", "den tv", "Bedroom TV", "x" };
+
+        var preview = ConsoleTvRegistry.PreviewNameHints(history, hints);
+        Assert.Equal("Living room TV", Assert.Single(preview.WouldSelect).Name);
+        Assert.Equal("Den TV", Assert.Single(preview.AlreadySelected).Name);
+        Assert.Contains("Bedroom TV", preview.NoMatch);
+        Assert.Contains("x", preview.NoMatch);                       // too short to match anything: reported, never applied
+        Assert.DoesNotContain(history, e => e.Name == "Living room TV" && e.Selected);   // previewing changes nothing
+
+        var (applied, count) = ConsoleTvRegistry.SelectByNameHints(history, hints);
+        Assert.Equal(1, count);
+        Assert.False(applied.Single(e => e.Name == "Desk monitor").Selected);
+    }
+
+    [Fact]
+    public void The_native_console_button_never_blocks_on_a_missing_tv()
+    {
+        // Contract: the explicit start has no blocking dialog; it uses a discreet bilingual notice and leaves the window where it is.
+        string src = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "PaRuX.App", "MainWindow.ConsoleMode.cs"));
+        Assert.DoesNotContain("TV not available", src);
+        Assert.Contains("TV not connected: using the current screen.", src);
+        Assert.Contains("TV non collegata: uso lo schermo attuale.", src);
+    }
+
+    private static string FindRepoRoot()
+    {
+        string? dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "PaRuX.sln"))) dir = Path.GetDirectoryName(dir);
+        return dir ?? throw new InvalidOperationException("repo root not found");
+    }
+
     // ---- stable matching -----------------------------------------------------------------------------------------------------------
 
     [Fact]

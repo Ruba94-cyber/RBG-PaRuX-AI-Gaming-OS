@@ -1271,6 +1271,9 @@
                             <Button x:Name="ConsoleDisplaysClear" Content="Clear TV choice" loc:Loc.ItContent="Azzera la scelta TV"
                                 AutomationProperties.AutomationId="Settings_ConsoleDisplays_Clear_Button"
                                 Click="ConsoleDisplaysClear_Click" />
+                            <Button x:Name="ConsoleDisplaysImport" Content="Import TVs from the old Console Mode" loc:Loc.ItContent="Importa le TV dal vecchio Console Mode"
+                                AutomationProperties.AutomationId="Settings_ConsoleDisplays_ImportTvNames_Button"
+                                Click="ConsoleDisplaysImport_Click" />
                         </StackPanel>
                         <TextBlock x:Name="ConsoleDisplaysStatus" TextWrapping="Wrap"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_Status_Text"

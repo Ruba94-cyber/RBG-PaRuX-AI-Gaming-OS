@@ -257,18 +257,11 @@ public sealed partial class MainWindow
                 : null;
             if (destination is null)
             {
-                await new ContentDialog
-                {
-                    XamlRoot = RootGrid.XamlRoot,
-                    Title = ConsoleText("TV not available", "TV non disponibile"),
-                    Content = ConsoleText(
-                        "The chosen Console TV is disconnected, changed its Windows display ID or the local Core cannot read it. Reconnect the TV or update Gaming > Console / TV display routing. PaRuX has not moved windows or changed any display settings.",
-                        "La TV scelta non è collegata, ha cambiato identificativo Windows o il Core locale non riesce a rilevarla. Ricollega la TV o aggiorna Gaming > Destinazione Console / TV. PaRuX non ha spostato finestre né modificato le impostazioni degli schermi."),
-                    CloseButtonText = "OK"
-                }.ShowAsync();
-                return;
+                // The owner pressed Console: it always starts. The chosen TV is not connected, so the window is NOT moved anywhere
+                // (no other screen is picked, no display setting changes) and Console opens on the screen the window is on now.
+                Log.Write("Console started on the current screen: the chosen TV is not connected.");
+                PadToast(ConsoleText("TV not connected: using the current screen.", "TV non collegata: uso lo schermo attuale."));
             }
-
             var pos = AppWindow.Position;
             var size = AppWindow.Size;
             _consolePreviousWindowBounds = new RectInt32(pos.X, pos.Y, size.Width, size.Height);
@@ -276,10 +269,13 @@ public sealed partial class MainWindow
                 overlapped.Restore();
             // Use the same overflow-safe anchor as verified return routing.
             // The fullscreen presenter then uses the monitor owning this window.
-            var anchor = ConsoleHomeRepositionPolicy.CenteredAnchor(destination);
-            if (anchor is null) throw new InvalidOperationException("Invalid Console TV geometry.");
-            AppWindow.MoveAndResize(new RectInt32(
-                anchor.Value.X, anchor.Value.Y, anchor.Value.Width, anchor.Value.Height));
+            if (destination is not null)
+            {
+                var anchor = ConsoleHomeRepositionPolicy.CenteredAnchor(destination);
+                if (anchor is null) throw new InvalidOperationException("Invalid Console TV geometry.");
+                AppWindow.MoveAndResize(new RectInt32(
+                    anchor.Value.X, anchor.Value.Y, anchor.Value.Width, anchor.Value.Height));
+            }
         }
 
         try
