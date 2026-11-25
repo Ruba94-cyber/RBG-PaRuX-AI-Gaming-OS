@@ -8,7 +8,7 @@
 ## What is new since 4.4.0
 
 - **Portable layout:** `PaRuX.exe` launcher at the root, application in `app\`, data in `PaRuXData\`. Applies to Standard Portable and Corporate Lite.
-- **Corporate Lite:** CPU by default, bundled Vulkan on discrete GPUs, RAM admission with clear refusals, offline by construction, per-data-root single instance. The automatic small-model fallback is not active yet.
+- **Corporate Lite:** CPU by default, bundled Vulkan on discrete GPUs, RAM admission with clear refusals, offline by construction, per-data-root single instance. Automatic small-model fallback: when the default Qwen3-4B does not fit the free memory and no model was requested, the smaller bundled model (Qwen3-0.6B, listed in the package manifest and admitted by the same memory plan) answers instead, with an English/Italian notice; a model you choose yourself is never replaced and your saved settings are not changed. Verified by tests and a local run, not yet on a rebuilt package or a restricted corporate PC.
 - **Console mode:** Start in Console mode without a TV; Playnite Fullscreen handoff with reversible theme changes; configurable pad hold time; opt-in Console power plan; opt-in Xbox Game Bar block (per user, with consent, journaled restore).
 - **Games tools page** and per-game launch focus / post-launch actions.
 - **AI / Chat:** self-healing tool calls, managed Python in chat, constrained output, loop guard, fail-closed MCP admission, Canvas preview, token usage, prompt variables, document pins, group chat, Paperless-ngx, Brave web search with sources, meeting assistant, dictation, Agent Flows, training parity.

@@ -893,7 +893,9 @@ public sealed class ChatProxyService
             ? Trim(enginePreparation.FallbackReason)
             : modelRoute.FellBackToStandard
                 ? "The requested role was unavailable, so PaRuX used the Standard role."
-                : null;
+                : CorporateMode.IsActive
+                    ? CorporateSmallModelFallback.CurrentFor(modelRoute.ModelPath)?.Combined
+                    : null;
 
         JsonObject routed = JsonSerializer.SerializeToNode(new
         {

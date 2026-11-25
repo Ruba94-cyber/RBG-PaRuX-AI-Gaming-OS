@@ -12,10 +12,11 @@ PaRuX Corporate Lite - COME TESTARLO E DOVE PRENDERE I LOG
 
 2) COSA ASPETTARSI
    - Modello principale: Qwen3-4B. Nel pacchetto c'e' anche un modello molto piccolo, Qwen3-0.6B (piu' veloce, meno
-     preciso sui documenti complessi). ATTENZIONE: il passaggio AUTOMATICO al modello piccolo quando la RAM non basta
-     NON e' ancora attivo in questa versione. Se la RAM libera non basta per il 4B (Teams, Outlook, browser aperti) il
-     messaggio dice quanta RAM serve, quanta ne puo' usare PaRuX e quanta liberarne: in quel caso SELEZIONA a mano
-     "Qwen3-0.6B-Q8_0" dall'elenco dei modelli in Chat e riprova.
+     preciso sui documenti complessi). Se la RAM libera non basta per il 4B (Teams, Outlook, browser aperti) e non hai
+     scelto tu un modello, PaRuX passa da solo al modello piccolo e lo dice ("Memoria insufficiente per Qwen3-4B...:
+     uso Qwen3-0.6B..."); le tue impostazioni non cambiano e il 4B torna quando c'e' piu' memoria libera. Un modello che
+     scegli tu a mano non viene mai sostituito: se non entra, il messaggio dice quanta RAM serve, quanta ne puo' usare
+     PaRuX e quanta liberarne. Se nemmeno il modello piccolo entra, lo dice e indica quanta memoria liberare.
    - Ricerca nei documenti: motore semantico multilingue incluso (italiano/inglese), nessun download.
    - Il primo messaggio puo' richiedere 20-60 secondi (carica il modello); poi e' piu' veloce.
 

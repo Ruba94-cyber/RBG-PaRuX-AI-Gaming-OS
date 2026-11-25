@@ -630,7 +630,16 @@ while (-not (Test-Path '$hogStop')) { Start-Sleep -Milliseconds 500 }
         $stage.chat_error = if ($r.Status -ne 200) { $r.Text.Substring(0, [math]::Min(400, $r.Text.Length)) } else { $null }
         $st = Api GET "/api/v1/runtime/status" $null 60
         $stage.active_model = if ($st.Json -and $st.Json.activeModelPath) { Split-Path ([string]$st.Json.activeModelPath) -Leaf } else { $null }
-        $stage.pass = [bool]($r.Status -eq 200 -and $stage.active_model -like "Qwen3-0.6B*")
+        # The automatic fallback must be observable: runtime status carries the EN + IT notice while the small model serves.
+        $stage.fallback_notice_en = if ($st.Json) { [string]$st.Json.corporateMemoryFallbackNotice } else { "" }
+        $stage.fallback_notice_it = if ($st.Json) { [string]$st.Json.corporateMemoryFallbackNoticeIt } else { "" }
+        # A second request must reuse the running small model (same llama-server process, no reload on every request).
+        $serverPids1 = @(& $ours | Where-Object { $_.ProcessName -like "llama-server*" } | ForEach-Object { $_.Id })
+        $r2 = Api POST "/api/v1/chat/completions" $body 600
+        $serverPids2 = @(& $ours | Where-Object { $_.ProcessName -like "llama-server*" } | ForEach-Object { $_.Id })
+        $stage.second_chat_http_status = $r2.Status
+        $stage.llama_server_reused = [bool]($serverPids1.Count -gt 0 -and (($serverPids1 -join ",") -eq ($serverPids2 -join ",")))
+        $stage.pass = [bool]($r.Status -eq 200 -and $stage.active_model -like "Qwen3-0.6B*" -and $stage.fallback_notice_en -like "Not enough memory for*" -and $stage.fallback_notice_it -like "Memoria insufficiente per*" -and $r2.Status -eq 200 -and $stage.llama_server_reused)
     } catch { $stage.error = $_.Exception.Message; $stage.pass = $false }
     finally {
         try { "stop" | Set-Content $hogStop; if ($hog) { $null = $hog.WaitForExit(15000); if (-not $hog.HasExited) { $hog.Kill() } } } catch {}

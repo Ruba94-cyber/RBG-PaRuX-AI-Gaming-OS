@@ -99,6 +99,10 @@ public sealed class RuntimeManagerHardwareStatus
     public bool ActiveHasVisionSupport { get; set; }
     public string LaunchPlanExplanation { get; set; } = string.Empty;
     public List<string> TextLaunchTrace { get; set; } = new();
+    /// <summary>Corporate memory fallback notice (English) while the smaller bundled model serves instead of the default; null otherwise.</summary>
+    public string? CorporateMemoryFallbackNotice { get; set; }
+    /// <summary>Italian text of <see cref="CorporateMemoryFallbackNotice"/>.</summary>
+    public string? CorporateMemoryFallbackNoticeIt { get; set; }
     /// <summary>Observed offload/VRAM report from the running text runtime's load log; the requested layer count is labelled as such.</summary>
     public RuntimeTextLoadReport? TextLoad { get; set; }
 

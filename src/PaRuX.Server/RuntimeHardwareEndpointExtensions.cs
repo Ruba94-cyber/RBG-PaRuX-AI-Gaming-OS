@@ -115,6 +115,8 @@ public static class RuntimeHardwareEndpointExtensions
                 ActiveHasVisionSupport = shaped.ActiveHasVisionSupport,
                 LaunchPlanExplanation = shaped.LaunchPlanExplanation,
                 TextLaunchTrace = shaped.TextLaunchTrace,
+                CorporateMemoryFallbackNotice = shaped.CorporateMemoryFallbackNotice,
+                CorporateMemoryFallbackNoticeIt = shaped.CorporateMemoryFallbackNoticeIt,
                 TextLoad = shaped.TextLoad,
                 GpuAdapters = gpu.Adapters,
                 GpuDedicatedVideoMemoryTotalBytes = gpu.TotalDedicatedVideoMemoryBytes,
@@ -169,6 +171,8 @@ public static class RuntimeHardwareEndpointExtensions
         ActiveHasVisionSupport = status.ActiveHasVisionSupport,
         LaunchPlanExplanation = status.LaunchPlanExplanation,
         TextLaunchTrace = status.TextLaunchTrace,
+        CorporateMemoryFallbackNotice = status.CorporateMemoryFallbackNotice,
+        CorporateMemoryFallbackNoticeIt = status.CorporateMemoryFallbackNoticeIt,
         TextLoad = status.TextLoad
     };
 

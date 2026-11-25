@@ -174,6 +174,12 @@ public sealed class RuntimeManagerService
             LaunchPlanExplanation = _process.LastLaunchPlanExplanation,
             TextLaunchTrace = _process.LastTextLaunchTrace.ToList()
         };
+        if (textResident && CorporateMode.IsActive
+            && CorporateSmallModelFallback.CurrentFor(result.ActiveModelPath) is { } smallModelNotice)
+        {
+            result.CorporateMemoryFallbackNotice = smallModelNotice.English;
+            result.CorporateMemoryFallbackNoticeIt = smallModelNotice.Italian;
+        }
         // Measure what the CURRENT Corporate profile allows without stealing
         // memory from Outlook/Teams or crediting PaRuX processes that are still
         // serving requests. This is a status observation, not the admission
@@ -245,6 +251,12 @@ public sealed class RuntimeManagerService
                         Message = "The saved Chat model is unavailable; PaRuX is using the bundled starter. Choose a replacement in Model Hub."
                     });
             }
+            if (status.CorporateMemoryFallbackNotice is not null)
+                issues.Add(new RuntimeDiagnosticIssue
+                {
+                    Severity = "info",
+                    Message = status.CorporateMemoryFallbackNoticeIt + " / " + status.CorporateMemoryFallbackNotice
+                });
             return new RuntimeDiagnosticsReport { Issues = issues, CheckedUtc = DateTime.UtcNow };
         }
 
@@ -334,6 +346,12 @@ public sealed class RuntimeManagerService
         if (path == null || !File.Exists(path))
             return new RuntimeLoadResult { Success = false, Role = normalizedRole, Message = path == null ? "No model is assigned to role \"" + normalizedRole + "\" yet." : "The model assigned to role \"" + normalizedRole + "\" is missing on disk: " + path };
 
+        // Nothing was requested but the package default: it may be replaced by a smaller bundled model when memory is short.
+        bool smallFallback = normalizedRole == "standard" && CorporateMode.IsActive
+            && CorporateSmallModelFallback.IsUnassignedPackageDefault(path);
+        if (smallFallback && await TryReuseRememberedSmallFallbackAsync(normalizedRole, path, ct).ConfigureAwait(false) is { } reused)
+            return reused;
+
         if (await IsRoleActiveAsync(normalizedRole, ct).ConfigureAwait(false))
         {
             // A writer that queued just after the status sample gets priority. Waiting here and
@@ -352,7 +370,30 @@ public sealed class RuntimeManagerService
 
         return await LoadTextRoleCoreAsync(
             normalizedRole, path, persistRoleAssignment: false, useRequestedModelPath: false,
-            transition: transition, ct: ct).ConfigureAwait(false);
+            transition: transition, ct: ct, allowSmallFallback: smallFallback).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A remembered small-model fallback that is still serving is reused as is: the default model is looked at again only
+    /// when free RAM grew significantly, so a busy PC does not stop and reload the small model on every request.
+    /// </summary>
+    private async Task<RuntimeLoadResult?> TryReuseRememberedSmallFallbackAsync(string role, string defaultPath, CancellationToken ct)
+    {
+        CorporateSmallModelFallback.Memory memory = CorporateSmallModelFallback.Memory.Shared;
+        if (memory.Get(defaultPath) is not { } remembered) return null;
+        RuntimeManagerStatus status = await GetStatusAsync(ct).ConfigureAwait(false);
+        if (status.ActiveModelPath is null || !PathsEqualLocal(status.ActiveModelPath, remembered.FallbackModelPath)) return null;
+        if (!await _process.IsTextHealthyAsync(ct).ConfigureAwait(false)) return null;
+        HardwareFitEstimate? fit = EstimateCorporateAutoFit(defaultPath, TryGetSystemRamSnapshot());
+        double effectiveMib = fit?.AvailableMib ?? remembered.AvailableMib;
+        bool fitsNow = fit?.Compatible == true && CorporateSmallModelFallback.Memory.GrewSignificantly(remembered, effectiveMib);
+        if (!memory.ShouldKeepFallback(remembered, effectiveMib, fitsNow)) return null;
+        CorporateFallbackNotice? notice = CorporateSmallModelFallback.CurrentFor(remembered.FallbackModelPath);
+        return new RuntimeLoadResult
+        {
+            Success = true, Role = role, ModelPath = remembered.FallbackModelPath,
+            Message = "Already loaded (reused, no swap)." + (notice is null ? string.Empty : " " + notice.Combined)
+        };
     }
 
     public async Task<RuntimeLoadResult> EnsureExactCandidateLoadedAsync(string role, string filePath, CancellationToken ct)
@@ -836,7 +877,8 @@ public sealed class RuntimeManagerService
         bool persistRoleAssignment,
         bool useRequestedModelPath,
         MediaExecutionCoordinator.Lease transition,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool allowSmallFallback = false)
     {
         string? adapterPath = LocalAiPaths.GetRoleAdapter(normalizedRole);
         if (adapterPath != null || normalizedRole is not ("standard" or "uncensored"))
@@ -863,6 +905,36 @@ public sealed class RuntimeManagerService
         // direct-slot drain and current-resource admission boundary as arbitrary model swaps.
         RuntimeLoadResult? incompatible = await PrepareAndCheckTextModelStartAsync(
             transition, launchPath, normalizedRole, ct).ConfigureAwait(false);
+        CorporateFallbackNotice? smallNotice = null;
+        if (incompatible != null && allowSmallFallback && normalizedRole == "standard" && !persistRoleAssignment)
+        {
+            // The package default does not fit the memory available now and nobody asked for it by name: try the smaller bundled
+            // models the manifest lists (bounded, largest first), each through the same admission as any other model.
+            string defaultPath = launchPath;
+            IReadOnlyList<string> alternates = CorporateSmallModelFallback.ResolveForCurrentPackage(
+                defaultPath, p => File.Exists(p) && LooksLikeValidGguf(p));
+            CorporateSmallModelFallback.Selection chosen = await CorporateSmallModelFallback.ChooseAsync(alternates,
+                async alt => await CheckHardwareCompatibilityAsync(alt, normalizedRole, ct).ConfigureAwait(false) is null, ct)
+                .ConfigureAwait(false);
+            if (chosen.ModelPath is null)
+            {
+                CorporateSmallModelFallback.Memory.Shared.Forget();
+                CorporateSmallModelFallback.ClearPublished();
+                return chosen.Tried.Count == 0 ? incompatible
+                    : new RuntimeLoadResult
+                    {
+                        Success = false, Role = incompatible.Role, ModelPath = incompatible.ModelPath,
+                        Message = CorporateSmallModelFallback.AppendNoSmallModelFits(incompatible.Message, chosen.Tried)
+                    };
+            }
+            HardwareFitEstimate? defaultFit = await EstimateHardwareFitForAdmissionAsync(defaultPath, ct).ConfigureAwait(false);
+            smallNotice = CorporateSmallModelFallback.BuildNotice(defaultPath, chosen.ModelPath,
+                defaultFit?.NeededMib ?? 0, defaultFit?.AvailableMib ?? 0);
+            CorporateSmallModelFallback.Memory.Shared.Remember(defaultPath, chosen.ModelPath, defaultFit?.AvailableMib ?? 0);
+            CorporateSmallModelFallback.Publish(smallNotice);
+            launchPath = chosen.ModelPath;
+            incompatible = null;
+        }
         if (incompatible != null) return incompatible;
         if (persistRoleAssignment)
         {
@@ -885,6 +957,16 @@ public sealed class RuntimeManagerService
             normalizedRole == "standard" ? "Standard" : "Uncensored",
             ct, modelPathOverride: launchPath).ConfigureAwait(false);
         if (result.Success) WriteActiveRole(normalizedRole);
+        if (smallNotice is not null)
+        {
+            if (!result.Success)
+            {
+                CorporateSmallModelFallback.Memory.Shared.Forget();
+                CorporateSmallModelFallback.ClearPublished();
+            }
+            else if (!result.Message.Contains(smallNotice.English, StringComparison.Ordinal))
+                result = new LocalAiProcessManager.RuntimeResult(true, result.Message + " " + smallNotice.Combined);
+        }
         return new RuntimeLoadResult { Success = result.Success, Message = result.Message, Role = normalizedRole, ModelPath = launchPath };
     }
 

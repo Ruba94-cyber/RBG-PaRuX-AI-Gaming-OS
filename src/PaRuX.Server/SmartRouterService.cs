@@ -769,8 +769,10 @@ public sealed class SmartRouterService : IRoleRouter
         Action<string?>? explainEscalation = null)
     {
         bool automaticMode = mode is RouteMode.Auto or RouteMode.Smart or RouteMode.Quality or RouteMode.Performance or RouteMode.LowVram;
+        IReadOnlyList<CandidateEvidenceDto>? corporateAllCandidates = null;
         if (automaticMode && normalizedTextRole != null && CorporateMode.IsActive && mode == RouteMode.Auto)
         {
+            corporateAllCandidates = candidates;
             // A manual lock or explicit role never reaches this automatic pool. Unknown
             // OS RAM and candidates that cannot fit must not be promoted as successful
             // AUTO suggestions. No model installation, profile widening or forced swap.
@@ -805,11 +807,35 @@ public sealed class SmartRouterService : IRoleRouter
             capture(selected);
             explainEscalation?.Invoke(escalation.Describe(selected));
             if (selected != null)
-                return await _runtimeManager.EnsureExactCandidateLoadedAsync(normalizedTextRole, selected.FilePath, ct);
+            {
+                RuntimeLoadResult loaded = await _runtimeManager.EnsureExactCandidateLoadedAsync(normalizedTextRole, selected.FilePath, ct);
+                if (corporateAllCandidates != null) RecordCorporateAutoMemoryFallback(corporateAllCandidates, selected, loaded);
+                return loaded;
+            }
         }
 
         capture(null);
         return await _runtimeManager.EnsureRoleLoadedAsync(roleToLoad, ct);
+    }
+
+    /// <summary>
+    /// Corporate AUTO already excludes a model the live memory plan refuses. When that excluded model is the package default and
+    /// a smaller one answers instead, say so (Runtime Manager status, chat route event) without touching any saved setting.
+    /// </summary>
+    internal static void RecordCorporateAutoMemoryFallback(
+        IReadOnlyList<CandidateEvidenceDto> allCandidates, CandidateEvidenceDto selected, RuntimeLoadResult loaded)
+    {
+        if (!loaded.Success) return;
+        string? bundled = LocalAiPaths.FindBundledCorporateModel();
+        CandidateEvidenceDto? packageDefault = bundled == null ? null : allCandidates.FirstOrDefault(c => PathsEqual(c.FilePath, bundled));
+        if (bundled == null || packageDefault == null || PathsEqual(selected.FilePath, bundled)
+            || packageDefault.HardwareCompatible != false)
+        {
+            CorporateSmallModelFallback.ClearPublished();
+            return;
+        }
+        CorporateSmallModelFallback.Publish(CorporateSmallModelFallback.BuildNotice(
+            bundled, selected.FilePath, packageDefault.EstimatedNeededMib ?? 0, packageDefault.AvailableMib ?? 0));
     }
 
     /// <summary>Pure AUTO-only gate: unknown fit is not a confirmed fit on constrained corporate CPU.</summary>

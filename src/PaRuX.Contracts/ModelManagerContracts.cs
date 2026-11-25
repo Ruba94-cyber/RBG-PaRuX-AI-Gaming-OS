@@ -849,6 +849,11 @@ public sealed class RuntimeManagerStatus
     public string LaunchPlanExplanation { get; set; } = string.Empty;
     /// <summary>One entry per attempt of the most recent text launch ladder; empty before any launch.</summary>
     public List<string> TextLaunchTrace { get; set; } = new();
+    /// <summary>Corporate only, and only while the running model is the smaller bundled model that replaced the default
+    /// because the memory plan refused the default (English). Null otherwise. Saved settings are not changed.</summary>
+    public string? CorporateMemoryFallbackNotice { get; set; }
+    /// <summary>Italian text of <see cref="CorporateMemoryFallbackNotice"/>.</summary>
+    public string? CorporateMemoryFallbackNoticeIt { get; set; }
     /// <summary>Observed offloaded layers / device memory from the running text runtime's own load log, with the requested
     /// <c>--gpu-layers</c> kept separate and labelled as a request. Null while no text runtime is resident.</summary>
     public RuntimeTextLoadReport? TextLoad { get; set; }

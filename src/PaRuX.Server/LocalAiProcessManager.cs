@@ -1370,7 +1370,8 @@ public sealed class LocalAiProcessManager
             {
                 if (intent == TextStartIntent.ForcedRestart && !StopText())
                     return new RuntimeResult(false, "The text runtime did not stop, so the requested model was not started.");
-                return await StartCorporateCpuTextAsync(ct, modelPathOverride).ConfigureAwait(false);
+                // No model named by the caller = the package default may fall back to a smaller bundled GGUF when it does not fit.
+                return await StartCorporateCpuTextAsync(ct, modelPathOverride, allowSmallFallback: modelPathOverride == null).ConfigureAwait(false);
             }
             if (!await StopMediaAwaitingVramReleaseAsync(ct).ConfigureAwait(false)) return new RuntimeResult(false, "The media runtime did not stop, so local text was not started.");
             // One inventory decides the tier and the backend: nvidia-smi for an NVIDIA device, DXGI for every other adapter. The launch reads
@@ -1806,7 +1807,8 @@ public sealed class LocalAiProcessManager
         return (attempt, " GPU start failed (" + FirstLine(attempt.Message) + "); running on the CPU engine instead.");
     }
 
-    private async Task<RuntimeResult> StartCorporateCpuTextAsync(CancellationToken ct, string? modelPathOverride)
+    private async Task<RuntimeResult> StartCorporateCpuTextAsync(CancellationToken ct, string? modelPathOverride,
+        bool allowSmallFallback = false)
     {
         string? runtime = LocalAiPaths.FindBundledCpuRuntime();
         if (runtime == null) return new RuntimeResult(false, "The bundled CPU runtime (llama.cpp-*-cpu) was not found in " + LocalAiPaths.RuntimeRoot + ".");
@@ -1828,6 +1830,36 @@ public sealed class LocalAiProcessManager
             : string.Empty;
         string profile = Path.GetFileNameWithoutExtension(model) +
             (corporate ? " CPU (Corporate Lite)" : " CPU (Standard Portable)");
+        // The package default may be replaced by a smaller bundled model ONLY when nothing was requested (no named model, no saved
+        // Chat assignment). Saved settings are never rewritten by this path.
+        bool smallFallbackEligible = allowSmallFallback && corporate
+            && CorporateSmallModelFallback.Eligible(true, corporate, CorporateSmallModelFallback.IsUnassignedPackageDefault(model));
+        CorporateSmallModelFallback.Memory smallMemory = CorporateSmallModelFallback.Memory.Shared;
+        if (smallFallbackEligible && smallMemory.Get(model) is { } remembered
+            && PathsEqual(GetActiveTextModelPath(), remembered.FallbackModelPath)
+            && await IsTextHealthyAsync(ct).ConfigureAwait(false))
+        {
+            // The remembered fallback is serving: do not stop and reload it for every request. Look at the default model again
+            // only when free RAM grew significantly since the decision (this resident's own memory counts as reclaimable).
+            SystemRamSnapshot? keepRam = ExecutionResourceGuard.TryGetSystemRamSnapshot();
+            double keepCeiling = ExecutionProfileStore.Current.Get(model).Effective.Budget.MaxSystemRamPercent;
+            double effectiveMib = keepRam?.IsValid == true
+                ? RuntimeMemoryBudget.CalculateCorporateAvailableBytes(keepRam, keepCeiling, GetTextWorkingSetBytes()) / 1048576d
+                : remembered.AvailableMib;
+            bool fitsNow = false;
+            if (CorporateSmallModelFallback.Memory.GrewSignificantly(remembered, effectiveMib))
+            {
+                try { fitsNow = CorporateCpuMemoryPlanner.ForModel(model, keepRam, keepCeiling, GetTextWorkingSetBytes()).Fits; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                    or ArgumentException or NotSupportedException) { fitsNow = false; }
+            }
+            if (smallMemory.ShouldKeepFallback(remembered, effectiveMib, fitsNow))
+            {
+                CorporateFallbackNotice? keptNotice = CorporateSmallModelFallback.CurrentFor(remembered.FallbackModelPath);
+                return new RuntimeResult(true, "Already running: " + Path.GetFileNameWithoutExtension(remembered.FallbackModelPath)
+                    + " CPU (Corporate Lite)" + (keptNotice is null ? string.Empty : " " + keptNotice.Combined));
+            }
+        }
         if ((ReadTrimmed(LocalAiPaths.ActiveProfileFile) == profile || PathsEqual(GetActiveTextModelPath(), model))
             && await IsTextHealthyAsync(ct).ConfigureAwait(false))
             return new RuntimeResult(true, "Already running: " + profile + fallbackNotice);
@@ -1877,8 +1909,42 @@ public sealed class LocalAiProcessManager
                 }
             }
         }
+        CorporateFallbackNotice? smallModelNotice = null;
         if (!memory.Fits)
-            return new RuntimeResult(false, CorporateCpuMemoryPlanner.Shortfall(memory, ram, memoryCeiling));
+        {
+            string refusal = CorporateCpuMemoryPlanner.Shortfall(memory, ram, memoryCeiling);
+            if (!smallFallbackEligible) return new RuntimeResult(false, refusal);
+            // Bounded (at most CorporateSmallModelFallback.MaxAttempts), planner-admitted, manifest-listed, largest first. A model
+            // the planner refuses is never launched; if none fits the refusal above stands, with guidance.
+            IReadOnlyList<string> alternates = CorporateSmallModelFallback.ResolveForCurrentPackage(model, IsUsableCorporateTextGguf);
+            var admittedPlans = new Dictionary<string, (CorporateCpuMemoryPlanner.Plan Plan, double Ceiling)>(StringComparer.OrdinalIgnoreCase);
+            CorporateSmallModelFallback.Selection chosen = CorporateSmallModelFallback.Choose(alternates, alt =>
+            {
+                double altCeiling = ExecutionProfileStore.Current.Get(alt).Effective.Budget.MaxSystemRamPercent;
+                CorporateCpuMemoryPlanner.Plan altPlan = CorporateCpuMemoryPlanner.ForModel(alt, ram, altCeiling);
+                if (altPlan.Fits) admittedPlans[alt] = (altPlan, altCeiling);
+                return altPlan.Fits;
+            }, ct);
+            if (chosen.ModelPath is null || !admittedPlans.TryGetValue(chosen.ModelPath, out var picked))
+            {
+                smallMemory.Forget();
+                CorporateSmallModelFallback.ClearPublished();
+                return new RuntimeResult(false, CorporateSmallModelFallback.AppendNoSmallModelFits(refusal, chosen.Tried));
+            }
+            string defaultModel = model;
+            smallModelNotice = CorporateSmallModelFallback.BuildNotice(defaultModel, chosen.ModelPath, memory.NeededMib, memory.AvailableMib);
+            smallMemory.Remember(defaultModel, chosen.ModelPath, memory.AvailableMib);
+            CorporateSmallModelFallback.Publish(smallModelNotice);
+            model = chosen.ModelPath;
+            memory = picked.Plan;
+            memoryCeiling = picked.Ceiling;
+            profile = Path.GetFileNameWithoutExtension(model) + " CPU (Corporate Lite)";
+        }
+        else if (smallFallbackEligible)
+        {
+            smallMemory.Forget();
+            CorporateSmallModelFallback.ClearPublished();
+        }
         string? portRefusal = ChooseTextPortForLaunch();
         if (portRefusal != null) return new RuntimeResult(false, portRefusal);
         int idleUnloadSeconds = CorporateCpuMemoryPlanner.IdleUnloadSeconds(memory);
@@ -1887,6 +1953,8 @@ public sealed class LocalAiProcessManager
         // continues below with the validated CPU launch, which was already admitted by the CPU memory plan above.
         string gpuNotice = string.Empty;
         var launchTrace = new List<string>();
+        if (smallModelNotice is not null)
+            launchTrace.Add("Memory fallback: " + smallModelNotice.English);
         if (corporate)
         {
             (RuntimeResult? gpuResult, string gpuNote) = await TryStartCorporateVulkanAsync(
@@ -1897,7 +1965,8 @@ public sealed class LocalAiProcessManager
                 if (gpuResult.Success)
                 {
                     _lastTextLaunchTrace = launchTrace.ToArray();
-                    return new RuntimeResult(true, gpuResult.Message + gpuNotice + fallbackNotice);
+                    return new RuntimeResult(true, gpuResult.Message + gpuNotice + fallbackNotice
+                        + (smallModelNotice is null ? string.Empty : " " + smallModelNotice.Combined));
                 }
                 // Cancellation (or a runtime that would not stop) is not a GPU fault: no CPU launch behind the caller's back.
                 if (ct.IsCancellationRequested) return gpuResult;
@@ -1917,6 +1986,13 @@ public sealed class LocalAiProcessManager
             _lastTextLaunchTrace = launchTrace.ToArray();
         }
         if (result.Success) { _lastTextLaunch = new TextLaunchSnapshot(model, exe, runtime, args, profile, null); GamingTextMemory.Clear(); }
+        else if (smallModelNotice is not null)
+        {
+            // A fallback that did not start is not remembered or announced as running.
+            smallMemory.Forget();
+            CorporateSmallModelFallback.ClearPublished();
+        }
+        if (result.Success && smallModelNotice is null && corporate) CorporateSmallModelFallback.ClearPublished();
         if (result.Success && gpuNotice.Length > 0) result = new RuntimeResult(true, result.Message + gpuNotice);
         // Tell the user what changed, rather than claiming a 4096-token context
         // while a memory-constrained 2048/3072-token instance is running.
@@ -1927,6 +2003,7 @@ public sealed class LocalAiProcessManager
         if (result.Success && idleUnloadSeconds < CorporateIdleUnloadSeconds)
             contextNotice += " The CPU engine was configured to release its idle model after "
                 + idleUnloadSeconds + " seconds to reduce PaRuX RAM use between requests.";
+        if (result.Success && smallModelNotice is not null) contextNotice += " " + smallModelNotice.Combined;
         return result.Success && (choice.RecoveredFromSavedChoice || contextNotice.Length > 0)
             ? new RuntimeResult(true, result.Message + contextNotice + fallbackNotice)
             : result;
