@@ -80,6 +80,7 @@ public sealed partial class MainWindow
                 return ConsolePlayniteStartResult.Unavailable;
 
             _playniteConsoleHandoffActive = true;
+            RaisePlayniteFullscreen();
             _ = ApplyConsolePowerProfileAsync();
             _ = ApplyConsoleGameBarBlockAsync();
             _ = StartConsoleSupportAppsAsync();
@@ -153,64 +154,77 @@ public sealed partial class MainWindow
             BeginPlayniteReturnWatch(before.Value?.Session.PaRuXLaunchedClosedCounter);
     }
 
-    /// <summary>Watches (bounded, one loop) until the Playnite that PaRuX started closes, then returns to PaRuX if the owner wants that.</summary>
+    /// <summary>
+    /// Watches (bounded, one loop) until the Playnite that PaRuX started closes, then returns to PaRuX. The decision, the idle bound and the
+    /// "wait for the game" rule live in <see cref="PlayniteReturnWatcher"/> (unit-tested with a fake status source). An explicit Console
+    /// handoff always returns; Playnite started by the user, or while a game runs, never moves PaRuX.
+    /// </summary>
     internal void BeginPlayniteReturnWatch(long? beforeLaunchCounter = null, bool forceReturn = false,
         bool watchExternalClose = false, bool externalInitiallyRunning = false)
     {
         if (Interlocked.Exchange(ref _playniteWatchRunning, 1) == 1) return;
         bool consoleHandoffWatcher = _playniteConsoleHandoffActive;
+        bool force = forceReturn || (consoleHandoffWatcher && !watchExternalClose);
+        string returnLine = consoleHandoffWatcher
+            ? "Playnite-first Console handoff: Playnite closed, returning to PaRuX"
+            : "Playnite closed, returning to PaRuX";
         _ = Task.Run(async () =>
         {
             try
             {
-                long? baseline = beforeLaunchCounter;
-                bool observedExternalRunning = externalInitiallyRunning;
-                int idle = 0;
-                while (!App.IsShuttingDown && idle < 40)   // at most ~2 minutes without a PaRuX-started Playnite
-                {
-                    var status = await PlayniteClient.Current.GetStatusAsync();
-                    if (status.Value is { } s)
-                    {
-                        long counter = s.Session.PaRuXLaunchedClosedCounter;
-                        baseline ??= counter;
-                        if (watchExternalClose)
-                        {
-                            observedExternalRunning |= s.Session.PlayniteRunning || s.Component.Running;
-                            if (PlayniteReturnWatchPolicy.ExternalCloseSettled(s, observedExternalRunning))
-                            {
-                                // The user started this instance: never bring PaRuX forward.
-                                _playniteConsoleHandoffActive = false;
-                                return;
-                            }
-                        }
-                        if (!watchExternalClose && PlayniteReturnWatchPolicy.OwnedCloseSettled(baseline, s))
-                        {
-                            _playniteConsoleHandoffActive = false;
-                            if (PlayniteReturnWatchPolicy.ShouldBringForward(baseline, s, forceReturn))
-                                _dispatcher.TryEnqueue(PadBringForward);
-                            return;
-                        }
-                        // Playnite can close while a launched game remains running.
-                        // Keep the pending close visible, and keep watching the game,
-                        // instead of stealing focus or timing out after two minutes.
-                        if (!PlayniteReturnWatchPolicy.KeepPendingClose(baseline, s, forceReturn))
-                            baseline = counter;
-                        // Keep observing user-owned Playnite too. It must not silently
-                        // time out after two minutes while the player's library is open.
-                        idle = PlayniteReturnWatchPolicy.HasActiveFrontendOrGames(s) ? 0 : idle + 1;
-                    }
-                    else idle++;
-                    await Task.Delay(TimeSpan.FromSeconds(3));
-                }
+                PlayniteReturnWatchOutcome outcome = await PlayniteReturnWatcher.RunAsync(
+                    async ct => (await PlayniteClient.Current.GetLiveStatusAsync(ct)).Value,
+                    (delay, ct) => Task.Delay(delay, ct),
+                    () => App.IsShuttingDown,
+                    Log.Write,
+                    beforeLaunchCounter, force, watchExternalClose, externalInitiallyRunning,
+                    returnLine, TimeSpan.FromSeconds(3));
+                if (consoleHandoffWatcher) _playniteConsoleHandoffActive = false;
+                if (outcome == PlayniteReturnWatchOutcome.Returned && !App.IsShuttingDown)
+                    if (!_dispatcher.TryEnqueue(ReturnToPaRuXAfterPlaynite)) Log.Write("Playnite return: the UI queue refused the request.");
             }
             catch (Exception ex) { Log.Write("Playnite return watch stopped: " + ex.GetType().Name); }
             finally
             {
-                // Avoid a permanently stuck Console state after a provider failure,
-                // a cancelled watch or the bounded idle timeout; never auto-focus here.
+                // Avoid a permanently stuck Console state after a provider failure, a cancelled watch or the bounded idle
+                // timeout; never auto-focus here.
                 if (consoleHandoffWatcher) { _playniteConsoleHandoffActive = false; _ = RestoreConsolePowerProfileAsync(); _ = RestoreConsoleGameBarBlockAsync(); _ = StopConsoleSupportAppsAsync(); }
                 Interlocked.Exchange(ref _playniteWatchRunning, 0);
             }
+        });
+    }
+
+    /// <summary>
+    /// Playnite (and any game it started) has ended: show the main window again (Chat/Home), restoring it from minimized or hidden
+    /// state. The window object lives for the whole process (closing only hides it), so "recreating" is a plain show.
+    /// </summary>
+    private void ReturnToPaRuXAfterPlaynite()
+    {
+        try
+        {
+            if (App.IsShuttingDown) return;
+            if (GamingManager.Current.IsActive) { Log.Write("Playnite return skipped: a game became active."); return; }
+            PadBringForward();
+            if (!_consoleModeActive) ShowChat();
+        }
+        catch (Exception ex) { Log.Write("Playnite return failed: " + ex.GetType().Name); }
+    }
+
+    /// <summary>
+    /// Raises Playnite Fullscreen above the windows that were already open (an Explorer window must not stay in front of the
+    /// Console). Nothing is minimized and nothing is done while a game is running.
+    /// </summary>
+    private void RaisePlayniteFullscreen()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                bool ok = await ForegroundWindowHelper.BringProcessWindowForwardAsync("Playnite.FullscreenApp",
+                    () => !App.IsShuttingDown && !GamingManager.Current.IsActive, TimeSpan.FromSeconds(12));
+                Log.Write(ok ? "Playnite Fullscreen raised to the foreground." : "Playnite Fullscreen could not be raised (Windows kept the focus or a game is active).");
+            }
+            catch (Exception ex) { Log.Write("Playnite Fullscreen raise failed: " + ex.GetType().Name); }
         });
     }
 }
