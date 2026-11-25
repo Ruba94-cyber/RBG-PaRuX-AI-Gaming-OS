@@ -6,11 +6,11 @@
     <file> becomes <file>.part001, <file>.part002, ... (each <= -PartSizeBytes, default 1.9 GiB) in -OutputDirectory
     (default: next to the file). A checksum list <file>.parts.sha256.txt is written with the SHA-256 of every part and
     of the joined file, in standard "<hash>  <name>" form. The original file is left untouched and no network
-    is used. Re-joining is done by tools/join-release-asset.ps1 (or plain `copy /b`, see docs/guides/PORTABLE.md);
+    is used. Re-joining is done by tools/join-release-asset.ps1 (or plain `copy /b`, see docs/guides/CORPORATE.md);
     the join result must match the joined-file hash byte for byte.
 
 .EXAMPLE
-    ./tools/split-release-asset.ps1 -Path artifacts\release\4.2.0\PaRuX-4.2.0-portable-win-x64.zip
+    ./tools/split-release-asset.ps1 -Path artifacts\release\4.2.0\PaRuX-Corporate-Lite-Offline-win-x64.zip
 #>
 [CmdletBinding()]
 param(

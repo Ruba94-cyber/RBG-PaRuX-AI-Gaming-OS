@@ -35,7 +35,7 @@ public sealed class PaRuXLocalAiStateRootTests : IDisposable
         {
             Directory.CreateDirectory(Path.Combine(root, "PaRuXData"));
             Directory.CreateDirectory(Path.Combine(root, "PaRuX.Server"));
-            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.PortableMarkerFileName), "Standard Portable");
+            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.LegacyStandardPortableMarkerFileName), "Standard Portable");
             string unrelatedHostState = Path.Combine(Path.GetTempPath(), "host-localai-data");
             Assert.Equal(Path.Combine(root, "PaRuXData"),
                 PaRuXLocalAiStateRoot.Resolve(root, unrelatedHostState));

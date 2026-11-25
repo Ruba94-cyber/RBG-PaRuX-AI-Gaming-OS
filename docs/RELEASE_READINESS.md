@@ -1,3 +1,5 @@
+> **2026-11-25:** the Standard Portable distribution is discontinued; the portable rows and paragraphs below are historical. Distributions: MSI, Corporate Lite (portable), APK.
+
 # Release readiness
 
 **Verdict: PUBLISHED AS BETA PRE-RELEASE, NOT ALL GATES MET.** `v4.1.0` (commit `348a433c`) was published on GitHub on 2026-11-10 as a pre-release at the owner's instruction, after green xUnit, green FlaUI regression and verified packages. The gates below that are PARTIAL remain open and must not be described as passed. Evidence: [QA_EVIDENCE.md](QA_EVIDENCE.md), [RELEASE_CANDIDATE_4.1.0.md](RELEASE_CANDIDATE_4.1.0.md).

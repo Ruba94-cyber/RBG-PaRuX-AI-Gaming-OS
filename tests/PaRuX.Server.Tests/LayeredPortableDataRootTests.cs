@@ -32,7 +32,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     {
         string app = Dir("pkg", "app");
         string data = Dir("pkg", "PaRuXData");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
 
         Assert.Equal(data, PaRuXDataRoot.FindPortableDataRoot(app));                                   // app\PaRuX.exe
         Assert.Equal(data, PaRuXDataRoot.FindPortableDataRoot(Dir("pkg", "app", "PaRuX.Server")));      // Core
@@ -44,7 +44,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     public void Layered_package_without_PaRuXData_is_not_portable_for_the_standard_edition()
     {
         string app = Dir("pkg", "app");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
 
         Assert.Null(PaRuXDataRoot.FindPortableDataRoot(app));
         Assert.False(Directory.Exists(Path.Combine(_root, "pkg", "PaRuXData")));
@@ -94,7 +94,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
         // Standard: marker and PaRuXData beside PaRuX.exe, Core one level below.
         string standard = Dir("legacy-standard");
         Dir("legacy-standard", "PaRuXData");
-        Marker(standard, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(standard, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
         Assert.Equal(Path.Combine(standard, "PaRuXData"), PaRuXDataRoot.FindPortableDataRoot(standard));
         Assert.Equal(Path.Combine(standard, "PaRuXData"), PaRuXDataRoot.FindPortableDataRoot(Dir("legacy-standard", "PaRuX.Server")));
 
@@ -124,7 +124,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     {
         string other = Dir("pkg", "bin");
         Dir("pkg", "PaRuXData");
-        Marker(other, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(other, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
 
         Assert.Null(PaRuXDataRoot.FindPortableDataRoot(other));
     }
@@ -134,7 +134,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     {
         string app = Dir("pkg", "app");
         string data = Dir("pkg", "PaRuXData");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
 
         Assert.Equal(data, PaRuXDataRoot.FindPortableDataRoot(Dir("pkg", "app", "a", "b", "c")));  // marker 3 levels up
         Assert.Null(PaRuXDataRoot.FindPortableDataRoot(Dir("pkg", "app", "a", "b", "c", "d")));    // 4 levels up: not ours
@@ -145,7 +145,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     {
         string app = Dir("pkg", "app");
         string data = Dir("pkg", "PaRuXData");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
 
         Assert.Equal(data, PaRuXDataRoot.FindPortableDataRoot(app + Path.DirectorySeparatorChar));
     }
@@ -153,7 +153,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     public void Startup_entries_and_shortcuts_target_the_root_launcher_only_in_a_layered_package()
     {
         string app = Dir("pkg", "app");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
         File.WriteAllText(Path.Combine(_root, "pkg", "PaRuX.exe"), "launcher");
         File.WriteAllText(Path.Combine(app, "PaRuX.exe"), "app");
 
@@ -174,7 +174,7 @@ public sealed class LayeredPortableDataRootTests : IDisposable
     {
         string app = Dir("ucpkg", "app");
         string data = Dir("ucpkg", "PaRuXData");
-        Marker(app, PaRuXDataRoot.PortableMarkerFileName);
+        Marker(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName);
         string docs = Dir("docs");
 
         Assert.Equal(Path.Combine(data, "user-content", "Meeting notes"),

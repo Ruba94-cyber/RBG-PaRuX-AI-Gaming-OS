@@ -103,7 +103,7 @@ Logo assets are in `assets/` (`assets/README.md`). Screenshots: `SCREENSHOTS.md`
 
 | Claim | Evidence |
 |---|---|
-| Local chat on a downloaded model | Standard Portable acceptance 12/12 (QA-036); real-app local chat end to end (QA-055, Radeon 780M + CPU) |
+| Local chat on a downloaded model | Real-app local chat end to end (QA-055, Radeon 780M + CPU) |
 | Documents with sources, refusal when absent | RAG-01/02, EV-09 on the reference PC |
 | RAM figure | EV-06 (6.7 GB peak, 4B model) |
 | Store edition: no executable downloads, no torrent, no self-update | `StoreEditionPolicy` tests (QA-038, 224 focused tests); installed package refusals with HTTP 403 (QA-043) |

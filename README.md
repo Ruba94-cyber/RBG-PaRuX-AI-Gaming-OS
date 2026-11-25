@@ -46,11 +46,9 @@
 
 Available features depend on your installed models, runtimes and hardware. **Not every feature or model will work on every PC during beta.**
 
-## Standard Portable: standalone offline packaging (source only)
+## Distributions
 
-The current **unreleased** Standard Portable builder now requires a bundled CPU `llama.cpp` runtime, Vulkan runtime, Qwen3-4B GGUF starter, ONNX embeddings and reranker, plus self-contained Desktop/Core binaries. The ZIP includes a `parux.portable` marker and adjacent `PaRuXData`: launching `PaRuX.exe` directly or relocating the extracted directory is designed to preserve Chat history, model files, indexing and settings **without referencing the host PC's `Documents/LocalAI` or installed models**. The dedicated Corporate CPU shell and diagnostic shell are marked INTERNAL and use separate staging paths/output names, so they cannot overwrite the full Standard package.
-
-On the **Windows BUILD PC**, use `scripts/build-portable.ps1 -FetchAssets -Smoke` to prepare and verify the local assets before delivery; the target user should not need to install .NET, the Windows App Runtime, Python, Ollama or LM Studio for **base Chat and document retrieval**. The built ZIP has not yet passed fresh-machine native Windows/FlaUI, actual text inference, RAG quality or relocation tests. Advanced generation/training, system drivers, game launchers and their optional dependencies are **not** promised fully prebundled. The code is not part of the published 4.1.0 beta. Enterprise Corporate portability may require NTFS ACL support and IT approval; removable FAT/exFAT drives are not certified.
+PaRuX ships exactly two distributions: the **MSI** (normal Windows installation, in-app signed update) and **Corporate Lite** (portable, offline, for managed company PCs). The former Standard Portable ZIP is **discontinued**: use the MSI and move your `PaRuXData` as described in [INSTALL.md](docs/guides/INSTALL.md#moving-from-the-discontinued-standard-portable).
 
 ## Corporate Lite: fully offline requires the right package
 
@@ -91,7 +89,7 @@ Figures come from the project's measurements on one reference PC (Ryzen 7 8840U,
 | Use | RAM | GPU / VRAM | Disk |
 |---|---|---|---|
 | Operating system | Windows 10 or newer, x64 | | |
-| App and Core, idle | about 0.5 GB (App about 256 MB, Core about 197-230 MB working set) | none | MSI download about 0.8 GB; Portable ZIP about 0.2 GB |
+| App and Core, idle | about 0.5 GB (App about 256 MB, Core about 197-230 MB working set) | none | MSI download about 0.8 GB |
 | Small model on CPU (Corporate Lite, Qwen3-4B Q4_K_M) | about 7 GB in use during a document run on the reference PC; a true 8 GB PC is **NOT verified** | none (about 13 tokens/s, first token about 14 s) | ZIP with model about 2.7 GB |
 | Same 4B model on a GPU | model file 2.3 GiB; about 1 GB system RAM | about 4.3 GB VRAM at 16K context (195.8 tokens/s measured on the RTX 5080, **unverified on current commits**) | model file 2.3 GiB |
 | Larger models (for example a 30B Q3 coder model) | more | about 14 GB VRAM observed | several GB per model |
@@ -105,7 +103,7 @@ A dedicated GPU is recommended for large models and media generation but is not 
 3. Launch it, review the suggested setup (Detect, then Locate existing / Install with PaRuX / Skip). Downloads require your confirmation.
 4. To build from source (Windows, .NET 10 SDK) see [RELEASING.md](docs/RELEASING.md) and [AI_LOCAL_SETUP.md](docs/AI_LOCAL_SETUP.md).
 
-**Portable:** extract the ZIP to an NTFS folder and run `PaRuX.exe`; the folder holds only `PaRuX.exe` (launcher) plus `app`, `PaRuXData`, `docs` and `launchers`; data stays in `PaRuXData` next to `PaRuX.exe`. See [PORTABLE.md](docs/guides/PORTABLE.md).
+**Corporate Lite (portable):** extract the ZIP to an NTFS folder and run `PaRuX.exe`; the folder holds only `PaRuX.exe` (launcher) plus `app`, `PaRuXData`, `docs` and `launchers`; data stays in `PaRuXData` next to `PaRuX.exe`. See [PORTABLE.md](docs/guides/PORTABLE.md).
 
 **Android companion:** an optional controller for PaRuX running on Windows, **not** a standalone mobile inference engine. See [Android setup](docs/PARUX_ANDROID_README.md).
 
@@ -114,7 +112,7 @@ A dedicated GPU is recommended for large models and media generation but is not 
 1. Open **Model Hub**. Pick a suggested model for your hardware, search Hugging Face, or import a GGUF file you already have. A starter such as Qwen3-4B Q4_K_M is the size used in the measurements above.
 2. Confirm the download (progress and resume are shown). Models are never downloaded silently.
 3. Open **Chat** and send a message; the runtime starts when a request needs it. Routing can choose a model automatically or you can select one.
-4. The 4.1.0 MSI and Portable packages do not bundle a chat model; only the Corporate Lite with-model package does.
+4. The MSI does not bundle a chat model; only the Corporate Lite with-model package does.
 
 ## Add games
 
@@ -126,11 +124,11 @@ In the AI mode, add a folder as a knowledge source and wait for indexing; answer
 
 ## Update
 
-MSI: open **Updates** (Advanced interface) and choose **Download & install verified MSI**; it installs only a signed, newer release. Portable: replace the application files and keep `PaRuXData`. Details in [INSTALL.md](docs/guides/INSTALL.md).
+MSI: open **Updates** (Advanced interface) and choose **Download & install verified MSI**; it installs only a signed, newer release. Corporate Lite: replace the application files and keep `PaRuXData`; the discontinued Standard Portable gets no updates. Details in [INSTALL.md](docs/guides/INSTALL.md).
 
 ## Guides
 
-[Install](docs/guides/INSTALL.md) · [Portable](docs/guides/PORTABLE.md) · [Corporate](docs/guides/CORPORATE.md) · [Gaming](docs/guides/GAMING.md) · [Console / TV](docs/guides/CONSOLE_MODE.md) · [Troubleshooting](docs/guides/TROUBLESHOOTING.md) · [FAQ](docs/guides/FAQ.md) · [Privacy](docs/guides/PRIVACY.md) · [Release notes template](docs/guides/RELEASE_NOTES_TEMPLATE.md)
+[Install](docs/guides/INSTALL.md) · [Portable (Corporate Lite)](docs/guides/PORTABLE.md) · [Corporate](docs/guides/CORPORATE.md) · [Gaming](docs/guides/GAMING.md) · [Console / TV](docs/guides/CONSOLE_MODE.md) · [Troubleshooting](docs/guides/TROUBLESHOOTING.md) · [FAQ](docs/guides/FAQ.md) · [Privacy](docs/guides/PRIVACY.md) · [Release notes template](docs/guides/RELEASE_NOTES_TEMPLATE.md)
 
 ## Local-first, with choices
 

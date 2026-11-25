@@ -14,10 +14,10 @@ public sealed class PortablePackageLayoutTests
     private static readonly string[] ValidListing =
     {
         "PaRuX.exe",
-        "app/PaRuX.exe", "app/PaRuX.Server/PaRuX.Server.exe", "app/parux.portable", "app/Assets/parux.ico", "app/de-DE/PaRuX.resources.dll",
-        "PaRuXData/.portable-data", "PaRuXData/models/model.gguf",
-        "docs/README-portable.txt", "docs/LICENSE.txt", "docs/MANIFEST-portable.json",
-        "launchers/PaRuX (portable data).cmd",
+        "app/PaRuX.exe", "app/PaRuX.Server/PaRuX.Server.exe", "app/parux.corporate", "app/Assets/parux.ico", "app/de-DE/PaRuX.resources.dll",
+        "PaRuXData/models/model.gguf",
+        "docs/README-corporate-lite.txt", "docs/LICENSE.txt", "docs/MANIFEST.json",
+        "launchers/Start PaRuX Corporate Lite.cmd",
     };
 
     [Fact]
@@ -102,26 +102,26 @@ public sealed class PortablePackageLayoutTests
     // ---- both builders and the harnesses really use the rule ---------------------------------------------------------
 
     [Fact]
-    public void Both_builders_publish_the_launcher_stage_the_app_in_app_and_fail_on_a_dirty_root()
+    public void Corporate_builder_and_internal_shell_publish_the_launcher_stage_the_app_in_app_and_fail_on_a_dirty_root()
     {
-        string standard = Read("scripts", "build-portable.ps1");
+        string shell = Read("scripts", "build-corporate-app-shell.ps1");
         string corporate = Read("scripts", "build-corporate-lite.ps1");
 
-        foreach (string script in new[] { standard, corporate })
+        // The Standard Portable distribution is retired: neither its builder nor its verifier exists any more.
+        Assert.False(File.Exists(Path.Combine(RepoRoot(), "scripts", "build-portable.ps1")));
+        Assert.False(File.Exists(Path.Combine(RepoRoot(), "tests", "portable", "verify-standard-portable.ps1")));
+
+        foreach (string script in new[] { shell, corporate })
             Assert.Contains("portable-layout.ps1", script, StringComparison.Ordinal);
 
-        // Standard: the application is published into app\, the launcher is the only root file, the verifier runs on the finished ZIP.
-        Assert.Contains("Publish-PaRuXLauncher -RepoRoot", standard, StringComparison.Ordinal);
-        Assert.Contains("$appDir = Join-Path $stageDir \"app\"", standard, StringComparison.Ordinal);
-        Assert.Contains("-o $appDir $common", standard, StringComparison.Ordinal);
-        Assert.Contains("-o $coreDir $common", standard, StringComparison.Ordinal);
-        Assert.Contains("Assert-PaRuXPackageLayout -Names $names -Label \"Portable ZIP\"", standard, StringComparison.Ordinal);
-        Assert.Contains("\"app/PaRuX.exe\"", standard, StringComparison.Ordinal);
-        Assert.Contains("Join-Path $appDir \"parux.portable\"", standard, StringComparison.Ordinal);
-        Assert.Contains("Join-Path $launchersDir \"PaRuX (portable data).cmd\"", standard, StringComparison.Ordinal);
-        Assert.Contains("Join-Path $docsDir \"README-portable.txt\"", standard, StringComparison.Ordinal);
-        Assert.Contains("docs/MANIFEST-portable.json", standard, StringComparison.Ordinal);
-        Assert.Contains("The launcher did not start app", standard, StringComparison.Ordinal);
+        // Shell: the application is published into app\, the launcher is the only root file, the stage layout is verified.
+        Assert.Contains("Publish-PaRuXLauncher -RepoRoot", shell, StringComparison.Ordinal);
+        Assert.Contains("$appDir = Join-Path $stageDir \"app\"", shell, StringComparison.Ordinal);
+        Assert.Contains("-o $appDir $common", shell, StringComparison.Ordinal);
+        Assert.Contains("-o $coreDir $common", shell, StringComparison.Ordinal);
+        Assert.Contains("Assert-PaRuXPackageLayout -Names $names", shell, StringComparison.Ordinal);
+        Assert.Contains("\"app/PaRuX.exe\"", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("Join-Path $appDir \"parux.portable\"", shell, StringComparison.Ordinal);
 
         // Corporate: same rule over the finished archive, marker in app\, three .cmd in launchers\ resolving ..\PaRuXData.
         Assert.Contains("Assert-PaRuXPackageLayout -Names $rel -Label \"Corporate Lite ZIP\"", corporate, StringComparison.Ordinal);
@@ -133,7 +133,6 @@ public sealed class PortablePackageLayoutTests
         Assert.Contains("%PARUX_PACKAGE%", corporate, StringComparison.Ordinal);
         Assert.Contains("%~dp0..", corporate, StringComparison.Ordinal);
         Assert.DoesNotContain("%~dp0PaRuXData", corporate, StringComparison.Ordinal);
-        Assert.DoesNotContain("%~dp0PaRuXData", standard, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,10 +164,6 @@ public sealed class PortablePackageLayoutTests
         // CloseMainWindow must never be sent to the (windowless) launcher.
         Assert.Contains("$realApp.CloseMainWindow()", measure, StringComparison.Ordinal);
         Assert.DoesNotContain("$appProc.CloseMainWindow()", measure, StringComparison.Ordinal);
-
-        string verify = Read("tests", "portable", "verify-standard-portable.ps1");
-        Assert.Contains("package root holds only PaRuX.exe plus app, PaRuXData, docs, launchers", verify, StringComparison.Ordinal);
-        Assert.Contains("the root launcher started the real application", verify, StringComparison.Ordinal);
     }
 
     // ---- helpers --------------------------------------------------------------------------------------------------------

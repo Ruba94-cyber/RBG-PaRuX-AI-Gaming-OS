@@ -11,8 +11,26 @@ namespace PaRuX.Contracts;
 public static class PaRuXDataRoot
 {
     private const string FolderName = "PaRuX";
-    /// <summary>The standard Portable edition carries its data beside PaRuX.exe.</summary>
-    public const string PortableMarkerFileName = "parux.portable";
+    /// <summary>Marker of the DISCONTINUED Standard Portable ZIP. It is no longer produced; it is still recognised so a
+    /// package extracted earlier keeps resolving its adjacent PaRuXData (no user loses data). The product now has two
+    /// distributions: the MSI and Corporate Lite (<see cref="CorporateMode.MarkerFileName"/>).</summary>
+    public const string LegacyStandardPortableMarkerFileName = "parux.portable";
+
+    /// <summary>True for an old Standard Portable copy: it carries the retired marker and is not a Corporate package.</summary>
+    public static bool IsLegacyStandardPortable(string baseDirectory)
+    {
+        try
+        {
+            bool legacy = false;
+            foreach (string root in PackageSearchDirectories(baseDirectory))
+            {
+                if (System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName))) return false;
+                if (System.IO.File.Exists(System.IO.Path.Combine(root, LegacyStandardPortableMarkerFileName))) legacy = true;
+            }
+            return legacy;
+        }
+        catch (Exception) { return false; }
+    }
 
     private static readonly object Gate = new();
     private static string? _resolved;
@@ -136,7 +154,7 @@ public static class PaRuXDataRoot
                 !string.Equals(System.IO.Path.GetFileName(appDirectory), PackageAppFolderName, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(System.IO.Path.GetFileName(full), "PaRuX.exe", StringComparison.OrdinalIgnoreCase))
                 return processPath;
-            bool layered = System.IO.File.Exists(System.IO.Path.Combine(appDirectory, PortableMarkerFileName)) ||
+            bool layered = System.IO.File.Exists(System.IO.Path.Combine(appDirectory, LegacyStandardPortableMarkerFileName)) ||
                            System.IO.File.Exists(System.IO.Path.Combine(appDirectory, CorporateMode.MarkerFileName));
             string? packageRoot = System.IO.Path.GetDirectoryName(appDirectory);
             if (!layered || packageRoot == null) return processPath;
@@ -173,7 +191,7 @@ public static class PaRuXDataRoot
                         throw new CorporateDataRootUnavailableException(corporateData, ex);
                     }
                 }
-                if (System.IO.File.Exists(System.IO.Path.Combine(root, PortableMarkerFileName)) ||
+                if (System.IO.File.Exists(System.IO.Path.Combine(root, LegacyStandardPortableMarkerFileName)) ||
                     System.IO.File.Exists(System.IO.Path.Combine(root, CorporateMode.MarkerFileName)))
                 {
                     foreach (string data in DataFolderCandidates(root))

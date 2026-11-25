@@ -12,8 +12,8 @@ public sealed class CorporateLiteSourceContractTests
     public void Packaging_contains_cpu_engine_a_starter_and_two_unambiguous_launcher_modes()
     {
         string script = Read("scripts", "build-corporate-lite.ps1");
-        Assert.Contains("build-portable.ps1", script, StringComparison.Ordinal);
-        Assert.Contains("-WithoutVulkan", script, StringComparison.Ordinal);
+        Assert.Contains("build-corporate-app-shell.ps1", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("build-portable.ps1", script, StringComparison.Ordinal);
         Assert.Contains("llama-server.exe", script, StringComparison.Ordinal);
         Assert.Contains(".corporate-default-model", script, StringComparison.Ordinal);
         Assert.Contains("Start PaRuX Corporate Lite.cmd", script, StringComparison.Ordinal);

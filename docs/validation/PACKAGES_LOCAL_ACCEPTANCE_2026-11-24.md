@@ -4,6 +4,8 @@
 
 Host: Intel Core i5-10310U, 8 logical cores, 15.7 GB RAM (about 5-7 GB free while other desktop applications ran), Intel UHD Graphics (integrated, shared memory), Windows 11 Pro, standard user.
 
+> **Retired 2026-11-25:** the Standard Portable distribution is discontinued (MSI and Corporate Lite only); this section is historical evidence and its verifier `tests/portable/verify-standard-portable.ps1` no longer exists.
+
 ## Portable Standard (`artifacts/portable/PaRuX-4.4.0-portable-win-x64.zip`, ~2.7 GB)
 
 `tests/portable/verify-standard-portable.ps1` -> **PASS 12/12** on the package built from `main` after the router fixes below: double-click start with no `PARUX_*` variable, bootstrap inside the folder, 4 documents indexed, grounded answer with citation (first token ~50 s on CPU/iGPU), planted instruction ignored, unsupported question declined, clean exit, folder moved and index kept, answer again after the move, nothing written under `%LOCALAPPDATA%\PaRuX`.

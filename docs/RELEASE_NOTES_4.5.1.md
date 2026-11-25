@@ -8,11 +8,12 @@
 
 ## What is new since 4.5.0
 
-- **Portable / MSI:** user content (meeting notes, saved web pages) stays inside `PaRuXData` in Portable and Corporate Lite; the MSI bundles the Visual C++ runtime app-local; user skill ids are validated; model ids in errors are listed once.
+- **Distributions:** Standard Portable discontinued; use the MSI. Corporate Lite remains portable (offline, `PaRuX.exe` + `app`, `PaRuXData`, `docs`, `launchers`). An already extracted Standard Portable keeps reading its `PaRuXData`, but gets no updates; the in-app Updates page explains how to move to the MSI (`docs/guides/INSTALL.md`). Nothing is deleted automatically.
+- **MSI / Corporate Lite fixes:** user content (meeting notes, saved web pages) stays inside `PaRuXData` in Portable and Corporate Lite; the MSI bundles the Visual C++ runtime app-local; user skill ids are validated; model ids in errors are listed once.
 - **Console:** TV selector with a persistent multi-select list and monitor history; Console mode always starts; TV names from the legacy Console config are imported; PaRuX returns to the foreground when Playnite Fullscreen closes.
 - **Start-up:** generic sign-in start orchestrator, support apps, never-pause list, timing log, dry-run.
 - **Background downloads need consent:** downloads in the background and online catalog checks are OFF by default. Migration: the old implicit default (on) is not carried over; existing settings read as OFF until you switch it on once. Corporate Lite is always off.
-- Everything from 4.5.0 (layered Portable layout, Corporate Lite with automatic small-model fallback, Console mode, Games tools, AI/Chat, Knowledge readers, reliability fixes) is included.
+- Everything from 4.5.0 (layered portable layout for Corporate Lite, Corporate Lite with automatic small-model fallback, Console mode, Games tools, AI/Chat, Knowledge readers, reliability fixes) is included.
 
 ## Signing
 
@@ -31,7 +32,7 @@ MSI, PE files in the packages and ZIP launchers are signed with the self-signed 
 
 ## Upgrade notes
 
-- MSI: in-app Updates or install over the old one. Portable: extract to a new folder and move `PaRuXData` across, keeping it.
+- MSI: in-app Updates or install over the old one. Corporate Lite: extract to a new folder and move `PaRuXData` across, keeping it. Old Standard Portable: install the MSI and copy `PaRuXData` (see INSTALL.md).
 - Background downloads: re-enable "Keep runtimes up to date" in Settings if you want it.
 - Back up your data first if it holds anything you cannot recreate.
 - Files above the GitHub limit are split; join with `join-release-asset.ps1`.

@@ -69,7 +69,7 @@ public sealed class ReleaseVersionSourceContractTests
     {
         foreach (string script in new[]
                  {
-                     "build-msi.ps1", "build-msix.ps1", "build-portable.ps1", "build-corporate-lite.ps1",
+                     "build-msi.ps1", "build-msix.ps1", "build-corporate-app-shell.ps1", "build-corporate-lite.ps1",
                      "build-winget-manifest.ps1", "publish-android-apk.ps1", "generate-sbom.ps1",
                      "build-full-offline-bundle.ps1",
                  })

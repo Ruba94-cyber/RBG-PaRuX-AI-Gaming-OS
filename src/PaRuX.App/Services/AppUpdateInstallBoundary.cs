@@ -11,6 +11,18 @@ namespace PaRuX.Services
     /// </summary>
     internal static class AppUpdateInstallBoundary
     {
+        /// <summary>
+        /// The Standard Portable ZIP is discontinued: PaRuX is distributed as the MSI and as Corporate Lite only.
+        /// Returns the notice for a copy that still carries the retired marker (null for MSI, MSIX, Corporate, development).
+        /// Nothing is deleted or migrated automatically; the user moves PaRuXData by hand (docs/guides/INSTALL.md).
+        /// </summary>
+        internal static string? StandardPortableClosedMessage(string baseDirectory) =>
+            PaRuX.Contracts.PaRuXDataRoot.IsLegacyStandardPortable(baseDirectory)
+                ? UiText.Pick(
+                    "The Standard Portable edition is discontinued and no longer receives updates. Install the PaRuX MSI and copy your PaRuXData folder into the new data location (see INSTALL.md, \"Moving from the discontinued Standard Portable\"). Nothing is deleted automatically; keep this folder until the MSI install is verified.",
+                    "L'edizione Standard Portable è stata dismessa e non riceve più aggiornamenti. Installa l'MSI di PaRuX e copia la cartella PaRuXData nella nuova posizione dei dati (vedi INSTALL.md, \"Passare dalla Standard Portable dismessa\"). Nulla viene cancellato automaticamente: conserva questa cartella finché l'installazione MSI non è verificata.")
+                : null;
+
         internal static string ResolveProtectedHelperPath()
         {
             string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);

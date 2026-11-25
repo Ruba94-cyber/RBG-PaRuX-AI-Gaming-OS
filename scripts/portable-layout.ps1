@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Shared layout rules of the layered portable packages (Standard Portable, Corporate Lite). Dot-source it.
+    Shared layout rules of the layered portable package (Corporate Lite; the Standard Portable is discontinued). Dot-source it.
 
 .DESCRIPTION
     Every portable ZIP has ONE top-level folder (PaRuX\ or PaRuX-Corporate-Lite\) and, inside it:
@@ -11,7 +11,7 @@
         docs\            README, licences, third-party notices, manifest
         launchers\       optional .cmd entry points (Corporate: offline / CPU only / model downloads)
 
-    The markers parux.portable / parux.corporate live in app\ (no loose file at the root); the data
+    The parux.corporate marker lives in app\ (no loose file at the root; the retired parux.portable marker is only recognised read-only); the data
     root detection (PaRuXDataRoot) finds PaRuXData beside app\. MSI and MSIX keep their own layout and
     never use this file.
 #>

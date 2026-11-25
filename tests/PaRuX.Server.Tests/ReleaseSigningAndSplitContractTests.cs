@@ -24,12 +24,11 @@ public sealed class ReleaseSigningAndSplitContractTests
         Assert.Contains("PaRuXWinMlPrepublished", msi, StringComparison.Ordinal);
         Assert.Contains("PaRuXWinMlPrepublished", ReadRepo("installer", "PaRuX.Setup", "PaRuX.Setup.wixproj"), StringComparison.Ordinal);
 
-        string portable = ReadRepo("scripts", "build-portable.ps1");
-        Assert.Contains("sign-first-party.ps1", portable, StringComparison.Ordinal);
-        Assert.True(
-            portable.IndexOf("sign-first-party.ps1", StringComparison.Ordinal) <
-            portable.IndexOf("$fileManifest = @(", StringComparison.Ordinal),
-            "Portable files must be signed before the per-file inventory is hashed.");
+        // Corporate Lite: the application shell is signed before the package inventory (MANIFEST.json) hashes it.
+        string shell = ReadRepo("scripts", "build-corporate-app-shell.ps1");
+        Assert.Contains("sign-first-party.ps1", shell, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(RepoRoot(), "scripts", "build-portable.ps1")));
+        Assert.False(File.Exists(Path.Combine(RepoRoot(), "tests", "portable", "verify-standard-portable.ps1")));
     }
 
     [Theory]

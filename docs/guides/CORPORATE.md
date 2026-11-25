@@ -45,7 +45,7 @@ PaRuX-Corporate-Lite\
   belongs to `app\PaRuX.exe`.
 - Inference runs locally through the bundled llama.cpp runtimes. The validated **CPU** engine is the default and the
   fallback. The package also carries the hash-pinned **Vulkan** engine (llama.cpp b10549, the same lock entry as the
-  Standard Portable): when a usable GPU adapter exists, PaRuX tries it first and, if it does not become healthy in time
+  MSI): when a usable GPU adapter exists, PaRuX tries it first and, if it does not become healthy in time
   or fails (no driver, VM without GPU, allocation error, implausible output), it falls back to the CPU engine on its own
   and records why (Runtime Manager launch trace). Nothing is downloaded or installed and no other process is stopped.
   GPU memory shared with system RAM counts against the same profile RAM limit; the Vulkan start is skipped when it

@@ -99,7 +99,7 @@ $dirty = @(& git -C $repoRoot status --porcelain=v1 2>$null)
 $dirtyNote = if ($dirty.Count -gt 0) { " (uncommitted changes: local build, not a submission artifact)" } else { "" }
 Write-Host "MSIX $packageVersion from $sourceCommit$dirtyNote"
 
-# ---- publish (same steps as build-portable.ps1 / build-msi.ps1) ---------------------------------------------------
+# ---- publish (same steps as build-msi.ps1) ---------------------------------------------------
 if (-not $SkipPublish) {
     if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
     New-Item -ItemType Directory -Path $stageDir -Force | Out-Null

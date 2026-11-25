@@ -4,22 +4,21 @@ using Xunit;
 namespace PaRuX.Server.Tests;
 
 /// <summary>
-/// Source-only gates for the full Standard Portable and portable-data isolation.
-/// A green assertion is NOT a substitute for Windows publish, native loader,
-/// real Chat/RAG acceptance or relocation to a clean low-spec PC.
+/// Source-only gates for the retirement of the Standard Portable ZIP. PaRuX has two distributions: the MSI and
+/// Corporate Lite. The layered data-root detection stays (Corporate Lite uses it) and the retired
+/// <c>parux.portable</c> marker is still recognised read-only so an old extracted package keeps its PaRuXData.
+/// A green assertion is NOT a substitute for Windows publish or clean-PC acceptance.
 /// </summary>
 public sealed class PortableStandaloneSourceContractTests
 {
     [Fact]
-    public void Both_zip_editions_detect_a_colocated_root_without_a_batch_launcher()
+    public void Layered_zip_detects_a_colocated_root_without_a_batch_launcher()
     {
         string data = Read("src", "PaRuX.Contracts", "PaRuXDataRoot.cs");
         string state = Read("src", "PaRuX.Contracts", "PaRuXLocalAiStateRoot.cs");
         string desktop = Read("src", "PaRuX.App", "Services", "AppPaths.cs");
         string core = Read("src", "PaRuX.Server", "LocalAiPaths.cs");
-        Assert.Contains("public const string PortableMarkerFileName", data, StringComparison.Ordinal);
-        // The two Contracts resolvers take the executable folder through a pure, testable
-        // overload, so the literal is split across the entry point and the resolver.
+        Assert.Contains("public const string LegacyStandardPortableMarkerFileName", data, StringComparison.Ordinal);
         Assert.Contains("AppContext.BaseDirectory", data, StringComparison.Ordinal);
         Assert.Contains("FindPortableDataRoot(baseDirectory)", data, StringComparison.Ordinal);
         Assert.Contains("CorporateMode.MarkerFileName", data, StringComparison.Ordinal);
@@ -32,69 +31,79 @@ public sealed class PortableStandaloneSourceContractTests
     }
 
     [Fact]
-    public void Standard_zip_cannot_ship_as_an_empty_chat_shell_by_default()
+    public void The_Standard_Portable_builder_verifier_and_asset_resolver_are_gone()
     {
-        string build = Read("scripts", "build-portable.ps1");
-        Assert.Contains("$fullyStandalone = -not $WithoutVulkan -and -not $ShellOnly", build, StringComparison.Ordinal);
-        Assert.Contains("Resolve-PaRuXPortableOfflineAssets", build, StringComparison.Ordinal);
-        Assert.Contains("parux.portable", build, StringComparison.Ordinal);
-        Assert.Contains("PaRuXData/.portable-data", build, StringComparison.Ordinal);
-        Assert.Contains(".portable-default-model", build, StringComparison.Ordinal);
-        Assert.Contains("Qwen3-4B-Q4_K_M.gguf", build, StringComparison.Ordinal);
-        Assert.Contains("ai-runtimes", build, StringComparison.Ordinal);
-        Assert.Contains("llama-server.exe", build, StringComparison.Ordinal);
-        Assert.Contains("MANIFEST-portable.json", build, StringComparison.Ordinal);
-        Assert.Contains("Portable archive SHA-256 mismatch", build, StringComparison.Ordinal);
-        Assert.Contains("PaRuX.Server/hostfxr.dll", build, StringComparison.Ordinal);
-        Assert.Contains("PaRuX.Server/hostpolicy.dll", build, StringComparison.Ordinal);
-        Assert.Contains("PaRuX.Server/coreclr.dll", build, StringComparison.Ordinal);
-        Assert.Contains("-FetchAssets", build, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void No_runtime_or_model_download_is_needed_on_destination_for_offline_chat_search()
-    {
-        string build = Read("scripts", "build-portable.ps1");
+        Assert.False(File.Exists(RepoPath("scripts", "build-portable.ps1")));
+        Assert.False(File.Exists(RepoPath("tests", "portable", "verify-standard-portable.ps1")));
         string assets = Read("scripts", "portable-offline-assets.ps1");
-        Assert.Contains("Qwen/Qwen3-4B-GGUF", assets, StringComparison.Ordinal);
-        Assert.Contains("7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5", assets, StringComparison.Ordinal);
-        Assert.Contains("1110a243fdf4706b3f48f1d95db1a4f5529b4d41", assets, StringComparison.Ordinal);
-        Assert.Contains("a09144355adeed5f58c8ed011d209bf8ee5a1fec", assets, StringComparison.Ordinal);
-        Assert.Contains("The llama.cpp release does not publish SHA-256 metadata", assets, StringComparison.Ordinal);
-        Assert.Contains("Assert-PaRuXPinnedAsset", assets, StringComparison.Ordinal);
-        Assert.Contains("Assert-PaRuXNoReparseTree", assets, StringComparison.Ordinal);
-        Assert.Contains("Copy-Item -LiteralPath $offline.ModelPath", build, StringComparison.Ordinal);
-        Assert.Contains("EmbeddingDir", build, StringComparison.Ordinal);
-        Assert.Contains("RerankerDir", build, StringComparison.Ordinal);
+        Assert.DoesNotContain("Resolve-PaRuXPortableOfflineAssets", assets, StringComparison.Ordinal);
+        Assert.Contains("Copy-PaRuXVcRuntime", assets, StringComparison.Ordinal);
+        // The release gate and the packaging scripts never look for the retired asset.
+        foreach (string file in new[] { "tools/release-gate.ps1", "tools/check-direct-third-party-coverage.ps1",
+                     "scripts/verify-release-assets.ps1", "scripts/build-msi.ps1", "scripts/build-corporate-lite.ps1" })
+        {
+            string text = File.ReadAllText(Path.Combine(RepoPath(), file.Replace('/', Path.DirectorySeparatorChar)));
+            Assert.DoesNotContain("portable-win-x64", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("build-portable.ps1", text, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public void Standard_uses_real_native_CPU_fallback_when_Vulkan_or_GPU_is_unusable()
+    public void Corporate_packager_uses_the_internal_CPU_shell_stage()
+    {
+        string corporate = Read("scripts", "build-corporate-lite.ps1");
+        string shell = Read("scripts", "build-corporate-app-shell.ps1");
+        Assert.Contains("build-corporate-app-shell.ps1", corporate, StringComparison.Ordinal);
+        Assert.Contains("app-shell-stage", corporate, StringComparison.Ordinal);
+        Assert.Contains("app-shell-stage", shell, StringComparison.Ordinal);
+        Assert.Contains(".parux-publish-source", shell, StringComparison.Ordinal);
+        Assert.Contains(".parux-publish-source", corporate, StringComparison.Ordinal);
+        Assert.Contains("|cpu-shell", shell, StringComparison.Ordinal);
+        Assert.Contains("|cpu-shell", corporate, StringComparison.Ordinal);
+        Assert.Contains("compiled from a different commit or edition", corporate, StringComparison.Ordinal);
+        Assert.Contains("staged source commit/edition differs", shell, StringComparison.Ordinal);
+        // The shell never creates an edition marker or a data folder; Corporate Lite adds its own.
+        Assert.DoesNotContain("Set-Content -LiteralPath (Join-Path $appDir \"parux.portable\"", shell, StringComparison.Ordinal);
+        Assert.Contains("parux.corporate", corporate, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Retired_marker_is_still_recognised_read_only_and_the_update_channel_is_closed()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "parux-legacy-portable-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string app = Path.Combine(root, "app");
+            Directory.CreateDirectory(app);
+            Directory.CreateDirectory(Path.Combine(root, "PaRuXData"));
+            File.WriteAllText(Path.Combine(app, PaRuXDataRoot.LegacyStandardPortableMarkerFileName), "legacy");
+            // Existing data stays reachable (no data loss) ...
+            Assert.Equal(Path.Combine(root, "PaRuXData"), PaRuXDataRoot.FindPortableDataRoot(app));
+            // ... and the copy is identified so the in-app updater explains that the channel is closed.
+            Assert.True(PaRuXDataRoot.IsLegacyStandardPortable(app));
+
+            File.WriteAllText(Path.Combine(app, CorporateMode.MarkerFileName), "corporate");
+            Assert.False(PaRuXDataRoot.IsLegacyStandardPortable(app));
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+
+        string boundary = Read("src", "PaRuX.App", "Services", "AppUpdateInstallBoundary.cs");
+        string client = Read("src", "PaRuX.App", "Services", "AppUpdateClient.cs");
+        Assert.Contains("StandardPortableClosedMessage", boundary, StringComparison.Ordinal);
+        Assert.Contains("PaRuXData", boundary, StringComparison.Ordinal);
+        Assert.Contains("StandardPortableClosedMessage(AppContext.BaseDirectory)", client, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Legacy_copy_still_uses_native_CPU_fallback_when_Vulkan_or_GPU_is_unusable()
     {
         string ai = Read("src", "PaRuX.Server", "LocalAiProcessManager.cs");
         string paths = Read("src", "PaRuX.Server", "LocalAiPaths.cs");
         Assert.Contains("cpuOnly && selfContainedPortable", ai, StringComparison.Ordinal);
-        Assert.Contains("portable native CPU", ai, StringComparison.Ordinal);
         Assert.Contains("FindBundledPortableModel()", ai, StringComparison.Ordinal);
         Assert.Contains("FindBundledPortableModel()", paths, StringComparison.Ordinal);
-        Assert.Contains("StandardVision =>", paths, StringComparison.Ordinal);
-        Assert.Contains("CPU (Standard Portable)", ai, StringComparison.Ordinal);
         Assert.Contains("GetPortableOwnedRoleModel(\"standard\")", ai, StringComparison.Ordinal);
         Assert.Contains("GetPortableOwnedRoleModel", paths, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Smoke_launches_direct_zip_executable_without_an_inherited_profile_override()
-    {
-        string build = Read("scripts", "build-portable.ps1");
-        Assert.Contains("PARUX_CORPORATE_MODEL_DOWNLOADS", build, StringComparison.Ordinal);
-        Assert.Contains("[Environment]::SetEnvironmentVariable($name, $null, \"Process\")", build, StringComparison.Ordinal);
-        Assert.Contains("Join-Path $app \"PaRuXData\"", build, StringComparison.Ordinal);
-        Assert.Contains("cpu-help.stdout.txt", build, StringComparison.Ordinal);
-        Assert.Contains("/api/v1/embeddings/engine", build, StringComparison.Ordinal);
-        Assert.Contains("/api/v1/reranker/engine", build, StringComparison.Ordinal);
-        Assert.Contains("Offline Portable embedding ONNX engine did not load", build, StringComparison.Ordinal);
-        Assert.Equal(1, build.Split("Write-Host \"Done.\"", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]
@@ -114,33 +123,14 @@ public sealed class PortableStandaloneSourceContractTests
         Assert.Contains("Bundled Portable CPU runtime", components, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void The_Corporate_packager_still_uses_the_CPU_only_shell_not_the_standard_modelled_zip()
-    {
-        string corporate = Read("scripts", "build-corporate-lite.ps1");
-        string portable = Read("scripts", "build-portable.ps1");
-        Assert.Contains("-WithoutVulkan", corporate, StringComparison.Ordinal);
-        Assert.Contains("if (-not $WithoutVulkan)", portable, StringComparison.Ordinal);
-        Assert.Contains("$fullyStandalone = -not $WithoutVulkan -and -not $ShellOnly", portable, StringComparison.Ordinal);
-        Assert.Contains("if ($WithoutVulkan -and $FetchAssets)", portable, StringComparison.Ordinal);
-        Assert.Contains("cpu-shell-stage", portable, StringComparison.Ordinal);
-        Assert.Contains("cpu-shell-stage", corporate, StringComparison.Ordinal);
-        Assert.Contains("CPU-shell-INTERNAL", portable, StringComparison.Ordinal);
-        Assert.Contains("diagnostic-shell-INTERNAL", portable, StringComparison.Ordinal);
-        Assert.Contains("PaRuX-$Version-portable-win-x64", portable, StringComparison.Ordinal);
-        Assert.Contains(".parux-publish-source", portable, StringComparison.Ordinal);
-        Assert.Contains(".parux-publish-source", corporate, StringComparison.Ordinal);
-        Assert.Contains("compiled from a different commit or edition", corporate, StringComparison.Ordinal);
-        Assert.Contains("staged source commit/edition differs", portable, StringComparison.Ordinal);
-        Assert.Contains("$allowedOfflineData", portable, StringComparison.Ordinal);
-    }
-
-    private static string Read(params string[] relative)
+    private static string RepoPath(params string[] relative)
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "PaRuX.sln")))
             root = root.Parent;
         Assert.NotNull(root);
-        return File.ReadAllText(Path.Combine(new[] { root!.FullName }.Concat(relative).ToArray()));
+        return Path.Combine(new[] { root!.FullName }.Concat(relative).ToArray());
     }
+
+    private static string Read(params string[] relative) => File.ReadAllText(RepoPath(relative));
 }

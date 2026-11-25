@@ -63,7 +63,7 @@ public sealed class CorporateDataRootCreationTests
         string root = NewRoot();
         try
         {
-            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.PortableMarkerFileName), "");
+            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.LegacyStandardPortableMarkerFileName), "");
             Assert.Null(PaRuXDataRoot.FindPortableDataRoot(root));
             Assert.False(Directory.Exists(Path.Combine(root, "PaRuXData")));
         }

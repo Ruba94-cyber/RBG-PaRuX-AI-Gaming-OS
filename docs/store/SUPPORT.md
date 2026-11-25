@@ -11,7 +11,7 @@ Draft support page for the Store listing's "Support contact info" field (Partner
 
 **Where is my data?** In the app's private folder for your Windows user, under `%LOCALAPPDATA%\Packages\<package family name>\LocalState\PaRuX`. It is removed when you uninstall the app. Use the app's Backup feature first if you want to keep chats, indexes or models.
 
-**I used the MSI or Portable edition before. Will my chats appear?** No. The Store edition keeps its own data folder and never reads or changes the MSI/Portable data. Move content with Backup/Restore.
+**I used the MSI or the (discontinued) Standard Portable edition before. Will my chats appear?** No. The Store edition keeps its own data folder and never reads or changes the MSI or old Portable data. Move content with Backup/Restore.
 
 **How do updates work?** The Microsoft Store updates PaRuX. The Update Manager still lets you review updates for optional runtimes and models, but it does not update the app itself in the Store edition.
 

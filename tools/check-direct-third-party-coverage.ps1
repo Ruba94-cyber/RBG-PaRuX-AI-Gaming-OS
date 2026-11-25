@@ -201,7 +201,7 @@ if (-not [string]::IsNullOrWhiteSpace($PublishDir)) {
 }
 
 # 5) Packaging scripts keep shipping the llama.cpp license and the MSIX script stays free of the CUDA notice.
-foreach ($script in "scripts/stage-msi-runtime.ps1", "scripts/build-portable.ps1", "scripts/build-corporate-lite.ps1", "scripts/build-msi.ps1", "scripts/build-msix.ps1") {
+foreach ($script in "scripts/stage-msi-runtime.ps1", "scripts/build-corporate-app-shell.ps1", "scripts/build-corporate-lite.ps1", "scripts/build-msi.ps1", "scripts/build-msix.ps1") {
     $scriptPath = Join-Path $Root $script
     if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) { throw "[notices] Packaging script missing: $script" }
     if ((Get-Content -LiteralPath $scriptPath -Raw).IndexOf("LICENSE-llama.cpp", [System.StringComparison]::Ordinal) -lt 0) {

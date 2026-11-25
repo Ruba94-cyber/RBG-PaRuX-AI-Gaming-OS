@@ -40,14 +40,13 @@ public sealed class SecurityMediumM123Tests : IDisposable
         Assert.Contains("No reviewed SHA-256 pin", pin, StringComparison.Ordinal);
         Assert.Contains("does not match the reviewed pin", pin, StringComparison.Ordinal);
         Assert.Contains("Upstream release digest differs from the reviewed pin", pin, StringComparison.Ordinal);
-        foreach (string script in new[] { "portable-offline-assets.ps1", "build-corporate-lite.ps1" })
+        foreach (string script in new[] { "build-corporate-lite.ps1" })
         {
             string text = Read("scripts", script);
             Assert.Contains("Get-PaRuXLlamaCpuPin", text, StringComparison.Ordinal);
             Assert.Contains("AllowUnpinnedLlamaCpuRuntime", text, StringComparison.Ordinal);
             Assert.Contains("Assert-PaRuXLlamaCpuArchivePin", text, StringComparison.Ordinal);
         }
-        Assert.Contains("AllowUnpinnedLlamaCpuRuntime", Read("scripts", "build-portable.ps1"), StringComparison.Ordinal);
     }
 
     // ---- SEC-M2 -------------------------------------------------------------------------------
