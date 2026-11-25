@@ -95,12 +95,12 @@ public sealed class MultilingualE5EmbeddingProvider : IRetrievalEmbeddingProvide
         {
             await new PinnedModelDownloader().DownloadAsync(PinnedModelManifest.MultilingualE5SmallInt8, _root, progress, ct).ConfigureAwait(false);
             lock (_gate) { ReleaseLocked(); _loadAttempted = false; }
-            try { File.Delete(LastErrorPath); } catch (IOException) { }
+            try { File.Delete(LastErrorPath); } catch (Exception) { }
             return "Multilingual embedding engine installed at " + _root;
         }
         catch (Exception ex)
         {
-            try { await File.WriteAllTextAsync(LastErrorPath, ex.Message, ct).ConfigureAwait(false); } catch (IOException) { }
+            try { await File.WriteAllTextAsync(LastErrorPath, ex.Message, ct).ConfigureAwait(false); } catch (Exception) { }
             throw;
         }
     }
@@ -186,13 +186,13 @@ public sealed class MultilingualE5EmbeddingProvider : IRetrievalEmbeddingProvide
                 _session = new InferenceSession(ModelPath, options);
                 _inputNames = _session.InputMetadata.Keys.ToArray();
                 _loadFailures = 0;
-                try { File.Delete(LastErrorPath); } catch (IOException) { }
+                try { File.Delete(LastErrorPath); } catch (Exception) { }
                 return true;
             }
             catch (Exception ex)
             {
                 _loadFailures++; _loadFailedTicks = DateTime.UtcNow.Ticks;
-                try { File.WriteAllText(LastErrorPath, "Failed to load the multilingual embedding engine: " + ex.GetType().Name + ": " + ex.Message + (ex.InnerException is null ? "" : " | " + ex.InnerException.Message)); } catch (IOException) { }
+                try { File.WriteAllText(LastErrorPath, "Failed to load the multilingual embedding engine: " + ex.GetType().Name + ": " + ex.Message + (ex.InnerException is null ? "" : " | " + ex.InnerException.Message)); } catch (Exception) { }
                 ReleaseLocked();
                 return false;
             }
@@ -201,7 +201,7 @@ public sealed class MultilingualE5EmbeddingProvider : IRetrievalEmbeddingProvide
 
     private void ReleaseLocked() { _session?.Dispose(); _session = null; _tokenizer = null; }
 
-    private static string? SafeRead(string path) { try { return File.Exists(path) ? File.ReadAllText(path) : null; } catch (IOException) { return null; } }
+    private static string? SafeRead(string path) { try { return File.Exists(path) ? File.ReadAllText(path) : null; } catch (Exception) { return null; } }
 
     public void Dispose() { _unloader.Dispose(); lock (_gate) ReleaseLocked(); }
 }

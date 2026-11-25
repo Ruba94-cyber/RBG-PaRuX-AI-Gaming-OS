@@ -485,9 +485,19 @@ public sealed class LocalRuntimeService
             profile,
             enforceCurrentVram: false,
             cancellationToken,
-            reclaimableSystemRamBytes).ConfigureAwait(false);
+            reclaimableSystemRamBytes,
+            enforceCurrentSystemRam: EnforcesGenericSystemRamPercent(PaRuX.Contracts.CorporateMode.IsActive)).ConfigureAwait(false);
         if (!decision.Allowed) throw new InvalidOperationException(decision.Message);
     }
+
+    /// <summary>
+    /// Corporate Lite decides memory per model (weights + KV cache + a dynamic reserve, see CorporateCpuMemoryPlanner and
+    /// CpuFallbackAdmission) and falls back to the very small bundled model when the main one does not fit. A flat "system RAM
+    /// above N percent" gate in front of that refuses every model, including the 0.6B one that fits, as soon as another
+    /// application holds the memory on a PC with a lot of RAM (measured: 25.8 GB machine, 3.3 GB free = 87.2 percent > 86).
+    /// Thermal limits still apply; only the percent gate is left to the model-aware planner.
+    /// </summary>
+    internal static bool EnforcesGenericSystemRamPercent(bool corporateActive) => !corporateActive;
 
     private static Task StopAlternativeEnginesAsync(CancellationToken cancellationToken)
     {

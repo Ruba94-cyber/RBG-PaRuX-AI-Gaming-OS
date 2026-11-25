@@ -229,6 +229,8 @@ public sealed class RerankerService : IDisposable, PaRuX.Server.Knowledge.IUnloa
                 _session = new InferenceSession(ModelPath);
                 _outputName = _session.OutputMetadata.Keys.FirstOrDefault(k => k == "logits")
                     ?? _session.OutputMetadata.Keys.FirstOrDefault();
+                _loadFailures = 0;
+                try { File.Delete(LastErrorPath); } catch (Exception) { /* best effort */ }
                 return true;
             }
             catch (Exception ex)

@@ -251,7 +251,7 @@ public sealed class EmbeddingService : IDisposable, PaRuX.Server.Knowledge.IUnlo
                 if (ThreadLimit > 0) { options.IntraOpNumThreads = ThreadLimit; options.InterOpNumThreads = 1; }
                 _session = new InferenceSession(ModelPath, options);
                 _loadFailures = 0;
-                try { File.Delete(LastErrorPath); } catch { /* best effort */ }
+                try { File.Delete(LastErrorPath); } catch (Exception) { /* best effort */ }
                 return true;
             }
             catch (Exception ex)

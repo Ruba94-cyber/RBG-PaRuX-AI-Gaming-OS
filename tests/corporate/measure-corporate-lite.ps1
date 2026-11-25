@@ -619,7 +619,7 @@ while (`$true) {
 Set-Content '$hogReady' 'ready'
 while (-not (Test-Path '$hogStop')) { Start-Sleep -Milliseconds 500 }
 "@ | Set-Content $hogScript -Encoding UTF8
-        $hog = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", $hogScript) -PassThru -WindowStyle Hidden
+        $hog = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", "`"$hogScript`"") -PassThru -WindowStyle Hidden
         $dl = (Get-Date).AddSeconds(120); while ((Get-Date) -lt $dl -and -not (Test-Path $hogReady)) { Start-Sleep -Milliseconds 500 }
         $stage.available_gib_during_test = [math]::Round(([int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024) / 1GB, 2)
         if ($stage.available_gib_during_test -gt ($stage.target_available_gib + 1.0)) { throw "The memory-holding helper did not reduce available RAM to the target ($($stage.available_gib_during_test) GB available, target $($stage.target_available_gib) GB): the test is invalid, not a product result." }
@@ -629,7 +629,7 @@ while (-not (Test-Path '$hogStop')) { Start-Sleep -Milliseconds 500 }
         $stage.chat_http_status = $r.Status
         $stage.chat_error = if ($r.Status -ne 200) { $r.Text.Substring(0, [math]::Min(400, $r.Text.Length)) } else { $null }
         $st = Api GET "/api/v1/runtime/status" $null 60
-        $stage.active_model = if ($st.Json) { Split-Path ([string]$st.Json.activeModelPath) -Leaf } else { $null }
+        $stage.active_model = if ($st.Json -and $st.Json.activeModelPath) { Split-Path ([string]$st.Json.activeModelPath) -Leaf } else { $null }
         $stage.pass = [bool]($r.Status -eq 200 -and $stage.active_model -like "Qwen3-0.6B*")
     } catch { $stage.error = $_.Exception.Message; $stage.pass = $false }
     finally {
@@ -676,7 +676,7 @@ try {
     $dataRoot = Join-Path $app "PaRuXData"
     $env:PARUX_CORPORATE = "1"; $env:PARUX_DATA_ROOT = $dataRoot; $env:PARUX_LOCALAI_STATE_DIR = $dataRoot
 
-    $sampler = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", $samplerPath, "-Root", $extract, "-Out", $script:sampOut, "-ConnOut", $connOut, "-NetChecks", $netChecks, "-Stop", $stopFile, "-Cores", $cores) -PassThru -WindowStyle Hidden
+    $sampler = Start-Process pwsh -ArgumentList @("-NoProfile", "-File", "`"$samplerPath`"", "-Root", "`"$extract`"", "-Out", "`"$($script:sampOut)`"", "-ConnOut", "`"$connOut`"", "-NetChecks", "`"$netChecks`"", "-Stop", "`"$stopFile`"", "-Cores", $cores) -PassThru -WindowStyle Hidden
     $t0 = Get-Date
     $appProc = Start-Process (Join-Path $app "PaRuX.exe") -PassThru -WorkingDirectory $app
     $boot = Join-Path $dataRoot "server\bootstrap.json"
