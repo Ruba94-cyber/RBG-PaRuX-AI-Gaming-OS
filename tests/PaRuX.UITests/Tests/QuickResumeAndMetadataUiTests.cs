@@ -17,7 +17,7 @@ namespace PaRuX.UITests.Tests;
 [Collection(UiTestCollection.Name)]
 public sealed class QuickResumeAndMetadataUiTests
 {
-    private const string GamingTab = "MainWindow_ModeTab_Gaming";
+    private const string GamingTab = "Navigation_GameLibrary_Item";
     private static readonly Regex ActionId = new(@"^QuickResume_(Pause|Resume)_(\d+)$", RegexOptions.Compiled);
 
     // Names QuickResumePolicy refuses, spelled out here on purpose: the test must not depend on the policy it verifies.

@@ -63,7 +63,7 @@ public sealed class PlayniteImportUiTests
         try
         {
             // Since gaming-removal step 2 the import lives on the install/import sub-page opened from Games tools.
-            Press(app, "MainWindow_ModeTab_Gaming");
+            Press(app, "Navigation_GameLibrary_Item");
             Press(app, "GamesToolsPage_InstallStage_Button");
             GamingSectionsPage.SelectSection(app.MainWindow, "Add");
             Press(app, "GameImport_Playnite_Look_Button");

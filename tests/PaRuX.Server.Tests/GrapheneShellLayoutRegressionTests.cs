@@ -16,16 +16,13 @@ public sealed class GrapheneShellLayoutRegressionTests
     }
 
     [Fact]
-    public void Shell_keeps_two_modes_inside_one_graphene_header()
+    public void Shell_uses_single_graphene_sidebar_without_mode_tabs_header()
     {
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
         var doc = XDocument.Load(Path.Combine(Root(), "src", "PaRuX.App", "MainWindow.xaml"));
-        var host = Assert.Single(doc.Descendants().Where(e => (string?)e.Attribute(x + "Name") == "ModeTabsHost"));
-        Assert.Equal("{ThemeResource PaRuXGrapheneHeaderBrush}", (string?)host.Attribute("Background"));
-        var tabs = Assert.Single(host.Descendants().Where(e => (string?)e.Attribute(x + "Name") == "ModeTabs"));
-        Assert.Equal(2, tabs.Elements().Count(e => e.Name.LocalName == "SelectorBarItem"));
-        Assert.Contains(tabs.Elements(), e => (string?)e.Attribute(x + "Name") == "ModeTabAiItem");
-        Assert.Contains(tabs.Elements(), e => (string?)e.Attribute(x + "Name") == "ModeTabGamingItem");
+        // Gaming-removal step 6 collapsed the AI | Gaming top tabs into the ordinary Games sidebar item.
+        Assert.Empty(doc.Descendants().Where(e => (string?)e.Attribute(x + "Name") == "ModeTabsHost"));
+        Assert.Empty(doc.Descendants().Where(e => (string?)e.Attribute(x + "Name") == "ModeTabs"));
         var pane = Assert.Single(doc.Descendants().Where(e => (string?)e.Attribute(x + "Name") == "NavView"));
         Assert.Equal("{ThemeResource PaRuXGrapheneSidebarBrush}", (string?)pane.Attribute("Background"));
     }

@@ -76,7 +76,7 @@ public static class SetupProfilePolicy
             ShowAiWorkspaces: false, ShowGamingWorkspace: true, ShowModeTabs: false, StartInGamingTab: true),
         _ => new SetupProfilePlan(
             StartLocalAi: true, StartGaming: true, StartAgentWorkers: true, RequireLanguageModel: true,
-            ShowAiWorkspaces: true, ShowGamingWorkspace: true, ShowModeTabs: true, StartInGamingTab: false)
+            ShowAiWorkspaces: true, ShowGamingWorkspace: true, ShowModeTabs: false, StartInGamingTab: false)
         };
     }
 
@@ -93,8 +93,8 @@ public static class SetupProfilePolicy
             ? "Chat, documenti, immagini e codice in locale. I servizi di gioco non vengono avviati."
             : "Chat, documents, images and code on this PC. The gaming services are not started.",
         SetupProfile.GamingOnly => italian
-            ? "Libreria giochi, controller e modalità TV. Non serve nessun modello linguistico."
-            : "Game library, controllers and TV mode. No language model is needed.",
+            ? "Playnite Console, download giochi, modding e strumenti controller. Non serve nessun modello linguistico."
+            : "Playnite Console, game downloads, modding and controller tools. No language model is needed.",
         _ => italian
             ? "IA e giochi insieme, con le risorse del PC condivise: l'IA si fa da parte mentre giochi."
             : "AI and games together, sharing the PC's resources: the AI steps aside while you play."

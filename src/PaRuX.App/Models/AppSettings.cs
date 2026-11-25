@@ -19,6 +19,7 @@ namespace PaRuX.Models
         public bool StartWithWindows { get; set; }
         public bool StudioModeEnabled { get; set; }
         /// <summary>Last top-level shell tab: "AI" (default, also used for any unknown value) or "Gaming".</summary>
+        /// <summary>Obsolete (gaming-removal step 6): AI | Gaming top tabs were collapsed into the Games sidebar item; kept for settings.json backward compatibility.</summary>
         public string LastModeTab { get; set; } = "AI";
         // Gaming library view (remembered between runs). Unknown or invalid values fall back to the defaults.
         // OBSOLETE since gaming-removal step 4 (native library views removed): the GameLibrary* fields below are no longer read or

@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using PaRuX.Services;
@@ -10,10 +9,11 @@ using Windows.System;
 namespace PaRuX;
 
 /// <summary>
-/// Top-level shell mode switch (AI / Gaming). It only changes which sidebar items are
-/// visible and which workspace is shown; no item is removed and no AutomationId changes.
-/// AI: Chat, Create, Projects, Model Hub (+ advanced AI items in Advanced interface).
-/// Gaming: Games (+ Playnite Console button in the pane footer). Settings and Help are in both.
+/// Profile-driven sidebar visibility and Ctrl+1 (Chat) / Ctrl+2 (Games) shortcuts.
+/// Gaming-removal step 6 collapsed the old AI | Gaming top tab bar: Games is now an ordinary
+/// sidebar workspace whenever the setup profile enables Gaming (Both or GamingOnly), while
+/// SettingsStore.Current.Data.LastModeTab remains readable in settings.json for compatibility
+/// and is ignored.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -21,11 +21,10 @@ public sealed partial class MainWindow
     internal const string ModeKeyGaming = "Gaming";
 
     private string _modeTab = ModeKeyAi;
-    private bool _applyingModeTab;
-    // Until the saved tab has been restored (NavView_Loaded) implicit syncs must not overwrite it.
     private bool _modeTabInitialized;
 
-    private bool IsGamingModeTab => string.Equals(_modeTab, ModeKeyGaming, StringComparison.Ordinal);
+    private bool IsGamingModeTab => !PaRuX.Contracts.CorporateMode.IsActive
+        && SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId) == SetupProfile.GamingOnly;
 
     private static string ModeTabText(string en, string it) => ConsoleText(en, it);
 
@@ -36,9 +35,6 @@ public sealed partial class MainWindow
         AddModeTabAccelerator(VirtualKey.Number1, ModeKeyAi);
         AddModeTabAccelerator(VirtualKey.Number2, ModeKeyGaming);
 
-        _applyingModeTab = true;
-        try { ModeTabs.SelectedItem = ModeTabAiItem; }
-        finally { _applyingModeTab = false; }
         ApplyModeTabVisibility();
     }
 
@@ -48,21 +44,26 @@ public sealed partial class MainWindow
         accelerator.Invoked += (_, args) =>
         {
             args.Handled = true;
-            if (App.IsShuttingDown || NavView.IsPaneVisible == false || !CurrentSetupPlan.ShowModeTabs) return;
-            SelectModeTab(tab, navigate: true);
-            (tab == ModeKeyAi ? ModeTabAiItem : ModeTabGamingItem).Focus(FocusState.Keyboard);
+            if (App.IsShuttingDown || NavView.IsPaneVisible == false) return;
+            if (tab == ModeKeyGaming)
+            {
+                if (!CurrentSetupPlan.ShowGamingWorkspace) return;
+                TryNavigateWorkspace(WorkspaceNavigationOrder.GamesWorkspaceTag);
+                GameLibraryNavItem.Focus(FocusState.Keyboard);
+            }
+            else
+            {
+                if (!CurrentSetupPlan.ShowAiWorkspaces) return;
+                ShowChat();
+                ChatNavItem.Focus(FocusState.Keyboard);
+            }
         };
         RootGrid.KeyboardAccelerators.Add(accelerator);
     }
 
     private void ApplyModeTabLocalization()
     {
-        string groupName = ModeTabText("Workspace mode", "Modalità dell'area di lavoro");
-        AutomationProperties.SetName(ModeTabs, groupName);
-        AutomationProperties.SetName(ModeTabAiItem, ModeTabText("AI mode", "Modalità AI"));
-        AutomationProperties.SetName(ModeTabGamingItem, ModeTabText("Gaming mode", "Modalità Gaming"));
-        ToolTipService.SetToolTip(ModeTabAiItem, ModeTabText("AI (Ctrl+1)", "AI (Ctrl+1)"));
-        ToolTipService.SetToolTip(ModeTabGamingItem, ModeTabText("Gaming (Ctrl+2)", "Gaming (Ctrl+2)"));
+        ToolTipService.SetToolTip(GameLibraryNavItem, ModeTabText("Games (Ctrl+2)", "Giochi (Ctrl+2)"));
     }
 
     /// <summary>Called once from NavView_Loaded, after the existing startup page was chosen.</summary>
@@ -71,13 +72,8 @@ public sealed partial class MainWindow
         if (_modeTabInitialized) return;
         _modeTabInitialized = true;
         SetupProfilePlan setup = CurrentSetupPlan;
-        // AI only / Gaming only have no tab to remember: the profile decides where the app starts.
-        bool wantsGaming = setup.ShowModeTabs
-            ? string.Equals(SettingsStore.Current.Data.LastModeTab, ModeKeyGaming, StringComparison.Ordinal)
-            : setup.StartInGamingTab;
-        // Only restore over the plain startup Chat page; first-run onboarding and test/deep-link
-        // initial pages keep priority.
-        if (wantsGaming && SettingsStore.Current.Data.OnboardingCompleted
+        // GamingOnly starts on Games; Both always starts on Chat (obsolete LastModeTab is ignored).
+        if (setup.StartInGamingTab && SettingsStore.Current.Data.OnboardingCompleted
             && NavView.IsPaneVisible && ChatPage.Visibility == Visibility.Visible)
         {
             SelectModeTab(ModeKeyGaming, navigate: true);
@@ -88,20 +84,22 @@ public sealed partial class MainWindow
         SetupProfilePolicy.Plan(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId));
 
     /// <summary>
-    /// Applies the setup profile (AI only / Gaming only / Both) to the shell: with a single-purpose profile the AI/Gaming
-    /// switch is hidden and the app stays in that workspace. Nothing is deleted or uninstalled, and the choice can be changed
-    /// again in Settings. Safe to call repeatedly.
+    /// Applies the setup profile (AI only / Gaming only / Both) to the shell. Nothing is deleted
+    /// or uninstalled, and the choice can be changed again in Settings. Safe to call repeatedly.
     /// </summary>
     internal void ApplySetupProfile()
     {
         SetupProfilePlan setup = CurrentSetupPlan;
-        ModeTabsHost.Visibility = setup.ShowModeTabs ? Visibility.Visible : Visibility.Collapsed;
-        if (!setup.ShowModeTabs)
+        if (setup.StartInGamingTab)
         {
-            string forced = setup.StartInGamingTab ? ModeKeyGaming : ModeKeyAi;
             bool settledShell = SettingsStore.Current.Data.OnboardingCompleted && OnboardingPage.Visibility != Visibility.Visible;
-            if (!string.Equals(_modeTab, forced, StringComparison.Ordinal))
-                SelectModeTab(forced, navigate: settledShell);
+            if (!string.Equals(_modeTab, ModeKeyGaming, StringComparison.Ordinal))
+                SelectModeTab(ModeKeyGaming, navigate: settledShell);
+        }
+        else if (!setup.ShowGamingWorkspace && string.Equals(_modeTab, ModeKeyGaming, StringComparison.Ordinal))
+        {
+            bool settledShell = SettingsStore.Current.Data.OnboardingCompleted && OnboardingPage.Visibility != Visibility.Visible;
+            SelectModeTab(ModeKeyAi, navigate: settledShell);
         }
         ApplyModeTabVisibility();
         EnsureWorkspaceFitsSetupProfile();
@@ -110,65 +108,23 @@ public sealed partial class MainWindow
         App.BubbleWin?.ApplyVisibilityMode();
     }
 
-    /// <summary>Selects a tab; optionally opens its default page (AI = Chat, Gaming = Games library).</summary>
+    /// <summary>Selects the AI or Games home workspace when permitted by the active setup profile.</summary>
     private void SelectModeTab(string tab, bool navigate)
     {
         tab = string.Equals(tab, ModeKeyGaming, StringComparison.Ordinal) ? ModeKeyGaming : ModeKeyAi;
         SetupProfilePlan setup = CurrentSetupPlan;
-        if (!setup.ShowModeTabs) tab = setup.StartInGamingTab ? ModeKeyGaming : ModeKeyAi;   // Ctrl+1/Ctrl+2 cannot leave the profile
-        SetModeTabState(tab);
+        if (tab == ModeKeyGaming && !setup.ShowGamingWorkspace) tab = ModeKeyAi;
+        if (tab == ModeKeyAi && !setup.ShowAiWorkspaces) tab = ModeKeyGaming;
+        _modeTab = tab;
         if (!navigate) return;
 
-        if (tab == ModeKeyGaming) TryNavigateWorkspace("__games__");
+        if (tab == ModeKeyGaming) TryNavigateWorkspace(WorkspaceNavigationOrder.GamesWorkspaceTag);
         else ShowChat();
     }
 
-    /// <summary>
-    /// Keeps the tab in step with the workspace that is really shown (Console mode, tray Quick Chat,
-    /// deep links...). Never navigates.
-    /// </summary>
+    /// <summary>Tracks whether the current workspace is Games without navigating or mutating settings.</summary>
     private void SyncModeTabToWorkspace(bool gaming) =>
-        SetModeTabState(gaming ? ModeKeyGaming : ModeKeyAi);
-
-    private void SetModeTabState(string tab)
-    {
-        SetupProfilePlan setup = CurrentSetupPlan;
-        if (!setup.ShowModeTabs)
-            tab = setup.StartInGamingTab ? ModeKeyGaming : ModeKeyAi;
-        bool changed = !string.Equals(_modeTab, tab, StringComparison.Ordinal);
-        _modeTab = tab;
-        _applyingModeTab = true;
-        try { ModeTabs.SelectedItem = tab == ModeKeyGaming ? ModeTabGamingItem : ModeTabAiItem; }
-        finally { _applyingModeTab = false; }
-        if (changed) ApplyModeTabVisibility();
-
-        if (_modeTabInitialized && changed
-            && !string.Equals(SettingsStore.Current.Data.LastModeTab, tab, StringComparison.Ordinal))
-        {
-            SettingsStore.Current.Data.LastModeTab = tab;
-            SettingsStore.Current.Save();
-        }
-    }
-
-    private void ModeTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
-    {
-        if (_applyingModeTab || !CurrentSetupPlan.ShowModeTabs) return;
-        string tab = ReferenceEquals(sender.SelectedItem, ModeTabGamingItem) ? ModeKeyGaming : ModeKeyAi;
-        if (string.Equals(tab, _modeTab, StringComparison.Ordinal)) return;
-        SelectModeTab(tab, navigate: true);
-    }
-
-    private void ModeTabs_KeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (!CurrentSetupPlan.ShowModeTabs || (e.Key != VirtualKey.Left && e.Key != VirtualKey.Right)) return;
-        // Arrow keys inside the selector switch tabs; Home/End are not needed for two tabs.
-        string target = e.Key == VirtualKey.Left ? ModeKeyAi : ModeKeyGaming;
-        e.Handled = true;
-        if (!string.Equals(target, _modeTab, StringComparison.Ordinal))
-            SelectModeTab(target, navigate: true);
-        // Page navigation may move focus into the workspace; keep it on the tab the user is driving.
-        (target == ModeKeyAi ? ModeTabAiItem : ModeTabGamingItem).Focus(FocusState.Keyboard);
-    }
+        _modeTab = gaming ? ModeKeyGaming : ModeKeyAi;
 
     /// <summary>
     /// Applies visibility only. Collapsed items are neither rendered nor focusable, but still exist
@@ -178,8 +134,7 @@ public sealed partial class MainWindow
     {
         bool corporate = PaRuX.Contracts.CorporateMode.IsActive;
         SetupProfile selected = SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId);
-        bool gaming = !corporate && (selected == SetupProfile.GamingOnly
-            || (selected == SetupProfile.Both && IsGamingModeTab));
+        bool gaming = !corporate && selected == SetupProfile.GamingOnly;
         bool ai = !gaming;
         bool studio = StudioModeToggle.IsOn;
         var visibleIds = WorkspaceNavigationOrder
@@ -195,12 +150,13 @@ public sealed partial class MainWindow
         // reachable from Chat model selection/Settings, but not as sidebar clutter.
         WorkspaceSectionHeader.Content = corporate
             ? ModeTabText("Assistant", "Assistente")
-            : gaming ? ModeTabText("Gaming", "Giochi")
+            : gaming ? ModeTabText("Games", "Giochi")
                 : ModeTabText("Workspaces", "Aree di lavoro");
         StudioModeToggle.Visibility = !corporate && !gaming
             ? Visibility.Visible : Visibility.Collapsed;
         UpdateContentStudioModeControlsVisibility(NavView.IsPaneOpen);
-        PlayniteConsoleButton.Visibility = gaming ? Visibility.Visible : Visibility.Collapsed;
+        PlayniteConsoleButton.Visibility = !corporate && CurrentSetupPlan.ShowGamingWorkspace
+            ? Visibility.Visible : Visibility.Collapsed;
 
         // Only AI profiles have conversations. Gaming-only must not expose a chat
         // search box, new-chat action, history, nor a shortcut to those controls.
