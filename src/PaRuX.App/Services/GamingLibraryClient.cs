@@ -146,37 +146,6 @@ namespace PaRuX.Services
             SendAsync<LocalGameGuidePreparationDto>(HttpMethod.Post,
                 "/api/v1/gaming/assistant/prepare", request, ct);
 
-        /// <summary>Read locally saved wishlist metadata. Never calls a game store.</summary>
-        public Task<GamingCallResult<List<LocalWishlistItemDto>>> GetWishlistAsync(CancellationToken ct = default) =>
-            SendAsync<List<LocalWishlistItemDto>>(HttpMethod.Get, "/api/v1/gaming/wishlist", null, ct);
-
-        /// <summary>Save a public Steam app id and target with monitoring OFF.</summary>
-        public Task<GamingCallResult<LocalWishlistItemDto>> AddWishlistItemAsync(
-            LocalWishlistItemDto item, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistItemDto>(HttpMethod.Post, "/api/v1/gaming/wishlist", item, ct);
-
-        /// <summary>Owner's separate explicit consent; still no automatic network polling.</summary>
-        public Task<GamingCallResult<LocalWishlistItemDto>> SetWishlistWatchAsync(
-            string productId, bool enabled, bool consent, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistItemDto>(HttpMethod.Put,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId) + "/watch",
-                new LocalWishlistWatchUpdate(enabled, consent), ct);
-
-        /// <summary>
-        /// Only a direct user action may request one indicative Steam storefront quote.
-        /// Discover must already be opted in; no polling or notification is started.
-        /// </summary>
-        public Task<GamingCallResult<LocalWishlistQuoteDto>> QuoteWishlistPriceAsync(
-            string productId, bool consent, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistQuoteDto>(HttpMethod.Post,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId) + "/quote",
-                new LocalWishlistQuoteRequest(consent), ct);
-
-        public Task<GamingCallResult<object>> RemoveWishlistItemAsync(
-            string productId, CancellationToken ct = default) =>
-            SendAsync<object>(HttpMethod.Delete,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId), null, ct);
-
         /// <summary>Edits a saved manual or emulator entry. Never touches game files.</summary>
         public Task<GamingCallResult<ManualGameDto>> UpdateManualGameAsync(string id, UpdateManualGameRequest request, CancellationToken ct = default) =>
             SendAsync<ManualGameDto>(HttpMethod.Put, "/api/v1/gaming/library/" + Uri.EscapeDataString(id), request, ct);
@@ -301,7 +270,7 @@ namespace PaRuX.Services
 
     /// <summary>
     /// Optional local cover images. The user picks an image file; only a validated copy (png, jpg or webp, size capped,
-    /// checked by file signature; the file is either chosen by the user or, only after the opt-in "Covers & info", downloaded from the Steam or Wikipedia CDN by GameMetadataService) is stored under the PaRuX data folder with a name
+    /// checked by file signature) is stored under the PaRuX data folder with a name
     /// derived from the content hash. A small index maps title keys to those names. The original file is never modified.
     /// </summary>
     public static class GameCoverStore
@@ -316,20 +285,7 @@ namespace PaRuX.Services
         public static string StorageFolder => Folder;
         private static string IndexPath => Path.Combine(Folder, "covers.json");
 
-        // The index is read from disk once and again only when covers.json changes (checked at most every 1.5 s), so a library of
-        // thousands of tiles resolves its covers from memory instead of re-parsing the index file for every tile.
-        private static readonly StampedCache<Dictionary<string, string>> IndexCache = new(
-            stamp: () =>
-            {
-                try
-                {
-                    var info = new FileInfo(IndexPath);
-                    return info.Exists ? info.LastWriteTimeUtc.Ticks ^ info.Length : 0;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return -1; }
-            },
-            load: LoadIndex,
-            nowMilliseconds: () => Environment.TickCount64);
+        private static Dictionary<string, string>? _cachedIndex;
 
         /// <summary>Signature check (not the file extension): ".png", ".jpg", ".webp" or null.</summary>
         public static string? DetectExtension(ReadOnlySpan<byte> head)
@@ -366,7 +322,7 @@ namespace PaRuX.Services
             string tmp = IndexPath + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(index));
             File.Move(tmp, IndexPath, overwrite: true);
-            IndexCache.Invalidate();
+            _cachedIndex = null;
         }
 
         /// <summary>Full path of the stored cover of a title, or null when it has none (or the copy is missing).</summary>
@@ -375,7 +331,8 @@ namespace PaRuX.Services
             if (string.IsNullOrEmpty(titleKey)) return null;
             lock (Gate)
             {
-                if (!IndexCache.Get().TryGetValue(titleKey, out string? name)) return null;
+                _cachedIndex ??= LoadIndex();
+                if (!_cachedIndex.TryGetValue(titleKey, out string? name)) return null;
                 string path = Path.Combine(Folder, name);
                 return File.Exists(path) ? path : null;
             }

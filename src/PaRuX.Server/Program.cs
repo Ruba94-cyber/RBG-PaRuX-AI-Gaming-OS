@@ -375,7 +375,6 @@ builder.Services.AddSingleton<CustomWorkflowService>();
 builder.Services.AddSingleton<GamingProfileStore>();
 builder.Services.AddSingleton<ControllerProfileStore>();
 builder.Services.AddSingleton<GameControllerProfileStore>();
-builder.Services.AddSingleton<GameSmartCollectionStore>();
 builder.Services.AddSingleton<PrincipalRoleStore>();
 builder.Services.AddSingleton<XInputShimInstaller>(_ =>
 {
@@ -391,7 +390,6 @@ builder.Services.AddSingleton<XInputShimInstaller>(_ =>
 });
 builder.Services.AddSingleton<ManualGameLibrary>();
 builder.Services.AddSingleton<ExternalGameLibraryStore>();
-builder.Services.AddSingleton<LocalWishlistStore>();
 builder.Services.AddSingleton<SignInAppListStore>();
 builder.Services.AddSingleton(sp => new SignInAppListRunner(
     sp.GetRequiredService<SignInAppListStore>(), new SignInAppProcessLauncher(),
@@ -4448,7 +4446,6 @@ app.MapTemporaryGameModEndpoints();
 app.MapGameSkinStudioEndpoints();
 app.MapGameAssetModEndpoints();
 app.MapGameModChangeSetEndpoints();
-app.MapLocalWishlistEndpoints();
 app.MapSignInAppListEndpoints();
 app.MapSupportAppEndpoints();
 app.MapGgufQuantizeEndpoints();
@@ -4457,13 +4454,11 @@ app.MapGameLaunchProfileEndpoints();
 PaRuX.Server.Orchestration.AgentLibraryEndpoints.MapAgentLibraryEndpoints(app);
 PaRuX.Server.ChatCode.ChatCodeEndpoints.MapChatCodeEndpoints(app);
 app.MapGameSaveBackupEndpoints();
-app.MapGameExtensionEndpoints();
 app.MapOpenAiCompatibleProviderEndpoints();
 app.MapTrainingToolsEndpoints();
 app.MapEmulatorEndpoints();
 PaRuX.Server.Orchestration.Gaming.QuickResumeEndpoints.MapQuickResumeEndpoints(app);
 PaRuX.Server.Orchestration.Gaming.Downloads.GameDownloadEndpoints.MapGameDownloadEndpoints(app);
-PaRuX.Server.Orchestration.Gaming.Discover.GameDiscoverEndpoints.MapGameDiscoverEndpoints(app);
 // Any "unavailable during Gaming" refusal that an endpoint did not map itself becomes the one 409 { code: "gaming_active" }.
 app.Use(async (context, next) =>
 {

@@ -174,12 +174,13 @@ namespace PaRuX.Server.Tests
                 lastAdvancedIndex = currentAdvancedIndex;
             }
 
-            // Verify specific members of Simple mode
+            // Verify specific members of Simple mode (Both profile includes Games as a regular workspace)
             Assert.Equal(new[]
             {
                 WorkspaceNavigationOrder.ChatAutomationId,
                 WorkspaceNavigationOrder.CreateAutomationId,
                 WorkspaceNavigationOrder.ProjectsAutomationId,
+                WorkspaceNavigationOrder.GameLibraryAutomationId,
                 WorkspaceNavigationOrder.ModelHubAutomationId,
                 WorkspaceNavigationOrder.SettingsAutomationId,
                 WorkspaceNavigationOrder.HelpAutomationId

@@ -19,16 +19,6 @@ public sealed partial class ManualGameLibraryView
     /// <summary>The TV-scale presentation belonged to the native Console/TV shell, removed in gaming-removal step 3: always desktop.</summary>
     private static bool _consolePresentation => false;
 
-    /// <summary>Tints the library with the active extension theme's background (only when its appearance matches the app theme).</summary>
-    private void ApplyLibraryThemeBackground()
-    {
-        string? hex = LibraryThemeState.BackgroundHex(ActualTheme == ElementTheme.Dark);
-        if (hex is not null && GameExtensionManifestValidator.TryParseHex(hex, out (byte R, byte G, byte B) c))
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, c.R, c.G, c.B));
-        else
-            ClearValue(BackgroundProperty);
-    }
-
     private void BuildGamingStrip()
     {
         _gamingStripText.Text = T("Gaming mode is active. AI is off.", "Modalità Gaming attiva. L'AI è spenta.");

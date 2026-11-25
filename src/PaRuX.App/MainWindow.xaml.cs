@@ -184,8 +184,6 @@ namespace PaRuX
             // while the game owns CPU/GPU/VRAM, even if Core is unreachable.
             GamingManager.Current.StateChanged += OnGamingModeChangedForIndicatorTimer;
             if (!GamingManager.Current.IsActive) _activeIndicatorTimer.Start();
-            InitializeAchievementToasts();
-            InitializeGameExtensionTheme();
 
             // One best-effort pull from PaRuX Server at startup, off the UI thread, so a
             // conversation started on a paired Android device shows up here too. Never

@@ -56,12 +56,13 @@ public sealed class SetupProfilePolicyTests
     }
 
     [Fact]
-    public void Both_starts_everything_and_shows_both_tabs()
+    public void Both_starts_everything_and_shows_both_workspaces_without_mode_tabs()
     {
         SetupProfilePlan plan = SetupProfilePolicy.Plan(SetupProfile.Both);
 
         Assert.True(plan.StartLocalAi && plan.StartGaming && plan.StartAgentWorkers);
-        Assert.True(plan.RequireLanguageModel && plan.ShowAiWorkspaces && plan.ShowGamingWorkspace && plan.ShowModeTabs);
+        Assert.True(plan.RequireLanguageModel && plan.ShowAiWorkspaces && plan.ShowGamingWorkspace);
+        Assert.False(plan.ShowModeTabs);
         Assert.False(plan.StartInGamingTab);
     }
 

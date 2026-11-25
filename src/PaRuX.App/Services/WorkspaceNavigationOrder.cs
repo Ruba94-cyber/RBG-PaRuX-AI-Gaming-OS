@@ -88,17 +88,19 @@ namespace PaRuX.Services
             SetupProfile setupProfile = SetupProfile.Both, bool? corporateMode = null)
         {
             bool corporate = corporateMode ?? PaRuX.Contracts.CorporateMode.IsActive;
-            // Only the installed purpose decides the usable surface. The AI/Gaming tab is
-            // a selector when BOTH was chosen, not an override of an AI-only setup.
-            bool gaming = !corporate && (setupProfile == SetupProfile.GamingOnly
-                || (setupProfile == SetupProfile.Both && isGamingMode));
+            // Gaming-removal step 6: the AI|Gaming top tab is collapsed. In Both, Games is an ordinary
+            // sidebar workspace alongside AI workspaces; GamingOnly shows only Games/Settings/Help;
+            // AiOnly hides Games; Corporate shows only Chat/Documents/Settings/Help.
+            bool gamingOnly = !corporate && setupProfile == SetupProfile.GamingOnly;
+            bool includeGames = !corporate && setupProfile == SetupProfile.Both;
             return AllEntries
                 .Where(e => corporate
                     ? e.AutomationId is ChatAutomationId or DocumentSearchAutomationId
                         or SettingsAutomationId or HelpAutomationId
-                    : gaming
+                    : gamingOnly
                         ? e.IsGamingOnly || IsSharedAcrossModes(e)
-                        : !e.IsGamingOnly && !e.IsCorporateOnly
+                        : !e.IsCorporateOnly
+                            && (includeGames || !e.IsGamingOnly)
                             && (isAdvancedMode || !e.IsAdvancedOnly))
                 .ToList()
                 .AsReadOnly();

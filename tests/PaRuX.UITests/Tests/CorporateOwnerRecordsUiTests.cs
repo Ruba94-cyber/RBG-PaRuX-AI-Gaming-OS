@@ -55,14 +55,13 @@ public sealed class CorporateOwnerRecordsUiTests
 
             // Offline by construction: nothing that calls out is offered.
             Assert.Null(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("Settings_Webhooks_Add_Button")));
-            Assert.Null(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("Settings_Steam_Save_Button")));
 
             // ...and the Core refuses them even if something asks directly.
             using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(app.DataRoot, "server", "bootstrap.json")));
             string endpoint = doc.RootElement.GetProperty("endpoint").GetString()!.TrimEnd('/');
             string token = doc.RootElement.GetProperty("token").GetString()!;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            foreach (string path in new[] { "/api/v2/webhooks", "/api/v2/steam/credentials" })
+            foreach (string path in new[] { "/api/v2/webhooks" })
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, endpoint + path);
                 request.Headers.Add("X-PaRuX-Token", token);

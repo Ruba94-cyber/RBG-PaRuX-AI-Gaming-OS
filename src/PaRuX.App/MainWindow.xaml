@@ -17,55 +17,7 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="RootGrid" Background="{ThemeResource PaRuXSurfaceSolidBrush}" SizeChanged="RootGrid_SizeChanged" KeyDown="RootGrid_ConsoleKeyDown">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <!-- Top-level mode switch (AI / Gaming). Logic lives in MainWindow.ModeTabs.cs. -->
-        <Border
-            x:Name="ModeTabsHost"
-            Grid.Row="0"
-            Padding="16,2,16,2"
-            Background="{ThemeResource PaRuXGrapheneHeaderBrush}"
-            BorderBrush="{ThemeResource PaRuXStrokeBrush}"
-            BorderThickness="0,0,0,1">
-            <Border HorizontalAlignment="Center"
-                    Background="{ThemeResource PaRuXSurfaceSubtleBrush}"
-                    BorderBrush="{ThemeResource PaRuXStrokeStrongBrush}"
-                    BorderThickness="1"
-                    Padding="4,0" CornerRadius="{StaticResource PaRuXRadiusLarge}">
-                <SelectorBar
-                x:Name="ModeTabs"
-                HorizontalAlignment="Left"
-                SelectionChanged="ModeTabs_SelectionChanged"
-                KeyDown="ModeTabs_KeyDown"
-                AutomationProperties.AutomationId="MainWindow_ModeTabs"
-                AutomationProperties.Name="Workspace mode" loc:Loc.ItName="Modalità dell&#x27;area di lavoro">
-                <SelectorBarItem
-                    x:Name="ModeTabAiItem"
-                    Text="AI"
-                    MinHeight="44"
-                    MinWidth="64"
-                    FontSize="{StaticResource PaRuXFontSizeBody}"
-                    AutomationProperties.AutomationId="MainWindow_ModeTab_AI"
-                    AutomationProperties.Name="AI mode" loc:Loc.ItName="Modalità AI"
-                    ToolTipService.ToolTip="AI (Ctrl+1)" />
-                <SelectorBarItem
-                    x:Name="ModeTabGamingItem"
-                    Text="Gaming"
-                    MinHeight="44"
-                    MinWidth="64"
-                    FontSize="{StaticResource PaRuXFontSizeBody}"
-                    AutomationProperties.AutomationId="MainWindow_ModeTab_Gaming"
-                    AutomationProperties.Name="Gaming mode" loc:Loc.ItName="Modalità Gaming"
-                    ToolTipService.ToolTip="Gaming (Ctrl+2)" />
-                </SelectorBar>
-            </Border>
-        </Border>
-
         <tb:TaskbarIcon
-            Grid.Row="1"
             x:Name="TrayIcon"
             ToolTipText="PaRuX AI &amp; Gaming OS"
             IconSource="Assets/prx-orbit-tray.ico">
@@ -87,7 +39,6 @@
         </tb:TaskbarIcon>
 
         <NavigationView
-            Grid.Row="1"
             Background="{ThemeResource PaRuXGrapheneSidebarBrush}"
             x:Name="NavView"
             IsBackButtonVisible="Collapsed"

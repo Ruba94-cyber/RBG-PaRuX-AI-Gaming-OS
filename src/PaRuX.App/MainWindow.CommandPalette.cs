@@ -70,20 +70,10 @@ namespace PaRuX
             void Add(string id, string en, string it, string keywords, Action run) =>
                 list.Add(new PaletteCommand(id, ConsoleText(en, it), keywords, run));
 
-            if (CurrentSetupPlan.ShowModeTabs)
-            {
-                Add("mode-ai", "Switch to AI", "Passa a IA", "mode tab artificial intelligence modalita", () => SelectModeTab(ModeKeyAi, navigate: true));
-                Add("mode-gaming", "Switch to Gaming", "Passa a Gaming", "mode tab games giochi modalita libreria", () => SelectModeTab(ModeKeyGaming, navigate: true));
-            }
             void Workspace(string tag, string en, string it, string keywords)
             {
                 if (!IsWorkspaceAllowedForSetup(tag)) return;
-                Add("go-" + tag.Trim('_'), "Go to " + en, "Vai a " + it, keywords, () =>
-                {
-                    if (tag is "__games__" or "__gamestools__") SelectModeTab(ModeKeyGaming, navigate: true);
-                    else if (IsGamingModeTab) SelectModeTab(ModeKeyAi, navigate: false);
-                    TryNavigateWorkspace(tag);
-                });
+                Add("go-" + tag.Trim('_'), "Go to " + en, "Vai a " + it, keywords, () => TryNavigateWorkspace(tag));
             }
             Workspace("__chat__", "Chat", "Chat", "conversation talk message conversazione");
             Workspace("__create__", "Create", "Crea", "image video music speech immagine musica voce 3d");

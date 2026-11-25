@@ -14,7 +14,7 @@ namespace PaRuX.UITests.Tests;
 [Collection(UiTestCollection.Name)]
 public sealed class PausedGameBannerUiTests
 {
-    private const string GamingTab = "MainWindow_ModeTab_Gaming";
+    private const string GamingTab = "Navigation_GameLibrary_Item";
 
     [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI")]
     public void A_paused_app_is_offered_for_resume_on_the_Games_tools_page_and_resuming_removes_the_card()

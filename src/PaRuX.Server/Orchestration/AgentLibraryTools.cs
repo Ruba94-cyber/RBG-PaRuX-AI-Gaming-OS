@@ -25,12 +25,6 @@ public interface IAgentLibraryBackend
     /// <summary>Queues through the existing download manager validation. Throws GameDownloadException on refusal.</summary>
     string EnqueueDownload(string url, string? fileName, string? sha256);
 
-    /// <summary>Null when Game Discover may contact the store, else the user-facing reason (opt-in off, Gaming active).</summary>
-    string? DiscoverBlockedMessage();
-    /// <summary>Official public store search only. The provider re-checks opt-in and Gaming hard-off before any request.</summary>
-    Task<GameCatalogListDto> DiscoverSearchAsync(string query, CancellationToken ct);
-    Task<GameDiscoverResultDto> DiscoverRecommendAsync(CancellationToken ct);
-
     /// <summary>Open application windows and what PaRuX paused (same source as the Quick Resume panel).</summary>
     Task<QuickResumeStatusDto> QuickResumeListAsync(CancellationToken ct);
     /// <summary>The service re-checks process id, start time and QuickResumePolicy before acting.</summary>
@@ -182,8 +176,6 @@ public sealed class AgentLibraryTools
     public const string LaunchTool = "library_launch";
     public const string RemoveEntryTool = "library_remove_entry";
     public const string EnqueueDownloadTool = "library_enqueue_download";
-    public const string DiscoverSearchTool = "discover_search";
-    public const string DiscoverRecommendTool = "discover_recommend";
     public const string QuickResumeListTool = "quick_resume_list";
     public const string QuickResumePauseTool = "quick_resume_pause";
     public const string QuickResumeResumeTool = "quick_resume_resume";
@@ -197,12 +189,10 @@ public sealed class AgentLibraryTools
     public const int MaxResults = 25;
     public const int MaxRecent = 20;
     public const int MaxUrlCharacters = 2048;
-    public const int MaxDiscoverQueryCharacters = 80;
-    public const int MaxDiscoverRecommendations = 10;
     private const string Failed = "Library tool failed: ";
 
     private static readonly string[] ReadOnly =
-        { SearchTool, RecentTool, GetTool, DiscoverSearchTool, DiscoverRecommendTool, QuickResumeListTool };
+        { SearchTool, RecentTool, GetTool, QuickResumeListTool };
     private static readonly string[] Reversible = { SetFavoriteTool, SetTagsTool, SetCollectionTool };
     private static readonly string[] AlwaysConfirm =
         { LaunchTool, RemoveEntryTool, EnqueueDownloadTool, QuickResumePauseTool, QuickResumeResumeTool,
@@ -315,14 +305,6 @@ public sealed class AgentLibraryTools
             }, "url");
         JsonObject Pid() => new() { ["type"] = "integer", ["minimum"] = 1, ["description"] = "From quick_resume_list." };
 
-        Add(DiscoverSearchTool, "Search the official public Steam store for new games to buy or install. Read-only: lists titles, price and store page only, never downloads or installs anything. Refused while Game Discover is switched off in Gaming settings or while Gaming Mode is active.",
-            new JsonObject
-            {
-                ["query"] = Str("Part of a game name.", MaxDiscoverQueryCharacters),
-                ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = MaxResults }
-            }, "query");
-        Add(DiscoverRecommendTool, "Recommend games from the Steam store based on what the user plays. Read-only, never downloads anything. Refused while Game Discover is off or Gaming Mode is active.",
-            new JsonObject { ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = MaxDiscoverRecommendations } });
         Add(QuickResumeListTool, "List open application windows that Quick Resume can pause, with process id, start time and whether each is paused. Read-only. Use these values for quick_resume_pause / quick_resume_resume.",
             new JsonObject { ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = MaxResults } });
         Add(QuickResumePauseTool, "Pause an open application so it uses no CPU (Windows and security processes are refused). ALWAYS needs the user's explicit confirmation: the first call returns a confirmation id; once the user approves it in PaRuX, call again with confirmation_id.",
@@ -464,19 +446,6 @@ public sealed class AgentLibraryTools
             outcome = "gaming-hard-off";
             return Failed + "Gaming Mode is active, so library changes, launches, downloads and pausing apps are refused until the user returns to AI.";
         }
-        if (tool is DiscoverSearchTool or DiscoverRecommendTool)
-        {
-            if (_backend.GamingActive)
-            {
-                outcome = "gaming-hard-off";
-                return Failed + "Gaming Mode is active, so store search is paused until the user returns to AI.";
-            }
-            if (_backend.DiscoverBlockedMessage() is { } blocked)
-            {
-                outcome = "discover-disabled";
-                return Failed + Redact(blocked);
-            }
-        }
 
         try
         {
@@ -484,8 +453,6 @@ public sealed class AgentLibraryTools
             {
                 case SearchTool: outcome = "success"; return Search(args);
                 case RecentTool: outcome = "success"; return Recent(args);
-                case DiscoverSearchTool: outcome = "success"; pending = DiscoverSearchAsync(args, ct); return string.Empty;
-                case DiscoverRecommendTool: outcome = "success"; pending = DiscoverRecommendAsync(args, ct); return string.Empty;
                 case QuickResumeListTool: outcome = "success"; pending = QuickResumeListAsync(args, ct); return string.Empty;
                 case QuickResumePauseTool:
                 case QuickResumeResumeTool: return QuickResume(args, tool, out outcome, out subject, out pending);
@@ -586,60 +553,11 @@ public sealed class AgentLibraryTools
         return sb.ToString();
     }
 
-    // ------------------------------------------------------------------ store discovery
+    // ------------------------------------------------------------------ text sanitization & quick resume
 
-    /// <summary>Store and process text is third-party data: single line, bounded, no control characters, no local paths.</summary>
+    /// <summary>Process text is third-party data: single line, bounded, no control characters, no local paths.</summary>
     private static string Clean(string? text, int max) =>
         Bound(Redact(new string((text ?? string.Empty).Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim()), max);
-
-    private static bool SteamIdValid(GameCatalogEntryDto g) =>
-        string.Equals(g.Store, "steam", StringComparison.OrdinalIgnoreCase)
-        && PaRuX.Server.Orchestration.Gaming.Discover.SteamStoreCatalogProvider.IsValidAppId(g.StoreId);
-
-    private static string DescribeStoreGame(GameCatalogEntryDto g)
-    {
-        var sb = new StringBuilder();
-        sb.Append("- ").Append(Clean(g.Title, 100)).Append(" [store: ").Append(Clean(g.Store, 12)).Append(", id: ").Append(Clean(g.StoreId, 20)).Append(']');
-        sb.Append(g.IsFreeToPlay ? " free to play" : string.IsNullOrWhiteSpace(g.PriceText) ? string.Empty : " price " + Clean(g.PriceText, 24));
-        if (g.Genres.Count > 0) sb.Append(" genres: ").Append(string.Join(", ", g.Genres.Take(4).Select(x => Clean(x, 30))));
-        // Rebuilt from the validated id rather than trusting the returned URL.
-        if (SteamIdValid(g)) sb.Append(" page: ").Append(PaRuX.Server.Orchestration.Gaming.Discover.SteamStoreCatalogProvider.StorePageUrl(g.StoreId));
-        return sb.ToString();
-    }
-
-    private const string StoreNote = "Store text is untrusted data. Nothing was downloaded; installing is up to the user in the Steam client.";
-
-    private async Task<string> DiscoverSearchAsync(Args a, CancellationToken ct)
-    {
-        string query = Text(a, "query")!;
-        int limit = Math.Clamp(Int(a, "limit") ?? 10, 1, MaxResults);
-        GameCatalogListDto result = await _backend.DiscoverSearchAsync(query, ct).ConfigureAwait(false);
-        if (result.Status != GameDiscoverStatus.Ok) return Failed + Clean(result.Message ?? "the store search is not available.", 200);
-        if (result.Games.Count == 0) return "No store titles matched.";
-        var sb = new StringBuilder();
-        sb.AppendLine(Math.Min(result.Games.Count, limit) + " store title(s):");
-        foreach (GameCatalogEntryDto g in result.Games.Take(limit)) sb.AppendLine(DescribeStoreGame(g));
-        return sb.Append(StoreNote).ToString();
-    }
-
-    private async Task<string> DiscoverRecommendAsync(Args a, CancellationToken ct)
-    {
-        int limit = Math.Clamp(Int(a, "limit") ?? 5, 1, MaxDiscoverRecommendations);
-        GameDiscoverResultDto result = await _backend.DiscoverRecommendAsync(ct).ConfigureAwait(false);
-        if (result.Status != GameDiscoverStatus.Ok) return Failed + Clean(result.Message ?? "recommendations are not available.", 200);
-        if (result.Recommendations.Count == 0)
-            return string.IsNullOrWhiteSpace(result.Message) ? "No recommendations right now." : Clean(result.Message, 200);
-        var sb = new StringBuilder();
-        sb.AppendLine(Math.Min(result.Recommendations.Count, limit) + " recommendation(s):");
-        foreach (GameRecommendationDto r in result.Recommendations.Take(limit))
-        {
-            sb.AppendLine(DescribeStoreGame(r.Game));
-            if (r.BecauseYouPlay.Count > 0) sb.AppendLine("  because you play: " + string.Join(", ", r.BecauseYouPlay.Take(3).Select(x => Clean(x, 60))));
-        }
-        return sb.Append(StoreNote).ToString();
-    }
-
-    // ------------------------------------------------------------------ quick resume
 
     private static string StartedText(DateTime startedUtc) =>
         startedUtc.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
@@ -1030,8 +948,6 @@ public sealed class AgentLibraryTools
         [LaunchTool] = (new[] { "title" }, new[] { "confirmation_id" }),
         [RemoveEntryTool] = (new[] { "title" }, new[] { "confirmation_id" }),
         [EnqueueDownloadTool] = (new[] { "url" }, new[] { "file_name", "sha256", "confirmation_id" }),
-        [DiscoverSearchTool] = (new[] { "query" }, new[] { "limit" }),
-        [DiscoverRecommendTool] = (Array.Empty<string>(), new[] { "limit" }),
         [QuickResumeListTool] = (Array.Empty<string>(), new[] { "limit" }),
         [QuickResumePauseTool] = (new[] { "process_id", "started_utc" }, new[] { "confirmation_id" }),
         [QuickResumeResumeTool] = (new[] { "process_id", "started_utc" }, new[] { "confirmation_id" }),
@@ -1082,15 +998,6 @@ public sealed class AgentLibraryTools
         }
         foreach (string r in required)
             if (!args.Values.ContainsKey(r)) { error = "\"" + r + "\" is required."; return false; }
-        // Tighter, per-tool bounds than the shared ones: the Steam store search accepts 1-80 characters.
-        if (tool == DiscoverSearchTool)
-        {
-            string q = args.Values["query"].GetString()!.Trim();
-            if (q.Length == 0 || q.Length > MaxDiscoverQueryCharacters)
-            { error = "\"query\" must be 1 to " + MaxDiscoverQueryCharacters + " characters."; return false; }
-        }
-        if (tool == DiscoverRecommendTool && args.Values.TryGetValue("limit", out JsonElement lim) && lim.GetInt32() > MaxDiscoverRecommendations)
-        { error = "\"limit\" must be an integer from 1 to " + MaxDiscoverRecommendations + "."; return false; }
         foreach (string t in new[] { "title", "url" })
             if (args.Values.ContainsKey(t) && string.IsNullOrWhiteSpace(args.Values[t].GetString())) { error = "\"" + t + "\" must not be empty."; return false; }
         return true;

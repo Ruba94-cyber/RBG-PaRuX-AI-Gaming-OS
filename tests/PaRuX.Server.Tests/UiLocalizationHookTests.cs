@@ -49,25 +49,6 @@ public sealed class UiLocalizationHookTests
     };
 
     [Fact]
-    public void Every_steam_achievements_service_problem_has_an_Italian_text()
-    {
-        // The service sentences stay English (API contract); the card must translate each one so a translated
-        // label is never followed by an untranslated English message.
-        string root = FindRepositoryRoot();
-        string source = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "SteamAchievementsService.cs"));
-        var emitted = System.Text.RegularExpressions.Regex.Matches(source, "Problem = \"((?:\\\\.|[^\"\\\\])*)\"")
-            .Select(m => m.Groups[1].Value).ToList();
-        Assert.NotEmpty(emitted);
-        foreach (string problem in emitted)
-        {
-            Assert.True(SteamAchievementsText.KnownProblems.Contains(problem), "No Italian text for Steam problem: " + problem);
-            Assert.NotEqual(problem, SteamAchievementsText.LocalizeProblem(problem, italian: true));
-            Assert.Equal(problem, SteamAchievementsText.LocalizeProblem(problem, italian: false));
-        }
-        Assert.Equal("unknown text", SteamAchievementsText.LocalizeProblem("unknown text", italian: true));
-    }
-
-    [Fact]
     public void Pick_returns_English_by_default_and_when_italian_is_off()
     {
         Assert.Equal("Save", UiText.Pick("Save", "Salva", italian: false));

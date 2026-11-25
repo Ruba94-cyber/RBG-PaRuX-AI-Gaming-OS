@@ -49,19 +49,6 @@ public sealed class ExternalLibraryPricePoliciesTests
         Assert.NotNull(sample);
         Assert.Equal(1999, sample!.PriceMinor);
         Assert.Equal("IT", sample.StoreCountryCode);
-        var wishlist = new LocalWishlistEntry("steam", "42", "Synthetic Puzzle", "EUR", 2000, false)
-        {
-            StoreCountryCode = "IT"
-        };
-        Assert.False(LocalWishlistPolicy.Evaluate(
-            wishlist with { PriceWatchOptIn = true }, unknownCountry, now).NotifyEligible);
-        Assert.False(LocalWishlistPolicy.Evaluate(wishlist, sample, now).NotifyEligible);
-        Assert.True(LocalWishlistPolicy.Evaluate(
-            wishlist with { PriceWatchOptIn = true }, sample, now).NotifyEligible);
-        Assert.False(LocalWishlistPolicy.Evaluate(
-            wishlist with { PriceWatchOptIn = true, PriceTargetMinor = 1000 }, sample, now).NotifyEligible);
-        Assert.False(LocalWishlistPolicy.Evaluate(
-            wishlist with { PriceWatchOptIn = true }, sample, now.AddHours(25)).NotifyEligible);
     }
 
     [Fact]

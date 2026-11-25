@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using PaRuX.Contracts;
 using PaRuX.Server.Orchestration.Gaming;
-using PaRuX.Server.Orchestration.Gaming.Discover;
 using PaRuX.Server.Orchestration.Gaming.Downloads;
 
 namespace PaRuX.Server.Orchestration;
@@ -74,31 +73,6 @@ public sealed class AgentLibraryBackend : IAgentLibraryBackend
         string directory = Path.Combine(ServerState.StateDirectory, "agent-downloads");
         Directory.CreateDirectory(directory);
         return _downloads.Enqueue(new GameDownloadRequest(url, directory, fileName, sha256)).Id;
-    }
-
-    // Same runtime, gate and opt-in the /api/v1/gaming/discover endpoints use. Like those endpoints, each call
-    // resolves it from a fresh scope so a settings change made in the UI (a separate store instance) is seen.
-    public string? DiscoverBlockedMessage()
-    {
-        using IServiceScope scope = _services.CreateScope();
-        return GameDiscoverRuntime.For(scope.ServiceProvider).Gate.Check() is { } status ? GameDiscoverGate.MessageFor(status) : null;
-    }
-
-    public async Task<GameCatalogListDto> DiscoverSearchAsync(string query, CancellationToken ct)
-    {
-        using IServiceScope scope = _services.CreateScope();
-        var r = await GameDiscoverRuntime.For(scope.ServiceProvider).Steam.SearchAsync(query, ct).ConfigureAwait(false);
-        return new GameCatalogListDto(r.Status, r.IsOk ? null : r.Message, r.Value ?? Array.Empty<GameCatalogEntryDto>());
-    }
-
-    public async Task<GameDiscoverResultDto> DiscoverRecommendAsync(CancellationToken ct)
-    {
-        // Same rule as the endpoint: recommendations need a scanned library, and this adapter never scans.
-        if (!_cache.TryRead(out IReadOnlyList<GameTitleDto> library))
-            return new GameDiscoverResultDto(GameDiscoverStatus.Failed,
-                "The game library has not been scanned yet. Ask the user to open the library first.", Array.Empty<GameRecommendationDto>());
-        using IServiceScope scope = _services.CreateScope();
-        return await GameDiscoverRuntime.For(scope.ServiceProvider).Service.RecommendAsync(library, ct).ConfigureAwait(false);
     }
 
     public Task<GameModPreviewDto> ProposeTemporaryModAsync(GameModProposalRequest request, CancellationToken ct)

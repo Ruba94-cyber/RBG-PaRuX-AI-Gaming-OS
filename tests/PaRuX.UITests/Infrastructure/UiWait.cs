@@ -151,29 +151,6 @@ internal static class UiWait
         return element ?? throw new InvalidOperationException("Missing UI element: " + id + " (" + type + ").");
     }
 
-    /// <summary>The AI | Gaming mode tabs hide the sidebar items of the other tab, and hidden items are not in the UIA tree.
-    /// Before looking up a Navigation_* item, select the tab that owns it. Settings and Help are visible in both tabs.</summary>
-    internal static void EnsureModeTabFor(AutomationElement root, string id)
-    {
-        // Console / TV is a gaming control: its footer button lives in the Gaming tab only.
-        bool gamingOnly = id == "MainWindow_ConsoleMode_Button";
-        if (!gamingOnly && !id.StartsWith("Navigation_", StringComparison.Ordinal)) return;
-        if (id is "Navigation_Settings_Item" or "Navigation_Help_Item") return;
-        string tabId = gamingOnly || id == "Navigation_GameLibrary_Item" ? "MainWindow_ModeTab_Gaming" : "MainWindow_ModeTab_AI";
-        try
-        {
-            AutomationElement? tab = root.FindFirstDescendant(cf => cf.ByAutomationId(tabId));
-            var selection = tab?.Patterns.SelectionItem.PatternOrDefault;
-            if (selection != null)
-            {
-                if (!selection.IsSelected.ValueOrDefault) selection.Select();
-            }
-            else
-            {
-                // SelectorBarItem may expose only Invoke.
-                tab?.Patterns.Invoke.PatternOrDefault?.Invoke();
-            }
-        }
-        catch (Exception) { /* the tab strip is not reachable yet; the caller keeps polling */ }
-    }
+    /// <summary>Gaming-removal step 6 collapsed the AI | Gaming top tabs into the ordinary Games sidebar item; no tab switch is needed.</summary>
+    internal static void EnsureModeTabFor(AutomationElement root, string id) { }
 }

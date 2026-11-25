@@ -27,7 +27,7 @@ public sealed class GamesToolsPageUiTests
         try
         {
             // Since step 2 the Gaming tab / Games item opens the slim Games tools page directly (no native library in between).
-            Press(app, "MainWindow_ModeTab_Gaming");
+            Press(app, "Navigation_GameLibrary_Item");
 
             Assert.NotNull(ById(app, "Workspace_GamesTools_Page"));
             Assert.NotNull(ById(app, "GamesToolsPage_Heading"));

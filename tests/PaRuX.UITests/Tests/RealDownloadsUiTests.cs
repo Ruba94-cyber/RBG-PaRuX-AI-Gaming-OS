@@ -92,7 +92,7 @@ public sealed class RealDownloadsUiTests
 
     private static void OpenDownloads(UiTestApplication app)
     {
-        new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "MainWindow_ModeTab_Gaming"));
+        new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item"));
         GamingSectionsPage.SelectSection(app.MainWindow, "Downloads");
     }
 

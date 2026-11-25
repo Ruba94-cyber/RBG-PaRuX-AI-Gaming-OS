@@ -59,7 +59,6 @@
     <Compile Include="..\..\src\PaRuX.App\Services\AttachmentDropPolicy.cs" Link="Linked\AttachmentDropPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\BackgroundDownloadsChoice.cs" Link="Linked\BackgroundDownloadsChoice.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\QuickActionCatalog.cs" Link="Linked\QuickActionCatalog.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\SteamAchievementsText.cs" Link="Linked\SteamAchievementsText.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaRuX.Server\PaRuX.Server.csproj" />
@@ -86,8 +85,6 @@
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationBranching.cs" Link="Branching\ConversationBranching.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ConversationRewind.cs" Link="Branching\ConversationRewind.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\AccentPalette.cs" Link="Linked\AccentPalette.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\AchievementSessionWatcher.cs" Link="Linked\AchievementSessionWatcher.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\LibraryThemeState.cs" Link="Linked\LibraryThemeState.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\DictationText.cs" Link="Linked\DictationText.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SystemDictationPolicy.cs" Link="Linked\SystemDictationPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaPromptEnhancer.cs" Link="Branching\MediaPromptEnhancer.cs" />

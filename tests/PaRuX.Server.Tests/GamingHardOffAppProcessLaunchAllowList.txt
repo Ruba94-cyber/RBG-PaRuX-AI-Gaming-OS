@@ -35,5 +35,4 @@ Views/ChatView.NativeCodingHandoff.cs|1|USER-ACTION|Opens the configured VS Code
 Views/CreateWorkspaceView.Result.cs|1|USER-ACTION|Opens a generated result file on an explicit click.
 Views/MediaGalleryView.cs|2|USER-ACTION|Opens a gallery item or reveals it in Explorer on an explicit click.
 Views/SettingsView.xaml.cs|1|USER-ACTION|Opens a .glb in the user's own Blender on an explicit click; the PaRuX 3D generation child lives in the server (ThreedService, gated).
-Views/SettingsView.Extensions.cs|1|USER-ACTION|Opens the owner's Documents\PaRuX\Extensions folder in Explorer on an explicit click; no model process, no extension code is run.
 Views/UpdateManagerView.cs|1|USER-ACTION|Starts the app's own verified updater helper (UAC) on an explicit user action.

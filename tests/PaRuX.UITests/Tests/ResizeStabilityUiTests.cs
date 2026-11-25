@@ -66,7 +66,7 @@ public sealed class ResizeStabilityUiTests
         using var app = new UiTestApplication(name, restartDataRoot: root);
         try
         {
-            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "MainWindow_ModeTab_Gaming"));
+            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item"));
             app.ResizeMainWindow(1280, 800);
             foreach (string section in new[] { "Library", "Downloads", "Add", "Emulators", "Devices" })
             {

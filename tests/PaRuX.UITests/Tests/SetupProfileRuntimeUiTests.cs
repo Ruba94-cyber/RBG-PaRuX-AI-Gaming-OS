@@ -25,12 +25,12 @@ public sealed class SetupProfileRuntimeUiTests
             var page = new SetupProfilePage(app);
             int processId = app.MainWindow.Properties.ProcessId.Value;
 
-            // Both is the default: the AI | Gaming tabs exist and the app opens on the AI workspace.
-            UiWait.For(() => page.ModeTabsShown && page.IsShown(ChatNav), "the default Both shell");
+            // Both is the default: Chat and Games are both ordinary sidebar items (no AI | Gaming top tabs).
+            UiWait.For(() => page.ModeTabsHidden && page.IsShown(ChatNav) && page.IsShown(GamesNav), "the default Both shell");
             page.OpenSettingsGeneral();
             UiWait.For(() => page.SelectedItemId == BothItem, "Both selected by default");
 
-            // AI only: the mode tabs go away, Chat stays, Games stays hidden; the person stays in Settings.
+            // AI only: Chat stays, Games stays hidden; the person stays in Settings.
             page.Choose(AiItem);
             UiWait.For(() => page.SavedProfile() == "ai", "AI only saved");
             UiWait.For(() => page.ModeTabsHidden && page.IsShown(ChatNav) && !page.IsShown(GamesNav), "the AI-only shell");
@@ -38,28 +38,25 @@ public sealed class SetupProfileRuntimeUiTests
                 "the runtime stopping the gaming service");
             Assert.True(page.IsShown(ComboId), "the switch happens in place; Settings stays open");
 
-            // Gaming only: AI workspaces vanish, the Games library opens and is the only home.
+            // Gaming only: AI workspaces vanish, Games opens and is the only home.
             page.Choose(GamingItem);
             UiWait.For(() => page.SavedProfile() == "gaming", "Gaming only saved");
             UiWait.For(() => page.ModeTabsHidden && page.IsShown(GamesNav) && !page.IsShown(ChatNav), "the Gaming-only shell");
-            UiWait.For(() => page.Exists("GameLibrary_Sections"), "the Games library opened");
-            UiWait.For(() => !page.IsShown("GameLibrary_ReturnToAi_Button")
-                && !page.IsShown("GameHome_LocalGuide_Button")
+            UiWait.For(() => page.Exists("Workspace_GamesTools_Page"), "the Games tools page opened");
+            UiWait.For(() => !page.IsShown("GameHome_LocalGuide_Button")
                 && !page.IsShown("GameHome_AssetStudio_Open"),
                 "Gaming-only hides AI-dependent actions inside the Games page");
             UiWait.For(() => page.LogContains("Setup profile switch ai -> gaming: success=True, steps=3"),
                 "the runtime stopping AI and agent services and starting the gaming service");
 
-            // Back to Both: tabs return and the AI workspace is reachable again, all in the same process.
+            // Back to Both: Chat and Games are both reachable again in the sidebar, all in the same process.
             page.OpenSettingsGeneral();
             UiWait.For(() => page.SelectedItemId == GamingItem, "Gaming only shown as the active profile");
             page.Choose(BothItem);
             UiWait.For(() => page.SavedProfile() == "both", "Both saved");
-            UiWait.For(() => page.ModeTabsShown, "the AI | Gaming tabs are back");
+            UiWait.For(() => page.ModeTabsHidden && page.IsShown(ChatNav) && page.IsShown(GamesNav), "Chat and Games are both visible in Both");
             UiWait.For(() => page.LogContains("Setup profile switch gaming -> both: success=True, steps=2"),
                 "the runtime starting AI and agent services again");
-            page.SelectTab(AiTab);
-            UiWait.For(() => page.IsShown(ChatNav) && !page.IsShown(GamesNav), "the AI workspace is reachable again");
 
             Assert.Equal(processId, app.MainWindow.Properties.ProcessId.Value);
             Assert.Equal(3, page.LogCount("Setup profile switch"));
@@ -87,7 +84,7 @@ public sealed class SetupProfileRuntimeUiTests
         try
         {
             var page = new SetupProfilePage(restarted);
-            UiWait.For(() => page.Exists("GameLibrary_Sections"), "the Games library is the start page");
+            UiWait.For(() => page.Exists("Workspace_GamesTools_Page"), "the Games tools page is the start page");
             Assert.True(page.ModeTabsHidden, "Gaming only has no AI | Gaming tabs");
             Assert.True(page.IsShown(GamesNav));
             Assert.False(page.IsShown(ChatNav), "AI workspaces stay hidden after the restart");
@@ -144,7 +141,7 @@ public sealed class SetupProfileRuntimeUiTests
         try
         {
             var page = new SetupProfilePage(app);
-            UiWait.For(() => page.ModeTabsShown && page.IsShown(ChatNav), "the default Both shell");
+            UiWait.For(() => page.ModeTabsHidden && page.IsShown(ChatNav) && page.IsShown(GamesNav), "the default Both shell");
             page.OpenSettingsGeneral();
             UiWait.For(() => page.SelectedItemId == BothItem, "Both selected by default");
             string before = page.HintText;
@@ -156,9 +153,9 @@ public sealed class SetupProfileRuntimeUiTests
             UiWait.For(() => page.SelectedItemId == BothItem, "the row snapped back to Both");
             Assert.NotEqual(before, page.HintText);
             Assert.NotEqual("gaming", page.SavedProfile());
-            Assert.True(page.ModeTabsShown, "the AI | Gaming tabs stay because nothing changed");
+            Assert.True(page.ModeTabsHidden, "no AI | Gaming top tabs");
             Assert.True(page.IsShown(ChatNav), "the AI workspace is untouched");
-            Assert.False(page.IsShown(GamesNav));
+            Assert.True(page.IsShown(GamesNav), "Games stays visible in Both");
             Assert.True(page.LogContains("Setup profile switch both -> gaming: success=False"), "the failure is logged honestly");
             // The combo is usable again: a second attempt is possible (and fails the same honest way).
             Assert.True(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId(ComboId))!.Properties.IsEnabled.ValueOrDefault);
