@@ -216,7 +216,7 @@ internal sealed class GameDownloadsPanel : StackPanel
         {
             // The timer is UI-only, in effect solely while active transfers are
             // visible. Never poll the Core or compete with an active game.
-            if (!_busy && Visibility == Visibility.Visible && !GamingManager.Current.IsActive)
+            if (!_busy && Visibility == Visibility.Visible && !GamingManager.Current.IsActive && !UiPollCadence.IsWindowHidden())
                 await RefreshAsync();
         };
         Loaded += async (_, _) =>

@@ -50,6 +50,11 @@ int corePort = ServerState.ChooseCorePort();
 // Hosting's "Request starting ..." line prints the full query string, which would write a browser launch code
 // (/app?code=...) to every log sink. Warnings and errors from this category are still emitted.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+// Idle CPU: the console logger formats every "Executing endpoint ... / Executed endpoint ..." Information line produced by the app's
+// status polls into a console nobody reads (about 14% of the idle Core's CPU in the 2026-11-25 trace). Warnings and errors still log.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Routing", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Server.Kestrel", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Cors", LogLevel.Warning);
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 64L * 1024 * 1024;

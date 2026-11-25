@@ -2110,7 +2110,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
-                                       Text="Keep runtimes up to date (downloads in the background; checks online catalogs)" loc:Loc.ItText="Mantieni i runtime aggiornati (scarica in background e consulta i cataloghi online)"
+                                       Text="Keep runtimes up to date in the background (off by default)" loc:Loc.ItText="Mantieni i runtime aggiornati in background (spento per impostazione predefinita)"
                                        Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                             <ToggleSwitch x:Name="Settings_AutoCheck_RuntimeUpdate_Toggle"
                                           Grid.Column="1" IsOn="False"
@@ -2118,6 +2118,9 @@
                                           AutomationProperties.Name="Keep runtimes up to date (downloads in the background)" loc:Loc.ItName="Mantieni i runtime aggiornati (scarica in background)"
                                           Toggled="AutoCheckRuntimeUpdateToggle_Toggled" />
                         </Grid>
+                        <TextBlock x:Name="Settings_AutoCheck_RuntimeUpdate_Explanation_Text" TextWrapping="Wrap"
+                                   AutomationProperties.AutomationId="Settings_AutoCheck_RuntimeUpdate_Explanation_Text"
+                                   Style="{StaticResource PaRuXCaptionTextStyle}" Margin="0,0,0,8" />
                         <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

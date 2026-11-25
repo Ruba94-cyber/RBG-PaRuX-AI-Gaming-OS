@@ -118,9 +118,13 @@ public sealed class SunshineSessionTriggerProvider : IGamingTriggerProvider
     public string Id => "sunshine";
     public string Name => "Sunshine Remote Stream Trigger";
 
+    /// <summary>The orchestrator reads IsDetected once per second; the install probe is four file-system lookups plus a directory
+    /// listing, so its answer is reused for a few seconds (a fresh install is noticed within that).</summary>
+    internal static readonly TtlValue<bool> ExecutableFound = new(TimeSpan.FromSeconds(10), () => ExecutablePath != null);
+
     public bool IsDetected
     {
-        get => IsInstalledOnMachine;
+        get => ExecutableFound.Get() || IsProcessRunning();
     }
 
     internal static bool IsInstalledOnMachine => ExecutablePath != null || IsProcessRunning();

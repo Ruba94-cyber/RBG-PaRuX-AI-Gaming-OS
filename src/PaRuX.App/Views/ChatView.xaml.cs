@@ -102,6 +102,7 @@ namespace PaRuX.Views
         {
             InitializeComponent();
             InitDocumentsButton();
+            InitFileDrop();
             HookCanvasPreview();
             // Non-modal "Tuning for your PC" line: visible only while a model is queued or being tuned.
             TuningStatusHost.Children.Add(new ModelTuningStatusControl(ModelTuningStatusControl.Mode.Line, "text"));

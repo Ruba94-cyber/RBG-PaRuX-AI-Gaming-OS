@@ -132,6 +132,16 @@
          selected feature carries, and on removal only on what PaRuX itself recorded as installed. -->
     <ComponentGroup Id="PaRuXRedistBase" Directory="REDISTDIR">
       <Files Include="$(var.RedistDir)\Base\**" />
+      <!-- The Redist folder (and its two optional sub-folders) can be left behind EMPTY after removal: the post-setup helper and
+           the optional-feature steps touch it at run time, so Windows Installer did not create it from a component and would not
+           remove it. RemoveFolder On="uninstall" deletes each one if (and only if) it is empty by then; the helper repeats the
+           same empty-only cleanup after the setup has ended (Invoke-PaRuXRedist.ps1, Remove-RedistEmptyFolders). -->
+      <Component Id="PaRuXRedistFolderCleanup" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Ruba94-cyber\PaRuX\Features" Name="PaRuXRedistFolder" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemovePaRuXRedistDriversDir" Directory="REDISTDRIVERSDIR" On="uninstall" />
+        <RemoveFolder Id="RemovePaRuXRedistSunshineDir" Directory="REDISTSUNSHINEDIR" On="uninstall" />
+        <RemoveFolder Id="RemovePaRuXRedistDir" Directory="REDISTDIR" On="uninstall" />
+      </Component>
     </ComponentGroup>
 
     <!-- Feature markers (HKLM, written by the feature's own component): a rolled-back or cancelled setup leaves none, so the

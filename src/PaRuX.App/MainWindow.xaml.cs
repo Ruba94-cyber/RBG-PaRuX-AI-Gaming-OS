@@ -49,6 +49,8 @@ namespace PaRuX
         private readonly DispatcherQueue _dispatcher;
         private List<Conversation> _allConversations = new List<Conversation>();
         private readonly HashSet<string> _runningCodeTaskIds = new(StringComparer.OrdinalIgnoreCase);
+        // Set by the poll while a download/install is in flight; read by the same timer to pick its next interval (UiPollCadence).
+        private volatile bool _backgroundWorkInFlight;
         private DispatcherTimer? _activeIndicatorTimer;
         private string _searchFilter = string.Empty;
         private bool _trayDisposed;
@@ -114,6 +116,8 @@ namespace PaRuX
             // the Gaming return state only when the user/OS foregrounds PaRuX.
             // Never focus-steal or run an idle status poll during gameplay.
             Activated += OnConsoleWindowActivated;
+            Activated += OnWindowActivatedForIndicators;
+            UiPollCadence.WindowHiddenProbe = IsMainWindowHidden;
             InitializeConsoleVerifiedReturn();
             InitializeOnScreenKeyboard();
 
@@ -580,6 +584,8 @@ namespace PaRuX
         {
             if (GamingManager.Current.IsActive) return;
             _ = CheckBackgroundWorkNotificationsAsync();
+            bool anyRunning = false;
+            bool hiddenAtTick = IsMainWindowHidden();   // read on the UI thread, before the first await
             try
             {
                 AgentTaskListResponse list = await AgentOrchestratorClient.Current.ListAsync(CancellationToken.None).ConfigureAwait(false);
@@ -589,16 +595,39 @@ namespace PaRuX
                              || string.Equals(t.Status, "running", StringComparison.OrdinalIgnoreCase))
                     .Select(t => t.Id)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                anyRunning = running.Count > 0;
 
                 bool changed = !_runningCodeTaskIds.SetEquals(running);
                 if (changed)
                 {
                     _runningCodeTaskIds.Clear();
                     foreach (string id in running) _runningCodeTaskIds.Add(id);
-                    _dispatcher.TryEnqueue(RefreshActiveIndicators);
+                    // A hidden or minimized window has nothing to repaint; it refreshes once when it is shown again.
+                    if (UiPollCadence.ShouldRefreshUi(hiddenAtTick)) _dispatcher.TryEnqueue(RefreshActiveIndicators);
                 }
             }
             catch { }
+            finally
+            {
+                // Adaptive tick (UiPollCadence): the original 2 s while anything is in flight, slower when nothing is.
+                bool activity = anyRunning || ChatSession.Current.IsBusy || _backgroundWorkInFlight;
+                _dispatcher.TryEnqueue(() => ApplyIndicatorInterval(activity));
+            }
+        }
+
+        private void ApplyIndicatorInterval(bool anyActivity)
+        {
+            if (_activeIndicatorTimer is null) return;
+            TimeSpan next = UiPollCadence.Next(IsMainWindowHidden(), anyActivity);
+            if (_activeIndicatorTimer.Interval != next) _activeIndicatorTimer.Interval = next;
+        }
+
+        private void OnWindowActivatedForIndicators(object sender, WindowActivatedEventArgs args)
+        {
+            if (args.WindowActivationState == WindowActivationState.Deactivated) return;
+            // Shown again: repaint the badges once and go back to a prompt tick; the next tick re-evaluates the interval.
+            RefreshActiveIndicators();
+            if (_activeIndicatorTimer is { } t && t.Interval > UiPollCadence.Active) t.Interval = UiPollCadence.Active;
         }
 
         private bool MatchesFilter(Conversation c)
@@ -1103,6 +1132,7 @@ namespace PaRuX
         private async Task CheckBackgroundWorkNotificationsAsync()
         {
             if (_trayDisposed) return;
+            bool downloadsInFlight = false, installsInFlight = false;
             try
             {
                 bool isHidden = IsMainWindowHidden();
@@ -1112,6 +1142,7 @@ namespace PaRuX
                 {
                     List<ModelDownloadStatus> downloads = await ModelDownloadClient.Current
                         .ListDownloadsAsync(CancellationToken.None).ConfigureAwait(false);
+                    downloadsInFlight = downloads.Any(d => UiPollCadence.DownloadInFlight(d.Status));
                     IReadOnlyList<BackgroundNotificationDecision> downloadDecisions =
                         _backgroundWorkTracker.EvaluateDownloads(downloads, isHidden, prefs);
 
@@ -1128,6 +1159,7 @@ namespace PaRuX
                 {
                     List<RuntimeInstallStatus> installs = await RuntimeManagerClient.Current
                         .ListInstallsAsync(CancellationToken.None).ConfigureAwait(false);
+                    installsInFlight = installs.Any(i => UiPollCadence.InstallInFlight(i.Stage));
                     IReadOnlyList<BackgroundNotificationDecision> installDecisions =
                         _backgroundWorkTracker.EvaluateInstalls(installs, isHidden, prefs);
 
@@ -1144,6 +1176,7 @@ namespace PaRuX
             {
                 // Core offline, starting up or quiescence: ignore poll errors
             }
+            _backgroundWorkInFlight = downloadsInFlight || installsInFlight;
         }
 
         private void OnSessionStateChangedForTrayNotification()
