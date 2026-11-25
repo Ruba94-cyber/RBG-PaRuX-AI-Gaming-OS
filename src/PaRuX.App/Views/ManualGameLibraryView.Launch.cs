@@ -358,16 +358,8 @@ public sealed partial class ManualGameLibraryView
             _focusBeforeBusy = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Control;
             return;
         }
-        Control? remembered = _focusBeforeBusy;
+        // Focus restoration was only needed by the removed TV presentation; desktop keeps WinUI's own focus handling.
         _focusBeforeBusy = null;
-        if (!_consolePresentation) return;
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (_busy) return;
-            if (remembered is { IsLoaded: true, IsEnabled: true } &&
-                remembered.Focus(FocusState.Programmatic)) return;
-            FocusConsoleHome();
-        });
     }
 
     private void SetBusy(bool value) { TrackFocusAcrossBusy(value); _busy = value; _add.IsEnabled = !value; _browse.IsEnabled = !value; _steamRefresh.IsEnabled = !value; _epicRefresh.IsEnabled = !value; _gogRefresh.IsEnabled = !value; _allStoresRefresh.IsEnabled = !value; _displayRefresh.IsEnabled = !value; _controllerRefresh.IsEnabled = !value; _inspectInstaller.IsEnabled = !value && _installerInspectionAllowed; _refreshStaged.IsEnabled = !value && _installerInspectionAllowed; UpdatePackageStageAvailability(); _cancelInspection.IsEnabled = value && _inspectionCancellation != null; _gamingStatusRefresh.IsEnabled = !value; _returnToAi.IsEnabled = !value && _returnToAiAvailable; SyncGamingStrip(); _games.IsHitTestVisible = !value; _discoveredGames.IsHitTestVisible = !value; _detectedPrevious.IsEnabled = !value && _lastDetectedWindow.HasPrevious; _detectedNext.IsEnabled = !value && _lastDetectedWindow.HasNext; _storeDiscoveryOfferScan.IsEnabled = !value; _storeDiscoveryOfferDismiss.IsEnabled = !value; }

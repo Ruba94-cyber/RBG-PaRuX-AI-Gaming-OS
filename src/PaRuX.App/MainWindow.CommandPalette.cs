@@ -72,8 +72,10 @@ namespace PaRuX
                 Workspace("__updates__", "Updates", "Aggiornamenti", "update version versione");
             }
             Add("new-chat", "New chat", "Nuova chat", "start conversation clear nuova conversazione", () => NewChat_Click(NewChatButton, new RoutedEventArgs()));
-            Add("console", "Toggle Console / TV mode", "Attiva o disattiva Console / TV", "fullscreen tv controller big picture schermo intero",
-                () => ConsoleModeButton_Click(ConsoleModeButton, new RoutedEventArgs()));
+            // Console mode is Playnite Fullscreen (the native PaRuX Console/TV shell was removed in gaming-removal step 3).
+            if (IsWorkspaceAllowedForSetup(WorkspaceNavigationOrder.GamesWorkspaceTag))
+                Add("console", "Open Playnite Console (Fullscreen)", "Apri Playnite Console (schermo intero)", "console fullscreen tv controller big picture playnite schermo intero",
+                    () => _ = ShowPlayniteLauncherAsync(PaRuX.Contracts.PlayniteLauncherAction.Console, gamepad: false, fromRequest: true));
             return list;
         }
 

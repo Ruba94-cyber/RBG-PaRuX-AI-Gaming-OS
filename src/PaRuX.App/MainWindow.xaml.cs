@@ -113,8 +113,6 @@ namespace PaRuX
             // A fullscreen game may leave the PaRuX window deactivated. Refresh
             // the Gaming return state only when the user/OS foregrounds PaRuX.
             // Never focus-steal or run an idle status poll during gameplay.
-            Activated += OnConsoleWindowActivated;
-            InitializeConsoleVerifiedReturn();
             InitializeOnScreenKeyboard();
 
             IntPtr hwnd = WindowNative.GetWindowHandle(this);
@@ -1192,7 +1190,6 @@ namespace PaRuX
             if (_trayDisposed) return;
             _trayDisposed = true;
             GamingManager.Current.StateChanged -= OnGamingModeChangedForIndicatorTimer;
-            LocalAiController.Current.VerifiedGameReturnChanged -= OnVerifiedGameReturnChanged;
             _activeIndicatorTimer?.Stop();
             try
             {

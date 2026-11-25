@@ -66,7 +66,7 @@ public sealed partial class MainWindow
             if (RootGrid.XamlRoot is null) return;
 
             bool settingsOnly = action == PlayniteLauncherAction.Settings && fromRequest;
-            bool large = gamepad || _consoleModeActive;
+            bool large = gamepad;
             var dialog = new ContentDialog
             {
                 XamlRoot = RootGrid.XamlRoot,
@@ -85,7 +85,7 @@ public sealed partial class MainWindow
 
             _plSurface = surface;
             _plDialog = dialog;
-            if (!_consoleModeActive) StartConsoleRawPad();   // pads WinUI does not drive (for example Stadia) can operate the launcher too
+            StartConsoleRawPad();   // pads WinUI does not drive (for example Stadia) can operate the launcher too
             surface.Start();
             _ = surface.RunAsync(action, fromRequest);
             try { await dialog.ShowAsync(); }
@@ -99,7 +99,7 @@ public sealed partial class MainWindow
                 surface.Dispose();
                 _plSurface = null;
                 _plDialog = null;
-                if (!_consoleModeActive) StopConsoleRawPad();
+                StopConsoleRawPad();
             }
         }
         catch (Exception ex)

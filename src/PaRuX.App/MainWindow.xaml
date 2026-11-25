@@ -239,11 +239,11 @@
 
             <NavigationView.PaneFooter>
                 <Button
-                    x:Name="ConsoleModeButton"
-                    AutomationProperties.AutomationId="MainWindow_ConsoleMode_Button"
-                    AutomationProperties.Name="Enter Console TV mode" loc:Loc.ItName="Entra in modalità Console TV"
-                    Content="Console / TV"
-                    Click="ConsoleModeButton_Click"
+                    x:Name="PlayniteConsoleButton"
+                    AutomationProperties.AutomationId="MainWindow_PlayniteConsole_Button"
+                    AutomationProperties.Name="Open Playnite Console (Fullscreen)" loc:Loc.ItName="Apri Playnite Console (schermo intero)"
+                    Content="Playnite Console" loc:Loc.ItContent="Playnite Console"
+                    Click="PlayniteConsoleButton_Click"
                     HorizontalAlignment="Stretch"
                     Margin="12,8,12,12"
                     MinHeight="48"
@@ -251,7 +251,7 @@
                     BorderBrush="{ThemeResource PaRuXStrokeStrongBrush}"
                     BorderThickness="1"
                     CornerRadius="{StaticResource PaRuXRadiusLarge}"
-                    ToolTipService.ToolTip="Use the existing Games workspace in fullscreen. Press Escape or gamepad B to return." loc:Loc.ItToolTip="Usa l&#x27;area di lavoro Giochi esistente a schermo intero. Premi Esc o B del gamepad per tornare." />
+                    ToolTipService.ToolTip="Console mode is Playnite Fullscreen with your theme. If Playnite is missing or skipped, the launcher shows Detect, Locate, Install or Skip." loc:Loc.ItToolTip="La modalità Console è Playnite a schermo intero con il tuo tema. Se Playnite manca o è stato saltato, il launcher mostra Rileva, Individua, Installa o Salta." />
             </NavigationView.PaneFooter>
 
             <Border

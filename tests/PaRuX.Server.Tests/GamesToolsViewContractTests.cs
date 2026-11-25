@@ -129,6 +129,29 @@ public sealed class GamesToolsViewContractTests
     }
 
     [Fact]
+    public void Console_mode_is_Playnite_Fullscreen_and_keeps_its_Game_Bar_power_and_support_app_hooks()
+    {
+        // Gaming-removal step 3: no native PaRuX Console/TV presenter. Console = Playnite Fullscreen (owner's theme untouched).
+        string start = Read("src", "PaRuX.App", "MainWindow.PlayniteStartup.cs");
+        int handoff = start.IndexOf("internal async Task<ConsolePlayniteStartResult> TryStartPlayniteConsoleAsync", StringComparison.Ordinal);
+        Assert.True(handoff > 0);
+        string body = start[handoff..start.IndexOf("internal void MinimizeForPlayniteConsole()", handoff, StringComparison.Ordinal)];
+        foreach (string hook in new[] { "PlayniteModes.Console", "ApplyConsolePowerProfileAsync()", "ApplyConsoleGameBarBlockAsync()", "StartConsoleSupportAppsAsync()" })
+            Assert.Contains(hook, body, StringComparison.Ordinal);
+        // ...and every exit path restores them.
+        Assert.Contains("RestoreConsolePowerProfileAsync(); _ = RestoreConsoleGameBarBlockAsync(); _ = StopConsoleSupportAppsAsync();", start, StringComparison.Ordinal);
+
+        // Reachable from the Games tools page, the Gaming-tab footer button, the command palette, sign-in start and the pad.
+        Assert.Contains("OpenPlayniteAsync(PlayniteLauncherAction.Console)", Read("src", "PaRuX.App", "Views", "GamesToolsView.cs"), StringComparison.Ordinal);
+        string pad = Read("src", "PaRuX.App", "MainWindow.PadNavigation.cs");
+        Assert.Contains("ShowPlayniteLauncherAsync(PlayniteLauncherAction.Console", pad, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_PlayniteConsole_Button", Read("src", "PaRuX.App", "MainWindow.xaml"), StringComparison.Ordinal);
+        Assert.Contains("PlayniteLauncherAction.Console", Read("src", "PaRuX.App", "MainWindow.CommandPalette.cs"), StringComparison.Ordinal);
+        Assert.Contains("TryStartPlayniteConsoleAsync(explicitRequest: playniteOnly)", Read("src", "PaRuX.App", "MainWindow.LogonStartup.cs"), StringComparison.Ordinal);
+        Assert.Contains("PadSwitchPlayniteAsync", start, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Local_game_guide_is_one_shared_flow_with_unchanged_automation_ids()
     {
         string flow = Read("src", "PaRuX.App", "Views", "LocalGameGuideFlow.cs");

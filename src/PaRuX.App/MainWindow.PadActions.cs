@@ -62,7 +62,7 @@ public sealed partial class MainWindow
         _padActionBusy = true;
         try
         {
-            var ctx = new PadActionContext(GamingManager.Current.IsActive, _consoleModeActive, ConsoleOnGamingWorkspace());
+            var ctx = new PadActionContext(GamingManager.Current.IsActive, false, GamesWorkspaceVisible());
             PadActionDecision decision = PadActionPolicy.Decide(action, ctx);
             if (!decision.Allowed)
             {
@@ -73,17 +73,14 @@ public sealed partial class MainWindow
             {
                 case PadActionId.OpenMenu:
                     PadBringForward();
-                    if (_consoleModeActive && !ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace();   // TV mode: home is the Gaming library
                     break;
                 case PadActionId.GamingLibrary:
                     PadBringForward();
-                    if (_consoleModeActive) { if (!ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace(); }
-                    else ShowGamesHomeFromController();
+                    ShowGamesHomeFromController();
                     break;
                 case PadActionId.SwitchWorkspace:
                     PadBringForward();
-                    if (_consoleModeActive) SwitchConsoleWorkspace();
-                    else if (GamesWorkspaceVisible()) ShowChat();
+                    if (GamesWorkspaceVisible()) ShowChat();
                     else ShowGamesHomeFromController();
                     break;
                 case PadActionId.MiniAgent:

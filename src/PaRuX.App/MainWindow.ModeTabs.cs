@@ -13,7 +13,7 @@ namespace PaRuX;
 /// Top-level shell mode switch (AI / Gaming). It only changes which sidebar items are
 /// visible and which workspace is shown; no item is removed and no AutomationId changes.
 /// AI: Chat, Create, Projects, Model Hub (+ advanced AI items in Advanced interface).
-/// Gaming: Games (+ Console / TV button in the pane footer). Settings and Help are in both.
+/// Gaming: Games (+ Playnite Console button in the pane footer). Settings and Help are in both.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -200,8 +200,7 @@ public sealed partial class MainWindow
         StudioModeToggle.Visibility = !corporate && !gaming
             ? Visibility.Visible : Visibility.Collapsed;
         UpdateContentStudioModeControlsVisibility(NavView.IsPaneOpen);
-        ConsoleModeButton.Visibility = _consoleModeActive || gaming
-            ? Visibility.Visible : Visibility.Collapsed;
+        PlayniteConsoleButton.Visibility = gaming ? Visibility.Visible : Visibility.Collapsed;
 
         // Only AI profiles have conversations. Gaming-only must not expose a chat
         // search box, new-chat action, history, nor a shortcut to those controls.

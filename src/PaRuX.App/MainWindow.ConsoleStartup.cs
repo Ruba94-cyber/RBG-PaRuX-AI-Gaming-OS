@@ -7,10 +7,10 @@ using PaRuX.Services;
 namespace PaRuX;
 
 /// <summary>
-/// Console/TV start preference. Opt-in (Settings > Gaming > Console / TV): when the chosen TV is connected at launch the app opens
-/// directly in Console/TV mode on it; otherwise it starts as the owner chose (normal AI window, or minimized). It reuses the existing
-/// display selection policy and <see cref="EnterConsoleModeAsync"/>; it never changes Windows display settings and never uses another
-/// screen than the one the owner marked as TV.
+/// Console/TV start preference. Opt-in (Settings > Gaming > Console / TV): when the chosen TV is connected at launch, Console mode
+/// (Playnite Fullscreen with the owner's theme) is started; otherwise PaRuX starts as the owner chose (normal AI window, or minimized).
+/// Since gaming-removal step 3 there is no native PaRuX fullscreen fallback: if Playnite cannot start, PaRuX stays in its normal
+/// window. It never changes Windows display settings and never uses another screen than the one the owner marked as TV.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -40,7 +40,7 @@ public sealed partial class MainWindow
             switch (ConsoleStartupPolicy.Decide(data.ConsoleStartOnTvWhenPresent, targetId, tvPresent, data.StartupWithoutTv))
             {
                 case ConsoleStartupDecision.EnterConsole:
-                    if (_consoleModeActive || _consoleRoutingInProgress || GamingManager.Current.IsActive
+                    if (_consoleRoutingInProgress || GamingManager.Current.IsActive
                         || LocalAiController.Current.IsGameActive())
                         return;
                     _consoleRoutingInProgress = true;
@@ -62,9 +62,8 @@ public sealed partial class MainWindow
                             break;
                         }
 
-                        // Fallback only when Playnite was NOT started at all.
-                        await EnterConsoleModeAsync();
-                        Log.Write("Console startup: Playnite unavailable; opened the legacy Console fallback.");
+                        // Playnite was NOT started at all: the native Console/TV shell no longer exists, so PaRuX stays in its normal window.
+                        Log.Write("Console startup: Playnite Fullscreen was not started (" + handoff + "); PaRuX stays in its normal window.");
                     }
                     finally { _consoleRoutingInProgress = false; }
                     break;
@@ -108,26 +107,4 @@ public sealed partial class MainWindow
             await Task.Delay(ConsoleStartupProbeInterval);
         }
     }
-
-    /// <summary>
-    /// Console/TV workspace switch from the controller: Gaming library to the AI chat and back, without leaving fullscreen.
-    /// Returns true when handled.
-    /// </summary>
-    private bool SwitchConsoleWorkspace()
-    {
-        if (!_consoleModeActive || _consoleRoutingInProgress) return false;
-        if (GameLibraryPageIfCreated?.Visibility == Microsoft.UI.Xaml.Visibility.Visible)
-        {
-            ShowChat();
-            return true;
-        }
-        ShowStudioWorkspace(StudioWorkspace.Games);
-        GameLibraryPage.ApplyConsoleMode(true);
-        GameLibraryPage.OnShown();
-        GameLibraryPage.FocusConsoleHome();
-        return true;
-    }
-
-    /// <summary>True while the Gaming library is the visible workspace of Console/TV mode.</summary>
-    private bool ConsoleOnGamingWorkspace() => GameLibraryPageIfCreated?.Visibility == Microsoft.UI.Xaml.Visibility.Visible;
 }

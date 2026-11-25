@@ -11,7 +11,7 @@ using PaRuX.Services;
 namespace PaRuX;
 
 /// <summary>
-/// Gamepad operation of everything that is NOT the page itself in Console/TV mode: ContentDialogs, flyouts and ComboBox drop-downs
+/// Gamepad operation of everything that is NOT the page itself while the Playnite launcher dialog is pad-driven: ContentDialogs, flyouts and ComboBox drop-downs
 /// (they live in separate popup roots), the on-screen keyboard, text fields, sliders and toggles. It only calls the controls' own
 /// public API (Hide, IsDropDownOpen, IsOn, Value, Focus) and the in-app on-screen keyboard; no mouse/keyboard input is synthesised.
 /// Text entry deliberately uses the app's own pad-operable keyboard (<c>OnScreenKeyboardOverlay</c>) and NOT the Windows touch
@@ -50,7 +50,6 @@ public sealed partial class MainWindow
     {
         if (_keyboardOverlay?.IsOpen == true) return _keyboardOverlay;
         if (TopInteractivePopup()?.Child is { } popupChild) return popupChild;
-        if (ConsoleOnGamingWorkspace() && GameLibraryPageIfCreated?.QuickActionsRoot is { } quickActions) return quickActions;
         return RootGrid.XamlRoot?.Content;
     }
 

@@ -52,10 +52,6 @@ public sealed partial class ManualGameLibraryView
         await RefreshAsync();
         await UpdateGamingStatusAsync();
         UpdateStoreDiscoveryOffer();
-        // The initial catalog load briefly disables buttons; restore a useful
-        // gamepad focus target once the real server status has been fetched.
-        if (_consolePresentation && !_busy)
-            FocusConsoleHome();
     }
 
     /// <summary>Returns null when status cannot be confirmed. A failed read never
@@ -114,36 +110,6 @@ public sealed partial class ManualGameLibraryView
         _refreshStaged.IsEnabled = _installerInspectionAllowed && !_busy;
         UpdatePackageStageAvailability();
         return observed;
-    }
-
-    /// <summary>Refresh only when the user brings the Console window back into
-    /// the foreground. Do not steal focus from a running emulator or poll in the
-    /// background. An unconfirmed Core response never implies a game ended.</summary>
-    public async Task OnConsoleForegroundActivatedAsync()
-    {
-        if (!_consolePresentation || _busy || _consoleForegroundRefreshInFlight) return;
-        _consoleForegroundRefreshInFlight = true;
-        try
-        {
-            bool previouslyGaming = _lastConfirmedGamingActive;
-            GamingStatusDto? state = await UpdateGamingStatusAsync();
-            if (GameLibraryForegroundReturnPolicy.CanRefreshTitles(previouslyGaming, state))
-            {
-                if (_universal is not null)
-                    await _universal.RefreshTitlesAfterGameAsync();
-                _gamingStatus.Text = GameLibraryForegroundReturnPolicy.HasConfirmedOwnedExit(state)
-                    ? T("The verified game process exited. PaRuX returned resources to AI; Console Home is ready.",
-                        "Il processo del gioco verificato è terminato. PaRuX ha restituito le risorse all'AI; la Home Console è pronta.")
-                    : T("AI resources available again. PaRuX did not terminate the game or launcher.",
-                        "Risorse AI nuovamente disponibili. PaRuX non ha terminato il gioco o il launcher.");
-            }
-        }
-        catch (Exception)
-        {
-            _gamingStatus.Text = T("Could not refresh Gaming status after returning to PaRuX.",
-                "Impossibile aggiornare lo stato Gaming al ritorno in PaRuX.");
-        }
-        finally { _consoleForegroundRefreshInFlight = false; }
     }
 
     private async Task RefreshGamingStatusButtonAsync()

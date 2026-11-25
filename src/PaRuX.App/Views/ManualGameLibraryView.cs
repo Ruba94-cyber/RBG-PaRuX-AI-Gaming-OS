@@ -28,7 +28,6 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly StackPanel _games = new() { Spacing = 8 };
     private readonly StackPanel _root = new() { Spacing = 16, Padding = new Thickness(24), MaxWidth = 1500, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock _heading = new();
-    private bool _consolePresentation;
     private SelectorBar? _sectionBar;
     private readonly StackPanel _discoveredGames = new() { Spacing = 8 };
     private readonly TextBlock _discoveryStatus = new() { TextWrapping = TextWrapping.Wrap };
@@ -71,7 +70,6 @@ public sealed partial class ManualGameLibraryView : UserControl
     // An unreachable Core may temporarily disable actions, but must not erase the
     // last confirmed Gaming observation needed for foreground-return reconciliation.
     private bool _lastConfirmedGamingActive;
-    private bool _consoleForegroundRefreshInFlight;
     private readonly TextBlock _controllerStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _displayStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _displayItems = new() { Spacing = 8 };

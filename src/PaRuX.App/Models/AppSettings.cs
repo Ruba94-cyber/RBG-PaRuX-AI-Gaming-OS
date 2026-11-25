@@ -113,6 +113,8 @@ namespace PaRuX.Models
         /// to the foreground only after Core signals a verified owned-game exit
         /// AND confirms the AI resources were restored. Never on manual Return,
         /// game handoffs, splash exits or generic Gaming marker disappearance.</summary>
+        /// <remarks>OBSOLETE since gaming-removal step 3 (native Console/TV shell removed): no longer read or shown. Kept and still
+        /// serialised so settings written by an older PaRuX load unchanged and a rollback keeps the owner's choice.</remarks>
         public bool AutoShowConsoleAfterVerifiedGameExit { get; set; } = false;
 
         /// <summary>Opt-in: while Console/TV mode (or a Playnite Fullscreen PaRuX started) is in use, select the Windows power plan

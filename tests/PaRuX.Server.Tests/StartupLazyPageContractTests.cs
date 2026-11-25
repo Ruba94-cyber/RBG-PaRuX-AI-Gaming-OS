@@ -108,7 +108,7 @@ public sealed class StartupLazyPageContractTests
         // Console activation handler never construct a page just to hide it.
         string workspaces = Read("src", "PaRuX.App", "MainWindow.Workspaces.cs");
         string window = Read("src", "PaRuX.App", "MainWindow.xaml.cs");
-        string console = Read("src", "PaRuX.App", "MainWindow.ConsoleMode.cs");
+        string console = Read("src", "PaRuX.App", "MainWindow.PadNavigation.cs");
         Assert.DoesNotContain("GameLibraryPage.Visibility == ", workspaces, StringComparison.Ordinal);
         Assert.DoesNotContain("ModelHubPage.Visibility == ", workspaces, StringComparison.Ordinal);
         Assert.DoesNotContain("SettingsPage.Visibility == ", workspaces, StringComparison.Ordinal);
