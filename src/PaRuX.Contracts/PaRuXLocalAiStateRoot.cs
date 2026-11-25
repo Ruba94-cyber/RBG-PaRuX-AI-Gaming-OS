@@ -11,8 +11,25 @@ public static class PaRuXLocalAiStateRoot
     /// %LOCALAPPDATA%\LocalAI by default. A process-local absolute override is supported for
     /// isolated integration/UI-test child processes; normal launches never set it.
     /// </summary>
-    public static string Path => Resolve(AppContext.BaseDirectory,
-        Environment.GetEnvironmentVariable(OverrideEnvironmentVariable), PackageIdentity.FamilyName);
+    public static string Path
+    {
+        get
+        {
+            // Polled by the Gaming guard several times per second; the portable-marker probe is a handful of file-system
+            // calls, so the answer is reused for two seconds per (base directory, override) pair.
+            string? overrideRoot = Environment.GetEnvironmentVariable(OverrideEnvironmentVariable);
+            string baseDirectory = AppContext.BaseDirectory;
+            long now = Environment.TickCount64;
+            Cached? c = _cached;
+            if (c != null && now - c.At < 2000 && c.BaseDirectory == baseDirectory && c.Override == overrideRoot) return c.Value;
+            string value = Resolve(baseDirectory, overrideRoot, PackageIdentity.FamilyName);
+            _cached = new Cached(now, baseDirectory, overrideRoot, value);
+            return value;
+        }
+    }
+
+    private sealed record Cached(long At, string BaseDirectory, string? Override, string Value);
+    private static volatile Cached? _cached;
 
     /// <summary>Portable marker wins over inherited process overrides; all
     /// coordination files stay inside the same movable PaRuXData directory.</summary>

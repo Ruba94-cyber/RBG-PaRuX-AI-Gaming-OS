@@ -42,6 +42,9 @@ try {
   $e = Start-Engine
   if ($e.Ready) {
     python -I "$here\bench.py" --label $Label --url "http://127.0.0.1:$Port/v1/chat/completions" --runs $Runs --out "$OutDir\ai-$Label.json" 2>&1 | Out-File "$OutDir\ai-$Label.log" -Encoding utf8
+    # 3 concurrent generation-heavy requests vs 1 (server-counted tokens): shows whether the engine batches slots
+    python -I "$here\parallel.py" --label "$Label-par3" --n 3 --length gen --max-tokens 256 --url "http://127.0.0.1:$Port/v1/chat/completions" --out "$OutDir\par3-$Label.json" 2>&1 | Out-File "$OutDir\par3-$Label.log" -Encoding utf8
+    python -I "$here\parallel.py" --label "$Label-par1" --n 1 --length gen --max-tokens 256 --url "http://127.0.0.1:$Port/v1/chat/completions" --out "$OutDir\par1-$Label.json" 2>&1 | Out-File "$OutDir\par1-$Label.log" -Encoding utf8
     $used = Used-Mib
     $ws = [math]::Round((Get-Process -Id $e.P.Id).WorkingSet64 / 1MB)
     [ordered]@{ Label = $Label; Server = $Server; Args = $ArgLine; LoadMs = $loads; BaselineMiB = $base; UsedMiB = $used; EngineVramMiB = ($used - $base); EngineWsMB = $ws } |

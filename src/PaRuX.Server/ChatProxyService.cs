@@ -1039,6 +1039,10 @@ public sealed class ChatProxyService
         CancellationToken cancellationToken)
     {
         JsonObject payload = await PrepareProviderPayloadAsync(request, stream: true, cancellationToken).ConfigureAwait(false);
+        // Same terminal usage frame as the plain stream (OpenAI-compatible clients and the /usage report read it); without it the
+        // tool-enabled path (every request that advertises tools) streamed timings but never a usage frame.
+        if (!_runtime.UsesExternalProvider)
+            payload["stream_options"] = new JsonObject { ["include_usage"] = true };
         return new StreamingMcpToolLoop(
             payload,
             tools,

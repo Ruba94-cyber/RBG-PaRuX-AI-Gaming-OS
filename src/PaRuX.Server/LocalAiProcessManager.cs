@@ -616,7 +616,25 @@ public sealed class LocalAiProcessManager
     /// reading the ownership checks use), so it is reused rather than skipped; the foreign listener is the only one that moves a launch.
     /// </summary>
     private static bool IsHeldByAnotherProgram(int port) =>
-        IsPortListening(port) && !ManagedListenerOwnership.IsOwnedByThisProcess(port);
+        IsPortListening(port) && !ManagedListenerOwnership.IsOwnedByThisProcess(port) && !IsHeldByResidentTextRuntime(port);
+
+    /// <summary>
+    /// The listener is the text runtime this Core launched and recorded. A model switch chooses its port while that resident is
+    /// still up (it is stopped just before the new launch), so counting it as foreign moved every switch to the next port: the new
+    /// server then listened on 1235 while health, chat and ownership kept using 1234, and the switch never became ready
+    /// (reproduced on 4.5.1 with the load API: every second model switch hung).
+    /// </summary>
+    private static bool IsHeldByResidentTextRuntime(int port)
+    {
+        try
+        {
+            int? verified = GetVerifiedTextLaunchProcessId();
+            if (verified.HasValue && ManagedListenerOwnership.IsStrictlyOwnedBy(port, verified.Value)) return true;
+            using Process? managed = GetManagedProcess(LocalAiPaths.TextPidFile, "llama-server");
+            return managed != null && ManagedListenerOwnership.IsStrictlyOwnedBy(port, managed.Id);
+        }
+        catch { return false; }
+    }
 
     /// <summary>
     /// Whether PaRuX's own text runtime is up and answering.

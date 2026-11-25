@@ -112,6 +112,17 @@ public sealed class ChatTokenUsageSourceContractTests
     }
 
     [Fact]
+    public void Tool_enabled_stream_also_requests_the_usage_frame_from_the_managed_local_runtime()
+    {
+        string source = Read("src", "PaRuX.Server", "ChatProxyService.cs").Replace("\r\n", "\n");
+        int loop = source.IndexOf("private async Task<StreamingMcpToolLoop> CreateMcpToolLoopAsync", StringComparison.Ordinal);
+        int create = source.IndexOf("return new StreamingMcpToolLoop(", loop, StringComparison.Ordinal);
+        Assert.True(loop > 0 && create > loop);
+        string head = source.Substring(loop, create - loop);
+        Assert.Contains("if (!_runtime.UsesExternalProvider)\n            payload[\"stream_options\"] = new JsonObject { [\"include_usage\"] = true };", head, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Client_parses_usage_session_stores_it_and_slash_usage_never_reaches_the_model()
     {
         Assert.Contains("ChatTokenUsageParser.TryParse(data)", Read("src", "PaRuX.App", "Services", "ChatClient.cs"), StringComparison.Ordinal);

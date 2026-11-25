@@ -526,7 +526,7 @@
                             Height="36"
                             Width="36"
                             Padding="0"
-                            ToolTipService.ToolTip="Attach images (PNG, JPEG, WebP, BMP)" loc:Loc.ItToolTip="Allega immagini (PNG, JPEG, WebP, BMP)">
+                            ToolTipService.ToolTip="Attach images, video or documents (PNG, JPEG, WebP, MP4, PDF, DOCX, XLSX, TXT and more)" loc:Loc.ItToolTip="Allega immagini, video o documenti (PNG, JPEG, WebP, MP4, PDF, DOCX, XLSX, TXT e altro)">
                             <FontIcon Glyph="&#xE723;" FontSize="15" />
                         </Button>
                         <Button

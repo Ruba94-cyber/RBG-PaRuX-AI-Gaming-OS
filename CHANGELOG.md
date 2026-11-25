@@ -1,3 +1,11 @@
+## Unreleased (after 4.5.1; needs a new build of the installer and artifacts)
+
+- **Fix: switching the loaded model could hang.** A model switch (the `/api/v1/models/library/<file>/load` route that `ModelRolesClient` uses; reproduced through the API, not by driving the UI) chose the text-runtime port while the previous runtime of this Core still listened on 1234, treated it as another program and launched the new server on 1235 while health, chat and ownership kept using 1234, so the switch never became ready (3 of 3 switches from a resident runtime hung on 4.5.1; recovered on the next switch). The resident runtime that this Core launched and recorded is no longer counted as foreign. After the fix 6 of 6 switches succeeded in 1.9-4.6 s. Evidence: `docs/validation/COMPETITOR_BENCH_2026-11-25.md`.
+- **Fix: streamed replies on the tool-enabled path carried no `usage` frame** (token counts for API clients and `/usage`); the tool loop now asks the managed local runtime for it like the plain stream does.
+- **Idle CPU:** the portable-marker probe behind the Gaming guard's state directory is reused for 2 s (about 0.4 points of one core less on an idle Core; the Playnite process watcher remains the main idle cost, see the validation report).
+- **Chat attach button tooltip** now says it accepts images, video and documents (it always did).
+- `tools/competitor-bench`: real tokens/s from the server's `usage` field, `parallel.py` (concurrent requests) and a parallel step in `Run-Engine.ps1`.
+
 ## 4.5.1 (pre-release candidate, 2026-11-25; built and signed locally, not published until the owner decides)
 
 Supersedes the 4.5.0 pre-release (Corporate Lite only, commit 6e904b35): 4.5.1 is the complete 4.5 line (MSI, APK, Corporate Lite, signed update manifest; the Standard Portable is discontinued) and consolidates the changes made after 4.5.0. Everything listed under 4.5.0 below still applies.

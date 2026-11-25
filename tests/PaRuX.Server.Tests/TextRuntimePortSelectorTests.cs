@@ -92,3 +92,17 @@ public sealed class TextRuntimePortSelectorTests
         Assert.Throws<ArgumentOutOfRangeException>(() => TextRuntimePortSelector.Choose(preferred, _ => false));
     }
 }
+
+/// <summary>Pins the model-switch port rule: the resident runtime this Core launched is never "another program".</summary>
+public sealed class TextRuntimeSwitchPortContractTests
+{
+    [Fact]
+    public void The_port_held_by_the_resident_text_runtime_is_reused_by_a_model_switch()
+    {
+        string root = AppContext.BaseDirectory;
+        while (root != null && !File.Exists(Path.Combine(root, "PaRuX.sln"))) root = Path.GetDirectoryName(root)!;
+        string source = File.ReadAllText(Path.Combine(root!, "src", "PaRuX.Server", "LocalAiProcessManager.cs")).Replace("\r\n", "\n");
+        Assert.Contains("IsPortListening(port) && !ManagedListenerOwnership.IsOwnedByThisProcess(port) && !IsHeldByResidentTextRuntime(port)", source, StringComparison.Ordinal);
+        Assert.Contains("ManagedListenerOwnership.IsStrictlyOwnedBy(port, verified.Value)", source, StringComparison.Ordinal);
+    }
+}

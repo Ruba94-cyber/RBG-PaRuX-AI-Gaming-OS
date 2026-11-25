@@ -23,6 +23,7 @@ def make_text(approx_tokens, nonce):
 
 PROMPTS = {
     "short": lambda n: "Explain in two sentences what a mutex is. (ref %s)" % n,
+    "gen": lambda n: "Write a detailed 400-word explanation of how a hash table works, with an example. (ref %s)" % n,
     "1k": lambda n: make_text(1000, n) + "\n\nSummarize the notes above in exactly two sentences.",
     "4k": lambda n: make_text(4000, n) + "\n\nSummarize the notes above in exactly two sentences.",
 }
@@ -30,7 +31,8 @@ PROMPTS = {
 def one(url, token, model, prompt, max_tokens, extra):
     u = urllib.parse.urlparse(url)
     conn = http.client.HTTPConnection(u.hostname, u.port, timeout=300)
-    body = {"messages": [{"role": "user", "content": prompt}], "stream": True, "temperature": 0, "seed": 7, "max_tokens": max_tokens}
+    body = {"messages": [{"role": "user", "content": prompt}], "stream": True, "temperature": 0, "seed": 7, "max_tokens": max_tokens,
+            "stream_options": {"include_usage": True}}  # engines/APIs that honour it return a terminal usage frame
     if model: body["model"] = model
     body.update(extra)
     h = {"Content-Type": "application/json"}
@@ -74,6 +76,12 @@ def one(url, token, model, prompt, max_tokens, extra):
         for k in ("prompt_n", "cache_n", "prompt_ms", "prompt_per_second", "predicted_n", "predicted_ms", "predicted_per_second"):
             res["srv_" + k] = timings.get(k)
     if usage: res["usage"] = usage
+    # REAL decode speed: tokens the server itself counted (usage.completion_tokens, else timings.predicted_n), never chunk counts
+    n_tok = (usage or {}).get("completion_tokens") or (timings or {}).get("predicted_n")
+    res["tokens_source"] = "usage" if (usage or {}).get("completion_tokens") else ("timings" if n_tok else None)
+    res["completion_tokens"] = n_tok
+    if n_tok and n_tok > 1 and t_first_tok is not None and t_last is not None and t_last > t_first_tok:
+        res["real_decode_tps"] = (n_tok - 1) / (t_last - t_first_tok)
     return res
 
 if __name__ == "__main__":
@@ -94,5 +102,5 @@ if __name__ == "__main__":
             r = one(a.url, token, a.model, PROMPTS[ln](nonce), a.max_tokens, extra)
             r.update({"label": a.label, "length": ln, "run": i, "warmup": i < 0})
             allres.append(r)
-            print(a.label, ln, i, {k: (round(v, 1) if isinstance(v, float) else v) for k, v in r.items() if k in ("ttft_ms", "client_decode_tps", "srv_prompt_n", "srv_predicted_per_second", "srv_cache_n", "error")}, flush=True)
+            print(a.label, ln, i, {k: (round(v, 1) if isinstance(v, float) else v) for k, v in r.items() if k in ("ttft_ms", "real_decode_tps", "client_decode_tps", "srv_prompt_n", "srv_predicted_per_second", "srv_cache_n", "error")}, flush=True)
     json.dump(allres, open(a.out, "w"), indent=1)
