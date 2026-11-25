@@ -57,7 +57,13 @@ namespace PaRuX.Views
                 Settings_AutoCheck_Interval_Box.Value = status.Settings.IntervalHours;
                 Settings_AutoCheck_Interval_Box.IsEnabled = status.Settings.Enabled;
                 if (Settings_AutoCheck_RuntimeUpdate_Toggle != null)
-                    Settings_AutoCheck_RuntimeUpdate_Toggle.IsOn = status.Settings.KeepRuntimesUpdated;
+                {
+                    BackgroundDownloadsChoiceView choice = BackgroundDownloadsChoice.Build(status.Settings.KeepRuntimesUpdated, CorporateMode.IsActive);
+                    Settings_AutoCheck_RuntimeUpdate_Toggle.IsOn = choice.IsOn;
+                    Settings_AutoCheck_RuntimeUpdate_Toggle.IsEnabled = choice.CanChange;
+                    if (Settings_AutoCheck_RuntimeUpdate_Explanation_Text != null)
+                        Settings_AutoCheck_RuntimeUpdate_Explanation_Text.Text = T(choice.ExplanationEn + " " + choice.StateEn, choice.ExplanationIt + " " + choice.StateIt);
+                }
                 if (Settings_AutoCheck_MediaOptimize_Toggle != null)
                     Settings_AutoCheck_MediaOptimize_Toggle.IsOn = status.Settings.AutoOptimizeMedia;
                     Settings_AutoCheck_Tuning_Explanation_Text.Text = ModelTuningPresenter.SettingsExplanation;
@@ -168,7 +174,7 @@ namespace PaRuX.Views
                 return;
             bool enabled = Settings_AutoCheck_Enabled_Toggle.IsOn;
             double hours = Settings_AutoCheck_Interval_Box.Value;
-            bool keepRuntimes = Settings_AutoCheck_RuntimeUpdate_Toggle.IsOn;
+            bool keepRuntimes = BackgroundDownloadsChoice.Requested(Settings_AutoCheck_RuntimeUpdate_Toggle.IsOn, CorporateMode.IsActive);
             bool autoOptimize = Settings_AutoCheck_MediaOptimize_Toggle.IsOn;
             try
             {
@@ -177,6 +183,11 @@ namespace PaRuX.Views
                 try
                 {
                     Settings_AutoCheck_RuntimeUpdate_Toggle.IsOn = saved.KeepRuntimesUpdated;
+                    if (Settings_AutoCheck_RuntimeUpdate_Explanation_Text != null)
+                    {
+                        BackgroundDownloadsChoiceView c = BackgroundDownloadsChoice.Build(saved.KeepRuntimesUpdated, CorporateMode.IsActive);
+                        Settings_AutoCheck_RuntimeUpdate_Explanation_Text.Text = T(c.ExplanationEn + " " + c.StateEn, c.ExplanationIt + " " + c.StateIt);
+                    }
                     Settings_AutoCheck_MediaOptimize_Toggle.IsOn = saved.AutoOptimizeMedia;
                     Settings_AutoCheck_Enabled_Toggle.IsOn = saved.Enabled;
                     Settings_AutoCheck_Interval_Box.Value = saved.IntervalHours;

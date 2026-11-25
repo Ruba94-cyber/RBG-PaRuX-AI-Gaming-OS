@@ -213,6 +213,10 @@ namespace PaRuX.Views
                 : string.Join("  ", status.LastRun.Select(r => r.Name + ": " + r.Outcome));
         }
 
+        private static string StopWithConsoleHelp => T(
+            "\"Stop when Console ends\" closes only apps PaRuX started itself for this Console session, when you leave Console mode. A copy that was already running before is never stopped, and nothing is stopped if you turn the option off first.",
+            "\"Ferma a fine Console\" chiude solo le app avviate da PaRuX per questa sessione Console, quando esci dalla modalità Console. Una copia già in esecuzione prima non viene mai fermata, e se spegni l'opzione prima non viene fermato nulla.");
+
         private UIElement BuildSupportRow(SupportAppRow row)
         {
             SupportAppEntry e = row.Entry;
@@ -226,6 +230,10 @@ namespace PaRuX.Views
             options.Children.Add(Check(T("Stop when Console ends", "Ferma a fine Console"), e.StopWithConsole, v => e with { StopWithConsole = v }, e));
             options.Children.Add(Check(T("Replace an older running copy", "Sostituisci una copia più vecchia in esecuzione"), e.ReplaceIfStale, v => e with { ReplaceIfStale = v }, e));
             box.Children.Add(options);
+            // Plain-language scope of the option that is easy to misread: what "stop" does and does not touch.
+            var stopHelp = Line(StopWithConsoleHelp, 0.75);
+            AutomationProperties.SetAutomationId(stopHelp, SupportIdPrefix + "_StopWithConsoleHelp_" + e.Id + "_Text");
+            box.Children.Add(stopHelp);
             var remove = new Button { Content = T("Remove from the list", "Rimuovi dall'elenco") };
             AutomationProperties.SetAutomationId(remove, SupportIdPrefix + "_Remove_" + e.Id + "_Button");
             remove.Click += async (_, _) => await SaveSupportAppsAsync(_supportState!.Enabled, _supportState.Apps.Select(a => a.Entry).Where(a => a.Id != e.Id).ToList());

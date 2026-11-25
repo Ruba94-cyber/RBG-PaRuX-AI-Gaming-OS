@@ -30,6 +30,38 @@ namespace PaRuX
                 await ShowCommandPaletteAsync();
             };
             RootGrid.KeyboardAccelerators.Add(accelerator);
+            foreach (QuickAction qa in QuickActionCatalog.All)
+            {
+                if (qa.AcceleratorKey is not char key) continue;
+                string id = qa.Id;
+                var quick = new KeyboardAccelerator { Key = (VirtualKey)key, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift };
+                quick.Invoked += (_, args) => { args.Handled = true; RunQuickAction(id); };
+                RootGrid.KeyboardAccelerators.Add(quick);
+            }
+        }
+
+        /// <summary>Runs a quick action by opening the same control the mouse path uses, after going to the right workspace.</summary>
+        private void RunQuickAction(string id)
+        {
+            if (!CurrentSetupPlan.ShowAiWorkspaces || App.IsShuttingDown) return;
+            if (IsGamingModeTab) SelectModeTab(ModeKeyAi, navigate: false);
+            if (id == QuickActionCatalog.CreateImage)
+            {
+                if (!TryNavigateWorkspace("__create__")) return;
+                if (EnsurePage(StudioWorkspace.Create) is PaRuX.Views.CreateWorkspaceView create) create.ShowImageMode();
+                return;
+            }
+            if (!TryNavigateWorkspace("__chat__")) return;
+            _dispatcher.TryEnqueue(() =>
+            {
+                switch (id)
+                {
+                    case QuickActionCatalog.SearchChats: SearchBox.Focus(FocusState.Keyboard); break;
+                    case QuickActionCatalog.ChooseModel: ChatPage.QuickOpenModelPicker(); break;
+                    case QuickActionCatalog.GenerationSettings: ChatPage.QuickOpenGenerationSettings(); break;
+                    case QuickActionCatalog.AttachFile: ChatPage.QuickOpenAttachPicker(); break;
+                }
+            });
         }
 
         private List<PaletteCommand> BuildPaletteCommands()
@@ -71,6 +103,9 @@ namespace PaRuX
                 Workspace("__observability__", "Observability", "Osservabilità", "logs metrics log metriche");
                 Workspace("__updates__", "Updates", "Aggiornamenti", "update version versione");
             }
+            if (CurrentSetupPlan.ShowAiWorkspaces)
+                foreach (QuickAction qa in QuickActionCatalog.All)
+                    list.Add(new PaletteCommand(qa.Id, QuickActionCatalog.PaletteTitle(qa, UiText.IsItalian), qa.Keywords, () => RunQuickAction(qa.Id)));
             Add("new-chat", "New chat", "Nuova chat", "start conversation clear nuova conversazione", () => NewChat_Click(NewChatButton, new RoutedEventArgs()));
             Add("console", "Toggle Console / TV mode", "Attiva o disattiva Console / TV", "fullscreen tv controller big picture schermo intero",
                 () => ConsoleModeButton_Click(ConsoleModeButton, new RoutedEventArgs()));

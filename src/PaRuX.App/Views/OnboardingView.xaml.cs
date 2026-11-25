@@ -58,6 +58,8 @@ namespace PaRuX.Views
             _dispatcher = DispatcherQueue.GetForCurrentThread();
             RenderBundledOverview(BundledRuntimeOverviewPresenter.BuildOverview(null, null));
             InitializeSetupProfileChoice();
+            ApplyBackgroundDownloadsChoice(BackgroundDownloadsChoice.DefaultOn);
+            Loaded += async (s, e) => await LoadBackgroundDownloadsChoiceAsync();
             Loaded += (s, e) =>
             {
                 _modelDownloadViewLoaded = true;
