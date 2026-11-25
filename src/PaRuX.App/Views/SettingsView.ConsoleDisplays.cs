@@ -194,7 +194,7 @@ public sealed partial class SettingsView
         ConsoleStartOnTvExplanation.Text = TvT(
             "When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back.",
             "All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro.");
-        ConsoleStartWithoutTvCombo.Header = TvT("When no chosen TV is connected, start", "Se nessuna TV scelta è collegata, avvia");
+        ConsoleStartWithoutTvCombo.Header = TvT("When PaRuX starts (also at sign-in) and no chosen TV is connected, the window", "Quando PaRuX parte (anche all'accesso) e nessuna TV scelta è collegata, la finestra");
         ConsoleAutoReturnExplanation.Text = TvT(
             "Only a verified directly launched process exit and completed AI recovery can trigger this. Manual Return, store handoffs and unknown child processes are ignored. Windows may deny foreground activation.",
             "Si attiva soltanto dopo la chiusura verificata di un processo avviato direttamente e il ripristino dell'AI. Il ritorno manuale, gli store e i processi secondari sconosciuti sono esclusi. Windows può impedire l'attivazione in primo piano.");

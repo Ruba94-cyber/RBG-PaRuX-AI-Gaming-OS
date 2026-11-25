@@ -31,8 +31,22 @@ namespace PaRuX.Services
             if (key?.GetValue(name) != null) key.DeleteValue(name, false);
         }
 
-        /// <summary>The sign-in registration used by Settings, with its restore journal inside PaRuXData.</summary>
-        public static LogonRegistration CreateRegistration() =>
-            new(new RegistryRunKeyStore(), PaRuXDataRoot.Combine("server", "logon-registration.json"));
+        /// <summary>The sign-in registration used by Settings: the current user's scheduled task first, this Run value as the fallback,
+        /// with its restore journal inside PaRuXData.</summary>
+        public static LogonRegistration CreateRegistration()
+        {
+            string? userId = null, userSid = null;
+            try
+            {
+                using System.Security.Principal.WindowsIdentity me = System.Security.Principal.WindowsIdentity.GetCurrent();
+                userId = me.Name;
+                userSid = me.User?.Value;
+            }
+            catch (System.Security.SecurityException) { }
+            return new(new RegistryRunKeyStore(), new ScheduledTaskLogonStore(), PaRuXDataRoot.Combine("server", "logon-registration.json"), userId, userSid);
+        }
+
+        /// <summary>Where every <c>--logon</c> start records its process start time (read by the "did it start at the last sign-in?" check).</summary>
+        public static string LogonStartMarkerPath => PaRuXDataRoot.Combine("logs", "last-logon-start.json");
     }
 }

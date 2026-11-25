@@ -115,6 +115,7 @@ namespace PaRuX
             // Start-up resolution input for this (first) instance: the explicit argument, else Ctrl/Shift held right now (read-only).
             StartupLauncherRequest = launcherRequest;
             StartupLogonRequest = PaRuX.Contracts.LogonStartupArguments.Parse(Environment.GetCommandLineArgs());
+            if (StartupLogonRequest.Logon) NormalizeLogonStartPriority();
             if (!launcherRequest.HasAction && !hasPlayRequest)
             {
                 (StartupCtrlHeld, StartupShiftHeld) = PaRuX.Services.LauncherModifierKeys.Sample(TimeSpan.Zero);
@@ -179,6 +180,21 @@ namespace PaRuX
                 try { _singleInstanceMutex?.Dispose(); } catch { }
                 Environment.Exit(1);
             }
+        }
+
+        /// <summary>
+        /// A task created with Task Scheduler's default priority (7) starts PaRuX "below normal", and Core, started as a child, inherits it:
+        /// the sign-in start then takes about twice as long. A sign-in start runs at normal priority, whatever started it. Before Core starts.
+        /// </summary>
+        private static void NormalizeLogonStartPriority()
+        {
+            try
+            {
+                using System.Diagnostics.Process me = System.Diagnostics.Process.GetCurrentProcess();
+                if (me.PriorityClass is System.Diagnostics.ProcessPriorityClass.BelowNormal or System.Diagnostics.ProcessPriorityClass.Idle)
+                    me.PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
         }
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]

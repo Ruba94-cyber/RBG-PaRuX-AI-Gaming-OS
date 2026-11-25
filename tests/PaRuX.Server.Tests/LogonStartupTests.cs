@@ -28,13 +28,35 @@ public sealed class LogonStartupTests : IDisposable
     }
 
     [Fact]
-    public void Nothing_turned_on_means_a_quiet_minimised_desktop_start_at_sign_in()
+    public void Sign_in_desktop_start_follows_the_normal_window_choice_and_comes_to_the_front()
     {
-        LogonPlan p = LogonStartupPolicy.Decide(Logon, NoAsk, S(), new(false, false, null, false));
+        // Regression: a --logon start used to minimise even when the owner chose "normal".
+        LogonPlan p = LogonStartupPolicy.Decide(Logon, NoAsk, S(fallback: "normal"), new(false, false, null, false));
         Assert.Equal(LogonMode.Desktop, p.Mode);
-        Assert.Equal(LogonWindow.Minimized, p.Window);
-        Assert.Contains(p.Steps, s => s.Code == "minimize");
+        Assert.Equal(LogonWindow.Normal, p.Window);
+        Assert.Contains(p.Steps, s => s.Code == "show-window");
+        Assert.DoesNotContain(p.Steps, s => s.Code == "minimize");
         Assert.DoesNotContain(p.Steps, s => s.Code == "playnite");
+    }
+
+    [Theory]
+    [InlineData("minimized", LogonWindow.Minimized)]
+    [InlineData("normal", LogonWindow.Normal)]
+    [InlineData(null, LogonWindow.Normal)]
+    [InlineData("garbage", LogonWindow.Normal)]
+    public void Sign_in_desktop_window_is_minimised_only_when_chosen(string? fallback, LogonWindow expected)
+    {
+        Assert.Equal(expected, LogonStartupPolicy.Decide(Logon, NoAsk, S(fallback: fallback), new(false, false, null, false)).Window);
+        // The chosen TV is absent: the same rule applies (the real owner case: "Desktop (The chosen TV is not connected.)").
+        Assert.Equal(expected, LogonStartupPolicy.Decide(Logon, NoAsk, S(tv: true, fallback: fallback), new(true, false, null, false)).Window);
+    }
+
+    [Fact]
+    public void Minimised_choice_keeps_the_minimise_step()
+    {
+        LogonPlan p = LogonStartupPolicy.Decide(Logon, NoAsk, S(fallback: "minimized"), new(false, false, null, false));
+        Assert.Contains(p.Steps, s => s.Code == "minimize");
+        Assert.DoesNotContain(p.Steps, s => s.Code == "show-window");
     }
 
     [Fact]
@@ -199,6 +221,196 @@ public sealed class LogonStartupTests : IDisposable
         Assert.Null(reg.Enable(Exe));
         Assert.Null(reg.Restore());
         Assert.Equal("\"" + Exe + "\"", store.Get(LogonRegistration.ValueName));
+    }
+
+    // ---- scheduled task first, Run value as the fallback (fake Task Scheduler + fake Run key) ----
+
+    private const string User = @"PC\owner";
+    private const string Sid = "S-1-5-21-1-2-3-1001";
+    private LogonRegistration TaskReg(FakeRunKeyStore run, FakeLogonTaskStore tasks) => new(run, tasks, Path.Combine(_root, "journal.json"), User, Sid);
+
+    [Fact]
+    public void Enable_prefers_the_current_user_task_and_removes_paruxs_own_run_value()
+    {
+        var run = new FakeRunKeyStore();
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(Exe, true));   // a Run value Windows may never execute
+        var tasks = new FakeLogonTaskStore();
+        LogonRegistration reg = TaskReg(run, tasks);
+        LogonEnableResult r = reg.EnableDetailed(Exe);
+        Assert.True(r.Ok);
+        Assert.Equal(LogonMechanism.ScheduledTask, r.Mechanism);
+        Assert.Null(run.Get(LogonRegistration.ValueName));   // one mechanism only: no second copy at sign-in
+        LogonTaskInfo t = tasks.Get(LogonRegistration.TaskName)!;
+        Assert.Equal(Exe, t.Command);
+        Assert.Equal("--logon", t.Arguments);
+        Assert.Equal(LogonMechanism.ScheduledTask, reg.Describe(Exe).Mechanism);
+        Assert.Equal(LogonRegistrationState.RegisteredForLogon, reg.Status(Exe));
+
+        // Turning off removes the task and does NOT bring the old --logon Run value back (it was PaRuX's own sign-in entry).
+        Assert.Null(reg.Restore(Exe));
+        Assert.Null(tasks.Get(LogonRegistration.TaskName));
+        Assert.Null(run.Get(LogonRegistration.ValueName));
+        Assert.Equal(LogonRegistrationState.NotRegistered, reg.Status(Exe));
+    }
+
+    [Fact]
+    public void The_task_definition_is_for_this_user_only_least_privilege_normal_priority_and_escaped()
+    {
+        string exe = @"C:\Program Files\Pa&RuX\PaRuX.exe";
+        string xml = LogonRegistration.BuildTaskXml(exe, User, Sid);
+        var doc = System.Xml.Linq.XDocument.Parse(xml);
+        string V(string local) => doc.Descendants().First(e => e.Name.LocalName == local).Value;
+        Assert.Equal(User, doc.Descendants().First(e => e.Name.LocalName == "LogonTrigger").Elements().First(e => e.Name.LocalName == "UserId").Value);
+        Assert.Equal(Sid, doc.Descendants().First(e => e.Name.LocalName == "Principal").Elements().First(e => e.Name.LocalName == "UserId").Value);
+        Assert.Equal("InteractiveToken", V("LogonType"));
+        Assert.Equal("LeastPrivilege", V("RunLevel"));
+        Assert.Equal("4", V("Priority"));
+        Assert.Equal("PT0S", V("ExecutionTimeLimit"));
+        Assert.Equal("false", V("DisallowStartIfOnBatteries"));
+        Assert.Equal(exe, V("Command"));
+        Assert.Equal("--logon", V("Arguments"));
+        Assert.Equal(@"C:\Program Files\Pa&RuX", V("WorkingDirectory"));
+        Assert.DoesNotContain("HighestAvailable", xml);
+        Assert.DoesNotContain("GroupId", xml);   // never "any user"
+    }
+
+    [Fact]
+    public void When_task_scheduler_refuses_the_run_value_is_the_fallback_and_admin_need_is_reported()
+    {
+        var run = new FakeRunKeyStore();
+        var tasks = new FakeLogonTaskStore { FailRegister = LogonTaskCallResult.Failed("UnauthorizedAccessException 0x80070005", accessDenied: true) };
+        LogonRegistration reg = TaskReg(run, tasks);
+        LogonEnableResult r = reg.EnableDetailed(Exe);
+        Assert.True(r.Ok);
+        Assert.Equal(LogonMechanism.RunKey, r.Mechanism);
+        Assert.True(r.NeedsAdministrator);
+        Assert.NotNull(r.Note);
+        Assert.Equal("\"" + Exe + "\" --logon", run.Get(LogonRegistration.ValueName));
+        Assert.Equal(LogonMechanism.RunKey, reg.Describe(Exe).Mechanism);
+
+        // Turning it on again once the task works moves to the task and drops the Run value.
+        tasks.FailRegister = null;
+        Assert.Equal(LogonMechanism.ScheduledTask, reg.EnableDetailed(Exe).Mechanism);
+        Assert.Null(run.Get(LogonRegistration.ValueName));
+        Assert.Null(reg.Restore(Exe));
+        Assert.Null(run.Get(LogonRegistration.ValueName));
+        Assert.Null(tasks.Get(LogonRegistration.TaskName));
+    }
+
+    [Fact]
+    public void A_plain_parux_run_value_and_a_foreign_task_are_put_back_exactly()
+    {
+        var run = new FakeRunKeyStore();
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(Exe, false));
+        var tasks = new FakeLogonTaskStore();
+        string foreignXml = LogonRegistration.BuildTaskXml(@"D:\Other\tool.exe", User, Sid).Replace("--logon", "/quiet");
+        tasks.Register(LogonRegistration.TaskName, foreignXml);
+        LogonRegistration reg = TaskReg(run, tasks);
+
+        Assert.True(reg.Describe(Exe).ForeignTask);
+        LogonEnableResult refused = reg.EnableDetailed(Exe);
+        Assert.False(refused.Ok);
+        Assert.Equal(@"D:\Other\tool.exe", tasks.Get(LogonRegistration.TaskName)!.Command);   // untouched without consent
+        Assert.False(File.Exists(Path.Combine(_root, "journal.json")));
+
+        Assert.True(reg.EnableDetailed(Exe, replaceForeign: true).Ok);
+        Assert.Equal(Exe, tasks.Get(LogonRegistration.TaskName)!.Command);
+        Assert.Null(reg.Restore(Exe));
+        Assert.Equal(foreignXml, tasks.Get(LogonRegistration.TaskName)!.Xml);
+        Assert.Equal("\"" + Exe + "\"", run.Get(LogonRegistration.ValueName));
+    }
+
+    [Fact]
+    public void A_foreign_run_value_does_not_block_the_task_and_is_left_alone()
+    {
+        var run = new FakeRunKeyStore();
+        run.Set(LogonRegistration.ValueName, "\"D:\\Other\\tool.exe\" /x");
+        var tasks = new FakeLogonTaskStore();
+        LogonRegistration reg = TaskReg(run, tasks);
+        Assert.Equal(LogonMechanism.ScheduledTask, reg.EnableDetailed(Exe).Mechanism);
+        Assert.Equal("\"D:\\Other\\tool.exe\" /x", run.Get(LogonRegistration.ValueName));
+        Assert.Null(reg.Restore(Exe));
+        Assert.Equal("\"D:\\Other\\tool.exe\" /x", run.Get(LogonRegistration.ValueName));
+    }
+
+    [Fact]
+    public void An_existing_own_logon_task_is_adopted_and_turning_off_removes_it_without_a_journal()
+    {
+        // The local remedy on the owner's PC: "PaRuX at sign-in" created by hand, pointing at the installed PaRuX with --logon.
+        var run = new FakeRunKeyStore();
+        var tasks = new FakeLogonTaskStore();
+        tasks.Register(LogonRegistration.TaskName, LogonRegistration.BuildTaskXml(Exe, User, Sid));
+        LogonRegistration reg = TaskReg(run, tasks);
+        LogonRegistrationStatus s = reg.Describe(Exe);
+        Assert.Equal(LogonMechanism.ScheduledTask, s.Mechanism);
+        Assert.False(s.ForeignTask);
+        Assert.Equal(1, tasks.RegisterCalls);
+        Assert.True(reg.EnableDetailed(Exe).Ok);
+        Assert.Equal(1, tasks.RegisterCalls);   // nothing re-registered
+        Assert.Null(reg.Restore(Exe));
+        Assert.Null(tasks.Get(LogonRegistration.TaskName));
+    }
+
+    [Fact]
+    public void A_disabled_own_task_is_not_reported_as_registered()
+    {
+        var tasks = new FakeLogonTaskStore();
+        tasks.Tasks[LogonRegistration.TaskName] = new LogonTaskInfo(Exe, "--logon", false, null, null, "<Task/>");
+        Assert.Equal(LogonMechanism.None, TaskReg(new FakeRunKeyStore(), tasks).Describe(Exe).Mechanism);
+    }
+
+    [Theory]
+    [InlineData(false, 0, null, 60, LogonStartHealth.NotRegistered)]
+    [InlineData(true, null, null, 60, LogonStartHealth.Unknown)]          // sign-in time unknown
+    [InlineData(true, 0, 20, 60, LogonStartHealth.Started)]                // started 20 s after sign-in
+    [InlineData(true, 0, -3, 60, LogonStartHealth.Started)]                // within the clock skew
+    [InlineData(true, 0, -3600, 60, LogonStartHealth.Unknown)]             // previous session only, still within the grace
+    [InlineData(true, 0, -3600, 600, LogonStartHealth.NotStartedAtLastSignIn)]
+    [InlineData(true, 0, null, 600, LogonStartHealth.NotStartedAtLastSignIn)]
+    public void The_last_sign_in_check_warns_only_when_registered_and_no_logon_start_happened_since(bool registered, int? signInAt, int? startAt, int nowAt, LogonStartHealth expected)
+    {
+        var t0 = new DateTimeOffset(2026, 11, 25, 20, 0, 0, TimeSpan.Zero);
+        DateTimeOffset? At(int? s) => s is null ? null : t0.AddSeconds(s.Value);
+        Assert.Equal(expected, LogonStartHealthPolicy.Evaluate(registered, At(signInAt), At(startAt), t0.AddSeconds(nowAt)));
+    }
+
+    [Fact]
+    public void The_logon_start_marker_round_trips_and_a_damaged_one_reads_as_none()
+    {
+        string path = Path.Combine(_root, "logs", "last-logon-start.json");
+        Assert.Null(LogonStartMarker.Read(path));
+        var when = new DateTimeOffset(2026, 11, 25, 21, 45, 9, TimeSpan.Zero);
+        LogonStartMarker.Write(path, when, null);
+        Assert.Equal(when, LogonStartMarker.Read(path));
+        File.WriteAllText(path, "{not json");
+        Assert.Null(LogonStartMarker.Read(path));
+    }
+
+    [Fact]
+    public void App_wiring_uses_the_task_store_records_logon_starts_and_shows_the_window_when_chosen()
+    {
+        string app = Path.Combine(FindRepoRoot(), "src", "PaRuX.App");
+        string reg = File.ReadAllText(Path.Combine(app, "Services", "RegistryRunKeyStore.cs"));
+        Assert.Contains("new ScheduledTaskLogonStore()", reg);
+        string store = File.ReadAllText(Path.Combine(app, "Services", "ScheduledTaskLogonStore.cs"));
+        Assert.Contains("Schedule.Service", store);
+        Assert.Contains("LogonInteractiveToken = 3", store);
+        Assert.DoesNotContain("HighestAvailable", store);
+        string logon = File.ReadAllText(Path.Combine(app, "MainWindow.LogonStartup.cs"));
+        Assert.Contains("RecordLogonStart();", logon);
+        Assert.Contains("App.ShowMainWindow();", logon);
+        string appXaml = File.ReadAllText(Path.Combine(app, "App.xaml.cs"));
+        Assert.Contains("if (StartupLogonRequest.Logon) NormalizeLogonStartPriority();", appXaml);
+        // The orchestrator runs for every --logon process, whatever started it (Task Scheduler or Run): no activation-kind or
+        // working-directory gate between the parsed request and the start sequence.
+        string seq = File.ReadAllText(Path.Combine(app, "MainWindow.SignInApps.cs"));
+        Assert.Contains("if (!hasPlayRequest && App.StartupLogonRequest.Logon)", seq);
+        Assert.Contains("LogonStartupArguments.Parse(Environment.GetCommandLineArgs())", appXaml);
+        string settings = File.ReadAllText(Path.Combine(app, "Views", "SettingsView.LogonStartup.cs"));
+        Assert.Contains("LogonStartHealthPolicy.Evaluate", settings);
+        Assert.Contains("EnableDetailed(exe)", settings);
+        Assert.Contains("Restore(exe)", settings);
+        Assert.Contains("_Window_Combo", settings);
     }
 
     [Fact]

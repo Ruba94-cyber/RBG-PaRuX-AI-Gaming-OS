@@ -24,6 +24,7 @@ namespace PaRuX.Views
         private const string LogonIdPrefix = "Settings_LogonStart";
         private const string SupportIdPrefix = "Settings_SupportApps";
         private ToggleSwitch? _logonToggle;
+        private ComboBox? _logonWindow;
         private TextBox? _logonGpu;
         private TextBlock? _logonStatus, _logonPlanText;
         private StackPanel? _logonList;
@@ -32,8 +33,8 @@ namespace PaRuX.Views
         private StackPanel BuildLogonStartupSection()
         {
             StackPanel section = OwnerSection("Gaming & AI Sharing", T("START AT SIGN-IN", "AVVIO ALL'ACCESSO"),
-                T("PaRuX can start when you sign in to Windows and apply your choice: Console (Playnite Fullscreen, your support apps, optional power plan) or the quiet desktop side, minimised and never in front. It uses ONE entry for your Windows user only (no administrator rights, no scheduled task), put back exactly as it was when you turn it off. It never needs a TV or monitor: with nothing connected the desktop side starts. Ctrl at start opens the settings, Shift opens streaming.",
-                  "PaRuX può avviarsi quando accedi a Windows e applicare la tua scelta: Console (Playnite Fullscreen, le tue app di supporto, piano energetico facoltativo) oppure il lato desktop discreto, ridotto a icona e mai in primo piano. Usa UNA sola voce per il tuo utente Windows (nessun diritto di amministratore, nessuna attività pianificata), ripristinata esattamente com'era quando la spegni. Non richiede mai una TV o un monitor: senza nulla di collegato parte il lato desktop. Ctrl all'avvio apre le impostazioni, Shift apre lo streaming."),
+                T("PaRuX can start when you sign in to Windows and apply your choice: Console (Playnite Fullscreen, your support apps, optional power plan) or the desktop side, as a normal window in front or minimised (your choice below). It uses ONE scheduled task for your Windows user only (\"" + LogonRegistration.TaskName + "\", no administrator rights); only if Windows refuses the task does it use the Run entry of your user instead. Whatever was there before is put back exactly when you turn it off. It never needs a TV or monitor: with nothing connected the desktop side starts. Ctrl at start opens the settings, Shift opens streaming.",
+                  "PaRuX può avviarsi quando accedi a Windows e applicare la tua scelta: Console (Playnite Fullscreen, le tue app di supporto, piano energetico facoltativo) oppure il lato desktop, come finestra normale in primo piano o ridotta a icona (scegli qui sotto). Usa UNA sola attività pianificata per il tuo utente Windows (\"" + LogonRegistration.TaskName + "\", nessun diritto di amministratore); solo se Windows rifiuta l'attività usa invece la voce Run del tuo utente. Quando la spegni, ciò che c'era prima torna esattamente com'era. Non richiede mai una TV o un monitor: senza nulla di collegato parte il lato desktop. Ctrl all'avvio apre le impostazioni, Shift apre lo streaming."),
                 out _logonList, out _logonStatus, LogonIdPrefix,
                 (T("Preview what would start (dry run)", "Anteprima di cosa partirebbe (prova a secco)"), () => _ = LogonDryRunAsync()),
                 (T("Show the last start timings", "Mostra gli ultimi tempi di avvio"), () => ShowStartupTimings()));
@@ -48,6 +49,27 @@ namespace PaRuX.Views
             AutomationProperties.SetAutomationId(_logonToggle, LogonIdPrefix + "_Enabled_Toggle");
             _logonToggle.Toggled += async (_, _) => { if (!_logonLoading) await ToggleLogonAsync(_logonToggle.IsOn); };
             card.Children.Insert(1, _logonToggle);
+
+            // The same setting as Console / TV > "When no chosen TV is connected": it decides the desktop-side window for every start,
+            // sign-in included (it used to be ignored at sign-in, which always minimised).
+            _logonWindow = new ComboBox
+            {
+                Header = T("At sign-in, when Console does not start, the PaRuX window", "All'accesso, quando la Console non parte, la finestra di PaRuX"),
+                MinWidth = 320,
+            };
+            _logonWindow.Items.Add(new ComboBoxItem { Content = T("Opens normally, in front (recommended)", "Si apre normalmente, in primo piano (consigliato)"), Tag = ConsoleStartupPolicy.FallbackNormal });
+            _logonWindow.Items.Add(new ComboBoxItem { Content = T("Starts minimised on the taskbar", "Parte ridotta a icona sulla barra delle applicazioni"), Tag = ConsoleStartupPolicy.FallbackMinimized });
+            AutomationProperties.SetAutomationId(_logonWindow, LogonIdPrefix + "_Window_Combo");
+            _logonWindow.SelectedIndex = string.Equals(SettingsStore.Current.Data.StartupWithoutTv, ConsoleStartupPolicy.FallbackMinimized, StringComparison.Ordinal) ? 1 : 0;
+            _logonWindow.SelectionChanged += (_, _) =>
+            {
+                if (_logonLoading) return;
+                string chosen = (_logonWindow.SelectedItem as ComboBoxItem)?.Tag as string ?? ConsoleStartupPolicy.FallbackNormal;
+                SettingsStore.Current.Data.StartupWithoutTv = chosen == ConsoleStartupPolicy.FallbackMinimized ? ConsoleStartupPolicy.FallbackMinimized : ConsoleStartupPolicy.FallbackNormal;
+                SettingsStore.Current.Save();
+                _logonStatus!.Text = T("Saved.", "Salvato.");
+            };
+            card.Children.Insert(2, _logonWindow);
 
             _logonGpu = new TextBox
             {
@@ -69,27 +91,67 @@ namespace PaRuX.Views
             _logonPlanText = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
             AutomationProperties.SetAutomationId(_logonPlanText, LogonIdPrefix + "_Plan_Text");
             card.Children.Add(_logonPlanText);
-            RefreshLogonState();
+            _ = RefreshLogonStateAsync();
             return section;
         }
 
-        private void RefreshLogonState()
+        /// <summary>Reads the real state (Task Scheduler and the Run value, off the UI thread) and shows how PaRuX is registered, when the
+        /// task last ran and whether Windows started PaRuX at the last sign-in.</summary>
+        private async Task RefreshLogonStateAsync(string? prefix = null)
         {
             if (_logonToggle == null) return;
-            _logonLoading = true;
+            string? exe = StartupService.LaunchExecutable;
+            LogonRegistrationStatus status;
+            DateTimeOffset? lastStart, signIn;
             try
             {
-                string? exe = StartupService.LaunchExecutable;
-                LogonRegistrationState state = exe is null ? LogonRegistrationState.NotRegistered : RegistryRunKeyStore.CreateRegistration().Status(exe);
-                _logonToggle.IsOn = state == LogonRegistrationState.RegisteredForLogon;
-                _logonStatus!.Text = state switch
+                (status, lastStart, signIn) = await Task.Run(() =>
                 {
-                    LogonRegistrationState.RegisteredPlain => T("PaRuX starts with Windows without applying a Console / Desktop choice. Turn this on to apply it.", "PaRuX si avvia con Windows senza applicare una scelta Console / Desktop. Attivalo per applicarla."),
-                    LogonRegistrationState.Foreign => T("Another command is registered under PaRuX's startup name; it is left untouched.", "Un altro comando è registrato con il nome di avvio di PaRuX; non viene toccato."),
-                    _ => string.Empty,
-                };
+                    LogonRegistrationStatus s = exe is null
+                        ? new LogonRegistrationStatus(LogonRegistrationState.NotRegistered, LogonMechanism.None, false, false, false, null, null)
+                        : RegistryRunKeyStore.CreateRegistration().Describe(exe);
+                    return (s, LogonStartMarker.Read(RegistryRunKeyStore.LogonStartMarkerPath), SignInSessionProbe.Probe().StartUtc);
+                });
             }
+            catch (Exception ex) { _logonStatus!.Text = (prefix ?? string.Empty) + ex.Message; return; }
+
+            _logonLoading = true;
+            try { _logonToggle.IsOn = status.State == LogonRegistrationState.RegisteredForLogon; }
             finally { _logonLoading = false; }
+            _logonStatus!.Text = (prefix ?? string.Empty) + DescribeLogonStatus(status, lastStart, signIn);
+        }
+
+        private string DescribeLogonStatus(LogonRegistrationStatus s, DateTimeOffset? lastStart, DateTimeOffset? signIn)
+        {
+            static string When(DateTimeOffset? t) => t is { } v ? v.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture) : "-";
+            var sb = new StringBuilder();
+            switch (s.Mechanism)
+            {
+                case LogonMechanism.ScheduledTask:
+                case LogonMechanism.ScheduledTaskAndRunKey:
+                    sb.Append(T("Registered with the Windows scheduled task \"" + LogonRegistration.TaskName + "\".", "Registrato con l'attività pianificata di Windows \"" + LogonRegistration.TaskName + "\"."));
+                    sb.Append(' ').Append(s.TaskLastRunUtc is null
+                        ? T("It has not run yet.", "Non è ancora stata eseguita.")
+                        : T("Last run: ", "Ultima esecuzione: ") + When(s.TaskLastRunUtc) + (s.TaskLastResult is int r && r != 0 ? T(" (result 0x", " (risultato 0x") + r.ToString("X8") + ")" : string.Empty) + ".");
+                    break;
+                case LogonMechanism.RunKey:
+                    sb.Append(T("Registered with the Run entry of your user (fallback: Windows did not accept the scheduled task). Turn it off and on again to retry the task.",
+                                "Registrato con la voce Run del tuo utente (riserva: Windows non ha accettato l'attività pianificata). Spegni e riaccendi per riprovare con l'attività."));
+                    break;
+                default:
+                    sb.Append(s.State switch
+                    {
+                        LogonRegistrationState.RegisteredPlain => T("PaRuX starts with Windows without applying a Console / Desktop choice. Turn this on to apply it.", "PaRuX si avvia con Windows senza applicare una scelta Console / Desktop. Attivalo per applicarla."),
+                        LogonRegistrationState.Foreign => T("Another command or task is registered under PaRuX's startup name; it is left untouched.", "Un altro comando o attività è registrato con il nome di avvio di PaRuX; non viene toccato."),
+                        _ => T("Not registered: PaRuX does not start at sign-in.", "Non registrato: PaRuX non parte all'accesso."),
+                    });
+                    break;
+            }
+            if (lastStart is not null) sb.Append(' ').Append(T("Last sign-in start of PaRuX: ", "Ultimo avvio di PaRuX all'accesso: ") + When(lastStart) + ".");
+            if (LogonStartHealthPolicy.Evaluate(s.State == LogonRegistrationState.RegisteredForLogon, signIn, lastStart, DateTimeOffset.UtcNow) == LogonStartHealth.NotStartedAtLastSignIn)
+                sb.Append(Environment.NewLine).Append(T("Warning: at your last sign-in (" + When(signIn) + ") Windows did not start PaRuX. Turn this off and on again; if it keeps happening, check Task Scheduler > \"" + LogonRegistration.TaskName + "\".",
+                    "Attenzione: al tuo ultimo accesso (" + When(signIn) + ") Windows non ha avviato PaRuX. Spegni e riaccendi questa opzione; se succede ancora, controlla Utilità di pianificazione > \"" + LogonRegistration.TaskName + "\"."));
+            return sb.ToString();
         }
 
         private async Task ToggleLogonAsync(bool on)
@@ -97,10 +159,9 @@ namespace PaRuX.Views
             try
             {
                 string? exe = StartupService.LaunchExecutable;
-                LogonRegistration reg = RegistryRunKeyStore.CreateRegistration();
                 if (on)
                 {
-                    if (exe is null) { _logonStatus!.Text = T("PaRuX could not find its own program file.", "PaRuX non trova il proprio file di programma."); RefreshLogonState(); return; }
+                    if (exe is null) { await RefreshLogonStateAsync(T("PaRuX could not find its own program file. ", "PaRuX non trova il proprio file di programma. ")); return; }
                     var dialog = new ContentDialog
                     {
                         XamlRoot = XamlRoot,
@@ -108,26 +169,35 @@ namespace PaRuX.Views
                         Content = new TextBlock
                         {
                             TextWrapping = TextWrapping.Wrap,
-                            Text = T("PaRuX will add one startup entry for your Windows user only (Run key of the current user, no administrator rights). When you turn it off, the entry is put back exactly as it was. Nothing else in Windows changes.",
-                                     "PaRuX aggiungerà una sola voce di avvio solo per il tuo utente Windows (chiave Run dell'utente corrente, senza diritti di amministratore). Quando la spegni, la voce torna esattamente com'era. Nient'altro in Windows cambia."),
+                            Text = T("PaRuX will create one scheduled task for your Windows user only (\"" + LogonRegistration.TaskName + "\": at your sign-in, normal rights, no administrator). If Windows does not allow it, the Run entry of your user is used instead. When you turn it off, whatever was there before is put back exactly. Nothing else in Windows changes.",
+                                     "PaRuX creerà una sola attività pianificata solo per il tuo utente Windows (\"" + LogonRegistration.TaskName + "\": al tuo accesso, diritti normali, nessun amministratore). Se Windows non la consente, viene usata invece la voce Run del tuo utente. Quando la spegni, ciò che c'era prima torna esattamente com'era. Nient'altro in Windows cambia."),
                         },
                         PrimaryButtonText = T("Turn on", "Attiva"), CloseButtonText = T("Cancel", "Annulla"), DefaultButton = ContentDialogButton.Close,
                     };
-                    if (await dialog.ShowAsync() != ContentDialogResult.Primary) { RefreshLogonState(); return; }
-                    string? error = reg.Enable(exe);
-                    if (error is not null) { _logonStatus!.Text = T("Not changed: ", "Non modificato: ") + error; RefreshLogonState(); return; }
+                    if (await dialog.ShowAsync() != ContentDialogResult.Primary) { await RefreshLogonStateAsync(); return; }
+                    LogonEnableResult result = await Task.Run(() => RegistryRunKeyStore.CreateRegistration().EnableDetailed(exe));
+                    if (!result.Ok)
+                    {
+                        string admin = result.NeedsAdministrator ? T(" Windows needs administrator rights for this on this PC: start PaRuX once with \"Run as administrator\" and turn this on again.", " Su questo PC Windows richiede i diritti di amministratore: avvia PaRuX una volta con \"Esegui come amministratore\" e riattiva questa opzione.") : string.Empty;
+                        await RefreshLogonStateAsync(T("Not changed: ", "Non modificato: ") + result.Error + admin + " ");
+                        return;
+                    }
+                    Log.Write("Sign-in start registered with " + result.Mechanism + (result.Note is null ? "." : " (" + result.Note + ")."));
                     SettingsStore.Current.Data.StartWithWindows = true;
+                    SettingsStore.Current.Save();
+                    await RefreshLogonStateAsync(result.Note is null ? null : result.Note + " ");
                 }
                 else
                 {
-                    string? error = reg.Restore();
-                    if (error is not null) { _logonStatus!.Text = T("Not changed: ", "Non modificato: ") + error; RefreshLogonState(); return; }
+                    string? error = await Task.Run(() => RegistryRunKeyStore.CreateRegistration().Restore(exe));
+                    if (error is not null) { await RefreshLogonStateAsync(T("Not changed: ", "Non modificato: ") + error + " "); return; }
+                    Log.Write("Sign-in start turned off (previous entries restored).");
                     SettingsStore.Current.Data.StartWithWindows = StartupService.IsEnabled();
+                    SettingsStore.Current.Save();
+                    await RefreshLogonStateAsync();
                 }
-                SettingsStore.Current.Save();
-                RefreshLogonState();
             }
-            catch (Exception ex) { _logonStatus!.Text = ex.Message; RefreshLogonState(); }
+            catch (Exception ex) { await RefreshLogonStateAsync(ex.Message + " "); }
         }
 
         private async Task LogonDryRunAsync()

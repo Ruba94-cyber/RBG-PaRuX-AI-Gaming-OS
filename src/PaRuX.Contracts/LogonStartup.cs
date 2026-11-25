@@ -126,11 +126,13 @@ public static class LogonStartupPolicy
                 : new("The chosen TV is connected.", "La TV scelta è collegata."));
     }
 
-    // A sign-in start never grabs the screen on the desktop side: it is minimised unless the owner asked for a normal window.
+    // The desktop side follows the owner's "without TV" choice for EVERY start, sign-in included: "normal" (the default) opens the
+    // window in front, "minimized" keeps it on the taskbar. A sign-in start used to force minimised regardless of the setting, which
+    // made an owner who chose "normal" see nothing at sign-in. Anything that is not exactly "minimized" means a normal window.
     private static LogonWindow Window(LogonStartupSettings s, bool logon, bool desktop) =>
-        !desktop ? LogonWindow.Normal
-        : string.Equals(s.WithoutTvFallback, ConsoleStartupPolicy.FallbackMinimized, StringComparison.Ordinal) || logon ? LogonWindow.Minimized
-        : LogonWindow.Normal;
+        desktop && string.Equals(s.WithoutTvFallback, ConsoleStartupPolicy.FallbackMinimized, StringComparison.Ordinal)
+            ? LogonWindow.Minimized
+            : LogonWindow.Normal;
 
     private static LogonPlan Plan(LogonMode mode, LogonWindow window, LogonStartupSettings s, bool console, LogonText reason, bool launcherStep = false)
     {
@@ -152,7 +154,9 @@ public static class LogonStartupPolicy
         if (launcherStep)
             steps.Add(new("launcher", new("Open PaRuX's launcher page for the requested action.", "Apre la pagina del launcher di PaRuX per l'azione richiesta.")));
         if (window == LogonWindow.Minimized && !console)
-            steps.Add(new("minimize", new("Keep the PaRuX window minimised (no window in front).", "Tiene ridotta a icona la finestra di PaRuX (nessuna finestra in primo piano).")));
+            steps.Add(new("minimize", new("Keep the PaRuX window minimised (your choice: no window in front).", "Tiene ridotta a icona la finestra di PaRuX (tua scelta: nessuna finestra in primo piano).")));
+        else if (mode == LogonMode.Desktop)
+            steps.Add(new("show-window", new("Open the PaRuX window normally and bring it to the front (your choice).", "Apre normalmente la finestra di PaRuX e la porta in primo piano (tua scelta).")));
         if (s.SignInListEnabled && mode != LogonMode.Settings)
             steps.Add(new("sign-in-list", new("Run your after-sign-in app list (apps marked Skip in Console are skipped in Console).",
                 "Esegue l'elenco di app dopo l'accesso (le app con Salta in Console sono saltate in Console).")));
@@ -244,7 +248,7 @@ public static class StartupTimingFile
     }
 }
 
-/// <summary>The sign-in entry is one HKCU Run value. This seam is the registry; tests use a dictionary and never touch Windows.</summary>
+/// <summary>The fallback sign-in entry is one HKCU Run value. This seam is the registry; tests use a dictionary and never touch Windows.</summary>
 public interface IRunKeyStore
 {
     string? Get(string name);
@@ -260,68 +264,318 @@ public sealed class FakeRunKeyStore : IRunKeyStore
     public void Delete(string name) => Values.Remove(name);
 }
 
-public enum LogonRegistrationState { NotRegistered, RegisteredPlain, RegisteredForLogon, Foreign }
+/// <summary>What Windows Task Scheduler reports for one task of the current user (read-only snapshot).</summary>
+public sealed record LogonTaskInfo(string? Command, string? Arguments, bool Enabled, DateTimeOffset? LastRunUtc, int? LastResult, string Xml);
+
+/// <summary>The outcome of a Task Scheduler call. <see cref="AccessDenied"/> means Windows refused it for this user (administrator rights needed).</summary>
+public sealed record LogonTaskCallResult(bool Ok, bool AccessDenied, string? Error)
+{
+    public static LogonTaskCallResult Success { get; } = new(true, false, null);
+    public static LogonTaskCallResult Failed(string error, bool accessDenied = false) => new(false, accessDenied, error);
+}
 
 /// <summary>
-/// Reversible sign-in registration for the CURRENT user only (HKCU Run, no admin, no task). Enabling replaces PaRuX's own value
-/// with the same executable plus <c>--logon</c> and records the previous value in a small journal; disabling puts it back exactly
-/// (or removes it when there was none). A value that is not PaRuX's own command is never overwritten silently.
+/// The primary sign-in entry: one scheduled task in the root folder for the CURRENT user (logon trigger for that user, interactive token,
+/// least privilege). The calls go to the Task Scheduler service, so they are never redirected by another app's private registry or file
+/// view (the reason a Run value written from inside such an app is never seen by Windows). Tests use <see cref="FakeLogonTaskStore"/>.
+/// </summary>
+public interface ILogonTaskStore
+{
+    LogonTaskInfo? Get(string name);
+    LogonTaskCallResult Register(string name, string xml);
+    LogonTaskCallResult Delete(string name);
+}
+
+public sealed class FakeLogonTaskStore : ILogonTaskStore
+{
+    public Dictionary<string, LogonTaskInfo> Tasks { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>When set, Register fails with this result (simulates a policy or an access-denied Task Scheduler).</summary>
+    public LogonTaskCallResult? FailRegister { get; set; }
+    public int RegisterCalls { get; private set; }
+
+    public LogonTaskInfo? Get(string name) => Tasks.TryGetValue(name, out LogonTaskInfo? t) ? t : null;
+
+    public LogonTaskCallResult Register(string name, string xml)
+    {
+        RegisterCalls++;
+        if (FailRegister is { } fail) return fail;
+        System.Xml.Linq.XDocument doc = System.Xml.Linq.XDocument.Parse(xml);
+        System.Xml.Linq.XElement? exec = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Exec");
+        string? command = exec?.Elements().FirstOrDefault(e => e.Name.LocalName == "Command")?.Value;
+        string? args = exec?.Elements().FirstOrDefault(e => e.Name.LocalName == "Arguments")?.Value;
+        bool enabled = !string.Equals(doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Settings")?
+            .Elements().FirstOrDefault(e => e.Name.LocalName == "Enabled")?.Value, "false", StringComparison.OrdinalIgnoreCase);
+        Tasks[name] = new LogonTaskInfo(command, args, enabled, null, null, xml);
+        return LogonTaskCallResult.Success;
+    }
+
+    public LogonTaskCallResult Delete(string name) { Tasks.Remove(name); return LogonTaskCallResult.Success; }
+}
+
+public enum LogonRegistrationState { NotRegistered, RegisteredPlain, RegisteredForLogon, Foreign }
+
+/// <summary>Which Windows mechanism starts PaRuX at sign-in.</summary>
+public enum LogonMechanism { None, ScheduledTask, RunKey, ScheduledTaskAndRunKey }
+
+/// <summary>Everything Settings shows about the sign-in entry.</summary>
+public sealed record LogonRegistrationStatus(
+    LogonRegistrationState State,
+    LogonMechanism Mechanism,
+    bool ForeignTask,
+    bool ForeignRunValue,
+    bool TaskEnabled,
+    DateTimeOffset? TaskLastRunUtc,
+    int? TaskLastResult);
+
+/// <summary>The result of turning the sign-in start on.</summary>
+public sealed record LogonEnableResult(bool Ok, LogonMechanism Mechanism, string? Error, string? Note, bool NeedsAdministrator)
+{
+    public static LogonEnableResult Fail(string error, bool needsAdmin = false) => new(false, LogonMechanism.None, error, null, needsAdmin);
+}
+
+/// <summary>
+/// Reversible sign-in registration for the CURRENT Windows user only. Preferred: the scheduled task <see cref="TaskName"/> (logon trigger
+/// for this user, least privilege, no administrator rights on a normal Windows). When Task Scheduler refuses or is unavailable, the HKCU Run
+/// value is used instead. What was there before (a PaRuX Run value, a foreign Run value, a foreign task with the same name) is recorded in a
+/// small journal and put back exactly by <see cref="Restore()"/>. A value or task that is not PaRuX's own is never overwritten silently.
 /// </summary>
 public sealed class LogonRegistration
 {
     public const string ValueName = "PaRuX";
-    private readonly IRunKeyStore _store;
-    private readonly string _journalPath;
-    private sealed record Journal(int Version, bool HadValue, string? Previous);
+    public const string TaskName = "PaRuX at sign-in";
+    /// <summary>Normal process priority for the task (Task Scheduler's default 7 is "below normal", which also slows Core started as a child).</summary>
+    public const int TaskPriority = 4;
 
-    public LogonRegistration(IRunKeyStore store, string journalPath) { _store = store; _journalPath = journalPath; }
+    private readonly IRunKeyStore _store;
+    private readonly ILogonTaskStore? _tasks;
+    private readonly string _journalPath;
+    private readonly string? _userId;
+    private readonly string? _userSid;
+
+    private sealed record Journal(int Version, bool HadValue, string? Previous, bool HadTask = false, string? PreviousTaskXml = null);
+
+    /// <summary>Run-value only (no Task Scheduler).</summary>
+    public LogonRegistration(IRunKeyStore store, string journalPath) : this(store, null, journalPath, null, null) { }
+
+    /// <param name="userId">DOMAIN\user of the current user (logon trigger).</param>
+    /// <param name="userSid">SID of the current user (task principal).</param>
+    public LogonRegistration(IRunKeyStore store, ILogonTaskStore? tasks, string journalPath, string? userId, string? userSid)
+    {
+        _store = store; _tasks = tasks; _journalPath = journalPath; _userId = userId; _userSid = userSid;
+    }
 
     public static string CommandFor(string exePath, bool logon) =>
         "\"" + exePath + "\"" + (logon ? " " + LogonStartupArguments.LogonArgument : string.Empty);
 
-    public LogonRegistrationState Status(string exePath)
+    /// <summary>True when the task starts this executable with exactly <c>--logon</c>.</summary>
+    public static bool IsOwnLogonTask(LogonTaskInfo? task, string exePath) =>
+        task is not null
+        && string.Equals((task.Command ?? string.Empty).Trim().Trim('"'), exePath, StringComparison.OrdinalIgnoreCase)
+        && string.Equals((task.Arguments ?? string.Empty).Trim(), LogonStartupArguments.LogonArgument, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOwnRunValue(string? v, string exePath) =>
+        string.Equals(v, CommandFor(exePath, true), StringComparison.OrdinalIgnoreCase)
+        || string.Equals(v, CommandFor(exePath, false), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The task definition: logon trigger for this user only, interactive token, least privilege, normal priority, no time limit,
+    /// one instance, never stopped on battery. All values are XML-escaped.
+    /// </summary>
+    public static string BuildTaskXml(string exePath, string userId, string userSid)
+    {
+        static string X(string s) => System.Security.SecurityElement.Escape(s) ?? string.Empty;
+        string dir = Path.GetDirectoryName(exePath) ?? string.Empty;
+        return "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n"
+            + "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n"
+            + "  <RegistrationInfo><Description>Starts PaRuX when you sign in to Windows (Console or Desktop, as chosen in PaRuX Settings). Turn it off in PaRuX Settings.</Description></RegistrationInfo>\n"
+            + "  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + X(userId) + "</UserId></LogonTrigger></Triggers>\n"
+            + "  <Principals><Principal id=\"Author\"><UserId>" + X(userSid) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>\n"
+            + "  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+            + "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>false</StartWhenAvailable>"
+            + "<AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"
+            + "<Priority>" + TaskPriority + "</Priority></Settings>\n"
+            + "  <Actions Context=\"Author\"><Exec><Command>" + X(exePath) + "</Command><Arguments>" + LogonStartupArguments.LogonArgument
+            + "</Arguments><WorkingDirectory>" + X(dir) + "</WorkingDirectory></Exec></Actions>\n"
+            + "</Task>\n";
+    }
+
+    public LogonRegistrationState Status(string exePath) => Describe(exePath).State;
+
+    public LogonRegistrationStatus Describe(string exePath)
     {
         string? v = _store.Get(ValueName);
-        if (string.IsNullOrWhiteSpace(v)) return LogonRegistrationState.NotRegistered;
-        if (string.Equals(v, CommandFor(exePath, true), StringComparison.OrdinalIgnoreCase)) return LogonRegistrationState.RegisteredForLogon;
-        if (string.Equals(v, CommandFor(exePath, false), StringComparison.OrdinalIgnoreCase)) return LogonRegistrationState.RegisteredPlain;
-        return LogonRegistrationState.Foreign;
+        LogonTaskInfo? task = _tasks?.Get(TaskName);
+        bool taskOwn = IsOwnLogonTask(task, exePath);
+        bool taskActive = taskOwn && task!.Enabled;
+        bool runLogon = string.Equals(v, CommandFor(exePath, true), StringComparison.OrdinalIgnoreCase);
+        bool runPlain = string.Equals(v, CommandFor(exePath, false), StringComparison.OrdinalIgnoreCase);
+        bool runForeign = !string.IsNullOrWhiteSpace(v) && !runLogon && !runPlain;
+        LogonMechanism mech = taskActive && runLogon ? LogonMechanism.ScheduledTaskAndRunKey
+            : taskActive ? LogonMechanism.ScheduledTask
+            : runLogon ? LogonMechanism.RunKey
+            : LogonMechanism.None;
+        LogonRegistrationState state = mech != LogonMechanism.None ? LogonRegistrationState.RegisteredForLogon
+            : runPlain ? LogonRegistrationState.RegisteredPlain
+            : runForeign || (task is not null && !taskOwn) ? LogonRegistrationState.Foreign
+            : LogonRegistrationState.NotRegistered;
+        return new LogonRegistrationStatus(state, mech, task is not null && !taskOwn, runForeign, taskActive,
+            taskOwn ? task!.LastRunUtc : null, taskOwn ? task!.LastResult : null);
     }
 
     /// <summary>Returns null on success, otherwise a short reason. <paramref name="replaceForeign"/> must come from an explicit confirmation.</summary>
     public string? Enable(string exePath, bool replaceForeign = false)
     {
-        if (string.IsNullOrWhiteSpace(exePath) || !Path.IsPathFullyQualified(exePath) || exePath.Any(char.IsControl) || exePath.Contains('"'))
-            return "The PaRuX executable path is not valid.";
-        LogonRegistrationState state = Status(exePath);
-        if (state == LogonRegistrationState.RegisteredForLogon) return null;
-        if (state == LogonRegistrationState.Foreign && !replaceForeign)
-            return "A different command is already registered under PaRuX's startup name; it was not changed.";
-        string? previous = _store.Get(ValueName);
-        try
-        {
-            if (!File.Exists(_journalPath) || state != LogonRegistrationState.RegisteredForLogon)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_journalPath)!);
-                File.WriteAllText(_journalPath, JsonSerializer.Serialize(new Journal(1, previous is not null, previous)));
-            }
-            _store.Set(ValueName, CommandFor(exePath, true));
-            return null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return "The sign-in entry could not be saved."; }
+        LogonEnableResult r = EnableDetailed(exePath, replaceForeign);
+        return r.Ok ? null : r.Error;
     }
 
-    /// <summary>Restores the value from before <see cref="Enable"/> (or removes it). Returns null on success.</summary>
-    public string? Restore()
+    public LogonEnableResult EnableDetailed(string exePath, bool replaceForeign = false)
+    {
+        if (string.IsNullOrWhiteSpace(exePath) || !Path.IsPathFullyQualified(exePath) || exePath.Any(char.IsControl) || exePath.Contains('"'))
+            return LogonEnableResult.Fail("The PaRuX executable path is not valid.");
+        LogonRegistrationStatus now = Describe(exePath);
+        string? previousRun = _store.Get(ValueName);
+        LogonTaskInfo? previousTask = _tasks?.Get(TaskName);
+        bool useTask = _tasks is not null && !string.IsNullOrWhiteSpace(_userId) && !string.IsNullOrWhiteSpace(_userSid);
+
+        // Already done: our task is active and no PaRuX Run value would start a second copy (or, without Task Scheduler, the Run value).
+        if (now.Mechanism == LogonMechanism.ScheduledTask) return new(true, LogonMechanism.ScheduledTask, null, null, false);
+        if (now.Mechanism == LogonMechanism.RunKey && !useTask) return new(true, LogonMechanism.RunKey, null, null, false);
+
+        const string ForeignRun = "A different command is already registered under PaRuX's startup name; it was not changed.";
+        if (now.ForeignRunValue && !replaceForeign && !useTask) return LogonEnableResult.Fail(ForeignRun);
+        if (now.ForeignTask && !replaceForeign)
+            return LogonEnableResult.Fail("A different scheduled task named \"" + TaskName + "\" already exists; it was not changed.");
+
+        try
+        {
+            if (!File.Exists(_journalPath))
+            {
+                // A PaRuX --logon entry is our own: it is not "previous state" to bring back (turning off must stop the sign-in start).
+                bool runIsOwnLogon = string.Equals(previousRun, CommandFor(exePath, true), StringComparison.OrdinalIgnoreCase);
+                bool taskIsOwn = IsOwnLogonTask(previousTask, exePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(_journalPath)!);
+                File.WriteAllText(_journalPath, JsonSerializer.Serialize(new Journal(2,
+                    previousRun is not null && !runIsOwnLogon, runIsOwnLogon ? null : previousRun,
+                    previousTask is not null && !taskIsOwn, taskIsOwn ? null : previousTask?.Xml)));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return LogonEnableResult.Fail("The sign-in entry could not be saved."); }
+
+        string? taskNote = null;
+        bool needsAdmin = false;
+        if (useTask)
+        {
+            LogonTaskCallResult r = _tasks!.Register(TaskName, BuildTaskXml(exePath, _userId!, _userSid!));
+            if (r.Ok && IsOwnLogonTask(_tasks.Get(TaskName), exePath))
+            {
+                try
+                {
+                    // One mechanism only: PaRuX's own Run value would start a second copy (the journal brings a plain one back on Restore).
+                    if (IsOwnRunValue(_store.Get(ValueName), exePath)) _store.Delete(ValueName);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+                return new(true, LogonMechanism.ScheduledTask, null, null, false);
+            }
+            needsAdmin = r.AccessDenied;
+            taskNote = r.AccessDenied
+                ? "Windows did not allow a sign-in task for your user without administrator rights; the Run entry is used instead."
+                : "The sign-in task could not be created (" + (r.Error ?? "unknown error") + "); the Run entry is used instead.";
+        }
+
+        // Fallback: the HKCU Run value (only where a foreign value is not in the way).
+        if (now.ForeignRunValue && !replaceForeign) return new(false, LogonMechanism.None, ForeignRun + " " + taskNote, taskNote, needsAdmin);
+        try
+        {
+            _store.Set(ValueName, CommandFor(exePath, true));
+            return new(true, LogonMechanism.RunKey, null, taskNote, needsAdmin);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return new(false, LogonMechanism.None, "The sign-in entry could not be saved.", taskNote, needsAdmin);
+        }
+    }
+
+    /// <summary>Restores what was there before <see cref="Enable"/> (task and Run value). Returns null on success.</summary>
+    public string? Restore() => Restore(null);
+
+    /// <param name="exePath">The running PaRuX; when given, only a task or Run value that starts exactly this program is removed without a journal.</param>
+    public string? Restore(string? exePath)
     {
         try
         {
             Journal? j = File.Exists(_journalPath) ? JsonSerializer.Deserialize<Journal>(File.ReadAllText(_journalPath)) : null;
+            if (_tasks is not null)
+            {
+                LogonTaskInfo? current = _tasks.Get(TaskName);
+                if (j is { HadTask: true, PreviousTaskXml: { Length: > 0 } xml })
+                {
+                    LogonTaskCallResult r = _tasks.Register(TaskName, xml);
+                    if (!r.Ok) return "The previous scheduled task could not be put back" + (r.AccessDenied ? " (administrator rights needed)." : ".");
+                }
+                else if (current is not null && (exePath is null ? IsLogonTaskForAnyPaRuX(current) : IsOwnLogonTask(current, exePath)))
+                {
+                    LogonTaskCallResult r = _tasks.Delete(TaskName);
+                    if (!r.Ok) return "The sign-in task could not be removed" + (r.AccessDenied ? " (administrator rights needed)." : ".");
+                }
+            }
             if (j is { HadValue: true, Previous: { Length: > 0 } prev }) _store.Set(ValueName, prev);
-            else _store.Delete(ValueName);
+            else if (j is not null || exePath is null || IsOwnRunValue(_store.Get(ValueName), exePath)) _store.Delete(ValueName);
             if (File.Exists(_journalPath)) File.Delete(_journalPath);
             return null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return "The sign-in entry could not be restored."; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or System.Security.SecurityException) { return "The sign-in entry could not be restored."; }
+    }
+
+    // Without the executable path only a task that runs some PaRuX.exe with exactly --logon counts as ours.
+    private static bool IsLogonTaskForAnyPaRuX(LogonTaskInfo t) =>
+        string.Equals(Path.GetFileName((t.Command ?? string.Empty).Trim().Trim('"')), "PaRuX.exe", StringComparison.OrdinalIgnoreCase)
+        && string.Equals((t.Arguments ?? string.Empty).Trim(), LogonStartupArguments.LogonArgument, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Result of the "did PaRuX start at the last sign-in?" check.</summary>
+public enum LogonStartHealth { Unknown, Started, NotStartedAtLastSignIn, NotRegistered }
+
+/// <summary>
+/// Pure check behind the Settings warning. PaRuX records the process start time of every <c>--logon</c> start; when the sign-in start is
+/// registered, the current Windows sign-in is known and older than <see cref="Grace"/>, and no <c>--logon</c> start happened since that
+/// sign-in, Windows did not start PaRuX at the last sign-in.
+/// </summary>
+public static class LogonStartHealthPolicy
+{
+    public static readonly TimeSpan Grace = TimeSpan.FromMinutes(3);
+    /// <summary>Clock and process-start rounding tolerance.</summary>
+    public static readonly TimeSpan Skew = TimeSpan.FromSeconds(5);
+
+    public static LogonStartHealth Evaluate(bool registered, DateTimeOffset? signInUtc, DateTimeOffset? lastLogonStartUtc, DateTimeOffset nowUtc)
+    {
+        if (!registered) return LogonStartHealth.NotRegistered;
+        if (signInUtc is null) return LogonStartHealth.Unknown;
+        if (lastLogonStartUtc is { } s && s >= signInUtc.Value - Skew) return LogonStartHealth.Started;
+        if (nowUtc - signInUtc.Value < Grace) return LogonStartHealth.Unknown;   // Windows may still be starting it
+        return LogonStartHealth.NotStartedAtLastSignIn;
     }
 }
+
+/// <summary>The small marker a <c>--logon</c> start writes (UTC process start). Never throws.</summary>
+public static class LogonStartMarker
+{
+    private sealed record Marker(int Version, DateTimeOffset StartedUtc, string? Via);
+
+    public static void Write(string path, DateTimeOffset startedUtc, string? via)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(new Marker(1, startedUtc, via)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    public static DateTimeOffset? Read(string path)
+    {
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<Marker>(File.ReadAllText(path))?.StartedUtc : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+}
+
