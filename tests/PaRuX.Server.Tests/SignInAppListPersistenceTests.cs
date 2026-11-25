@@ -170,63 +170,6 @@ public sealed class SignInAppListPersistenceTests : IDisposable
         Assert.NotNull(store.Save(new SignInAppListSaveRequest(true, null, [ExeEntry("One", Exe())])).Error);
     }
 
-    // ---- legacy import (preview + confirm semantics live in the store/endpoint; the parse is read only) ----
-
-    private string LegacyFile(object apps, string name = "DelayedApps.json")
-    {
-        string p = Path.Combine(_root, name);
-        File.WriteAllText(p, JsonSerializer.Serialize(new { Settings = new { LaunchSpacingSeconds = 5 }, Apps = apps }));
-        return p;
-    }
-
-    [Fact]
-    public void Import_Replace_SavesDisabled_AndNeverChangesTheSourceFile()
-    {
-        string legacy = LegacyFile(new object[] { new { Name = "Tool", Kind = "exe", Path = Exe(), SkipInConsole = true } });
-        string before = File.ReadAllText(legacy);
-        var store = NewStore();
-        store.Save(new SignInAppListSaveRequest(true, null, [ExeEntry("Old", Exe("old.exe"))]));
-
-        SignInAppListParseResult parsed = SignInAppListPolicy.ImportLegacyFile(legacy);
-        Assert.True(parsed.Ok);
-        var (state, error) = store.ApplyImport(parsed.Value!, append: false);
-        Assert.Null(error);
-        Assert.False(state!.List.Enabled);
-        Assert.Equal(["Tool"], state.List.Apps.Select(a => a.Name).ToArray());
-        Assert.Equal(5, state.List.Settings.LaunchSpacingSeconds);
-        Assert.False(NewStore().Load().List.Enabled);
-        Assert.Equal(before, File.ReadAllText(legacy));
-    }
-
-    [Fact]
-    public void Import_Append_KeepsExisting_SkipsSameName_AndStaysDisabled()
-    {
-        string legacy = LegacyFile(new object[]
-        {
-            new { Name = "Tool", Kind = "exe", Path = Exe("t.exe") },
-            new { Name = "New", Kind = "exe", Path = Exe("n.exe") },
-        });
-        var store = NewStore();
-        store.Save(new SignInAppListSaveRequest(true, new SignInAppListSettings(LaunchSpacingSeconds: 9), [ExeEntry("tool", Exe("t2.exe"))]));
-        var (state, error) = store.ApplyImport(SignInAppListPolicy.ImportLegacyFile(legacy).Value!, append: true);
-        Assert.Null(error);
-        Assert.Equal(["tool", "New"], state!.List.Apps.Select(a => a.Name).ToArray());
-        Assert.Equal(9, state.List.Settings.LaunchSpacingSeconds);
-        Assert.False(state.List.Enabled);
-    }
-
-    [Fact]
-    public void Import_InvalidFile_ChangesNothing()
-    {
-        var store = NewStore();
-        store.Save(new SignInAppListSaveRequest(true, null, [ExeEntry("Keep", Exe())]));
-        string before = File.ReadAllText(StorePath);
-        string bad = LegacyFile(new object[] { new { Name = "Bad", Kind = "exe", Path = Path.Combine(_root, "nope.exe") } });
-        Assert.False(SignInAppListPolicy.ImportLegacyFile(bad).Ok);
-        Assert.False(SignInAppListPolicy.ImportLegacyFile(Path.Combine(_root, "missing.json")).Ok);
-        Assert.Equal(before, File.ReadAllText(StorePath));
-    }
-
     // ---- trigger ----
 
     [Fact]

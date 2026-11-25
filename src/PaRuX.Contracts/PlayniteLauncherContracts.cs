@@ -85,7 +85,7 @@ public static class PlayniteLauncherArguments
 public sealed record PlayniteLauncherResolution(PlayniteLauncherAction Action, string Reason);
 
 /// <summary>
-/// Startup-mode resolution, the same rules as the owner's small Console Mode tool: an explicit argument always wins; otherwise a held
+/// Startup-mode resolution: an explicit argument always wins; otherwise a held
 /// Ctrl opens the settings and a held Shift starts streaming (Ctrl+Shift = settings, so a stray Shift never starts streaming when
 /// the owner meant the settings); with nothing held and nothing asked, PaRuX does what its own start preferences say.
 /// </summary>

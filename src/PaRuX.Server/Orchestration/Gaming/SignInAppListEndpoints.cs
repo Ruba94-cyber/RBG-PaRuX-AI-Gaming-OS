@@ -6,8 +6,8 @@ using PaRuX.Contracts;
 namespace PaRuX.Server.Orchestration.Gaming;
 
 /// <summary>
-/// Owner-only API of the after-sign-in app list. Reads work while Gaming; every change, import and run is refused while
-/// Gaming is active. The importer only reads an explicitly chosen DelayedApps.json and never modifies it.
+/// Owner-only API of the after-sign-in app list. Reads work while Gaming; every change and run is refused while
+/// Gaming is active.
 /// </summary>
 public static class SignInAppListEndpoints
 {
@@ -50,28 +50,6 @@ public static class SignInAppListEndpoints
             return Results.NoContent();
         }).RequireDesktopOwner();
 
-        // Preview never writes anything. Confirm re-reads and re-validates the file, then saves it DISABLED.
-        app.MapPost("/api/v1/gaming/sign-in-apps/import-preview", (SignInAppImportRequest request, LocalRuntimeService runtime) =>
-        {
-            if (runtime.GamingMode) return Results.Conflict(new { error = "Leave Gaming before importing." });
-            SignInAppListParseResult parsed = SignInAppListPolicy.ImportLegacyFile(request?.Path);
-            return Results.Ok(new SignInAppImportPreview(parsed.Ok, parsed.Errors, parsed.Warnings, parsed.Value?.Settings, parsed.Value?.Apps ?? []));
-        }).RequireDesktopOwner();
-
-        app.MapPost("/api/v1/gaming/sign-in-apps/import", (
-            SignInAppImportRequest request, SignInAppListStore store, SignInAppListRunner runner, LocalRuntimeService runtime) =>
-        {
-            if (runtime.GamingMode) return Results.Conflict(new { error = "Leave Gaming before importing." });
-            if (request is null || !request.Confirm)
-                return Results.BadRequest(new { error = "Importing requires a separate, explicit confirmation after the preview." });
-            SignInAppListParseResult parsed = SignInAppListPolicy.ImportLegacyFile(request.Path);
-            if (!parsed.Ok || parsed.Value is null)
-                return Results.BadRequest(new { error = parsed.Errors.FirstOrDefault() ?? "The file cannot be imported." });
-            var (state, error) = store.ApplyImport(parsed.Value, request.Append);
-            return state is null
-                ? Results.BadRequest(new { error = error ?? "The list could not be saved." })
-                : Results.Ok(BuildStatus(state, runner));
-        }).RequireDesktopOwner();
     }
 
     private static SignInAppListStatus BuildStatus(SignInAppListState state, SignInAppListRunner runner) => new(

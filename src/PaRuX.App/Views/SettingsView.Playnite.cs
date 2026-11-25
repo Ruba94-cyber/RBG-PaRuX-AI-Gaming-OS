@@ -123,13 +123,6 @@ namespace PaRuX.Views
             _ = _plTheme.RefreshAsync();
 
             // Pieces that already exist elsewhere: shown here so the whole Console Mode is one page.
-            var importLegacy = new Button { Content = T("Import settings from the legacy launcher (read-only)", "Importa le impostazioni dal vecchio launcher (sola lettura)") };
-            AutomationProperties.SetAutomationId(importLegacy, PlayniteIdPrefix + "_LegacyImport_Button");
-            importLegacy.Click += async (_, _) =>
-            {
-                try { await PbImportLauncherAsync(); }
-                catch (Exception ex) { SetPlayniteStatus(T("Import failed: ", "Importazione non riuscita: ") + ex.Message); }
-            };
             var streamStart = new Button { Content = T("Start streaming mode (Sunshine already installed)", "Avvia la modalità streaming (Sunshine già installato)") };
             AutomationProperties.SetAutomationId(streamStart, PlayniteIdPrefix + "_StreamingStart_Button");
             streamStart.Click += async (_, _) => await StreamingActionAsync(start: true);
@@ -137,7 +130,6 @@ namespace PaRuX.Views
             AutomationProperties.SetAutomationId(streamStop, PlayniteIdPrefix + "_StreamingStop_Button");
             streamStop.Click += async (_, _) => await StreamingActionAsync(start: false);
             var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            extras.Children.Add(importLegacy);
             extras.Children.Add(streamStart);
             extras.Children.Add(streamStop);
             card.Children.Insert(card.Children.Count - 1, extras);

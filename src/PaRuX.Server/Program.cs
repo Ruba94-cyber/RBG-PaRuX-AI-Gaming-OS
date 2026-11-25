@@ -389,6 +389,15 @@ builder.Services.AddSingleton<SignInAppListStore>();
 builder.Services.AddSingleton(sp => new SignInAppListRunner(
     sp.GetRequiredService<SignInAppListStore>(), new SignInAppProcessLauncher(),
     () => sp.GetRequiredService<LocalRuntimeService>().GamingMode));
+builder.Services.AddSingleton<SupportAppStore>();
+builder.Services.AddSingleton<ISupportAppHost, SupportAppProcessHost>();
+builder.Services.AddSingleton(sp => new SupportAppRunner(
+    sp.GetRequiredService<SupportAppStore>(), sp.GetRequiredService<ISupportAppHost>(),
+    () => sp.GetRequiredService<LocalRuntimeService>().GamingMode,
+    log: line => StartupTimingFile.Append(PaRuXDataRoot.Combine("logs", "SupportApps.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + line)));
+builder.Services.AddSingleton(sp => new SupportAppInstaller(
+    new HttpClient { Timeout = TimeSpan.FromMinutes(12) }, SupportAppPolicy.ManagedRoot, sp.GetRequiredService<SupportAppStore>(),
+    sp.GetRequiredService<ISupportAppHost>(), () => sp.GetRequiredService<LocalRuntimeService>().GamingMode));
 builder.Services.AddSingleton<PaRuX.Server.Orchestration.Gaming.QuickResumeService>();
 builder.Services.AddSingleton<TemporaryGameModService>();
 builder.Services.AddSingleton<GameSkinStudioService>();
@@ -4386,6 +4395,7 @@ app.MapGameAssetModEndpoints();
 app.MapGameModChangeSetEndpoints();
 app.MapLocalWishlistEndpoints();
 app.MapSignInAppListEndpoints();
+app.MapSupportAppEndpoints();
 app.MapGgufQuantizeEndpoints();
 app.MapGameTitleEndpoints();
 app.MapGameLaunchProfileEndpoints();

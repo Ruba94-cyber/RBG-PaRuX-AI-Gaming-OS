@@ -156,6 +156,12 @@ public sealed partial class MainWindow
         var client = GamingOrchestratorClient.Current;
         GamingStatusDto? status = await client.GetStatusAsync();
         bool suspended = string.Equals(status?.State, "GameSuspended", StringComparison.Ordinal);
+        // The owner's "never pause" list only adds a refusal for pausing; a game that is already paused can always be resumed.
+        if (!suspended && PadFreezeExclusion.IsExcluded(SettingsStore.Current.Data.PadFreezeExcludedGames, status?.ActiveProfileName, status?.SuspendedProcessName))
+        {
+            PadToast(PadT("This game is on your \"never pause\" list.", "Questo gioco è nell'elenco \"non mettere mai in pausa\"."));
+            return;
+        }
         var result = suspended ? await client.ResumeGameAsync() : await client.SuspendGameAsync();
         if (result.Error is { } error) PadToast(error);
         else PadToast(suspended ? PadT("Game resumed.", "Gioco ripreso.") : PadT("Game paused.", "Gioco in pausa."));

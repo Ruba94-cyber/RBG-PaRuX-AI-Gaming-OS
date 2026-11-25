@@ -44,12 +44,3 @@ public sealed record SignInTriggerResponse(SignInTriggerDecision Decision, SignI
 /// <summary>The shell's live Console/TV state, reported while a run is in progress so SkipInConsole follows reality.</summary>
 public sealed record SignInShellStateRequest(bool ConsoleActive);
 
-/// <summary>Path of an explicitly chosen legacy DelayedApps.json (read only).</summary>
-public sealed record SignInAppImportRequest(string? Path, bool Confirm = false, bool Append = false);
-
-public sealed record SignInAppImportPreview(
-    bool Ok,
-    IReadOnlyList<string> Errors,
-    IReadOnlyList<string> Warnings,
-    SignInAppListSettings? Settings,
-    IReadOnlyList<SignInAppEntry> Apps);

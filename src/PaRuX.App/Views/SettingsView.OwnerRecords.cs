@@ -75,6 +75,9 @@ namespace PaRuX.Views
             if (!corporate) SettingsContentPanel.Children.Add(BuildRetroAchievementsSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildGameExtensionsSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildSignInAppListSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildLogonStartupSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildSupportAppsSection());
+            if (!corporate) SettingsContentPanel.Children.Add(BuildFreezeExclusionSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildPlayniteSection());
 
             _ = RefreshInstalledPluginsAsync();

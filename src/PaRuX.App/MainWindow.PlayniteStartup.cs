@@ -82,6 +82,7 @@ public sealed partial class MainWindow
             _playniteConsoleHandoffActive = true;
             _ = ApplyConsolePowerProfileAsync();
             _ = ApplyConsoleGameBarBlockAsync();
+            _ = StartConsoleSupportAppsAsync();
             if (result.Value!.Outcome == "started" || status.Session.PaRuXLaunchedPlaynite)
                 BeginPlayniteReturnWatch(status.Session.PaRuXLaunchedClosedCounter);
             else
@@ -207,7 +208,7 @@ public sealed partial class MainWindow
             {
                 // Avoid a permanently stuck Console state after a provider failure,
                 // a cancelled watch or the bounded idle timeout; never auto-focus here.
-                if (consoleHandoffWatcher) { _playniteConsoleHandoffActive = false; _ = RestoreConsolePowerProfileAsync(); _ = RestoreConsoleGameBarBlockAsync(); }
+                if (consoleHandoffWatcher) { _playniteConsoleHandoffActive = false; _ = RestoreConsolePowerProfileAsync(); _ = RestoreConsoleGameBarBlockAsync(); _ = StopConsoleSupportAppsAsync(); }
                 Interlocked.Exchange(ref _playniteWatchRunning, 0);
             }
         });

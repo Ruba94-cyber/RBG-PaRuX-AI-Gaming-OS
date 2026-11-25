@@ -110,13 +110,6 @@ public sealed partial class MainWindow
         }
     }
 
-    /// <summary>Reaches the existing read-only legacy-launcher import (it shows its own preview and changes nothing until applied).</summary>
-    internal void StartLegacyLauncherImport()
-    {
-        ShowSettings();
-        _ = SettingsPage.ImportLegacyLauncherAsync();
-    }
-
     /// <summary>
     /// Start-up resolution (arguments, held Ctrl/Shift) for this process. An explicit launcher request replaces the automatic Console/TV
     /// start and the Playnite-with-PaRuX start for this launch only; nothing else about the app changes. True when the launcher took over.

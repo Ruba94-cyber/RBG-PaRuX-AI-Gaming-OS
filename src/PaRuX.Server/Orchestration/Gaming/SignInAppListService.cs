@@ -6,9 +6,8 @@ using PaRuX.Contracts;
 namespace PaRuX.Server.Orchestration.Gaming;
 
 /// <summary>
-/// Pure parsing/validation of the PaRuX-owned "after sign-in" app list and the read-only importer for the
-/// legacy DelayedApps.json schema. Nothing here touches the registry, Startup folders or third-party startup
-/// entries (those stay USER_MANAGED). An imported or parsed list is ALWAYS disabled until the owner opts in.
+/// Pure parsing/validation of the PaRuX-owned "after sign-in" app list. Nothing here touches the registry, Startup folders or third-party startup
+/// entries (those stay USER_MANAGED). A parsed list is ALWAYS disabled until the owner opts in.
 /// </summary>
 public static partial class SignInAppListPolicy
 {
@@ -143,29 +142,6 @@ public static partial class SignInAppListPolicy
             }
             if (errors.Count > 0) return new(null, errors, warnings);
             return new(new SignInAppList(false, settings, apps), errors, warnings);
-        }
-    }
-
-    /// <summary>Opt-in, read-only import of the legacy DelayedApps.json from an explicitly chosen file.</summary>
-    public static SignInAppListParseResult ImportLegacyFile(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || path.Length > 1024 || path.StartsWith(@"\\", StringComparison.Ordinal) ||
-            !Path.IsPathFullyQualified(path) || ContainsDotDotSegment(path) ||
-            !string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
-            return new(null, ["Choose a local .json file."], []);
-        try
-        {
-            string full = Path.GetFullPath(path);
-            if (!File.Exists(full) || (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
-                return new(null, ["The file does not exist or is a link."], []);
-            using var fs = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            if (fs.Length > MaxFileBytes) return new(null, ["The file is larger than 256 KB."], []);
-            using var reader = new StreamReader(fs);
-            return Parse(reader.ReadToEnd());
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            return new(null, ["The file could not be read."], []);
         }
     }
 

@@ -232,7 +232,6 @@ namespace PaRuX.Views
             _yield = Toggle("AiYield", T("Free the graphics card and stop PaRuX AI while a Playnite game runs", "Libera la scheda video e ferma l'IA di PaRuX mentre un gioco di Playnite è in corso"));
             _settingsPage.Children.Add(Note(T("Which screen is your TV, and what the controller buttons do, are chosen in PaRuX Settings > Gaming > Console / TV and Controller buttons.",
                                               "Quale schermo è la tua TV, e cosa fanno i pulsanti del controller, si sceglie in Impostazioni PaRuX > Gaming > Console / TV e Pulsanti del controller.")));
-            _settingsPage.Children.Add(Plain("Import", T("Import my settings from the old launcher (you see a preview first)", "Importa le mie impostazioni dal vecchio launcher (prima vedi un'anteprima)"), ImportAsync));
             _settingsPage.Children.Add(Plain("Shortcuts", T("Shortcuts and taskbar menu (optional)...", "Collegamenti e menu della barra (facoltativo)..."), () => { Show(Page.Shortcuts); return Task.CompletedTask; }));
         }
 
@@ -562,15 +561,6 @@ namespace PaRuX.Views
             var saved = await PlayniteClient.Current.SaveSettingsAsync(s, _lifetime.Token);
             SetMessage(saved.Succeeded ? T("Saved.", "Salvato.") : T("Not saved: ", "Non salvato: ") + saved.Error);
             await RefreshAsync();
-        }
-
-        // Read-only import: the existing importer shows its own preview and changes nothing until the owner applies it. A ContentDialog
-        // cannot open on top of this one, so this one closes first.
-        private Task ImportAsync()
-        {
-            _closeDialog();
-            _queue.TryEnqueue(DispatcherQueuePriority.Low, () => App.MainWin?.StartLegacyLauncherImport());
-            return Task.CompletedTask;
         }
 
         // ---- shortcuts --------------------------------------------------------------------------------------------------------

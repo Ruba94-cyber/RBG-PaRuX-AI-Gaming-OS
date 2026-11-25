@@ -27,10 +27,6 @@ namespace PaRuX.Services
         public Task<SignInRunSnapshot> CancelAsync(CancellationToken ct) => Send<SignInRunSnapshot>(HttpMethod.Post, Base + "/cancel", null, ct);
         public Task ReportShellStateAsync(bool consoleActive, CancellationToken ct) =>
             SendNoContent(HttpMethod.Post, Base + "/shell-state", new SignInShellStateRequest(consoleActive), ct);
-        public Task<SignInAppImportPreview> ImportPreviewAsync(string path, CancellationToken ct) =>
-            Send<SignInAppImportPreview>(HttpMethod.Post, Base + "/import-preview", new SignInAppImportRequest(path), ct);
-        public Task<SignInAppListStatus> ImportConfirmAsync(string path, bool append, CancellationToken ct) =>
-            Send<SignInAppListStatus>(HttpMethod.Post, Base + "/import", new SignInAppImportRequest(path, Confirm: true, Append: append), ct);
 
         private static async Task<HttpRequestMessage> Build(HttpMethod method, string path, object? body, CancellationToken ct)
         {

@@ -39,15 +39,14 @@ namespace PaRuX.Views
                 out _signInList, out _signInStatus, SignInIdPrefix,
                 (T("Refresh", "Aggiorna"), () => _ = RefreshSignInAppsAsync()),
                 (T("Run now", "Avvia ora"), () => _ = RunSignInAppsNowAsync()),
-                (T("Stop", "Interrompi"), () => _ = CancelSignInAppsAsync()),
-                (T("Import from legacy DelayedApps.json", "Importa da DelayedApps.json del vecchio launcher"), () => _ = ImportSignInAppsAsync()));
+                (T("Stop", "Interrompi"), () => _ = CancelSignInAppsAsync()));
             AutomationProperties.SetAutomationId(section, SignInIdPrefix + "_Section");
             var card = (StackPanel)((Border)section.Children[1]).Child;
 
             // Buttons were created by OwnerSection; give them stable automation ids in the order they were added.
             if (card.Children.LastOrDefault() is StackPanel buttons)
             {
-                string[] ids = { "Refresh", "RunNow", "Stop", "Import" };
+                string[] ids = { "Refresh", "RunNow", "Stop" };
                 for (int i = 0; i < buttons.Children.Count && i < ids.Length; i++)
                     AutomationProperties.SetAutomationId(buttons.Children[i], SignInIdPrefix + "_" + ids[i] + "_Button");
             }
@@ -308,61 +307,6 @@ namespace PaRuX.Views
                 _signInRunText!.Text = DescribeSignInRun(snap);
             }
             catch (Exception ex) { _signInStatus.Text = ex.Message; }
-        }
-
-        private async Task ImportSignInAppsAsync()
-        {
-            if (_signInStatus == null) return;
-            try
-            {
-                var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary };
-                picker.FileTypeFilter.Add(".json");
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
-                Windows.Storage.StorageFile? file = await picker.PickSingleFileAsync();
-                if (file == null) return;
-
-                SignInAppImportPreview preview = await SignInAppListClient.Current.ImportPreviewAsync(file.Path, CancellationToken.None);
-                if (!preview.Ok)
-                {
-                    _signInStatus.Text = T("Cannot import: ", "Impossibile importare: ") + string.Join(" ", preview.Errors);
-                    return;
-                }
-
-                var text = new StringBuilder();
-                foreach (SignInAppEntry e in preview.Apps)
-                    text.AppendLine("• " + e.Name + " (" + (e.Kind == SignInAppKind.Exe ? e.Path : e.Aumid) + ")" + (e.SkipInConsole ? "  [" + T("skip in Console / TV", "salta in Console / TV") + "]" : ""));
-                if (preview.Apps.Count == 0) text.AppendLine(T("The file contains no apps.", "Il file non contiene app."));
-                foreach (string w in preview.Warnings) text.AppendLine("! " + w);
-                var content = new StackPanel { Spacing = 8 };
-                content.Children.Add(new TextBlock { Text = text.ToString(), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-                content.Children.Add(new TextBlock
-                {
-                    Text = T("The imported list is saved turned OFF; turn it on yourself when you are ready. The file you picked is only read, never changed. Apps already running are skipped when the list runs.",
-                             "L'elenco importato viene salvato SPENTO; attivalo tu quando vuoi. Il file scelto viene solo letto, mai modificato. Le app già in esecuzione vengono saltate quando l'elenco parte."),
-                    TextWrapping = TextWrapping.Wrap, Opacity = 0.75,
-                });
-                var append = new CheckBox { Content = T("Add to my current list instead of replacing it", "Aggiungi all'elenco attuale invece di sostituirlo") };
-                AutomationProperties.SetAutomationId(append, SignInIdPrefix + "_Import_Append_Check");
-                content.Children.Add(append);
-                AutomationProperties.SetAutomationId(content, SignInIdPrefix + "_Import_Preview");
-
-                var dialog = new ContentDialog
-                {
-                    XamlRoot = XamlRoot,
-                    Title = T("Import after-sign-in apps", "Importa le app dopo l'accesso"),
-                    Content = new ScrollViewer { Content = content, MaxHeight = 420 },
-                    PrimaryButtonText = T("Import", "Importa"),
-                    CloseButtonText = T("Cancel", "Annulla"),
-                    DefaultButton = ContentDialogButton.Close,
-                    IsPrimaryButtonEnabled = preview.Apps.Count > 0,
-                };
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-                SignInAppListStatus saved = await SignInAppListClient.Current.ImportConfirmAsync(file.Path, append.IsChecked == true, CancellationToken.None);
-                ApplySignInStatus(saved);
-                _signInStatus.Text = T("Imported. The list is off until you turn it on.", "Importato. L'elenco resta spento finché non lo attivi.");
-            }
-            catch (Exception ex) { _signInStatus.Text = T("Import failed: ", "Importazione non riuscita: ") + ex.Message; }
         }
 
         private static string DescribeSignInDecision(SignInTriggerDecision d) => d switch

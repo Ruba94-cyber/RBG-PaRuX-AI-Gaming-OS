@@ -22,6 +22,13 @@ public sealed partial class MainWindow
     internal async Task RunStartupSequenceAsync(bool hasPlayRequest)
     {
         // An explicit launcher request (argument, shortcut, held Ctrl/Shift) replaces the automatic Console/TV and Playnite starts for this launch.
+        // Started by the optional sign-in entry (--logon): one decision, timed, then the after-sign-in list. A game shortcut always wins.
+        if (!hasPlayRequest && App.StartupLogonRequest.Logon)
+        {
+            PlayniteLauncherResolution logonResolution = PlayniteLauncherModeResolver.Resolve(App.StartupLauncherRequest, App.StartupCtrlHeld, App.StartupShiftHeld);
+            await RunLogonStartupAsync(App.StartupLogonRequest, logonResolution);
+            return;
+        }
         bool launcherTookOver = !hasPlayRequest && ApplyPlayniteLauncherStartup();
         if (!hasPlayRequest && !launcherTookOver) await ApplyConsoleStartupPreferenceAsync();
         if (!launcherTookOver) await ApplyPlayniteStartupAsync(hasPlayRequest);

@@ -164,26 +164,6 @@ public sealed class SignInAppListTests : IDisposable
         Assert.False(SignInAppListPolicy.Parse(Json(new object[] { new { Name = "X", Kind = "script", Path = Exe() } })).Ok);
 
     [Fact]
-    public void Import_LegacyFile_IsReadOnlyAndDisabled()
-    {
-        string file = Path.Combine(_root, "DelayedApps.json");
-        File.WriteAllText(file, Json(new object[] { new { Name = "Tool", Kind = "exe", Path = Exe() } }));
-        DateTime before = File.GetLastWriteTimeUtc(file);
-        SignInAppListParseResult r = SignInAppListPolicy.ImportLegacyFile(file);
-        Assert.True(r.Ok, string.Join("; ", r.Errors));
-        Assert.False(r.Value!.Enabled);
-        Assert.Equal(before, File.GetLastWriteTimeUtc(file));
-    }
-
-    [Theory]
-    [InlineData(@"relative.json")]
-    [InlineData(@"\\server\share\DelayedApps.json")]
-    [InlineData(@"C:\missing-dir\DelayedApps.json")]
-    [InlineData(@"C:\a\..\DelayedApps.json")]
-    [InlineData(@"C:\x\file.txt")]
-    public void Import_BadPaths_Fail(string path) => Assert.False(SignInAppListPolicy.ImportLegacyFile(path).Ok);
-
-    [Fact]
     public async Task Run_Disabled_LaunchesNothing()
     {
         var l = new FakeLauncher();
