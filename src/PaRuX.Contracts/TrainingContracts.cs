@@ -151,6 +151,31 @@ public static class GrpoRewardMode
     }
 }
 
+/// <summary>
+/// GPU execution strategy for local Training Lab runs. Defaults to single-GPU for full backwards
+/// compatibility. Multi-GPU strategies require at least two detected GPUs and are validated both
+/// by the preflight planner and at job admission.
+/// </summary>
+public static class TrainingMultiGpuStrategy
+{
+    public const string Single = "single";
+    /// <summary>Model-parallel split across 2+ GPUs via <c>device_map="auto"</c> and per-GPU <c>max_memory</c>,
+    /// allowing models larger than a single GPU's VRAM to fit across multiple cards.</summary>
+    public const string DeviceMapAuto = "device-map-auto";
+    /// <summary>Distributed Data Parallel (DDP) across 2+ GPUs via <c>torchrun --standalone --nproc_per_node=N</c>,
+    /// replicating the model on each GPU to scale effective batch size and throughput.</summary>
+    public const string DataParallel = "data-parallel";
+    public static readonly string[] All = { Single, DeviceMapAuto, DataParallel };
+
+    public static string Normalize(string? value)
+    {
+        string normalized = string.IsNullOrWhiteSpace(value) ? Single : value.Trim().ToLowerInvariant();
+        if (!All.Contains(normalized, StringComparer.Ordinal))
+            throw new InvalidDataException("Unknown multi-GPU strategy. Known strategies: " + string.Join(", ", All) + ".");
+        return normalized;
+    }
+}
+
 public sealed class TrainingJobRequest
 {
     /// <summary>
@@ -195,6 +220,11 @@ public sealed class TrainingJobRequest
     public string TextField { get; set; } = "text";
     public string ImageField { get; set; } = "image";
     public string AudioField { get; set; } = "audio";
+
+    /// <summary>GPU execution strategy: "single" (default), "device-map-auto" (model parallel), or "data-parallel" (DDP).</summary>
+    public string MultiGpuStrategy { get; set; } = TrainingMultiGpuStrategy.Single;
+    /// <summary>Optional non-negative CUDA device indices (e.g. [0, 1]). Null/empty uses automatic GPU selection.</summary>
+    public int[]? GpuDeviceIds { get; set; }
 }
 
 public sealed class TrainingJobStatus
@@ -251,6 +281,8 @@ public sealed class TrainingPlanRequest
     /// Intended for Quick Training; Advanced can continue using sampled previews.</summary>
     public bool ValidateEntireDataset { get; set; }
     public string GrpoRewardMode { get; set; } = Contracts.GrpoRewardMode.ExactReference;
+    public string MultiGpuStrategy { get; set; } = TrainingMultiGpuStrategy.Single;
+    public int[]? GpuDeviceIds { get; set; }
 }
 
 public sealed class TrainingPlanFinding
@@ -294,5 +326,9 @@ public sealed class TrainingPlanResult
 
     public double EstimatedGib { get; set; }
     public double AvailableGib { get; set; }
+    public string MultiGpuStrategy { get; set; } = TrainingMultiGpuStrategy.Single;
+    public int WorldSize { get; set; } = 1;
+    public int EffectiveBatchSize { get; set; } = 4;
+    public int[] SelectedGpuDeviceIds { get; set; } = Array.Empty<int>();
     public List<TrainingPlanFinding> Findings { get; set; } = new();
 }

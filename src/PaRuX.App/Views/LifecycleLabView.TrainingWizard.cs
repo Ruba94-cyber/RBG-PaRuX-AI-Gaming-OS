@@ -52,6 +52,10 @@ namespace PaRuX.Views
         {
             Content = T("Pack short SFT samples (better token utilization)", "Raggruppa campioni SFT brevi (migliore uso dei token)")
         };
+        private readonly ComboBox _multiGpuStrategy = new() { MinWidth = 260 };
+        private readonly StackPanel _gpuSelectionPanel = new() { Orientation = Orientation.Vertical, Spacing = 4 };
+        private readonly TextBlock _gpuInventoryHint = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = 0.72 };
+        private readonly List<(int DeviceIndex, CheckBox Box)> _gpuCheckBoxes = new();
         private readonly NumberBox _grpoGenerations = new()
         {
             Value = 4, Minimum = 2, Maximum = 16,
@@ -78,6 +82,7 @@ namespace PaRuX.Views
             EnsureAllTrainingMethods();
             EnsureGrpoRewards();
             EnsureTrainingVariants();
+            EnsureMultiGpuStrategies();
             _trainingPath.PlaceholderText = T("JSONL: messages | prompt/chosen/rejected | text | prompt/reference | image+messages | audio+text", "JSONL: messages | prompt/chosen/rejected | text | prompt/reference | image+messages | audio+text");
 
             var panel = new StackPanel { Spacing = 10 };
@@ -110,6 +115,15 @@ namespace PaRuX.Views
                 FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = 0.72
             });
             panel.Children.Add(variants);
+
+            var gpuSection = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6 };
+            var gpuRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            gpuRow.Children.Add(Caption(T("GPU strategy", "Strategia GPU")));
+            gpuRow.Children.Add(_multiGpuStrategy);
+            gpuSection.Children.Add(gpuRow);
+            gpuSection.Children.Add(_gpuInventoryHint);
+            gpuSection.Children.Add(_gpuSelectionPanel);
+            panel.Children.Add(gpuSection);
 
             var preference = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             preference.Children.Add(Caption("Preference beta"));
@@ -146,6 +160,7 @@ namespace PaRuX.Views
             _trainingTargets.SelectionChanged += (_, _) => SyncInteractiveDraft();
             _trainingPacking.Checked += (_, _) => SyncInteractiveDraft();
             _trainingPacking.Unchecked += (_, _) => SyncInteractiveDraft();
+            _multiGpuStrategy.SelectionChanged += (_, _) => { UpdateGpuSelectionEnabledState(); SyncInteractiveDraft(); };
             _learningRate.ValueChanged += (_, _) => SyncInteractiveDraft();
             _maxSequenceLength.ValueChanged += (_, _) => SyncInteractiveDraft();
             _dpoBeta.ValueChanged += (_, _) => SyncInteractiveDraft();
@@ -229,6 +244,128 @@ namespace PaRuX.Views
             }
         }
 
+        private void EnsureMultiGpuStrategies()
+        {
+            if (_multiGpuStrategy.Items.Count > 0) return;
+            _multiGpuStrategy.Items.Add(new ComboBoxItem
+            {
+                Content = T("Single GPU", "Singola GPU"),
+                Tag = TrainingMultiGpuStrategy.Single
+            });
+            _multiGpuStrategy.Items.Add(new ComboBoxItem
+            {
+                Content = T("Multi-GPU · Auto Split (model parallel)", "Multi-GPU · Suddivisione automatica (model parallel)"),
+                Tag = TrainingMultiGpuStrategy.DeviceMapAuto
+            });
+            _multiGpuStrategy.Items.Add(new ComboBoxItem
+            {
+                Content = T("Multi-GPU · Data Parallel (DDP)", "Multi-GPU · Data Parallel (DDP)"),
+                Tag = TrainingMultiGpuStrategy.DataParallel
+            });
+            _multiGpuStrategy.SelectedIndex = 0;
+            _gpuInventoryHint.Text = T(
+                "Checking detected GPUs…",
+                "Verifica delle GPU rilevate in corso…");
+        }
+
+        private string SelectedMultiGpuStrategy() =>
+            SelectedTag(_multiGpuStrategy) ?? TrainingMultiGpuStrategy.Single;
+
+        private int[]? SelectedGpuDeviceIds()
+        {
+            if (_gpuCheckBoxes.Count == 0) return null;
+            int[] checkedIds = _gpuCheckBoxes
+                .Where(entry => entry.Box.IsChecked == true)
+                .Select(entry => entry.DeviceIndex)
+                .ToArray();
+            if (SelectedMultiGpuStrategy() == TrainingMultiGpuStrategy.Single)
+                return checkedIds.Length == 1 && _gpuCheckBoxes.Count > 1 ? checkedIds : null;
+            return checkedIds.Length > 0 ? checkedIds : null;
+        }
+
+        private void UpdateGpuSelectionEnabledState()
+        {
+            bool multi = SelectedMultiGpuStrategy() != TrainingMultiGpuStrategy.Single;
+            bool allowChoice = _gpuCheckBoxes.Count >= 2;
+            foreach ((_, CheckBox box) in _gpuCheckBoxes)
+                box.IsEnabled = allowChoice;
+            _gpuSelectionPanel.Visibility = _gpuCheckBoxes.Count > 0
+                ? (multi || allowChoice ? Visibility.Visible : Visibility.Collapsed)
+                : Visibility.Collapsed;
+        }
+
+        private async Task RefreshTrainingGpuInventoryAsync(CancellationToken ct)
+        {
+            try
+            {
+                RuntimeManagerHardwareStatus status = await RuntimeManagerClient.Current.GetStatusAsync(ct);
+                PopulateTrainingGpuInventory(status.GpuAdapters);
+            }
+            catch
+            {
+                _gpuInventoryHint.Text = T(
+                    "GPU inventory unavailable; single-GPU mode is used by default.",
+                    "Inventario GPU non disponibile; per impostazione predefinita viene usata la modalità singola GPU.");
+            }
+        }
+
+        private void PopulateTrainingGpuInventory(IReadOnlyList<GpuAdapterStatus>? adapters)
+        {
+            const uint NvidiaVendorId = 0x10DE;
+            List<GpuAdapterStatus> discrete = (adapters ?? Array.Empty<GpuAdapterStatus>())
+                .Where(a => !a.IsSoftware && a.DedicatedVideoMemoryBytes > 0)
+                .ToList();
+            List<GpuAdapterStatus> nvidia = discrete.Where(a => a.VendorId == NvidiaVendorId).ToList();
+            List<GpuAdapterStatus> chosen = nvidia.Count > 0 ? nvidia : discrete;
+
+            HashSet<int> previouslyChecked = _gpuCheckBoxes
+                .Where(entry => entry.Box.IsChecked == true)
+                .Select(entry => entry.DeviceIndex)
+                .ToHashSet();
+
+            _gpuCheckBoxes.Clear();
+            _gpuSelectionPanel.Children.Clear();
+
+            for (int i = 0; i < chosen.Count; i++)
+            {
+                double gib = chosen[i].DedicatedVideoMemoryBytes / (1024.0 * 1024.0 * 1024.0);
+                var box = new CheckBox
+                {
+                    Content = T($"GPU {i} · {chosen[i].Name} ({gib:0.#} GB)", $"GPU {i} · {chosen[i].Name} ({gib:0.#} GB)"),
+                    IsChecked = previouslyChecked.Count > 0 ? previouslyChecked.Contains(i) : true
+                };
+                Id(box, "LifecycleLab_GpuDevice_" + i + "_CheckBox");
+                box.Checked += (_, _) => SyncInteractiveDraft();
+                box.Unchecked += (_, _) => SyncInteractiveDraft();
+                _gpuCheckBoxes.Add((i, box));
+                _gpuSelectionPanel.Children.Add(box);
+            }
+
+            if (chosen.Count == 0)
+            {
+                _gpuInventoryHint.Text = T(
+                    "No discrete GPU detected on this PC — multi-GPU training requires 2 or more GPUs.",
+                    "Nessuna GPU dedicata rilevata su questo PC — il training multi-GPU richiede almeno 2 GPU.");
+            }
+            else if (chosen.Count == 1)
+            {
+                double gib = chosen[0].DedicatedVideoMemoryBytes / (1024.0 * 1024.0 * 1024.0);
+                _gpuInventoryHint.Text = T(
+                    $"1 GPU detected on this PC ({chosen[0].Name}, {gib:0.#} GB VRAM) — multi-GPU training requires 2 or more GPUs.",
+                    $"1 GPU rilevata su questo PC ({chosen[0].Name}, {gib:0.#} GB VRAM) — il training multi-GPU richiede almeno 2 GPU.");
+            }
+            else
+            {
+                double totalGib = chosen.Sum(a => a.DedicatedVideoMemoryBytes) / (1024.0 * 1024.0 * 1024.0);
+                _gpuInventoryHint.Text = T(
+                    $"{chosen.Count} GPUs detected ({totalGib:0.#} GB total VRAM). Auto Split shards large models across GPUs; Data Parallel (DDP) replicates the model for faster batching.",
+                    $"{chosen.Count} GPU rilevate ({totalGib:0.#} GB di VRAM totale). Suddivisione automatica divide modelli grandi tra le GPU; Data Parallel (DDP) replica il modello per batch più rapidi.");
+            }
+
+            UpdateGpuSelectionEnabledState();
+            SyncInteractiveDraft();
+        }
+
         private void RefreshMethodControlsAndDraft()
         {
             string method = SelectedTag(_trainingMethod) ?? TrainingMethod.Sft;
@@ -287,7 +424,9 @@ namespace PaRuX.Views
                     GrpoGenerations = SafeWholeNumber(_grpoGenerations.Value, 4),
                     TextField = (_textField.Text ?? "text").Trim(),
                     ImageField = (_imageField.Text ?? "image").Trim(),
-                    AudioField = (_audioField.Text ?? "audio").Trim()
+                    AudioField = (_audioField.Text ?? "audio").Trim(),
+                    MultiGpuStrategy = SelectedMultiGpuStrategy(),
+                    GpuDeviceIds = SelectedGpuDeviceIds()
                 });
             }
             catch (InvalidDataException ex)
@@ -323,7 +462,9 @@ namespace PaRuX.Views
                     LoraRank = SafeWholeNumber(_rank.Value, 16),
                     LearningRate = SafeDouble(_learningRate.Value, 0.0002),
                     MaxSequenceLength = SafeWholeNumber(_maxSequenceLength.Value, 2048),
-                    GrpoRewardMode = SelectedTag(_grpoReward) ?? GrpoRewardMode.ExactReference
+                    GrpoRewardMode = SelectedTag(_grpoReward) ?? GrpoRewardMode.ExactReference,
+                    MultiGpuStrategy = SelectedMultiGpuStrategy(),
+                    GpuDeviceIds = SelectedGpuDeviceIds()
                 }, CancellationToken.None);
 
                 _lastPlan = plan;
@@ -538,6 +679,9 @@ namespace PaRuX.Views
                     : string.Empty)
                 + (plan.EstimatedGib > 0
                     ? T($" Needs roughly {plan.EstimatedGib:0.#} GB against {plan.AvailableGib:0.#} GB available.", $" Servono circa {plan.EstimatedGib:0.#} GB a fronte di {plan.AvailableGib:0.#} GB disponibili.")
+                    : string.Empty)
+                + (plan.MultiGpuStrategy != TrainingMultiGpuStrategy.Single
+                    ? T($" Multi-GPU: {plan.MultiGpuStrategy} (world size {plan.WorldSize}, effective batch {plan.EffectiveBatchSize}).", $" Multi-GPU: {plan.MultiGpuStrategy} (world size {plan.WorldSize}, batch effettivo {plan.EffectiveBatchSize}).")
                     : string.Empty);
 
             int recommendedSequence = plan.RecommendedMaxSequenceLength > 0

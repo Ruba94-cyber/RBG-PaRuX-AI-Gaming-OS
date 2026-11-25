@@ -26,4 +26,25 @@ public static class TrainingBatchShapePolicy
         while (microBatch > 1 && DefaultEffectiveBatch % microBatch != 0) microBatch--;
         return (microBatch, DefaultEffectiveBatch / microBatch);
     }
+
+    /// <summary>
+    /// Computes per-GPU micro-batch, gradient accumulation, and total effective batch across
+    /// <paramref name="worldSize"/> data-parallel ranks. With <c>worldSize == 1</c>, matches
+    /// <see cref="Plan"/> identically. With <c>worldSize &gt;= 2</c>, reduces gradient accumulation
+    /// where multiple GPUs already satisfy the target effective batch and reports the exact
+    /// resulting <c>MicroBatch * GradientAccumulation * WorldSize</c>.
+    /// </summary>
+    public static (int MicroBatch, int GradientAccumulation, int EffectiveBatch) PlanMultiGpu(
+        int maxSequenceLength, long perGpuVramBytes, int worldSize)
+    {
+        int ranks = Math.Max(1, worldSize);
+        (int microBatch, int singleGpuAccum) = Plan(maxSequenceLength, perGpuVramBytes);
+        if (ranks == 1)
+            return (microBatch, singleGpuAccum, microBatch * singleGpuAccum);
+        int perStepAcrossRanks = microBatch * ranks;
+        int gradAccum = perStepAcrossRanks >= DefaultEffectiveBatch
+            ? 1
+            : (int)Math.Ceiling((double)DefaultEffectiveBatch / perStepAcrossRanks);
+        return (microBatch, gradAccum, perStepAcrossRanks * gradAccum);
+    }
 }

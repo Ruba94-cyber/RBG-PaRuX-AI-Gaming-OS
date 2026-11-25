@@ -2625,10 +2625,12 @@ app.MapPost("/api/v1/training/plan", async (
     double availableGib = status.GpuDetected && status.VramTotalMib > 0
         ? status.VramTotalMib / 1024.0
         : status.RamTotalBytes / 1024.0 / 1024.0 / 1024.0 * 0.5;
+    IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> availableGpus = TrainingLabService.DetectAvailableGpus();
 
     TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
         shape, request.Method, request.BaseModel,
-        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
+        request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora,
+        request.MultiGpuStrategy, request.GpuDeviceIds, availableGpus);
 
     QuickTrainingDatasetValidator.VerifiedDataset? verified = null;
     if (request.ValidateEntireDataset && plan.CanStart)
@@ -2660,7 +2662,8 @@ app.MapPost("/api/v1/training/plan", async (
             };
             plan = TrainingRunPlanner.Plan(shape, request.Method, request.BaseModel,
                 request.LoraRank, request.MaxSteps, request.LearningRate,
-                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
+                availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora,
+                request.MultiGpuStrategy, request.GpuDeviceIds, availableGpus);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2719,10 +2722,12 @@ app.MapPost("/api/v1/training/jobs", async (
         double availableGib = hardware.GpuDetected && hardware.VramTotalMib > 0
             ? hardware.VramTotalMib / 1024.0
             : hardware.RamTotalBytes / 1024.0 / 1024.0 / 1024.0 * 0.5;
+        IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> availableGpus = TrainingLabService.DetectAvailableGpus();
 
         TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
             shape, request.Method, request.BaseModel,
-            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora);
+            request.LoraRank, request.MaxSteps, request.LearningRate, availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora,
+            request.MultiGpuStrategy, request.GpuDeviceIds, availableGpus);
 
         if (!plan.CanStart)
         {
@@ -4642,6 +4647,10 @@ static TrainingPlanResult ToTrainingPlanResult(TrainingRunPlanner.RunPlan plan) 
     RecommendationRationale = plan.Recommended.Rationale,
     EstimatedGib = plan.EstimatedGib,
     AvailableGib = plan.AvailableGib,
+    MultiGpuStrategy = plan.MultiGpuStrategy,
+    WorldSize = plan.WorldSize,
+    EffectiveBatchSize = plan.EffectiveBatchSize,
+    SelectedGpuDeviceIds = plan.SelectedGpuDeviceIds ?? Array.Empty<int>(),
     Findings = plan.Findings.Select(finding => new TrainingPlanFinding
     {
         Severity = finding.Severity.ToString(),

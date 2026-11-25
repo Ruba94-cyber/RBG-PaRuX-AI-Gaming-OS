@@ -278,6 +278,138 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         catch { return 0; }
     }
 
+    internal static IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> DetectAvailableGpus()
+    {
+        try { return ResolveCudaGpuSpecs(new GpuInventoryService().GetStatus()); }
+        catch { return Array.Empty<TrainingRunPlanner.GpuDeviceSpec>(); }
+    }
+
+    /// <summary>
+    /// Extracts CUDA-eligible discrete GPUs in contiguous 0-based order. Prefers NVIDIA adapters when
+    /// any are present (matching CUDA device numbering on hybrid iGPU + dGPU Windows machines).
+    /// </summary>
+    internal static IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> ResolveCudaGpuSpecs(GpuInventoryStatus? inventory)
+    {
+        if (inventory == null || !inventory.Available || inventory.Adapters.Count == 0)
+            return Array.Empty<TrainingRunPlanner.GpuDeviceSpec>();
+        List<GpuAdapterStatus> discrete = inventory.Adapters
+            .Where(adapter => !adapter.IsSoftware && adapter.DedicatedVideoMemoryBytes > 0)
+            .ToList();
+        if (discrete.Count == 0) return Array.Empty<TrainingRunPlanner.GpuDeviceSpec>();
+        List<GpuAdapterStatus> nvidia = discrete
+            .Where(adapter => adapter.VendorId == GpuInventoryService.NvidiaVendorId)
+            .ToList();
+        List<GpuAdapterStatus> chosen = nvidia.Count > 0 ? nvidia : discrete;
+        var specs = new List<TrainingRunPlanner.GpuDeviceSpec>(chosen.Count);
+        for (int i = 0; i < chosen.Count; i++)
+        {
+            double gib = chosen[i].DedicatedVideoMemoryBytes / (1024.0 * 1024.0 * 1024.0);
+            specs.Add(new TrainingRunPlanner.GpuDeviceSpec(i, chosen[i].Name, Math.Round(gib, 2)));
+        }
+        return specs;
+    }
+
+    internal static int[] NormalizeAndValidateGpuDeviceIds(int[]? gpuDeviceIds)
+    {
+        if (gpuDeviceIds == null || gpuDeviceIds.Length == 0) return Array.Empty<int>();
+        var seen = new HashSet<int>();
+        var validated = new int[gpuDeviceIds.Length];
+        for (int i = 0; i < gpuDeviceIds.Length; i++)
+        {
+            int id = gpuDeviceIds[i];
+            if (id < 0 || id >= 64)
+                throw new InvalidDataException($"gpuDeviceIds contains invalid index {id}; indices must be non-negative integers (0-63).");
+            if (!seen.Add(id))
+                throw new InvalidDataException($"gpuDeviceIds contains duplicate index {id}.");
+            validated[i] = id;
+        }
+        return validated;
+    }
+
+    internal static string? BuildCudaVisibleDevices(int[]? gpuDeviceIds)
+    {
+        int[] validated = NormalizeAndValidateGpuDeviceIds(gpuDeviceIds);
+        if (validated.Length == 0) return null;
+        return string.Join(",", validated.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    internal static double[] ComputePerGpuMaxMemoryGib(
+        IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> availableGpus,
+        int[]? selectedGpuIds)
+    {
+        if (availableGpus.Count == 0) return Array.Empty<double>();
+        IEnumerable<TrainingRunPlanner.GpuDeviceSpec> selected = selectedGpuIds is { Length: > 0 }
+            ? selectedGpuIds
+                .Select(id => availableGpus.FirstOrDefault(g => g.Index == id))
+                .Where(g => g != null)!
+            : availableGpus;
+        return selected
+            .Select(g => Math.Max(1.0, Math.Floor(g.VramGib * 0.90)))
+            .ToArray();
+    }
+
+    internal static ProcessStartInfo BuildTrainingProcessStartInfo(
+        string venvPython,
+        string runtimeRoot,
+        string trainScriptPath,
+        string configPath,
+        string multiGpuStrategy,
+        int[]? gpuDeviceIds,
+        int detectedGpuCount)
+    {
+        string strategy = TrainingMultiGpuStrategy.Normalize(multiGpuStrategy);
+        int[] validatedIds = NormalizeAndValidateGpuDeviceIds(gpuDeviceIds);
+        string? cudaVisible = BuildCudaVisibleDevices(validatedIds);
+
+        var psi = new ProcessStartInfo
+        {
+            WorkingDirectory = runtimeRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        if (cudaVisible != null)
+            psi.Environment["CUDA_VISIBLE_DEVICES"] = cudaVisible;
+
+        if (strategy == TrainingMultiGpuStrategy.DataParallel)
+        {
+            int nproc = validatedIds.Length >= 2 ? validatedIds.Length : detectedGpuCount;
+            if (nproc < 2)
+                throw new InvalidOperationException(
+                    $"Multi-GPU Data Parallel requires at least 2 GPUs, but only {nproc} is configured/detected.");
+            string? venvBinDir = Path.GetDirectoryName(venvPython);
+            string torchrunName = OperatingSystem.IsWindows() ? "torchrun.exe" : "torchrun";
+            string? torchrunPath = string.IsNullOrEmpty(venvBinDir) ? null : Path.Combine(venvBinDir, torchrunName);
+            if (!string.IsNullOrEmpty(torchrunPath) && File.Exists(torchrunPath))
+            {
+                psi.FileName = torchrunPath;
+                psi.ArgumentList.Add("--standalone");
+                psi.ArgumentList.Add("--nproc_per_node=" + nproc.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                psi.ArgumentList.Add(trainScriptPath);
+                psi.ArgumentList.Add(configPath);
+            }
+            else
+            {
+                psi.FileName = venvPython;
+                psi.ArgumentList.Add("-m");
+                psi.ArgumentList.Add("torch.distributed.run");
+                psi.ArgumentList.Add("--standalone");
+                psi.ArgumentList.Add("--nproc_per_node=" + nproc.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                psi.ArgumentList.Add(trainScriptPath);
+                psi.ArgumentList.Add(configPath);
+            }
+        }
+        else
+        {
+            psi.FileName = venvPython;
+            psi.ArgumentList.Add(trainScriptPath);
+            psi.ArgumentList.Add(configPath);
+        }
+
+        return psi;
+    }
+
     public Task<TrainingEngineRemovalResult> UninstallEngineAsync(CancellationToken ct)
     {
         string[] busy = _jobs.Values
@@ -588,6 +720,18 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         ValidateFieldName(request.TextField, "textField");
         ValidateFieldName(request.ImageField, "imageField");
         ValidateFieldName(request.AudioField, "audioField");
+        string multiGpuStrategy = TrainingMultiGpuStrategy.Normalize(request.MultiGpuStrategy);
+        int[] gpuIds = NormalizeAndValidateGpuDeviceIds(request.GpuDeviceIds);
+        if (multiGpuStrategy == TrainingMultiGpuStrategy.Single && gpuIds.Length > 1)
+            throw new InvalidDataException("Single-GPU strategy accepts at most one GPU device ID. Choose device-map-auto or data-parallel for multiple GPUs.");
+        if (multiGpuStrategy != TrainingMultiGpuStrategy.Single && gpuIds.Length == 1)
+            throw new InvalidDataException("Multi-GPU strategy requires at least two GPU device IDs (or leave empty to use all detected GPUs).");
+        if (multiGpuStrategy == TrainingMultiGpuStrategy.DeviceMapAuto
+            && method is TrainingMethod.TtsSft or TrainingMethod.EmbeddingFt)
+            throw new InvalidDataException("Auto model splitting (device-map-auto) is supported for text and vision LLM methods only.");
+        if (multiGpuStrategy == TrainingMultiGpuStrategy.DataParallel
+            && method == TrainingMethod.EmbeddingFt)
+            throw new InvalidDataException("Distributed Data Parallel (torchrun) is not supported for embedding fine-tuning.");
         if (method == TrainingMethod.TtsSft
             && !request.BaseModel.Contains("speecht5", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The current PaRuX TTS training adapter supports SpeechT5-family base models. Other TTS families are not silently routed through an incompatible trainer.");
@@ -822,7 +966,24 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             return;
         }
 
-        (int microBatch, int gradientAccumulation) = PlanBatchShape(request.MaxSequenceLength);
+        IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> availableGpus = DetectAvailableGpus();
+        string multiGpuStrategy = TrainingMultiGpuStrategy.Normalize(request.MultiGpuStrategy);
+        int[] validatedGpuIds = NormalizeAndValidateGpuDeviceIds(request.GpuDeviceIds);
+        int worldSize = multiGpuStrategy == TrainingMultiGpuStrategy.DataParallel
+            ? (validatedGpuIds.Length >= 2 ? validatedGpuIds.Length : Math.Max(1, availableGpus.Count))
+            : 1;
+        long perGpuVramBytes = availableGpus.Count > 0
+            ? (long)(availableGpus
+                .Where(g => validatedGpuIds.Length == 0 || validatedGpuIds.Contains(g.Index))
+                .Select(g => g.VramGib)
+                .DefaultIfEmpty(0)
+                .Min() * 1024d * 1024 * 1024)
+            : LargestGpuVideoMemoryBytes();
+        (int microBatch, int gradientAccumulation, _) =
+            TrainingBatchShapePolicy.PlanMultiGpu(request.MaxSequenceLength, perGpuVramBytes, worldSize);
+        double[] gpuMaxMemoryGib = multiGpuStrategy == TrainingMultiGpuStrategy.DeviceMapAuto
+            ? ComputePerGpuMaxMemoryGib(availableGpus, validatedGpuIds)
+            : Array.Empty<double>();
         // KTO's loss estimates a KL term over contemporaneous physical samples;
         // its effective batch is deliberately raised from 4 to 16 without
         // changing the native per-device batch or other training objectives.
@@ -873,6 +1034,9 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             text_field = request.TextField,
             image_field = request.ImageField,
             audio_field = request.AudioField,
+            multi_gpu_strategy = multiGpuStrategy,
+            gpu_device_ids = validatedGpuIds,
+            gpu_max_memory_gib = gpuMaxMemoryGib,
             checkpoint_steps = Math.Clamp(Math.Min(request.MaxSteps, 50), 1, 50),
             resume_checkpoint = resumeCheckpoint
         };
@@ -887,17 +1051,9 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         }
         TryPersistEntry(entry);
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = VenvPython,
-            WorkingDirectory = RuntimeRoot,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        psi.ArgumentList.Add(TrainScriptPath);
-        psi.ArgumentList.Add(configPath);
+        ProcessStartInfo psi = BuildTrainingProcessStartInfo(
+            VenvPython, RuntimeRoot, TrainScriptPath, configPath,
+            multiGpuStrategy, validatedGpuIds, availableGpus.Count);
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         lock (entry.Gate) entry.Process = process;
         using var budgetCts = new CancellationTokenSource(TimeSpan.FromMinutes(entry.MaxWallClockMinutes));
@@ -1223,7 +1379,58 @@ out_dir = cfg["output_dir"]
 adapter_dir = os.path.join(out_dir, "full-model" if cfg.get("precision") == "full-16bit" else "lora-adapter")
 resume_checkpoint = cfg.get("resume_checkpoint") or None
 checkpoint_steps = max(1, min(int(cfg.get("checkpoint_steps", 50)), int(cfg["max_steps"])))
+multi_gpu_strategy = cfg.get("multi_gpu_strategy", "single")
+gpu_max_memory_gib = cfg.get("gpu_max_memory_gib") or []
+global_rank = int(os.environ.get("RANK", "0"))
+local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+world_size = int(os.environ.get("WORLD_SIZE", "1"))
+is_main_process = (global_rank == 0)
 os.makedirs(out_dir, exist_ok=True)
+
+def resolve_multi_gpu(torch_mod):
+    visible_gpus = torch_mod.cuda.device_count() if torch_mod.cuda.is_available() else 0
+    if is_main_process:
+        print(
+            f"[PaRuX Multi-GPU] strategy={multi_gpu_strategy} visible_gpus={visible_gpus} "
+            f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<all>')} "
+            f"world_size={world_size} local_rank={local_rank}",
+            flush=True,
+        )
+    if multi_gpu_strategy in ("device-map-auto", "data-parallel") and visible_gpus < 2:
+        if is_main_process:
+            print(
+                f"[PaRuX Multi-GPU] Requested '{multi_gpu_strategy}' but torch.cuda.device_count()={visible_gpus} (< 2). "
+                "Falling back to single-GPU execution.",
+                flush=True,
+            )
+        return "single", None, None, {}
+    if multi_gpu_strategy == "device-map-auto":
+        if gpu_max_memory_gib:
+            max_mem = {i: f"{int(max(1, gib))}GiB" for i, gib in enumerate(gpu_max_memory_gib[:visible_gpus])}
+        else:
+            max_mem = {
+                i: f"{max(1, int(torch_mod.cuda.get_device_properties(i).total_memory * 0.90 // (1024 ** 3)))}GiB"
+                for i in range(visible_gpus)
+            }
+        return "device-map-auto", "auto", max_mem, {}
+    if multi_gpu_strategy == "data-parallel":
+        if torch_mod.cuda.is_available():
+            torch_mod.cuda.set_device(local_rank)
+        ddp_args = {"ddp_find_unused_parameters": False} if world_size > 1 else {}
+        return "data-parallel", {"": local_rank}, None, ddp_args
+    return "single", None, None, {}
+
+def apply_device_map_kwargs(fn, kwargs, device_map, max_memory):
+    if device_map is None:
+        return kwargs
+    import inspect
+    params = inspect.signature(fn).parameters
+    accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if "device_map" in params or accepts_var_kw:
+        kwargs["device_map"] = device_map
+    if max_memory is not None and ("max_memory" in params or accepts_var_kw):
+        kwargs["max_memory"] = max_memory
+    return kwargs
 
 def rows():
     with open(cfg["train_jsonl"], encoding="utf-8") as f:
@@ -1292,6 +1499,7 @@ if method == "tts-sft":
             batch["speaker_embeddings"] = torch.tensor([f["speaker_embeddings"] for f in features], dtype=torch.float32)
             return batch
 
+    _, _, _, ddp_trainer_args = resolve_multi_gpu(torch)
     trainer = Seq2SeqTrainer(
         model=model, train_dataset=dataset, data_collator=TtsCollator(processor, model),
         args=Seq2SeqTrainingArguments(
@@ -1299,10 +1507,11 @@ if method == "tts-sft":
             max_steps=cfg["max_steps"], learning_rate=cfg["learning_rate"], logging_steps=1,
             save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
             report_to=[], fp16=torch.cuda.is_available() and not torch.cuda.is_bf16_supported(),
-            bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(), remove_unused_columns=False))
+            bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(), remove_unused_columns=False, **ddp_trainer_args))
     trainer.train(resume_from_checkpoint=resume_checkpoint)
-    model.save_pretrained(adapter_dir)
-    processor.save_pretrained(adapter_dir)
+    if is_main_process:
+        model.save_pretrained(adapter_dir)
+        processor.save_pretrained(adapter_dir)
 elif method == "embedding-ft":
     # Contrastive fine-tune of an embedding / retrieval encoder: InfoNCE over in-batch negatives
     # (plus an explicit hard negative per row when the dataset provides one), trained as a LoRA/DoRA
@@ -1408,12 +1617,17 @@ else:
             kwargs["max_length"] = kwargs.pop("max_seq_length")
         return SFTConfig(**kwargs)
 
+    effective_strategy, resolved_device_map, resolved_max_memory, ddp_trainer_args = resolve_multi_gpu(torch)
+
     if method == "vision-sft":
         from unsloth import FastVisionModel
         from unsloth.trainer import UnslothVisionDataCollator
         from PIL import Image
-        model, tokenizer = FastVisionModel.from_pretrained(
-            model_name=base_model, load_in_4bit=True, use_gradient_checkpointing="unsloth")
+        vision_load_kwargs = apply_device_map_kwargs(
+            FastVisionModel.from_pretrained,
+            {"model_name": base_model, "load_in_4bit": True, "use_gradient_checkpointing": "unsloth"},
+            resolved_device_map, resolved_max_memory)
+        model, tokenizer = FastVisionModel.from_pretrained(**vision_load_kwargs)
         model = FastVisionModel.get_peft_model(
             model, finetune_vision_layers=True, finetune_language_layers=True,
             finetune_attention_modules=True, finetune_mlp_modules=True,
@@ -1442,7 +1656,7 @@ else:
                 save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                 output_dir=out_dir, report_to=[], remove_unused_columns=False,
                 dataset_text_field="", dataset_kwargs={"skip_prepare_dataset": True},
-                max_seq_length=cfg["max_seq_length"]))
+                max_seq_length=cfg["max_seq_length"], **ddp_trainer_args))
         trainer.train(resume_from_checkpoint=resume_checkpoint)
     else:
         from unsloth import FastLanguageModel
@@ -1461,10 +1675,14 @@ else:
         # Unsloth offloaded gradient checkpointing is the default memory saver; the Teach-your-model
         # policy turns it off only when the activations clearly fit in the detected VRAM.
         ckpt_mode = "unsloth" if cfg.get("gradient_checkpointing", True) else False
+        llm_load_kwargs = apply_device_map_kwargs(
+            FastLanguageModel.from_pretrained,
+            {},
+            resolved_device_map, resolved_max_memory)
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=base_model, max_seq_length=cfg["max_seq_length"], dtype=None,
             load_in_4bit=(precision == "qlora-4bit"), full_finetuning=full_finetune,
-            use_gradient_checkpointing=ckpt_mode)
+            use_gradient_checkpointing=ckpt_mode, **llm_load_kwargs)
         if full_finetune:
             # Every weight trains in bf16/fp16; there is no adapter to attach. 8-bit Adam keeps the
             # optimizer state (otherwise 8 bytes/parameter) small enough for a consumer GPU.
@@ -1513,7 +1731,7 @@ else:
                     desirable_weight=desirable_weight, undesirable_weight=undesirable_weight,
                     logging_steps=1, save_strategy="steps", save_steps=checkpoint_steps,
                     save_total_limit=2, output_dir=out_dir, report_to=[],
-                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported()))
+                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **ddp_trainer_args))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
         elif method == "orpo":
             # ORPO uses the same genuine paired preference schema as DPO, but it
@@ -1532,7 +1750,7 @@ else:
                     beta=cfg.get("dpo_beta", .1), logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[],
-                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported()))
+                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **ddp_trainer_args))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
         elif method == "dpo":
             data = [{"prompt": r["prompt"], "chosen": r["chosen"], "rejected": r["rejected"]} for r in rows()]
@@ -1545,7 +1763,7 @@ else:
                     max_steps=cfg["max_steps"], learning_rate=cfg["learning_rate"], logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[], beta=cfg.get("dpo_beta", .1),
-                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported()))
+                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **ddp_trainer_args))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
         elif method == "grpo":
             reward_mode = cfg.get("grpo_reward_mode", "exact-reference")
@@ -1600,7 +1818,7 @@ else:
                     learning_rate=cfg["learning_rate"], logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[],
-                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **grpo_extra))
+                    fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(), **grpo_extra, **ddp_trainer_args))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
         else:
             if method == "continued-pretraining":
@@ -1637,16 +1855,18 @@ else:
                     max_steps=cfg["max_steps"], learning_rate=cfg["learning_rate"], logging_steps=1,
                     save_strategy="steps", save_steps=checkpoint_steps, save_total_limit=2,
                     output_dir=out_dir, report_to=[], fp16=not torch.cuda.is_bf16_supported(),
-                    bf16=torch.cuda.is_bf16_supported(), **extra_optim))
+                    bf16=torch.cuda.is_bf16_supported(), **extra_optim, **ddp_trainer_args))
             trainer.train(resume_from_checkpoint=resume_checkpoint)
 
-    model.save_pretrained(adapter_dir)
-    tokenizer.save_pretrained(adapter_dir)
+    if is_main_process:
+        model.save_pretrained(adapter_dir)
+        tokenizer.save_pretrained(adapter_dir)
 
-marker_tmp = os.path.join(out_dir, ".parux-training-complete.tmp")
-with open(marker_tmp, "w", encoding="utf-8") as marker:
-    marker.write("completed\n")
-os.replace(marker_tmp, os.path.join(out_dir, "parux-training-complete"))
-print("PARUX_TRAINING_DONE", adapter_dir)
+if is_main_process:
+    marker_tmp = os.path.join(out_dir, ".parux-training-complete.tmp")
+    with open(marker_tmp, "w", encoding="utf-8") as marker:
+        marker.write("completed\n")
+    os.replace(marker_tmp, os.path.join(out_dir, "parux-training-complete"))
+    print("PARUX_TRAINING_DONE", adapter_dir)
 """;
 }

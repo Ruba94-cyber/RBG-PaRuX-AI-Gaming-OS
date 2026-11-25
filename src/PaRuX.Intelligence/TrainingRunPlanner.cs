@@ -13,6 +13,7 @@ public static class TrainingRunPlanner
     public enum Severity { Blocking, Warning }
     public sealed record Finding(Severity Severity, string Field, string Message);
     public sealed record Recommendation(int LoraRank, int MaxSteps, double LearningRate, string Rationale);
+    public sealed record GpuDeviceSpec(int Index, string Name, double VramGib);
     public sealed record RunPlan(
         bool CanStart,
         string DetectedMethod,
@@ -20,7 +21,11 @@ public static class TrainingRunPlanner
         Recommendation Recommended,
         IReadOnlyList<Finding> Findings,
         double EstimatedGib,
-        double AvailableGib)
+        double AvailableGib,
+        string MultiGpuStrategy = "single",
+        int WorldSize = 1,
+        int EffectiveBatchSize = TrainingBatchShapePolicy.DefaultEffectiveBatch,
+        int[]? SelectedGpuDeviceIds = null)
     {
         public IEnumerable<Finding> Blocking => Findings.Where(finding => finding.Severity == Severity.Blocking);
         public IEnumerable<Finding> Warnings => Findings.Where(finding => finding.Severity == Severity.Warning);
@@ -37,7 +42,10 @@ public static class TrainingRunPlanner
         string precision = "qlora-4bit",
         string targetPreset = "attention",
         int maxSequenceLength = 2048,
-        bool useDora = false)
+        bool useDora = false,
+        string multiGpuStrategy = "single",
+        int[]? gpuDeviceIds = null,
+        IReadOnlyList<GpuDeviceSpec>? availableGpus = null)
     {
         var findings = new List<Finding>();
         string normalizedMethod = NormalizeMethod(method);
@@ -96,16 +104,159 @@ public static class TrainingRunPlanner
                     "KTO requires at least four well-formed labelled examples to construct informative batches."));
         }
 
+        string normalizedStrategy = string.IsNullOrWhiteSpace(multiGpuStrategy)
+            ? "single"
+            : multiGpuStrategy.Trim().ToLowerInvariant();
+        if (normalizedStrategy is not ("single" or "device-map-auto" or "data-parallel"))
+        {
+            findings.Add(new Finding(Severity.Blocking, "multiGpuStrategy",
+                "Unsupported multi-GPU strategy '" + normalizedStrategy + "'. Choose single, device-map-auto or data-parallel."));
+            normalizedStrategy = "single";
+        }
+
+        double effectiveAvailableGib = availableGib;
+        double perGpuGibForBatch = availableGib;
+        int worldSize = 1;
+        int[] selectedGpuIds = Array.Empty<int>();
+        IReadOnlyList<GpuDeviceSpec> selectedGpus = Array.Empty<GpuDeviceSpec>();
+
+        bool gpuIdsValid = true;
+        if (gpuDeviceIds is { Length: > 0 })
+        {
+            var seen = new HashSet<int>();
+            foreach (int id in gpuDeviceIds)
+            {
+                if (id < 0 || id >= 64)
+                {
+                    findings.Add(new Finding(Severity.Blocking, "gpuDeviceIds",
+                        $"GPU device index {id} is invalid. Device indices must be non-negative integers (0-63)."));
+                    gpuIdsValid = false;
+                }
+                else if (!seen.Add(id))
+                {
+                    findings.Add(new Finding(Severity.Blocking, "gpuDeviceIds",
+                        $"GPU device index {id} is listed more than once. Remove duplicate GPU selections."));
+                    gpuIdsValid = false;
+                }
+            }
+            if (gpuIdsValid && availableGpus != null)
+            {
+                var byIndex = availableGpus.ToDictionary(g => g.Index);
+                var matched = new List<GpuDeviceSpec>();
+                foreach (int id in gpuDeviceIds)
+                {
+                    if (!byIndex.TryGetValue(id, out GpuDeviceSpec? gpu))
+                    {
+                        findings.Add(new Finding(Severity.Blocking, "gpuDeviceIds",
+                            $"GPU device index {id} was not detected on this PC ({availableGpus.Count} CUDA-capable GPU(s) detected)."));
+                        gpuIdsValid = false;
+                    }
+                    else
+                    {
+                        matched.Add(gpu);
+                    }
+                }
+                if (gpuIdsValid)
+                {
+                    selectedGpus = matched;
+                    selectedGpuIds = gpuDeviceIds.ToArray();
+                }
+            }
+            else if (gpuIdsValid)
+            {
+                selectedGpuIds = gpuDeviceIds.ToArray();
+            }
+        }
+
+        if (normalizedStrategy == "single")
+        {
+            if (gpuDeviceIds is { Length: > 1 })
+            {
+                findings.Add(new Finding(Severity.Blocking, "gpuDeviceIds",
+                    "Single-GPU strategy accepts at most one GPU device ID. Choose device-map-auto or data-parallel to use multiple GPUs."));
+            }
+            else if (selectedGpus.Count == 1)
+            {
+                effectiveAvailableGib = selectedGpus[0].VramGib;
+                perGpuGibForBatch = selectedGpus[0].VramGib;
+            }
+        }
+        else
+        {
+            int detectedCount = availableGpus?.Count ?? (availableGib > 0 ? 1 : 0);
+            if (detectedCount < 2)
+            {
+                findings.Add(new Finding(Severity.Blocking, "multiGpuStrategy",
+                    $"Multi-GPU training ({normalizedStrategy}) requires at least 2 GPUs, but PaRuX detected only {detectedCount}. Use single-GPU mode on this machine."));
+            }
+            else
+            {
+                if (gpuDeviceIds is not { Length: > 0 })
+                {
+                    selectedGpus = availableGpus!;
+                    selectedGpuIds = selectedGpus.Select(g => g.Index).ToArray();
+                }
+                else if (gpuIdsValid && selectedGpuIds.Length < 2)
+                {
+                    findings.Add(new Finding(Severity.Blocking, "gpuDeviceIds",
+                        $"Multi-GPU training ({normalizedStrategy}) requires selecting at least 2 GPUs."));
+                }
+            }
+
+            if (normalizedStrategy == "device-map-auto" && normalizedMethod is "tts-sft" or "embedding-ft")
+            {
+                findings.Add(new Finding(Severity.Blocking, "multiGpuStrategy",
+                    $"Auto model splitting (device-map-auto) is supported for text and vision LLM methods, not {FriendlyMethod(normalizedMethod)}."));
+            }
+            if (normalizedStrategy == "data-parallel" && normalizedMethod == "embedding-ft")
+            {
+                findings.Add(new Finding(Severity.Blocking, "multiGpuStrategy",
+                    "Distributed Data Parallel (torchrun) is not supported for the custom embedding fine-tuning loop yet. Use single-GPU mode for embedding fine-tuning."));
+            }
+
+            if (selectedGpus.Count >= 2)
+            {
+                double minVram = selectedGpus.Min(g => g.VramGib);
+                double maxVram = selectedGpus.Max(g => g.VramGib);
+                double sumVram = selectedGpus.Sum(g => g.VramGib);
+                if (normalizedStrategy == "device-map-auto")
+                {
+                    effectiveAvailableGib = sumVram;
+                    perGpuGibForBatch = minVram;
+                    worldSize = 1;
+                }
+                else // data-parallel
+                {
+                    effectiveAvailableGib = minVram;
+                    perGpuGibForBatch = minVram;
+                    worldSize = selectedGpus.Count;
+                    if (minVram > 0 && maxVram > minVram * 1.15)
+                    {
+                        findings.Add(new Finding(Severity.Warning, "gpuDeviceIds",
+                            $"Selected GPUs have uneven VRAM ({minVram:0.#} GB vs {maxVram:0.#} GB). Data Parallel replicates the full model on each GPU and is limited by the smallest selected card."));
+                    }
+                }
+            }
+            else if (gpuIdsValid && selectedGpuIds.Length >= 2 && normalizedStrategy == "data-parallel")
+            {
+                worldSize = selectedGpuIds.Length;
+            }
+        }
+
+        long perGpuVramBytes = perGpuGibForBatch > 0 && double.IsFinite(perGpuGibForBatch)
+            ? (long)Math.Min(perGpuGibForBatch * 1024d * 1024 * 1024, long.MaxValue)
+            : 0;
+        var batchPlan = TrainingBatchShapePolicy.PlanMultiGpu(maxSequenceLength, perGpuVramBytes, worldSize);
+        int effectiveBatchSize = normalizedMethod == "kto"
+            ? Math.Max(16, batchPlan.EffectiveBatch)
+            : batchPlan.EffectiveBatch;
+
         if (normalizedMethod == "kto")
         {
-            long vramBytes = availableGib > 0 && double.IsFinite(availableGib)
-                ? (long)Math.Min(availableGib * 1024d * 1024 * 1024, long.MaxValue)
-                : 0;
-            var batch = TrainingBatchShapePolicy.Plan(maxSequenceLength, vramBytes);
-            if (batch.MicroBatch < 4)
+            if (batchPlan.MicroBatch < 4)
                 findings.Add(new Finding(Severity.Blocking, "maxSequenceLength",
                     "KTO needs four physical GPU samples (effective batch 16), but the selected sequence length "
-                    + "and reported VRAM allow only " + batch.MicroBatch
+                    + "and reported VRAM allow only " + batchPlan.MicroBatch
                     + ". Reduce the context length or select a larger GPU."));
         }
 
@@ -158,12 +309,21 @@ public static class TrainingRunPlanner
             : 0;
         if (useDora && !fullFineTune)
             estimatedGib *= 1.1; // DoRA keeps a per-layer magnitude vector and an extra weight-norm pass.
+        if (normalizedStrategy == "device-map-auto")
+            estimatedGib *= 1.1; // Cross-GPU activation transfers and uneven layer boundaries add ~10% overhead.
+        else if (normalizedStrategy == "data-parallel")
+            estimatedGib *= 1.05; // DDP gradient buckets add ~5% per-GPU overhead.
 
-        if (parameters.HasValue && availableGib > 0 && estimatedGib > availableGib)
+        if (parameters.HasValue && effectiveAvailableGib > 0 && estimatedGib > effectiveAvailableGib)
         {
+            string hint = normalizedStrategy == "data-parallel" && selectedGpus.Count >= 2
+                && estimatedGib <= selectedGpus.Sum(g => g.VramGib) * 0.95
+                ? " Each GPU holds a full copy in Data Parallel; switch to Auto Split (device-map-auto) to shard the model across GPUs."
+                : string.Empty;
             findings.Add(new Finding(Severity.Blocking, "baseModel",
                 $"{FriendlyMethod(normalizedMethod)} with a {parameters.Value:0.#}B base needs roughly {estimatedGib:0.#} GB, "
-                + $"but PaRuX observed only {availableGib:0.#} GB available."));
+                + $"but PaRuX observed only {effectiveAvailableGib:0.#} GB available"
+                + (normalizedStrategy == "data-parallel" ? " per GPU." : ".") + hint));
         }
         else if (!parameters.HasValue)
         {
@@ -209,7 +369,8 @@ public static class TrainingRunPlanner
 
         return new RunPlan(
             findings.All(finding => finding.Severity != Severity.Blocking), normalizedMethod, dataset,
-            recommended, findings, estimatedGib, availableGib);
+            recommended, findings, estimatedGib, effectiveAvailableGib,
+            normalizedStrategy, worldSize, effectiveBatchSize, selectedGpuIds);
     }
 
     public static Recommendation Recommend(TrainingDatasetShape.Shape dataset, string method)

@@ -29,6 +29,8 @@ namespace PaRuX.Services
         public string TextField { get; init; } = "text";
         public string ImageField { get; init; } = "image";
         public string AudioField { get; init; } = "audio";
+        public string MultiGpuStrategy { get; init; } = TrainingMultiGpuStrategy.Single;
+        public int[]? GpuDeviceIds { get; init; }
     }
 
     public sealed class TrainingLabClient
@@ -101,7 +103,9 @@ namespace PaRuX.Services
                 GrpoGenerations = options.GrpoGenerations,
                 TextField = NormalizeField(options.TextField, "text"),
                 ImageField = NormalizeField(options.ImageField, "image"),
-                AudioField = NormalizeField(options.AudioField, "audio")
+                AudioField = NormalizeField(options.AudioField, "audio"),
+                MultiGpuStrategy = TrainingMultiGpuStrategy.Normalize(options.MultiGpuStrategy),
+                GpuDeviceIds = options.GpuDeviceIds is { Length: > 0 } ? (int[])options.GpuDeviceIds.Clone() : null
             };
             lock (_interactiveGate) _interactiveOptions = sanitized;
         }
@@ -127,6 +131,8 @@ namespace PaRuX.Services
                 request.TextField = options.TextField;
                 request.ImageField = options.ImageField;
                 request.AudioField = options.AudioField;
+                request.MultiGpuStrategy = options.MultiGpuStrategy;
+                request.GpuDeviceIds = options.GpuDeviceIds is { Length: > 0 } ? (int[])options.GpuDeviceIds.Clone() : null;
             }
             return SendAsync<TrainingJobStatus>(HttpMethod.Post, "/api/v2/training/jobs", request, ct);
         }

@@ -152,6 +152,9 @@ namespace PaRuX.Views
             Id(_trainingPrecision, "LifecycleLab_Precision_ComboBox", "Training base precision");
             Id(_trainingTargets, "LifecycleLab_Targets_ComboBox", "LoRA target layers");
             Id(_trainingPacking, "LifecycleLab_Packing_CheckBox", "Pack short SFT sequences");
+            Id(_multiGpuStrategy, "LifecycleLab_MultiGpuStrategy_ComboBox", "Multi-GPU training strategy");
+            Id(_gpuSelectionPanel, "LifecycleLab_GpuSelection_Panel");
+            Id(_gpuInventoryHint, "LifecycleLab_GpuInventoryHint_Text", "Detected GPU inventory for training");
             Id(_learningRate, "LifecycleLab_LearningRate_NumberBox", "Learning rate");
             Id(_maxSequenceLength, "LifecycleLab_MaxSequence_NumberBox", "Max sequence length");
             Id(_dpoBeta, "LifecycleLab_DpoBeta_NumberBox", "DPO beta");
@@ -849,6 +852,7 @@ namespace PaRuX.Views
 
         private async Task RefreshTrainingAsync(CancellationToken ct)
         {
+            await RefreshTrainingGpuInventoryAsync(ct);
             TrainingEngineStatus engine = await TrainingLabClient.Current.GetEngineStatusAsync(ct);
             _trainingEngine.Text = engine.Installed
                 ? T("Managed training runtime installed · CUDA ", "Runtime di training gestito installato · CUDA ") + (engine.CudaVerified ? T("verified", "verificato") : T("not verified", "non verificato")) + (string.IsNullOrWhiteSpace(engine.TorchVersion) ? string.Empty : T(" · torch ", " · torch ") + engine.TorchVersion)
@@ -999,7 +1003,9 @@ namespace PaRuX.Views
                 GrpoGenerations = SafeWholeNumber(_grpoGenerations.Value, 4),
                 TextField = string.IsNullOrWhiteSpace(_textField.Text) ? "text" : _textField.Text.Trim(),
                 ImageField = string.IsNullOrWhiteSpace(_imageField.Text) ? "image" : _imageField.Text.Trim(),
-                AudioField = string.IsNullOrWhiteSpace(_audioField.Text) ? "audio" : _audioField.Text.Trim()
+                AudioField = string.IsNullOrWhiteSpace(_audioField.Text) ? "audio" : _audioField.Text.Trim(),
+                MultiGpuStrategy = SelectedMultiGpuStrategy(),
+                GpuDeviceIds = SelectedGpuDeviceIds()
             };
 
             _trainingSubmissionInProgress = true;
@@ -1015,7 +1021,9 @@ namespace PaRuX.Views
                     LearningRate = request.LearningRate, MaxSequenceLength = request.MaxSequenceLength,
                     Precision = request.Precision, TargetPreset = request.TargetPreset,
                     PackSequences = request.PackSequences,
-                    GrpoRewardMode = request.GrpoRewardMode
+                    GrpoRewardMode = request.GrpoRewardMode,
+                    MultiGpuStrategy = request.MultiGpuStrategy,
+                    GpuDeviceIds = request.GpuDeviceIds
                 }, CancellationToken.None);
                 _lastPlan = plan;
                 RenderPlan(plan);

@@ -99,10 +99,12 @@ public static class TrainingRuntimeV2Endpoints
                 double availableGib = hardware.GpuDetected && hardware.VramTotalMib > 0
                     ? hardware.VramTotalMib / 1024.0
                     : hardware.RamTotalBytes / 1024.0 / 1024.0 / 1024.0 * 0.5;
+                IReadOnlyList<TrainingRunPlanner.GpuDeviceSpec> availableGpus = TrainingLabService.DetectAvailableGpus();
                 TrainingRunPlanner.RunPlan plan = TrainingRunPlanner.Plan(
                     dataset, request.Method, request.BaseModel,
                     request.LoraRank, request.MaxSteps, request.LearningRate,
-                    availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength);
+                    availableGib, request.Precision, request.TargetPreset, request.MaxSequenceLength, request.UseDora,
+                    request.MultiGpuStrategy, request.GpuDeviceIds, availableGpus);
                 if (!plan.CanStart)
                     return Results.BadRequest(new
                     {
