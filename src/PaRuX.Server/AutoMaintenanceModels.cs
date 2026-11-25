@@ -115,8 +115,13 @@ internal sealed class AutoMaintenanceSettings
     public bool Enabled { get; set; } = true;
     public int IntervalHours { get; set; } = DefaultIntervalHours;
     /// <summary>Keep PaRuX-managed llama.cpp runtimes (incl. the right CUDA build) up to date automatically. Models are never
-    /// downloaded by this. USER_MANAGED / SYSTEM_DETECTED runtimes are never touched.</summary>
-    public bool KeepRuntimesUpdated { get; set; } = true;
+    /// downloaded by this. USER_MANAGED / SYSTEM_DETECTED runtimes are never touched.
+    /// Background downloads and online catalog checks need explicit consent: this is OFF by default, it only counts as ON
+    /// together with <see cref="RuntimeUpdateConsentUtc"/> (set when the person turns it on), and it is always OFF in Corporate
+    /// (offline). A file saved by a build whose implicit default was ON carries no consent, so it reads as OFF.</summary>
+    public bool KeepRuntimesUpdated { get; set; }
+    /// <summary>When the person explicitly allowed background runtime downloads; null means no consent was given.</summary>
+    public DateTime? RuntimeUpdateConsentUtc { get; set; }
     /// <summary>While the machine is idle, run the existing "Optimize for this PC" calibration in the background (once per model,
     /// hardware fingerprint and runtime build; it never downloads anything). Needs <see cref="Enabled"/> as well.</summary>
     public bool CalibrateWhenIdle { get; set; } = true;
@@ -128,7 +133,9 @@ internal sealed class AutoMaintenanceSettings
     internal static int ClampInterval(int hours) => Math.Clamp(hours, MinimumIntervalHours, MaximumIntervalHours);
     internal AutoMaintenanceSettings Normalized() => new()
     {
-        Enabled = Enabled, IntervalHours = ClampInterval(IntervalHours), KeepRuntimesUpdated = KeepRuntimesUpdated,
+        Enabled = Enabled, IntervalHours = ClampInterval(IntervalHours),
+        KeepRuntimesUpdated = KeepRuntimesUpdated && RuntimeUpdateConsentUtc is not null && !PaRuX.Contracts.CorporateMode.IsActive,
+        RuntimeUpdateConsentUtc = KeepRuntimesUpdated && !PaRuX.Contracts.CorporateMode.IsActive ? RuntimeUpdateConsentUtc : null,
         AutoOptimizeMedia = AutoOptimizeMedia,
         CalibrateWhenIdle = CalibrateWhenIdle
     };

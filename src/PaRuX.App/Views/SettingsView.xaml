@@ -2113,12 +2113,12 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
-                                       Text="Keep PaRuX-managed runtimes up to date automatically" loc:Loc.ItText="Mantieni aggiornati automaticamente i runtime gestiti da PaRuX"
+                                       Text="Keep runtimes up to date (downloads in the background; checks online catalogs)" loc:Loc.ItText="Mantieni i runtime aggiornati (scarica in background e consulta i cataloghi online)"
                                        Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                             <ToggleSwitch x:Name="Settings_AutoCheck_RuntimeUpdate_Toggle"
-                                          Grid.Column="1" IsOn="True"
+                                          Grid.Column="1" IsOn="False"
                                           AutomationProperties.AutomationId="Settings_AutoCheck_RuntimeUpdate_Toggle"
-                                          AutomationProperties.Name="Keep PaRuX-managed runtimes up to date automatically" loc:Loc.ItName="Mantieni aggiornati automaticamente i runtime gestiti da PaRuX"
+                                          AutomationProperties.Name="Keep runtimes up to date (downloads in the background)" loc:Loc.ItName="Mantieni i runtime aggiornati (scarica in background)"
                                           Toggled="AutoCheckRuntimeUpdateToggle_Toggled" />
                         </Grid>
                         <Grid Style="{StaticResource PaRuXSettingsRowStyle}" ColumnSpacing="{StaticResource PaRuXSpaceL}">

@@ -35,7 +35,16 @@ public sealed class AutoMaintenanceTests : IDisposable
 
     private static ManagedModelInfo Model() => new() { FileName = "m.gguf", FilePath = "m.gguf", SizeBytes = 1 };
 
-    private AutoMaintenanceService Make(Fakes f) => new(new AutoMaintenanceStore(_dir), new AutoMaintenanceDependencies
+    private AutoMaintenanceService Make(Fakes f) => Consented(MakeUnconsented(f));
+
+    /// <summary>These tests exercise the opted-in online path; background checks are OFF until the person consents.</summary>
+    private static AutoMaintenanceService Consented(AutoMaintenanceService svc)
+    {
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: true);
+        return svc;
+    }
+
+    private AutoMaintenanceService MakeUnconsented(Fakes f) => new(new AutoMaintenanceStore(_dir), new AutoMaintenanceDependencies
     {
         Probe = _ => f.ProbeFailure is null ? Task.FromResult(f.Snapshot) : Task.FromException<HardwareSnapshot>(f.ProbeFailure),
         ListInstalledModels = () => { f.ListCalls++; return f.Installed; },
@@ -293,7 +302,7 @@ public sealed class AutoMaintenanceTests : IDisposable
         Assert.Equal("startup", s.LastReport!.Trigger);
 
         File.WriteAllText(Path.Combine(_dir, AutoMaintenanceStore.FileName), "{ not json");
-        var r = await Make(new Fakes()).RunAsync("manual", default);
+        var r = await MakeUnconsented(new Fakes()).RunAsync("manual", default);
         Assert.Contains(r.Errors, e => e.Contains("malformed"));
         Assert.NotNull(Make(new Fakes()).GetState().LastReport); // rewritten atomically
     }
@@ -316,7 +325,7 @@ public sealed class AutoMaintenanceTests : IDisposable
             IsGamingActive = () => false,
             UtcNow = () => _now
         };
-        var svc = new AutoMaintenanceService(new AutoMaintenanceStore(_dir), deps);
+        var svc = Consented(new AutoMaintenanceService(new AutoMaintenanceStore(_dir), deps));
         Task<MaintenanceReport> running = svc.RunAsync("startup", default);
         Assert.Equal("busy", (await svc.RunAsync("manual", default)).Outcome);
         gate.SetResult(new ModelDiscoveryRefreshResult { Outcome = "refreshed" });

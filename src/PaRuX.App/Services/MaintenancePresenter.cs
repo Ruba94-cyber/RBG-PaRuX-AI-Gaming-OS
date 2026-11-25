@@ -72,7 +72,7 @@ namespace PaRuX.Services
         /// <summary>One honest line for the runtime auto-update setting and its last result.</summary>
         public static string SummarizeRuntimeUpdate(MaintenanceStatusDto status, DateTime nowUtc)
         {
-            if (!status.Settings.KeepRuntimesUpdated) return "Automatic runtime updates are off. PaRuX-managed runtimes change only when you update them.";
+            if (!status.Settings.KeepRuntimesUpdated) return "Background runtime downloads and online catalog checks are off (your consent is needed to turn them on). PaRuX-managed runtimes change only when you update them.";
             RuntimeUpdateSummaryDto? u = status.RuntimeUpdate;
             if (u is null || string.IsNullOrWhiteSpace(u.LastResultLine) || u.LastResultUtc is not { } at)
                 return "Runtime updates: no automatic update has run yet.";

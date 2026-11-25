@@ -70,7 +70,13 @@ internal sealed class AutoMaintenanceService
         AutoMaintenanceState state = GetState();
         if (enabled is { } e) state.Settings.Enabled = e;
         if (intervalHours is { } h) state.Settings.IntervalHours = AutoMaintenanceSettings.ClampInterval(h);
-        if (keepRuntimesUpdated is { } k) state.Settings.KeepRuntimesUpdated = k;
+        if (keepRuntimesUpdated is { } k)
+        {
+            // Consent is recorded only by an explicit "on"; Corporate never downloads in the background.
+            bool allow = k && !PaRuX.Contracts.CorporateMode.IsActive;
+            state.Settings.KeepRuntimesUpdated = allow;
+            state.Settings.RuntimeUpdateConsentUtc = allow ? _deps.UtcNow() : null;
+        }
         if (autoOptimizeMedia is { } a) state.Settings.AutoOptimizeMedia = a;
         if (calibrateWhenIdle is { } c) state.Settings.CalibrateWhenIdle = c;
         _store.Save(state);
@@ -238,7 +244,13 @@ internal sealed class AutoMaintenanceService
                 if (!assignFailed) state.Fingerprint = current;
             }
 
-            await RefreshAndProposeAsync(report, state, snapshot, current, ct, e => failed |= e).ConfigureAwait(false);
+            // Online catalog checks and downloads are background network use: they run only with the person's consent
+            // (the runtime-update switch) or when the person starts the check by hand.
+            bool online = trigger == "manual" || state.Settings.KeepRuntimesUpdated;
+            if (online)
+                await RefreshAndProposeAsync(report, state, snapshot, current, ct, e => failed |= e).ConfigureAwait(false);
+            else
+                report.Changes.Add("online_checks: skipped (background downloads and catalog checks are off; run a manual check or allow them in Settings)");
             ProposeRuntimeUpdates(report);
             // Auto-update comes first: with it on, a managed-runtime "runtime_update" proposal is only left for cases that
             // genuinely need the user (retries exhausted); everything else is handled and reported as steps.
@@ -278,9 +290,11 @@ internal sealed class AutoMaintenanceService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex) { report.Errors.Add("media_runtime_update: " + Clip(ex.Message)); }
             }
-            await ProposeRuntimeBuildsAsync(report, ct, e => failed |= e, autoRuntimes, needsUser).ConfigureAwait(false);
+            if (online)
+                await ProposeRuntimeBuildsAsync(report, ct, e => failed |= e, autoRuntimes, needsUser).ConfigureAwait(false);
             await ProposeBackendSuggestionsAsync(report, ct).ConfigureAwait(false);
-            await RefreshMediaDiscoveryAsync(report, trigger, ct).ConfigureAwait(false);
+            if (online)
+                await RefreshMediaDiscoveryAsync(report, trigger, ct).ConfigureAwait(false);
             ProposeMediaSuggestions(report);
 
             string outcome = failed ? "error"

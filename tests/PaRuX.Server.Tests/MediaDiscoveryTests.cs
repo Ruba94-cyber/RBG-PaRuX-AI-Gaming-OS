@@ -717,6 +717,7 @@ public sealed class MediaDiscoveryTests : IDisposable
             IsOnBattery = () => battery,
             SuggestMedia = () => new[] { new MaintenanceProposal { Key = "k", Detail = "d", Capability = "image.generate" } }
         });
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: true);   // online discovery runs only with the person's consent
         if (!enabled) svc.UpdateSettings(false, null);
         return svc;
     }

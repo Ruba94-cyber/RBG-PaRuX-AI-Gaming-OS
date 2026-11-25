@@ -30,6 +30,12 @@ The Core listens on `127.0.0.1` only and protected requests need a random sessio
 | Game covers and metadata (optional) | Services such as the Steam store, SteamGridDB, IGDB |
 | Update check | GitHub release metadata, when you use Updates |
 
+Background downloads need your consent. "Keep runtimes up to date (downloads in the background)" in Settings > Automatic checks is **off by default**
+and is also what allows the scheduled online checks of the model, runtime and media catalogs; nothing is downloaded or looked up in the
+background until you turn it on (EN: "Keep runtimes up to date (downloads in the background; checks online catalogs)", IT: "Mantieni i runtime
+aggiornati (scarica in background e consulta i cataloghi online)"). A check you start yourself still works and only proposes changes. Settings saved by
+earlier 4.5.0 builds, whose implicit default was on, carry no consent and read as off until you turn the switch on once. Corporate Lite is always off.
+
 Corporate Lite is offline by default and refuses internet, runtime and model downloads. No cloud API is needed for local use.
 
 ## Evidence and limits

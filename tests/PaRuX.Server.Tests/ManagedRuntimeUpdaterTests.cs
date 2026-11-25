@@ -451,23 +451,27 @@ public sealed class ManagedRuntimeUpdaterTests : IDisposable
 
     // ---- integration with the maintenance pass --------------------------------------------------------------------
 
-    private AutoMaintenanceService MakeMaintenance(FakeHost h, List<RuntimeUpdateObservation> observations, out ManagedRuntimeUpdater updater)
+    private AutoMaintenanceService MakeMaintenance(FakeHost h, List<RuntimeUpdateObservation> observations, out ManagedRuntimeUpdater updater,
+        Action? onDiscovery = null, Action? onBuildCheck = null)
     {
         updater = Make(h);
-        return new AutoMaintenanceService(new AutoMaintenanceStore(_dir), new AutoMaintenanceDependencies
+        var service = new AutoMaintenanceService(new AutoMaintenanceStore(_dir), new AutoMaintenanceDependencies
         {
             Probe = _ => Task.FromResult(new HardwareSnapshot(null, 1, "cpu", Array.Empty<string>())),
             ListInstalledModels = () => Array.Empty<ManagedModelInfo>(),
             AutoAssign = (m, s) => new RoleAutoAssignResponse(),
             HasRoleAssignment = () => true,
-            RefreshDiscovery = _ => Task.FromResult(new ModelDiscoveryRefreshResult { Outcome = "refreshed" }),
+            RefreshDiscovery = _ => { onDiscovery?.Invoke(); return Task.FromResult(new ModelDiscoveryRefreshResult { Outcome = "refreshed" }); },
             DiscoveryCandidates = () => Array.Empty<ModelDiscoveryCandidate>(),
-            CheckRuntimeUpdates = _ => Task.FromResult<IReadOnlyList<RuntimeUpdateObservation>>(observations),
+            CheckRuntimeUpdates = _ => { onBuildCheck?.Invoke(); return Task.FromResult<IReadOnlyList<RuntimeUpdateObservation>>(observations); },
             PendingManagedRuntimeUpdates = () => new List<(string, string)>(),
             IsGamingActive = () => h.Gaming,
             RuntimeUpdater = updater,
             UtcNow = () => _now
         });
+        // These tests exercise the opted-in path; background downloads are OFF until the person consents.
+        service.UpdateSettings(null, null, keepRuntimesUpdated: true);
+        return service;
     }
 
     [Fact]
@@ -491,7 +495,9 @@ public sealed class ManagedRuntimeUpdaterTests : IDisposable
         var obs = new List<RuntimeUpdateObservation> { new(Cuda, "b100", "b200", ComponentOwnership.PARUX_MANAGED) };
         AutoMaintenanceService svc = MakeMaintenance(h, obs, out _);
         svc.UpdateSettings(null, null, keepRuntimesUpdated: false);
-        MaintenanceReport report = await svc.RunAsync("interval", default);
+        MaintenanceReport scheduled = await svc.RunAsync("interval", default);
+        Assert.DoesNotContain(scheduled.Proposals, p => p.Kind == "runtime_update");   // no consent: no online check at all
+        MaintenanceReport report = await svc.RunAsync("manual", default);
         Assert.Equal("disabled", report.RuntimeUpdateOutcome);
         Assert.Contains(report.Proposals, p => p.Kind == "runtime_update");
         Assert.Equal("b100", h.Active.Tag);
@@ -540,14 +546,50 @@ public sealed class ManagedRuntimeUpdaterTests : IDisposable
     }
 
     [Fact]
-    public void Keep_runtimes_updated_defaults_on_and_survives_a_round_trip()
+    public void Keep_runtimes_updated_defaults_off_needs_recorded_consent_and_survives_a_round_trip()
     {
         var store = new AutoMaintenanceStore(_dir);
-        Assert.True(store.Load().Settings.KeepRuntimesUpdated);
+        Assert.False(store.Load().Settings.KeepRuntimesUpdated);
+        Assert.Null(store.Load().Settings.RuntimeUpdateConsentUtc);
+
+        // A file saved by a build whose implicit default was ON has no consent record: it must read as OFF.
         AutoMaintenanceState s = store.Load();
-        s.Settings.KeepRuntimesUpdated = false;
+        s.Settings.KeepRuntimesUpdated = true;
         store.Save(s);
         Assert.False(new AutoMaintenanceStore(_dir).Load().Settings.KeepRuntimesUpdated);
+
+        // An explicit choice (consent timestamp recorded by UpdateSettings) is kept across restarts.
+        AutoMaintenanceService svc = MakeMaintenance(HostWithCatalog(Cand("b200", "13.1")), new List<RuntimeUpdateObservation>(), out _);
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: false);
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: true);
+        AutoMaintenanceSettings on = new AutoMaintenanceStore(_dir).Load().Settings;
+        Assert.True(on.KeepRuntimesUpdated);
+        Assert.Equal(_now, on.RuntimeUpdateConsentUtc);
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: false);
+        AutoMaintenanceSettings off = new AutoMaintenanceStore(_dir).Load().Settings;
+        Assert.False(off.KeepRuntimesUpdated);
+        Assert.Null(off.RuntimeUpdateConsentUtc);
+    }
+
+    [Fact]
+    public async Task Without_consent_scheduled_maintenance_makes_no_online_request_but_a_manual_check_still_does()
+    {
+        FakeHost h = HostWithCatalog(Cand("b200", "13.1"));
+        int discovery = 0, builds = 0;
+        var obs = new List<RuntimeUpdateObservation> { new(Cuda, "b100", "b200", ComponentOwnership.PARUX_MANAGED) };
+        AutoMaintenanceService svc = MakeMaintenance(h, obs, out _, () => discovery++, () => builds++);
+        svc.UpdateSettings(null, null, keepRuntimesUpdated: false);
+        MaintenanceReport scheduled = await svc.RunAsync("startup", default);
+        Assert.Equal(0, discovery);
+        Assert.Equal(0, builds);
+        Assert.Equal("disabled", scheduled.RuntimeUpdateOutcome);
+        Assert.Empty(h.Activations);
+        Assert.DoesNotContain(h.Calls, c => c.StartsWith("stage:", StringComparison.Ordinal));
+
+        await svc.RunAsync("manual", default);
+        Assert.Equal(1, discovery);
+        Assert.Equal(1, builds);
+        Assert.Empty(h.Activations);   // a manual check proposes; it never downloads without consent
     }
 
     [Fact]
