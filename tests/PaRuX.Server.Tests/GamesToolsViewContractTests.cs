@@ -109,6 +109,26 @@ public sealed class GamesToolsViewContractTests
     }
 
     [Fact]
+    public void Games_item_mode_tab_and_controller_open_the_slim_tools_page_not_the_native_library()
+    {
+        // Step 2 of the gaming-removal map: "__games__" (sidebar, Ctrl+2, Gaming tab, old deep links) and "__gamestools__" share one route.
+        string ws = Read("src", "PaRuX.App", "MainWindow.Workspaces.cs");
+        Assert.Matches(new Regex(@"case WorkspaceNavigationOrder\.GamesWorkspaceTag:\s*case WorkspaceNavigationOrder\.GamesToolsWorkspaceTag:\s*ShowGamesHome\(\);"), ws);
+        Assert.Contains("ShowStudioWorkspace(StudioWorkspace.GamesTools);", ws, StringComparison.Ordinal);
+
+        string pad = Read("src", "PaRuX.App", "MainWindow.PadActions.cs");
+        Assert.DoesNotContain("OpenToolsFromController", pad, StringComparison.Ordinal);
+        Assert.Contains("ShowGamesHomeFromController()", pad, StringComparison.Ordinal);
+
+        // The install/import sub-page keeps downloads, add & import and status, but no Library / Tools / Emulators sections.
+        string library = Read("src", "PaRuX.App", "Views", "ManualGameLibraryView.cs");
+        foreach (string gone in new[] { "(\"Library\",", "(\"Tools\",", "(\"Emulators\"," })
+            Assert.DoesNotContain(gone, library, StringComparison.Ordinal);
+        foreach (string kept in new[] { "(\"Downloads\",", "(\"Add\",", "(\"Devices\"," })
+            Assert.Contains(kept, library, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Local_game_guide_is_one_shared_flow_with_unchanged_automation_ids()
     {
         string flow = Read("src", "PaRuX.App", "Views", "LocalGameGuideFlow.cs");

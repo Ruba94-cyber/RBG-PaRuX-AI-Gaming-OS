@@ -202,6 +202,17 @@ namespace PaRuX
         /// <summary>Opens the slim Games tools page (same setup-profile gate as Games).</summary>
         internal void ShowGamesTools() => TryNavigateWorkspace(WorkspaceNavigationOrder.GamesToolsWorkspaceTag);
 
+        /// <summary>
+        /// The Games home: since step 2 of the gaming-removal map it is the slim Games tools page (Playnite, AI mods, downloads,
+        /// handoff, guide, controller tools). The native library (Gaming Home, shelves, detail) is no longer a destination.
+        /// Callers must already have checked the setup-profile gate (ShowStudioWorkspace re-checks it).
+        /// </summary>
+        private void ShowGamesHome()
+        {
+            ShowStudioWorkspace(StudioWorkspace.GamesTools);
+            NotifyLazyPageShown(StudioWorkspace.GamesTools);
+        }
+
         /// <summary>From Games tools: opens one existing section of the Games library page (Downloads, Add, Devices...). Navigation only.</summary>
         internal void ShowGamesLibrarySection(string section)
         {
@@ -276,13 +287,10 @@ namespace PaRuX
             if (!IsWorkspaceAllowedForSetup(tag)) return true;
             switch (tag)
             {
-                case "__games__":
-                    ShowStudioWorkspace(StudioWorkspace.Games);
-                    GameLibraryPage.OnShown();
-                    return true;
+                // "__games__" (sidebar, Ctrl+2, mode tab, old deep links) and "__gamestools__" open the same slim Games tools page.
+                case WorkspaceNavigationOrder.GamesWorkspaceTag:
                 case WorkspaceNavigationOrder.GamesToolsWorkspaceTag:
-                    ShowStudioWorkspace(StudioWorkspace.GamesTools);
-                    NotifyLazyPageShown(StudioWorkspace.GamesTools);
+                    ShowGamesHome();
                     return true;
                 case "__chat__":
                     ShowChat();
@@ -394,8 +402,7 @@ namespace PaRuX
 
             if (CurrentSetupPlan.StartInGamingTab)
             {
-                ShowStudioWorkspace(StudioWorkspace.Games);
-                GameLibraryPage.OnShown();
+                ShowGamesHome();
             }
             else
             {

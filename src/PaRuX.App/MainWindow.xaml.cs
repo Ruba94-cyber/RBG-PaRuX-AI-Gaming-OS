@@ -769,8 +769,7 @@ namespace PaRuX
             if (SettingsStore.Current.Data.OnboardingCompleted
                 && !IsWorkspaceAllowedForSetup(ChatHomeNavigationPolicy.ChatWorkspaceTag))
             {
-                ShowStudioWorkspace(StudioWorkspace.Games);
-                GameLibraryPage.OnShown();
+                ShowGamesHome();
                 return;
             }
             SyncModeTabToWorkspace(gaming: false);

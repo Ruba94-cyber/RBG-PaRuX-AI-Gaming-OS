@@ -44,6 +44,19 @@ public sealed partial class MainWindow
         _ = RunPadActionAsync(binding.ActionId);
     }
 
+    /// <summary>True while the Games home (slim Games tools page) or its install/import sub-page is the visible workspace.</summary>
+    private bool GamesWorkspaceVisible() =>
+        IsLazyPageVisible(StudioWorkspace.GamesTools) || GameLibraryPageIfCreated?.Visibility == Microsoft.UI.Xaml.Visibility.Visible;
+
+    /// <summary>Controller entry to Games: the slim Games tools page with focus on its first Playnite action. Nothing is scanned or started.</summary>
+    private void ShowGamesHomeFromController()
+    {
+        if (!IsWorkspaceAllowedForSetup(WorkspaceNavigationOrder.GamesWorkspaceTag)) return;
+        ShowGamesHome();
+        if (PeekPage(StudioWorkspace.GamesTools) is PaRuX.Views.GamesToolsView tools && !tools.FocusPrimaryAction())
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => tools.FocusPrimaryAction());
+    }
+
     internal async Task RunPadActionAsync(PadActionId action)
     {
         _padActionBusy = true;
@@ -65,27 +78,13 @@ public sealed partial class MainWindow
                 case PadActionId.GamingLibrary:
                     PadBringForward();
                     if (_consoleModeActive) { if (!ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace(); }
-                    else
-                    {
-                        ShowStudioWorkspace(StudioWorkspace.Games);
-                        // Set the lightweight Tools surface BEFORE the page's
-                        // on-shown refresh so no native catalogue scan is queued.
-                        GameLibraryPage.OpenToolsFromController();
-                        GameLibraryPage.OnShown();
-                    }
+                    else ShowGamesHomeFromController();
                     break;
                 case PadActionId.SwitchWorkspace:
                     PadBringForward();
                     if (_consoleModeActive) SwitchConsoleWorkspace();
-                    else if (ConsoleOnGamingWorkspace()) ShowChat();
-                    else
-                    {
-                        ShowStudioWorkspace(StudioWorkspace.Games);
-                        // Set the lightweight Tools surface BEFORE the page's
-                        // on-shown refresh so no native catalogue scan is queued.
-                        GameLibraryPage.OpenToolsFromController();
-                        GameLibraryPage.OnShown();
-                    }
+                    else if (GamesWorkspaceVisible()) ShowChat();
+                    else ShowGamesHomeFromController();
                     break;
                 case PadActionId.MiniAgent:
                     if (App.BubbleWin is { } bubble) bubble.ShowExpanded();

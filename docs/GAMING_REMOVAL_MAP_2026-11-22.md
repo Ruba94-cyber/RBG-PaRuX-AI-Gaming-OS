@@ -1,6 +1,21 @@
 # Gaming / TV removal map (2026-11-22)
 
-Status: ANALYSIS ONLY. Nothing was deleted or changed in `src/` or `tests/`. Source of truth: working code at branch `worktree-agent-ae8fcea9d87ad7571` (merged with `main`), grep and symbol references, not older plans.
+Original status (2026-11-22): analysis only. Source of truth: working code at branch `worktree-agent-ae8fcea9d87ad7571` (merged with `main`), grep and symbol references, not older plans.
+
+## Execution status (updated per step)
+
+| Step | Status | Commit summary |
+|---|---|---|
+| 1 | DONE (2026-11-24) | `GamesToolsView` slim page added (additive). |
+| 2 | DONE (2026-11-25) | `__games__` (sidebar Games, Ctrl+2, Gaming tab, command palette, pad Games/Switch actions, Gaming-only fallback) opens `GamesToolsView`; the old library page is now only the install/import sub-page (Downloads, Add & import, Gaming status) reached from "Inspect / stage / import an installer"; its Library / Tools / Emulators sections were removed, so `GamingHomeView` is unreachable (still compiled). Superseded `GamesToolsHome` (old in-library tools tab) and its FlaUI test removed. |
+| 3 | pending | |
+| 4 | pending | |
+| 5 | pending | |
+| 6 | pending | |
+| 7 | CANCELLED by owner decision (controller and display stacks stay) | |
+| 8 | pending | |
+| 9 | pending | |
+
 
 ## 1. Owner decision this map implements
 

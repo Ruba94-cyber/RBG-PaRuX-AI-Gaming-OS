@@ -33,6 +33,7 @@ internal sealed class GamesToolsView : UserControl
     private readonly TextBlock _handoffStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _guideButton;
+    private Button? _primaryAction;
     private bool _busy;
     private bool _refreshing;
 
@@ -68,7 +69,7 @@ internal sealed class GamesToolsView : UserControl
         _playniteStatus.Text = T("Playnite status not checked yet.", "Stato Playnite non ancora controllato.");
         play.Children.Add(_playniteStatus);
         play.Children.Add(Row(
-            Action("PlayniteConsole", T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"), () => OpenPlayniteAsync(PlayniteLauncherAction.Console)),
+            _primaryAction = Action("PlayniteConsole", T("Playnite Console (Fullscreen)", "Playnite Console (schermo intero)"), () => OpenPlayniteAsync(PlayniteLauncherAction.Console)),
             Action("PlayniteDesktop", T("Playnite Desktop", "Playnite Desktop"), () => OpenPlayniteAsync(PlayniteLauncherAction.Desktop)),
             // The launcher owns Detect / Locate / Install with PaRuX / Skip.
             Action("PlayniteSetup", T("Install / locate / skip Playnite", "Installa / individua / salta Playnite"), () => OpenPlayniteAsync(PlayniteLauncherAction.Open)),
@@ -156,6 +157,9 @@ internal sealed class GamesToolsView : UserControl
         UpdateHandoffStatus(activeSession: false);
         _ = RefreshPlayniteAsync();
     }
+
+    /// <summary>Controller entry: focus the first Playnite action (Console). Focus only, nothing is started.</summary>
+    internal bool FocusPrimaryAction() => _primaryAction?.Focus(FocusState.Keyboard) == true;
 
     // ---- building blocks ---------------------------------------------------------------------------------------------
 
