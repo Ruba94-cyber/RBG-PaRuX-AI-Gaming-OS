@@ -1,4 +1,15 @@
-## 4.5.0 (pre-release candidate, 2026-11-25; built and signed locally, not published until the owner decides)
+## 4.5.1 (pre-release candidate, 2026-11-25; built and signed locally, not published until the owner decides)
+
+Supersedes the 4.5.0 pre-release (Corporate Lite only, commit 6e904b35): 4.5.1 is the complete 4.5 line (MSI, APK, Standard Portable, Corporate Lite, signed update manifest) and consolidates the changes made after 4.5.0. Everything listed under 4.5.0 below still applies.
+
+- **Console TV selector:** persistent multi-select list of TVs with a stable monitor identity and a history of monitors seen; Console mode is always startable (no blocking dialog); TV names configured in the legacy Console settings are imported.
+- **Return to PaRuX:** when Playnite Fullscreen closes, PaRuX comes back to the foreground; Playnite Fullscreen is raised above open windows when handed off.
+- **Generic start-up orchestrator:** sign-in start sequence with support apps (optional helper programs started with PaRuX, pinned HTTPS installer asset, no runtime endpoint), a never-pause (no-freeze) list, a start-up timing log and a dry-run mode. Launcher-specific importers were removed; the guide (EN/IT) is under `docs/guides/`.
+- **Consent for background downloads:** downloads in the background and online catalog checks are opt-in. The previous implicit default (on) becomes OFF: settings saved by 4.5.0 and earlier have no consent record and read as OFF until the switch is turned on once. Corporate Lite stays always off.
+- **Portable / MSI fixes:** meeting notes and saved web pages stay inside `PaRuXData` in Portable and Corporate packages; user skill ids are validated; duplicate model ids are listed once; the MSI now bundles the Visual C++ runtime app-local.
+- **Version:** `Directory.Build.props` 4.5.1; Android `versionName` 4.5.1, `versionCode` 28.
+- **Known limits (not established):** no physical test with a real pad, Playnite Fullscreen with a running game, or a training GPU; no run on a real corporate PC; the Windows Game Bar block is opt-in and does not stop the Win+G shortcut; self-signed certificate without SmartScreen reputation; the MSI was not installed on a clean PC; Android pairing on a physical phone not tested. See `docs/RELEASE_NOTES_4.5.1.md`.
+## 4.5.0 (pre-release, Corporate Lite only; superseded by 4.5.1)
 
 Consolidates everything merged after the 4.4.0 tag (the older "unreleased" and "integration" sections below describe the same work in more detail).
 
