@@ -59,8 +59,6 @@
     <Compile Include="..\..\src\PaRuX.App\Services\AttachmentDropPolicy.cs" Link="Linked\AttachmentDropPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\BackgroundDownloadsChoice.cs" Link="Linked\BackgroundDownloadsChoice.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\QuickActionCatalog.cs" Link="Linked\QuickActionCatalog.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\SteamGridDbGallery.cs" Link="Linked\SteamGridDbGallery.cs" />
-    <Compile Include="..\..\src\PaRuX.App\Services\GameArtStore.cs" Link="Linked\GameArtStore.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SteamAchievementsText.cs" Link="Linked\SteamAchievementsText.cs" />
   </ItemGroup>
   <ItemGroup>

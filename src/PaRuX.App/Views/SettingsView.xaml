@@ -1293,8 +1293,8 @@
                             IsOn="False" Toggled="ConsoleStartOnTvSwitch_Toggled" />
                         <TextBlock x:Name="ConsoleStartOnTvExplanation" TextWrapping="Wrap"
                             Style="{StaticResource PaRuXCaptionTextStyle}"
-                            Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back."
-                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro." />
+                            Text="When PaRuX starts and the TV chosen above is connected, it starts Console mode: Playnite Fullscreen (with your theme) on that TV, and PaRuX stays available for AI. If Playnite is missing or skipped, PaRuX simply opens in its normal window."
+                            loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX avvia la modalità Console: Playnite a schermo intero (con il tuo tema) su quella TV, e PaRuX resta disponibile per l'IA. Se Playnite manca o è stato saltato, PaRuX si apre semplicemente nella finestra normale." />
                         <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
                             Header="When PaRuX starts (also at sign-in) and no chosen TV is connected, the window" loc:Loc.ItHeader="Quando PaRuX parte (anche all'accesso) e nessuna TV scelta è collegata, la finestra"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"

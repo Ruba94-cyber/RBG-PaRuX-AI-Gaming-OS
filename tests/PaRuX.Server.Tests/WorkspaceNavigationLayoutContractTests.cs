@@ -15,14 +15,14 @@ public sealed class WorkspaceNavigationLayoutContractTests
         XNamespace ui = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
 
-        // Contract update (44a827c): the pane footer is allowed for exactly one pinned, non-workspace
-        // control, the Console / TV entry button. Workspaces and recent chats must still never live
+        // Contract update (44a827c, gaming-removal step 3): the pane footer is allowed for exactly one pinned, non-workspace
+        // control, the Playnite Console button (Console mode is Playnite Fullscreen; the native Console / TV shell was removed). Workspaces and recent chats must still never live
         // in the footer: they share the MenuItems scroll surface.
         XElement paneFooter = Assert.Single(document.Descendants(ui + "NavigationView.PaneFooter"));
         XElement footerButton = Assert.Single(paneFooter.Elements());
         Assert.Equal("Button", footerButton.Name.LocalName);
-        Assert.Equal("ConsoleModeButton", (string?)footerButton.Attribute(x + "Name"));
-        Assert.Equal("MainWindow_ConsoleMode_Button", (string?)footerButton.Attribute("AutomationProperties.AutomationId"));
+        Assert.Equal("PlayniteConsoleButton", (string?)footerButton.Attribute(x + "Name"));
+        Assert.Equal("MainWindow_PlayniteConsole_Button", (string?)footerButton.Attribute("AutomationProperties.AutomationId"));
         // Settings and Help are pinned in FooterMenuItems so they stay reachable in Advanced at 720 px height,
         // where the scrolling MenuItems list (workspaces + recent chats) would otherwise push them out of view.
         XElement footerMenu = Assert.Single(document.Descendants(ui + "NavigationView.FooterMenuItems"));

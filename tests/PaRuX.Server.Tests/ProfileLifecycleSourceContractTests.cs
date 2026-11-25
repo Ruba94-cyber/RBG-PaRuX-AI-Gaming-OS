@@ -11,39 +11,6 @@ namespace PaRuX.Server.Tests;
 public sealed class ProfileLifecycleSourceContractTests
 {
     [Fact]
-    public void Gaming_library_cancels_queries_and_retries_when_hidden()
-    {
-        string home = Read("src", "PaRuX.App", "Views", "GamingHomeView.cs");
-        string wrapper = Read("src", "PaRuX.App", "Views", "UniversalLibraryPanel.cs");
-        string page = ReadGameLibraryView();
-        string shell = Read("src", "PaRuX.App", "MainWindow.Workspaces.cs");
-
-        Assert.Contains("internal void CancelPendingQueries()", home, StringComparison.Ordinal);
-        Assert.Contains("++_searchEditGeneration", home, StringComparison.Ordinal);
-        Assert.Contains("++_generation", home, StringComparison.Ordinal);
-        Assert.Contains("_cancellation?.Cancel()", home, StringComparison.Ordinal);
-        Assert.Contains("internal Task RefreshWhenShownAsync()", home, StringComparison.Ordinal);
-        Assert.Contains("_home.CancelPendingQueries()", wrapper, StringComparison.Ordinal);
-        Assert.Contains("_universal?.CancelPendingQueries()", page, StringComparison.Ordinal);
-        Assert.Contains("await _universal.RefreshVisibleTitlesAsync()", page, StringComparison.Ordinal);
-        Assert.Contains("GameLibraryPageIfCreated?.CancelExpensiveWork()", shell, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Gaming_only_hides_every_ai_dependent_command_inside_the_gaming_workspace()
-    {
-        string home = Read("src", "PaRuX.App", "Views", "GamingHomeView.cs");
-        string page = ReadGameLibraryView();
-        string wrapper = Read("src", "PaRuX.App", "Views", "UniversalLibraryPanel.cs");
-        Assert.Contains("_localGuide.Visibility = aiEnabled", home, StringComparison.Ordinal);
-        Assert.Contains("_gameAssetStudio.Visibility = aiEnabled", home, StringComparison.Ordinal);
-        Assert.Contains("_returnToAi.Visibility = gamingOnly", page, StringComparison.Ordinal);
-        Assert.Contains("if (GamingOnlySetup || _busy || !_returnToAiAvailable)", page, StringComparison.Ordinal);
-        Assert.Contains("_universal?.ApplySetupProfilePresentation()", page, StringComparison.Ordinal);
-        Assert.Contains("_home.ApplySetupProfilePresentation()", wrapper, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Model_hub_cancels_background_polls_before_hide_and_only_starts_one_initial_refresh()
     {
         string hub = Read("src", "PaRuX.App", "Views", "ModelHubView.cs");

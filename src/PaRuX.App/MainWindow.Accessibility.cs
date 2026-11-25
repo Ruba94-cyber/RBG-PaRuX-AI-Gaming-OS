@@ -86,7 +86,7 @@ namespace PaRuX
                     }
                 }
                 // Console/TV keeps the pane open and owns Escape (exit), exactly like gamepad B.
-                else if (NavView?.IsPaneOpen == true && !_consoleModeActive)
+                else if (NavView?.IsPaneOpen == true)
                 {
                     NavView.IsPaneOpen = false;
                     _userExplicitlyToggledPane = true;

@@ -86,7 +86,6 @@ namespace PaRuX
         private ManualGameLibraryView CreateGameLibraryPage()
         {
             var page = new ManualGameLibraryView();
-            page.GameGuideChatRequested += OnGameGuideChatRequested;
             _gameLibraryPage = AddEagerPage(page);
             return page;
         }

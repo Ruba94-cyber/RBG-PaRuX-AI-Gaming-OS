@@ -165,13 +165,21 @@ public sealed class ConsoleTvSelectorTests
     }
 
     [Fact]
-    public void The_native_console_button_never_blocks_on_a_missing_tv()
+    public void Console_start_without_Playnite_never_opens_a_native_fullscreen_shell()
     {
-        // Contract: the explicit start has no blocking dialog; it uses a discreet bilingual notice and leaves the window where it is.
-        string src = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "PaRuX.App", "MainWindow.ConsoleMode.cs"));
-        Assert.DoesNotContain("TV not available", src);
-        Assert.Contains("TV not connected: using the current screen.", src);
-        Assert.Contains("TV non collegata: uso lo schermo attuale.", src);
+        // Gaming-removal step 3: the native PaRuX Console/TV presenter is gone. A TV start or sign-in start whose Playnite Fullscreen
+        // handoff fails leaves PaRuX in its normal window; nothing in the shell can still enter a PaRuX fullscreen presenter.
+        string root = FindRepoRoot();
+        Assert.False(File.Exists(Path.Combine(root, "src", "PaRuX.App", "MainWindow.ConsoleMode.cs")));
+        foreach (string file in Directory.GetFiles(Path.Combine(root, "src", "PaRuX.App"), "MainWindow*.cs"))
+        {
+            string src = File.ReadAllText(file);
+            Assert.DoesNotContain("EnterConsoleModeAsync", src);
+            Assert.DoesNotContain("AppWindowPresenterKind.FullScreen", src);
+        }
+        string startup = File.ReadAllText(Path.Combine(root, "src", "PaRuX.App", "MainWindow.ConsoleStartup.cs"));
+        Assert.Contains("TryStartPlayniteConsoleAsync()", startup);
+        Assert.Contains("PaRuX stays in its normal window", startup);
     }
 
     private static string FindRepoRoot()

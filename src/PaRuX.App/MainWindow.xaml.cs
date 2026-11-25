@@ -115,10 +115,8 @@ namespace PaRuX
             // A fullscreen game may leave the PaRuX window deactivated. Refresh
             // the Gaming return state only when the user/OS foregrounds PaRuX.
             // Never focus-steal or run an idle status poll during gameplay.
-            Activated += OnConsoleWindowActivated;
             Activated += OnWindowActivatedForIndicators;
             UiPollCadence.WindowHiddenProbe = IsMainWindowHidden;
-            InitializeConsoleVerifiedReturn();
             InitializeOnScreenKeyboard();
 
             IntPtr hwnd = WindowNative.GetWindowHandle(this);
@@ -128,7 +126,7 @@ namespace PaRuX
             // Opt-in system dictation: registers its own single shortcut only when the person switched it on.
             SystemDictationService.Current.Attach(hwnd, DispatcherQueue);
 
-            // (The Games page is created on first open; its game-guide handoff is wired in CreateGameLibraryPage.)
+            // (The Games tools page is created on first open; its game-guide handoff is wired in EnsurePage.)
 
             ChatSession.Current.ConversationChanged += OnConversationChanged;
             ChatSession.Current.MessageAdded += _ => OnConversationTouched();
@@ -798,8 +796,7 @@ namespace PaRuX
             if (SettingsStore.Current.Data.OnboardingCompleted
                 && !IsWorkspaceAllowedForSetup(ChatHomeNavigationPolicy.ChatWorkspaceTag))
             {
-                ShowStudioWorkspace(StudioWorkspace.Games);
-                GameLibraryPage.OnShown();
+                ShowGamesHome();
                 return;
             }
             SyncModeTabToWorkspace(gaming: false);
@@ -1226,7 +1223,6 @@ namespace PaRuX
             if (_trayDisposed) return;
             _trayDisposed = true;
             GamingManager.Current.StateChanged -= OnGamingModeChangedForIndicatorTimer;
-            LocalAiController.Current.VerifiedGameReturnChanged -= OnVerifiedGameReturnChanged;
             _activeIndicatorTimer?.Stop();
             try
             {

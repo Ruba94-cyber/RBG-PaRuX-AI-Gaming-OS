@@ -26,7 +26,7 @@ public sealed partial class MainWindow
     {
         try
         {
-            if (hasPlayRequest || App.IsShuttingDown || _consoleModeActive ||
+            if (hasPlayRequest || App.IsShuttingDown ||
                 _playniteConsoleHandoffActive || _playniteDesktopFallbackAtStartup) return;
             var status = await PlayniteClient.Current.GetStatusAsync();
             if (!status.Succeeded || status.Value is not { } s) return;
@@ -55,7 +55,7 @@ public sealed partial class MainWindow
     {
         try
         {
-            if (App.IsShuttingDown || _consoleModeActive || _playniteConsoleHandoffActive)
+            if (App.IsShuttingDown || _playniteConsoleHandoffActive)
                 return ConsolePlayniteStartResult.Unavailable;
             var before = await PlayniteClient.Current.GetStatusAsync();
             if (!before.Succeeded || before.Value is not { } status) return ConsolePlayniteStartResult.Unavailable;
@@ -205,7 +205,7 @@ public sealed partial class MainWindow
             if (App.IsShuttingDown) return;
             if (GamingManager.Current.IsActive) { Log.Write("Playnite return skipped: a game became active."); return; }
             PadBringForward();
-            if (!_consoleModeActive) ShowChat();
+            ShowChat();
         }
         catch (Exception ex) { Log.Write("Playnite return failed: " + ex.GetType().Name); }
     }

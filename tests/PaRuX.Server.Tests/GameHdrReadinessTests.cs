@@ -135,7 +135,6 @@ public sealed class GameHdrReadinessTests
         string probe = Read("src", "PaRuX.Server", "Orchestration", "Gaming", "GamingHdrDisplayProbe.cs");
         string launcher = Read("src", "PaRuX.Server", "Orchestration", "Gaming", "ManualGameSessionService.cs");
         string topology = Read("src", "PaRuX.Server", "Orchestration", "Gaming", "GamingDisplayTopologyService.cs");
-        string ui = Read("src", "PaRuX.App", "Views", "GameLaunchProfileSection.cs");
         Assert.Contains("QueryDisplayConfig", probe);
         Assert.Contains("DisplayConfigGetColorInfo2", probe);
         Assert.DoesNotContain("DisplayConfigSetDeviceInfo", probe);
@@ -143,9 +142,6 @@ public sealed class GameHdrReadinessTests
         Assert.Contains("GamingHdrDisplayProbe.Read(info.Device)", topology);
         Assert.Contains("GameHdrReadinessPolicy.Check(", launcher);
         Assert.Contains("if (!hdr.MayLaunch)", launcher);
-        Assert.Contains("Setup(_hdrMode,", ui);
-        Assert.Contains("HdrMode", ui);
-        Assert.Contains("next.HdrMode =", ui);
     }
 
     private static string Read(params string[] relative)

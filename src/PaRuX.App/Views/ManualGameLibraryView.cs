@@ -28,9 +28,7 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly StackPanel _games = new() { Spacing = 8 };
     private readonly StackPanel _root = new() { Spacing = 16, Padding = new Thickness(24), MaxWidth = 1500, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock _heading = new();
-    private bool _consolePresentation;
     private SelectorBar? _sectionBar;
-    private GamesToolsHome? _toolsHome;
     private readonly StackPanel _discoveredGames = new() { Spacing = 8 };
     private readonly TextBlock _discoveryStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _steamRefresh = new();
@@ -72,7 +70,6 @@ public sealed partial class ManualGameLibraryView : UserControl
     // An unreachable Core may temporarily disable actions, but must not erase the
     // last confirmed Gaming observation needed for foreground-return reconciliation.
     private bool _lastConfirmedGamingActive;
-    private bool _consoleForegroundRefreshInFlight;
     private readonly TextBlock _controllerStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _displayStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _displayItems = new() { Spacing = 8 };
@@ -81,9 +78,6 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly Button _browse = new();
     private bool _busy;
     private readonly TextBox _filter = new();
-    /// <summary>On-demand, manually confirmed, no auto-send Game-to-Chat handoff.</summary>
-    public event Func<string, IReadOnlyList<string>, bool>? GameGuideChatRequested;
-    private UniversalLibraryPanel? _universal;
     private readonly GameDownloadsPanel _downloads = new();
     private readonly ComboBox _storeFilter = new() { MinWidth = 180 };
     private readonly ComboBox _stateFilter = new() { MinWidth = 180 };
@@ -122,11 +116,8 @@ public sealed partial class ManualGameLibraryView : UserControl
         root.Children.Add(_heading);
         BuildStoreDiscoveryOffer(root);
 
-        // The Gaming home (Continue shelf, tile library, detail panel) opens first; it also hosts the opt-in advanced section.
-        _universal = new UniversalLibraryPanel(LaunchInstallationAsync, LoadAsync);
-        _universal.GameGuideChatRequested += (question, sources) =>
-            GameGuideChatRequested?.Invoke(question, sources) == true;
-        root.Children.Add(_universal);
+        // The native Gaming home (Continue shelf, tiles, detail panel) was removed in gaming-removal step 4: this page keeps only
+        // downloads, adding/importing/installer staging and the Gaming status. Game libraries belong to Playnite.
 
         // Real resource/session status lives on the same Games home in both TV and
         // desktop presentations. No background polling or controller worker.
@@ -400,22 +391,11 @@ public sealed partial class ManualGameLibraryView : UserControl
         List<UIElement> all = root.Children.ToList();
         root.Children.Clear();
         root.Children.Add(all[0]);   // page title
-        // Transition entry: Playnite-first tools are one click away without
-        // changing existing Library deep links, saved data or old UI test navigation.
-        var openTools = new Button
-        {
-            Content = T("Playnite & Games tools", "Playnite e strumenti Giochi"),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            MinHeight = 48
-        };
-        AutomationProperties.SetAutomationId(openTools, "GameLibrary_OpenTools_Button");
-        openTools.Click += (_, _) => OpenGamesSection("Tools");
-        root.Children.Add(openTools);
-        // The slim Games tools workspace page (mods, downloads, Playnite, handoff, guide, controller tools) hosts the same entry points.
+        // Since step 2 of the gaming-removal map this page is a sub-page of the slim Games tools page (the Games home): it only
+        // keeps downloads, adding/importing/installer staging and the Gaming status. The native library is no longer shown.
         var openToolsPage = new Button
         {
-            Content = T("Open the Games tools page", "Apri la pagina Strumenti giochi"),
+            Content = T("Back to Games tools", "Torna a Strumenti giochi"),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
             MinHeight = 48
@@ -423,18 +403,14 @@ public sealed partial class ManualGameLibraryView : UserControl
         AutomationProperties.SetAutomationId(openToolsPage, "GameLibrary_OpenToolsPage_Button");
         openToolsPage.Click += (_, _) => App.MainWin?.ShowGamesTools();
         root.Children.Add(openToolsPage);
-        var toolsHome = _toolsHome = new GamesToolsHome(OpenGamesSection);
         var sections = new (string Id, string Title, List<UIElement> Items)[]
         {
-            ("Library", T("Library", "Libreria"), new List<UIElement> { _universal }),
-            ("Tools", T("Playnite & tools", "Playnite e strumenti"), new List<UIElement> { toolsHome }),
             ("Downloads", T("Downloads", "Download"), all.Skip(downloadsStart).Take(addStart - downloadsStart).ToList()),
             ("Add", T("Add & import", "Aggiungi e importa"),
-                new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(async () => { await LoadAsync(); if (_universal is not null) await _universal.ReloadTitlesNowAsync(); }), _universal.AddTools }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
-            ("Emulators", T("Emulators & ROMs", "Emulatori e ROM"), new List<UIElement> { _universal.EmulatorTools }),
+                new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(LoadAsync) }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
             ("Devices", T("Gaming settings", "Impostazioni gaming"),
                 all.Skip(sessionStart).Take(downloadsStart - sessionStart)
-                    .Concat(all.Skip(displayStart).Take(displayEnd - displayStart)).Append(_universal.BackupTools).ToList()),
+                    .Concat(all.Skip(displayStart).Take(displayEnd - displayStart)).Append(new GameSaveBackupPanel()).ToList()),
         };
         var bar = new SelectorBar { HorizontalAlignment = HorizontalAlignment.Left };
         _sectionBar = bar;
@@ -446,7 +422,7 @@ public sealed partial class ManualGameLibraryView : UserControl
             var item = new SelectorBarItem { Text = section.Title, Tag = section.Id, MinHeight = 44 };
             AutomationProperties.SetAutomationId(item, "GameLibrary_Section_" + section.Id);
             bar.Items.Add(item);
-            var panel = new StackPanel { Spacing = 16, Visibility = section.Id == "Library" ? Visibility.Visible : Visibility.Collapsed };
+            var panel = new StackPanel { Spacing = 16, Visibility = section.Id == "Downloads" ? Visibility.Visible : Visibility.Collapsed };
             foreach (UIElement element in section.Items) panel.Children.Add(element);
             panels[section.Id] = panel;
         }
@@ -454,16 +430,6 @@ public sealed partial class ManualGameLibraryView : UserControl
         {
             string? tag = (sender.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (var pair in panels) pair.Value.Visibility = pair.Key == tag ? Visibility.Visible : Visibility.Collapsed;
-            // No hidden detection or Core startup: inspect optional Playnite
-            // only when the user explicitly opens the Playnite-first hub.
-            if (tag == "Tools") _ = toolsHome.RefreshPlayniteAsync();
-        };
-        _universal.ImportGamesRequested += () =>
-        {
-            var addItem = bar.Items.OfType<SelectorBarItem>().First(item => (string?)item.Tag == "Add");
-            bar.SelectedItem = addItem;
-            _pageScroll?.ChangeView(null, 0, null, disableAnimation: true);
-            addItem.Focus(FocusState.Programmatic);
         };
         // Five sections do not fit a narrow window: the strip scrolls sideways instead of cutting the last tab off.
         root.Children.Add(new ScrollViewer
@@ -480,31 +446,9 @@ public sealed partial class ManualGameLibraryView : UserControl
         bar.SelectedItem = bar.Items[0];
 
         _pageScroll = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        // Console/TV quick actions live in a layer above the scroller (not inside it), so opening one never moves the library.
-        var pageHost = new Grid();
-        pageHost.Children.Add(_pageScroll);
-        pageHost.Children.Add(_universal.QuickActionsLayer);
-        Content = pageHost;
+        Content = _pageScroll;
         Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
         Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
-    }
-
-    /// <summary>
-    /// Desktop controller entry: bring up Playnite-first tools and put focus
-    /// on the first launcher action. Legacy Console still uses its tile surface.
-    /// Only the user-initiated pad action invokes this method.
-    /// </summary>
-    public void OpenToolsFromController()
-    {
-        OpenGamesSection("Tools");
-        if (_toolsHome?.FocusPrimaryAction() != true)
-        {
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            {
-                if ((_sectionBar?.SelectedItem as SelectorBarItem)?.Tag as string == "Tools")
-                    _toolsHome?.FocusPrimaryAction();
-            });
-        }
     }
 
     /// <summary>Opens one section of this page from the slim Games tools page. Navigation only.</summary>

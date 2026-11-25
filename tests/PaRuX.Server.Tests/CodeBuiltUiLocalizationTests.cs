@@ -37,7 +37,6 @@ public sealed class CodeBuiltUiLocalizationTests
         ["Views/Loc.cs"] = 1,                            // doc comment sample
         ["Views/ModelRoutingPanel.cs"] = 1,              // fixture
         ["Views/ToolsAutomationView.cs"] = 1,            // JSON example
-        ["Views/UniversalLibraryPanel.cs"] = 1,          // path and size template
     };
 
     [Fact]

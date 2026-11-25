@@ -191,46 +191,6 @@ public sealed class GameTileListModelTests
         return File.ReadAllText(Path.Combine(new[] { dir.FullName }.Concat(parts).ToArray()));
     }
 
-    [Fact]
-    public void Games_home_action_row_uses_natural_size_wrapping_not_fixed_cells()
-    {
-        string code = Source("src", "PaRuX.App", "Views", "GamingHomeView.cs");
-        Assert.Contains("var quickRow = new WrapRowPanel()", code);
-        Assert.DoesNotContain("ItemWidth = 210", code);
-        Assert.DoesNotContain("summaryHost.MaxWidth", code);
-    }
-
-    [Fact]
-    public void Library_grid_is_virtualized_recycles_tiles_and_decodes_covers_at_display_size()
-    {
-        string code = Source("src", "PaRuX.App", "Views", "GameTileGrid.cs");
-        Assert.Contains("new ItemsRepeater", code);
-        Assert.Contains("new UniformGridLayout", code);
-        Assert.Contains("IElementFactory", code);
-        Assert.Contains("RecycleElement", code);
-        Assert.DoesNotContain("VariableSizedWrapGrid", code);
-        Assert.DoesNotContain("_items.Children.Add", code);
-        Assert.Contains("DecodePixelWidth = pixels", code);
-        Assert.Contains("BoundedLruCache<string, CoverEntry>", code);
-        Assert.Contains("entry.Bitmap.UriSource = null", code);   // an unfinished decode is cancelled on recycle
-        // Handlers are attached once, when a tile is created, never when it is bound to a title.
-        string bind = code[code.IndexOf("private void Bind(", StringComparison.Ordinal)..code.IndexOf("private void Unbind(", StringComparison.Ordinal)];
-        Assert.DoesNotContain("+=", bind);
-        Assert.DoesNotContain("File.", bind);
-        // A refresh with the same titles must not swap the items source.
-        Assert.Contains("GameTileListModel.Diff(_source, titles)", code);
-    }
-
-    [Fact]
-    public void Search_sort_and_filter_reloads_do_not_download_the_unfiltered_library_again()
-    {
-        string code = Source("src", "PaRuX.App", "Views", "GamingHomeView.cs");
-        Assert.Contains("ReloadAsync(queryOnly: true)", code);
-        Assert.Contains("queryOnly && _continueLoaded && !refresh", code);
-        string client = Source("src", "PaRuX.App", "Services", "GamingLibraryClient.cs");
-        Assert.Contains("StampedCache<Dictionary<string, string>> IndexCache", client);
-        Assert.Contains("IndexCache.Get().TryGetValue", client);
-    }
 }
 
 /// <summary>The pure scroll-then-focus decisions behind GameTileGrid.FocusIndex (no UI thread needed).</summary>

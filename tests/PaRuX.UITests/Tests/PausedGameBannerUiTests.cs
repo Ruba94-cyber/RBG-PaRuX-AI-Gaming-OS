@@ -17,38 +17,32 @@ public sealed class PausedGameBannerUiTests
     private const string GamingTab = "MainWindow_ModeTab_Gaming";
 
     [Fact, Trait("Category", "Regression"), Trait("Category", "FlaUI")]
-    public void A_paused_app_is_offered_for_resume_at_the_very_top_of_the_library_and_resuming_removes_the_card()
+    public void A_paused_app_is_offered_for_resume_on_the_Games_tools_page_and_resuming_removes_the_card()
     {
         UiTestApplication.WaitForCorePortReleased();
-        string root = SyntheticGameLibrary.CreateRoot(12);
+        string root = SyntheticGameLibrary.CreateRoot(0);
         using Process target = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "charmap.exe")) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized })!;   // minimized: it must not pop up on the owner's screen
         try
         {
             UiWait.For(() => { target.Refresh(); return target.MainWindowHandle != IntPtr.Zero; }, "test application window", TimeSpan.FromSeconds(30));
-            string name = nameof(A_paused_app_is_offered_for_resume_at_the_very_top_of_the_library_and_resuming_removes_the_card);
+            string name = nameof(A_paused_app_is_offered_for_resume_on_the_Games_tools_page_and_resuming_removes_the_card);
             using var app = new UiTestApplication(name, restartDataRoot: root);
             try
             {
+                // Since gaming-removal step 4 the paused-game card and Quick Resume live on the Games tools page, in one expander.
                 new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, GamingTab));
-                UiWait.ById(app.MainWindow, "GameTitles_Search_TextBox");
+                UiWait.ById(app.MainWindow, "GamesToolsPage_QuickResume_Expander").Patterns.ExpandCollapse.Pattern.Expand();
                 string resumeId = "GameHome_PausedBanner_Resume_" + target.Id;
                 Assert.Null(GamingSectionsPage.TryFind(app.MainWindow, resumeId));   // nothing is paused yet: no card
 
-                // Pause it from the Quick Resume list further down the page (the normal way), then the card must appear on its own.
+                // Pause it from the Quick Resume list (the normal way), then the card must appear on its own.
                 string pauseId = "QuickResume_Pause_" + target.Id;
                 AutomationElement? pause = null;
-                GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, () => (pause = GamingSectionsPage.TryFind(app.MainWindow, pauseId)) != null,
-                    "Quick Resume lists the test application", stepsEachWay: 25);
+                UiWait.For(() => (pause = GamingSectionsPage.TryFind(app.MainWindow, pauseId)) != null,
+                    "Quick Resume lists the test application", TimeSpan.FromSeconds(60));
                 new InstallProgressPage(app).Invoke(pause!);
 
-                AutomationElement resume = UiWait.ById(app.MainWindow, resumeId);   // the card (polls about every 5 s, or right after the action)
-                // It sits above the search box and the library: the first thing on the page.
-                GamingLibraryVirtualizationUiTests.ScrollPageUntil(app, () => GamingSectionsPage.TryFind(app.MainWindow, resumeId) is { } e
-                    && !e.Properties.IsOffscreen.ValueOrDefault, "resume card visible at the top of the page", stepsEachWay: 25);
-                double resumeTop = GamingSectionsPage.TryFind(app.MainWindow, resumeId)!.BoundingRectangle.Top;
-                AutomationElement search = UiWait.ById(app.MainWindow, "GameTitles_Search_TextBox");
-                if (!search.Properties.IsOffscreen.ValueOrDefault)
-                    Assert.True(resumeTop < search.BoundingRectangle.Top, $"resume card ({resumeTop}) must be above the search box ({search.BoundingRectangle.Top})");
+                UiWait.ById(app.MainWindow, resumeId);   // the card (polls about every 5 s, or right after the action)
                 app.CaptureSnapshot("paused-banner-visible");
 
                 new InstallProgressPage(app).Invoke(GamingSectionsPage.TryFind(app.MainWindow, resumeId)!);

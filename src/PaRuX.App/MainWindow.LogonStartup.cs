@@ -143,7 +143,7 @@ public sealed partial class MainWindow
 
     private async Task StartLogonConsoleAsync(bool playniteOnly)
     {
-        if (_consoleModeActive || _consoleRoutingInProgress || GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive()) return;
+        if (_consoleRoutingInProgress || GamingManager.Current.IsActive || LocalAiController.Current.IsGameActive()) return;
         _consoleRoutingInProgress = true;
         try
         {
@@ -151,8 +151,8 @@ public sealed partial class MainWindow
             ConsoleStartFollowUp follow = ConsoleModeReadiness.FollowUp(handoff, alwaysConsole: playniteOnly);
             if (follow == ConsoleStartFollowUp.MinimizePaRuX) { MinimizeForPlayniteConsole(); return; }
             if (follow == ConsoleStartFollowUp.StayOpen) return;
-            // Playnite was not started: with the TV preference Console opens inside PaRuX; with the simple option PaRuX just opens.
-            if (!playniteOnly) await EnterConsoleModeAsync();
+            // Playnite was not started: PaRuX simply stays in its normal window (the native Console/TV shell was removed).
+            Log.Write("Sign-in Console start: Playnite Fullscreen was not started (" + handoff + "); PaRuX stays in its normal window.");
         }
         finally { _consoleRoutingInProgress = false; }
     }

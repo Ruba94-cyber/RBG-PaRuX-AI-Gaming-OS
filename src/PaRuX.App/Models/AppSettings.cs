@@ -20,6 +20,8 @@ namespace PaRuX.Models
         /// <summary>Last top-level shell tab: "AI" (default, also used for any unknown value) or "Gaming".</summary>
         public string LastModeTab { get; set; } = "AI";
         // Gaming library view (remembered between runs). Unknown or invalid values fall back to the defaults.
+        // OBSOLETE since gaming-removal step 4 (native library views removed): the GameLibrary* fields below are no longer read or
+        // shown. They are kept and still serialised so settings from an older PaRuX load unchanged and a rollback loses nothing.
         /// <summary>Sort: "name" (default), "lastplayed", "playtime" or "recentlyadded".</summary>
         public string GameLibrarySort { get; set; } = "name";
         /// <summary>"grid" (default) or "list".</summary>
@@ -113,6 +115,8 @@ namespace PaRuX.Models
         /// to the foreground only after Core signals a verified owned-game exit
         /// AND confirms the AI resources were restored. Never on manual Return,
         /// game handoffs, splash exits or generic Gaming marker disappearance.</summary>
+        /// <remarks>OBSOLETE since gaming-removal step 3 (native Console/TV shell removed): no longer read or shown. Kept and still
+        /// serialised so settings written by an older PaRuX load unchanged and a rollback keeps the owner's choice.</remarks>
         public bool AutoShowConsoleAfterVerifiedGameExit { get; set; } = false;
 
         /// <summary>Opt-in: while Console/TV mode (or a Playnite Fullscreen PaRuX started) is in use, select the Windows power plan

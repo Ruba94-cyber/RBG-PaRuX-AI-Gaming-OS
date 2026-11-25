@@ -11,7 +11,7 @@ public sealed class CommandPaletteFilterTests
         ("Go to Model Hub", "models download"),
         ("Go to Settings", "preferences language theme"),
         ("New chat", "start conversation"),
-        ("Toggle Console / TV mode", "fullscreen controller"),
+        ("Open Playnite Console (Fullscreen)", "console tv controller"),
     };
 
     private static string[] Run(string query) =>
@@ -40,5 +40,5 @@ public sealed class CommandPaletteFilterTests
 
     [Fact]
     public void Matching_is_case_insensitive_and_ignores_punctuation_in_titles() =>
-        Assert.Contains("Toggle Console / TV mode", Run("TV"));
+        Assert.Contains("Open Playnite Console (Fullscreen)", Run("FULLSCREEN"));
 }

@@ -44,12 +44,25 @@ public sealed partial class MainWindow
         _ = RunPadActionAsync(binding.ActionId);
     }
 
+    /// <summary>True while the Games home (slim Games tools page) or its install/import sub-page is the visible workspace.</summary>
+    private bool GamesWorkspaceVisible() =>
+        IsLazyPageVisible(StudioWorkspace.GamesTools) || GameLibraryPageIfCreated?.Visibility == Microsoft.UI.Xaml.Visibility.Visible;
+
+    /// <summary>Controller entry to Games: the slim Games tools page with focus on its first Playnite action. Nothing is scanned or started.</summary>
+    private void ShowGamesHomeFromController()
+    {
+        if (!IsWorkspaceAllowedForSetup(WorkspaceNavigationOrder.GamesWorkspaceTag)) return;
+        ShowGamesHome();
+        if (PeekPage(StudioWorkspace.GamesTools) is PaRuX.Views.GamesToolsView tools && !tools.FocusPrimaryAction())
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => tools.FocusPrimaryAction());
+    }
+
     internal async Task RunPadActionAsync(PadActionId action)
     {
         _padActionBusy = true;
         try
         {
-            var ctx = new PadActionContext(GamingManager.Current.IsActive, _consoleModeActive, ConsoleOnGamingWorkspace());
+            var ctx = new PadActionContext(GamingManager.Current.IsActive, false, GamesWorkspaceVisible());
             PadActionDecision decision = PadActionPolicy.Decide(action, ctx);
             if (!decision.Allowed)
             {
@@ -60,32 +73,15 @@ public sealed partial class MainWindow
             {
                 case PadActionId.OpenMenu:
                     PadBringForward();
-                    if (_consoleModeActive && !ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace();   // TV mode: home is the Gaming library
                     break;
                 case PadActionId.GamingLibrary:
                     PadBringForward();
-                    if (_consoleModeActive) { if (!ConsoleOnGamingWorkspace()) SwitchConsoleWorkspace(); }
-                    else
-                    {
-                        ShowStudioWorkspace(StudioWorkspace.Games);
-                        // Set the lightweight Tools surface BEFORE the page's
-                        // on-shown refresh so no native catalogue scan is queued.
-                        GameLibraryPage.OpenToolsFromController();
-                        GameLibraryPage.OnShown();
-                    }
+                    ShowGamesHomeFromController();
                     break;
                 case PadActionId.SwitchWorkspace:
                     PadBringForward();
-                    if (_consoleModeActive) SwitchConsoleWorkspace();
-                    else if (ConsoleOnGamingWorkspace()) ShowChat();
-                    else
-                    {
-                        ShowStudioWorkspace(StudioWorkspace.Games);
-                        // Set the lightweight Tools surface BEFORE the page's
-                        // on-shown refresh so no native catalogue scan is queued.
-                        GameLibraryPage.OpenToolsFromController();
-                        GameLibraryPage.OnShown();
-                    }
+                    if (GamesWorkspaceVisible()) ShowChat();
+                    else ShowGamesHomeFromController();
                     break;
                 case PadActionId.MiniAgent:
                     if (App.BubbleWin is { } bubble) bubble.ShowExpanded();
