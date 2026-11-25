@@ -326,7 +326,8 @@ namespace PaRuX.Services
                 {
                     ct.ThrowIfCancellationRequested();
                     // A user instruction sent while the task runs is delivered here, before the next model call.
-                    CodingAgentSteering.DeliverAtStepBoundary(resolvedSessionId, step, log, onStep);
+                    if (CodingAgentSteering.DeliverAtStepBoundary(resolvedSessionId, step, log, onStep) > 0)
+                        consecutiveNonProgress = 0;
                     FlushStepTiming();
                     phaseTimer.BeginStep(step);
 

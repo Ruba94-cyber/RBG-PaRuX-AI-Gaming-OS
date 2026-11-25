@@ -28,11 +28,15 @@ namespace PaRuX.Services
 
         private static readonly ConcurrentDictionary<string, Slot> Active = new(StringComparer.Ordinal);
 
+        /// <summary>Raised outside the queue lock whenever a session activates, queues, cancels, delivers, or ends.</summary>
+        public static event Action<string>? StateChanged;
+
         /// <summary>Called by the run for its whole lifetime; disposing it discards undelivered instructions.</summary>
         public static IDisposable Activate(string sessionId)
         {
             var slot = new Slot();
             Active[sessionId] = slot;
+            NotifyStateChanged(sessionId);
             return new Scope(sessionId, slot);
         }
 
@@ -42,6 +46,27 @@ namespace PaRuX.Services
         {
             if (string.IsNullOrWhiteSpace(sessionId) || !Active.TryGetValue(sessionId, out Slot? slot)) return 0;
             lock (slot.Gate) return slot.Pending.Count;
+        }
+
+        /// <summary>Returns a thread-safe snapshot of currently queued, undelivered instructions (oldest first).</summary>
+        public static IReadOnlyList<string> PeekPending(string? sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId) || !Active.TryGetValue(sessionId, out Slot? slot)) return Array.Empty<string>();
+            lock (slot.Gate) return slot.Pending.Count == 0 ? Array.Empty<string>() : slot.Pending.ToArray();
+        }
+
+        /// <summary>Cancels all queued, undelivered steering instructions for <paramref name="sessionId"/> and returns how many were removed.</summary>
+        public static int ClearPending(string? sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId) || !Active.TryGetValue(sessionId, out Slot? slot)) return 0;
+            int removed;
+            lock (slot.Gate)
+            {
+                removed = slot.Pending.Count;
+                slot.Pending.Clear();
+            }
+            if (removed > 0) NotifyStateChanged(sessionId);
+            return removed;
         }
 
         public static CodingSteeringOutcome Submit(string? sessionId, string? text)
@@ -55,6 +80,7 @@ namespace PaRuX.Services
                 if (slot.Pending.Count >= MaxPending) return CodingSteeringOutcome.QueueFull;
                 slot.Pending.Add(clean);
             }
+            NotifyStateChanged(sessionId);
             return CodingSteeringOutcome.Accepted;
         }
 
@@ -79,7 +105,19 @@ namespace PaRuX.Services
                     + instruction);
                 onStep?.Invoke("Step " + step + ": delivered a new user instruction (" + Truncate(instruction, 120) + ").");
             }
+            NotifyStateChanged(sessionId);
             return batch.Count;
+        }
+
+        private static void NotifyStateChanged(string sessionId)
+        {
+            Action<string>? handlers = StateChanged;
+            if (handlers == null) return;
+            foreach (Delegate handler in handlers.GetInvocationList())
+            {
+                try { ((Action<string>)handler)(sessionId); }
+                catch { /* observers must never break the agent step loop */ }
+            }
         }
 
         private static string Clean(string? text)
@@ -103,7 +141,8 @@ namespace PaRuX.Services
             {
                 if (System.Threading.Interlocked.Exchange(ref _disposed, 1) == 1) return;
                 // Only remove this run's slot; a newer run for the same id must not lose its queue.
-                Active.TryRemove(new KeyValuePair<string, Slot>(_id, _slot));
+                if (Active.TryRemove(new KeyValuePair<string, Slot>(_id, _slot)))
+                    NotifyStateChanged(_id);
             }
         }
     }

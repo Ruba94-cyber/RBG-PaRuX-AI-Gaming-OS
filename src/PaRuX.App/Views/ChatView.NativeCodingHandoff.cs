@@ -542,6 +542,7 @@ namespace PaRuX.Views
                     || string.Equals(statusStr, AgentTaskStatus.Verifying, StringComparison.OrdinalIgnoreCase))
                 && CodingAgentSteering.IsActive(message.CodeTaskId))
             {
+                string steerTaskId = message.CodeTaskId!;
                 var steerBox = new TextBox
                 {
                     Header = T("Add an instruction while it works", "Aggiungi un'istruzione mentre lavora"),
@@ -551,9 +552,51 @@ namespace PaRuX.Views
                     MaxLength = CodingAgentSteering.MaxCharacters
                 };
                 AutomationProperties.SetAutomationId(steerBox, "Chat_CodingTask_Steer_Input");
+                AutomationProperties.SetName(steerBox, T("Add an instruction while it works", "Aggiungi un'istruzione mentre lavora"));
+
+                var steerStatus = new TextBlock
+                {
+                    FontSize = 11,
+                    Opacity = 0.85,
+                    TextWrapping = TextWrapping.Wrap,
+                    Visibility = Visibility.Collapsed
+                };
+                AutomationProperties.SetAutomationId(steerStatus, "Chat_CodingTask_Steer_Status");
+
                 var steerButton = new Button { Content = T("Send instruction", "Invia istruzione"), Padding = new Thickness(12, 4, 12, 4) };
                 AutomationProperties.SetAutomationId(steerButton, "Chat_CodingTask_Steer_Button");
-                string steerTaskId = message.CodeTaskId!;
+                AutomationProperties.SetName(steerButton, T("Send instruction", "Invia istruzione"));
+
+                var cancelSteerButton = new Button
+                {
+                    Content = T("Cancel queued", "Annulla in coda"),
+                    Padding = new Thickness(10, 4, 10, 4),
+                    Visibility = Visibility.Collapsed
+                };
+                AutomationProperties.SetAutomationId(cancelSteerButton, "Chat_CodingTask_Steer_Cancel_Button");
+                AutomationProperties.SetName(cancelSteerButton, T("Cancel queued steering instructions", "Annulla le istruzioni di guida in coda"));
+
+                void RefreshSteerState()
+                {
+                    IReadOnlyList<string> pending = CodingAgentSteering.PeekPending(steerTaskId);
+                    if (pending.Count == 0)
+                    {
+                        steerStatus.Visibility = Visibility.Collapsed;
+                        steerStatus.Text = string.Empty;
+                        cancelSteerButton.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        string last = pending[^1];
+                        string preview = last.Length <= 80 ? last : last[..80] + "…";
+                        steerStatus.Text = T(
+                            $"Queued for next step ({pending.Count}): {preview}",
+                            $"In coda per il prossimo passo ({pending.Count}): {preview}");
+                        steerStatus.Visibility = Visibility.Visible;
+                        cancelSteerButton.Visibility = Visibility.Visible;
+                    }
+                }
+
                 steerButton.Click += (_, _) =>
                 {
                     CodingSteeringOutcome outcome = CodingAgentSteering.Submit(steerTaskId, steerBox.Text);
@@ -566,9 +609,25 @@ namespace PaRuX.Views
                         _ => T("This task is no longer running, so the instruction was not sent.", "Questa attività non è più in esecuzione: istruzione non inviata.")
                     });
                     if (outcome == CodingSteeringOutcome.Accepted) steerBox.Text = string.Empty;
+                    RefreshSteerState();
                 };
+
+                cancelSteerButton.Click += (_, _) =>
+                {
+                    int cleared = CodingAgentSteering.ClearPending(steerTaskId);
+                    RefreshSteerState();
+                    ShowTransientStatus(cleared > 0
+                        ? T($"Cancelled {cleared} queued steering instruction(s).", $"Annullate {cleared} istruzioni di guida in coda.")
+                        : T("No queued steering instructions to cancel.", "Nessuna istruzione di guida in coda da annullare."));
+                };
+
+                RefreshSteerState();
+                var steerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                steerActions.Children.Add(steerButton);
+                steerActions.Children.Add(cancelSteerButton);
                 panel.Children.Add(steerBox);
-                panel.Children.Add(steerButton);
+                panel.Children.Add(steerStatus);
+                panel.Children.Add(steerActions);
             }
 
             // 5. Completed Review & Apply Section
@@ -1403,7 +1462,7 @@ namespace PaRuX.Views
                     }
                     CodeApplyResult result = await CodeWorktreeApplyService.ApplyAsync(
                         repositoryRoot, worktree, CancellationToken.None, reviewedDiffFingerprint, verifiedFingerprint,
-                        acceptedAtConfirmation);
+                        acceptedAtConfirmation, taskId: message.CodeTaskId);
                     Log.Write("Reviewed coding-task apply " + message.CodeTaskId + ": success=" + result.Success
                         + "; " + result.Message);
                     ChatSession.Current.AppendAssistantNotice(

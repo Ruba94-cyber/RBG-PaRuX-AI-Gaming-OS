@@ -179,6 +179,58 @@ namespace PaRuX.Services
             return true;
         }
 
+        /// <summary>
+        /// Async rewind that also reverses durable applied worktree patches (<see cref="CodeWorktreeApplyService"/>)
+        /// alongside direct in-memory agent snapshots when <paramref name="rewindFiles"/> is true.
+        /// </summary>
+        public async Task<RewindResult> RewindToMessageAsync(ChatMessage message, bool rewindFiles, CancellationToken ct = default)
+        {
+            if (IsBusy || AgentCodingWorkerService.HasActiveExecutionLease)
+                return new RewindResult { Status = RewindStatus.Busy, ConversationId = Conversation.Id };
+            RewindResult result = ConversationRewind.Rewind(Conversation, message, conversation =>
+            {
+                conversation.Title = conversation.Title == "New chat" || string.IsNullOrWhiteSpace(conversation.Title)
+                    ? HistoryStore.DeriveTitle(conversation)
+                    : conversation.Title;
+                return HistoryStore.Save(conversation);
+            });
+            if (result.Status == RewindStatus.Rewound)
+            {
+                if (rewindFiles && result.RemovedCodeTaskIds.Count > 0)
+                {
+                    try { result.FileRewind = await CodingTaskChangeTracker.Current.RewindFilesAsync(result.RemovedCodeTaskIds, ct); }
+                    catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+                    {
+                        Log.Write("File rewind failed: " + ex.Message);
+                    }
+                }
+                _lastRewind = result;
+                ConversationPersisted?.Invoke();
+                ConversationChanged?.Invoke();
+            }
+            return result;
+        }
+
+        /// <summary>Async undo of the last rewind, re-applying both durable worktree patches and in-memory snapshots.</summary>
+        public async Task<(bool Restored, CodingFileRewindResult? FileUndo)> UndoLastRewindAsync(CancellationToken ct = default)
+        {
+            if (IsBusy || !ConversationRewind.Undo(Conversation, _lastRewind, HistoryStore.RestoreBranch))
+                return (false, null);
+            CodingFileRewindResult? fileUndo = null;
+            if (_lastRewind?.FileRewind is { CanUndo: true } fileRewind)
+            {
+                try { fileUndo = await CodingTaskChangeTracker.Current.UndoFileRewindAsync(fileRewind, ct); }
+                catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+                {
+                    Log.Write("Undo of the file rewind failed: " + ex.Message);
+                }
+            }
+            _lastRewind = null;
+            if (!Conversation.IsIncognito) ConversationPersisted?.Invoke();
+            ConversationChanged?.Invoke();
+            return (true, fileUndo);
+        }
+
         /// <summary>Duplicates a stored conversation (default: the current one) into a new "Copy of …" conversation and opens it.</summary>
         public bool DuplicateConversation(string? id = null)
         {

@@ -244,6 +244,91 @@ namespace PaRuX.Services
             return result;
         }
 
+        /// <summary>
+        /// Rewinds the files of the given coding tasks, newest task first, connecting both durable worktree applies
+        /// recorded by <see cref="CodeWorktreeApplyService"/> and direct in-memory <see cref="CodingOwnChangeReverter"/>
+        /// snapshots. Files modified by the user after the agent applied or wrote them are refused honestly and never touched.
+        /// The returned result can be passed to <see cref="UndoFileRewindAsync"/>.
+        /// </summary>
+        public async Task<CodingFileRewindResult> RewindFilesAsync(
+            IReadOnlyList<string> taskIdsNewestFirst, CancellationToken ct, string? applyUndoStateDirectory = null)
+        {
+            var result = new CodingFileRewindResult();
+            foreach (string taskId in taskIdsNewestFirst.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.Ordinal))
+            {
+                ct.ThrowIfCancellationRequested();
+                IReadOnlyList<string> appliedUndoIds = CodeWorktreeApplyService.UndoIdsForTask(taskId, applyUndoStateDirectory);
+                if (appliedUndoIds.Count > 0)
+                {
+                    foreach (string undoId in appliedUndoIds)
+                    {
+                        CodeWorktreeRewindResult rev = await CodeWorktreeApplyService
+                            .ReverseForRewindAsync(undoId, ct, applyUndoStateDirectory).ConfigureAwait(false);
+                        IReadOnlyList<string> paths = rev.ChangedPaths is { Count: > 0 } ? rev.ChangedPaths : new[] { "*" };
+                        if (rev.Success)
+                        {
+                            var items = paths.Select(p => new CodingRevertItem(p, CodingRevertOutcome.Restored)).ToList();
+                            result.AddAppliedPatch(new CodingTaskRewindOutcome(taskId, true, items), rev.Undo);
+                        }
+                        else
+                        {
+                            CodingRevertOutcome outcome = rev.RefusedModifiedByUser || rev.RefusedHeadChanged
+                                ? CodingRevertOutcome.SkippedModifiedByUser
+                                : CodingRevertOutcome.SkippedNotWritten;
+                            var items = paths.Select(p => new CodingRevertItem(p, outcome)).ToList();
+                            result.AddAppliedPatch(new CodingTaskRewindOutcome(taskId, true, items), null, rev.Message);
+                        }
+                    }
+                    continue;
+                }
+
+                if (!_tasks.TryGetValue(taskId, out TaskState? state) || state.Reverter.TrackedCount == 0)
+                {
+                    result.AddTask(new CodingTaskRewindOutcome(taskId, false, Array.Empty<CodingRevertItem>()), null);
+                    continue;
+                }
+                IReadOnlyList<CodingRevertItem> reverted = state.Reverter.RevertWithUndo(out CodingRevertUndo undo);
+                result.AddTask(new CodingTaskRewindOutcome(taskId, true, reverted), undo);
+            }
+            return result;
+        }
+
+        /// <summary>Puts back both applied worktree patches and direct-write snapshots undone by <see cref="RewindFilesAsync"/>, oldest task first.</summary>
+        public async Task<CodingFileRewindResult> UndoFileRewindAsync(CodingFileRewindResult rewind, CancellationToken ct)
+        {
+            var result = new CodingFileRewindResult();
+            foreach (CodeWorktreeRewindUndo token in rewind.AppliedPatchUndoEntries.Reverse())
+            {
+                ct.ThrowIfCancellationRequested();
+                CodeWorktreeRewindResult reapplied = await CodeWorktreeApplyService
+                    .ReapplyAfterRewindUndoAsync(token, ct).ConfigureAwait(false);
+                IReadOnlyList<string> paths = reapplied.ChangedPaths is { Count: > 0 } ? reapplied.ChangedPaths : new[] { "*" };
+                if (reapplied.Success)
+                {
+                    var items = paths.Select(p => new CodingRevertItem(p, CodingRevertOutcome.Restored)).ToList();
+                    result.AddAppliedPatch(new CodingTaskRewindOutcome(token.TaskId, true, items), null);
+                }
+                else
+                {
+                    CodingRevertOutcome outcome = reapplied.RefusedModifiedByUser || reapplied.RefusedHeadChanged
+                        ? CodingRevertOutcome.SkippedModifiedByUser
+                        : CodingRevertOutcome.SkippedNotWritten;
+                    var items = paths.Select(p => new CodingRevertItem(p, outcome)).ToList();
+                    result.AddAppliedPatch(new CodingTaskRewindOutcome(token.TaskId, true, items), null, reapplied.Message);
+                }
+            }
+            foreach ((string taskId, CodingRevertUndo undo) in rewind.UndoEntries.Reverse<(string, CodingRevertUndo)>())
+            {
+                if (!_tasks.TryGetValue(taskId, out TaskState? state))
+                {
+                    result.AddTask(new CodingTaskRewindOutcome(taskId, false, Array.Empty<CodingRevertItem>()), null);
+                    continue;
+                }
+                result.AddTask(new CodingTaskRewindOutcome(taskId, true, state.Reverter.ApplyUndo(undo)), null);
+            }
+            return result;
+        }
+
         public void Forget(string taskId) => _tasks.TryRemove(taskId, out _);
 
         private TaskState State(string taskId, string workspaceRoot) =>
@@ -294,18 +379,29 @@ namespace PaRuX.Services
     {
         private readonly List<CodingTaskRewindOutcome> _tasks = new();
         private readonly List<(string TaskId, CodingRevertUndo Undo)> _undo = new();
+        private readonly List<CodeWorktreeRewindUndo> _appliedPatchUndo = new();
+        private readonly List<string> _appliedPatchRefusals = new();
 
         public IReadOnlyList<CodingTaskRewindOutcome> Tasks => _tasks;
         internal IReadOnlyList<(string TaskId, CodingRevertUndo Undo)> UndoEntries => _undo;
+        internal IReadOnlyList<CodeWorktreeRewindUndo> AppliedPatchUndoEntries => _appliedPatchUndo;
+        public IReadOnlyList<string> AppliedPatchRefusals => _appliedPatchRefusals;
         public int RestoredFiles => _tasks.Sum(t => t.Items.Count(i => i.Outcome is CodingRevertOutcome.Restored or CodingRevertOutcome.Deleted));
         public int SkippedFiles => _tasks.Sum(t => t.Items.Count(i => i.Outcome is not (CodingRevertOutcome.Restored or CodingRevertOutcome.Deleted)));
         public int TasksWithoutSnapshot => _tasks.Count(t => !t.HadSnapshot);
-        public bool CanUndo => _undo.Any(u => u.Undo.Count > 0);
+        public bool CanUndo => _undo.Any(u => u.Undo.Count > 0) || _appliedPatchUndo.Count > 0;
 
         internal void AddTask(CodingTaskRewindOutcome outcome, CodingRevertUndo? undo)
         {
             _tasks.Add(outcome);
             if (undo != null && undo.Count > 0) _undo.Add((outcome.TaskId, undo));
+        }
+
+        internal void AddAppliedPatch(CodingTaskRewindOutcome outcome, CodeWorktreeRewindUndo? undo, string? refusalReason = null)
+        {
+            _tasks.Add(outcome);
+            if (undo != null) _appliedPatchUndo.Add(undo);
+            if (!string.IsNullOrWhiteSpace(refusalReason)) _appliedPatchRefusals.Add(refusalReason);
         }
     }
 }

@@ -50,7 +50,7 @@ namespace PaRuX.Views
             var undoRewind = new MenuFlyoutItem { Text = ChatItalian ? "Annulla l'ultimo riavvolgimento" : "Undo last rewind", Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(undoRewind, UndoRewindAutomationId);
             AutomationProperties.SetName(undoRewind, undoRewind.Text);
-            undoRewind.Click += (_, _) => UndoLastRewind();
+            undoRewind.Click += async (_, _) => await UndoLastRewindAsync();
             flyout.Items.Add(undoRewind);
             flyout.Opening += (_, _) =>
                 undoRewind.Visibility = ChatSession.Current.CanUndoRewind ? Visibility.Visible : Visibility.Collapsed;
@@ -116,7 +116,7 @@ namespace PaRuX.Views
             }
 
             RewindResult result;
-            try { result = ChatSession.Current.RewindToMessage(message, rewindFiles); }
+            try { result = await ChatSession.Current.RewindToMessageAsync(message, rewindFiles); }
             catch (Exception ex)
             {
                 Log.Write("Rewind failed: " + ex.Message);
@@ -127,9 +127,15 @@ namespace PaRuX.Views
             string fileNote = string.Empty;
             if (result.FileRewind is { } files)
             {
-                fileNote = ChatItalian
+                string refusalNote = files.AppliedPatchRefusals.Count > 0
+                    ? (ChatItalian
+                        ? " Alcuni file applicati sono stati modificati dopo l'applicazione e sono stati lasciati intatti."
+                        : " Some applied files were edited after apply and were left untouched.")
+                    : string.Empty;
+                fileNote = (ChatItalian
                     ? $" File ripristinati: {files.RestoredFiles}; lasciati com'erano: {files.SkippedFiles}" + (files.TasksWithoutSnapshot > 0 ? $"; {files.TasksWithoutSnapshot} attività senza istantanea (app riavviata)." : ".")
-                    : $" Files restored: {files.RestoredFiles}; left as they were: {files.SkippedFiles}" + (files.TasksWithoutSnapshot > 0 ? $"; {files.TasksWithoutSnapshot} task(s) without a snapshot (app restarted)." : ".");
+                    : $" Files restored: {files.RestoredFiles}; left as they were: {files.SkippedFiles}" + (files.TasksWithoutSnapshot > 0 ? $"; {files.TasksWithoutSnapshot} task(s) without a snapshot (app restarted)." : "."))
+                    + refusalNote;
             }
             else if (rewindFiles && result.Status == RewindStatus.Rewound && result.RemovedCodeTaskIds.Count == 0)
                 fileNote = ChatItalian ? " Nessuna attività di programmazione da riavvolgere." : " No coding task to rewind.";
@@ -145,19 +151,25 @@ namespace PaRuX.Views
             } + fileNote);
         }
 
-        private void UndoLastRewind()
+        private async System.Threading.Tasks.Task UndoLastRewindAsync()
         {
             bool restored;
-            try { restored = ChatSession.Current.UndoLastRewind(); }
+            CodingFileRewindResult? fileUndo = null;
+            try { (restored, fileUndo) = await ChatSession.Current.UndoLastRewindAsync(); }
             catch (Exception ex)
             {
                 Log.Write("Undo rewind failed: " + ex.Message);
                 restored = false;
             }
             RefreshConversationBranchNavigation();
-            ShowTransientStatus(restored
+            string fileNote = fileUndo != null && (fileUndo.RestoredFiles > 0 || fileUndo.SkippedFiles > 0)
+                ? (ChatItalian
+                    ? $" File ripristinati: {fileUndo.RestoredFiles}; lasciati com'erano: {fileUndo.SkippedFiles}."
+                    : $" Files restored: {fileUndo.RestoredFiles}; left as they were: {fileUndo.SkippedFiles}.")
+                : string.Empty;
+            ShowTransientStatus((restored
                 ? (ChatItalian ? "Riavvolgimento annullato: i messaggi sono tornati." : "Rewind undone: the messages are back.")
-                : (ChatItalian ? "Non è più possibile annullare il riavvolgimento." : "The rewind can no longer be undone."));
+                : (ChatItalian ? "Non è più possibile annullare il riavvolgimento." : "The rewind can no longer be undone.")) + fileNote);
         }
 
         /// <summary>Visible per-message button next to Copy/Regenerate on assistant replies.</summary>

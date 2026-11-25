@@ -19,6 +19,24 @@ namespace PaRuX.Services
         // Set when the applied patch was kept so the owner can reverse exactly these changes (Git targets only).
         string? UndoId = null);
 
+    /// <summary>Snapshot kept in memory when a conversation rewind reverses an applied worktree patch so "Undo last rewind" can re-apply it safely.</summary>
+    public sealed record CodeWorktreeRewindUndo(
+        string TaskId,
+        string Repository,
+        byte[] PatchBytes,
+        bool NormalizeLineEndings,
+        string? Head,
+        string? OriginalUndoId,
+        string? UndoStateDirectory);
+
+    public sealed record CodeWorktreeRewindResult(
+        bool Success,
+        string Message,
+        IReadOnlyList<string>? ChangedPaths = null,
+        bool RefusedModifiedByUser = false,
+        bool RefusedHeadChanged = false,
+        CodeWorktreeRewindUndo? Undo = null);
+
     /// <summary>
     /// Explicit user-driven bridge from an isolated PaRuX task worktree back to the user's original
     /// repository. It never commits, pushes or rebases. The complete binary-capable patch must pass
@@ -33,7 +51,8 @@ namespace PaRuX.Services
             string repositoryRoot, string worktreeRoot, CancellationToken ct,
             string? approvedWorkspaceFingerprint = null, string? verifiedWorkspaceFingerprint = null,
             IReadOnlyList<string>? acceptedFiles = null,
-            string? undoStateDirectory = null)
+            string? undoStateDirectory = null,
+            string? taskId = null)
         {
             if (acceptedFiles != null && acceptedFiles.Count == 0) return new CodeApplyResult(false, "No accepted files to apply. Nothing was applied."); string repository = CanonicalDirectory(repositoryRoot, "repository");
             string worktree = CanonicalDirectory(worktreeRoot, "worktree");
@@ -215,7 +234,7 @@ namespace PaRuX.Services
 
                     // Keep the exact applied patch so the owner can reverse these changes later (never automatic).
                     string? head = (await GitAsync(repository, CancellationToken.None, "rev-parse", "HEAD").ConfigureAwait(false)) is { Ok: true } h ? h.Output.Trim() : null;
-                    string? undoId = TryRecordUndo(undoStateDirectory, repository, patch, normalizeLineEndings, head);
+                    string? undoId = TryRecordUndo(undoStateDirectory, repository, patch, normalizeLineEndings, head, taskId);
                     return new CodeApplyResult(true,
                         "Applied the reviewed PaRuX task changes to the original repository as uncommitted local changes. No commit, push or rebase was performed."
                         + (undoId == null ? string.Empty : " You can undo exactly these changes while the applied lines are still in the files and the commit has not changed."),
@@ -246,12 +265,12 @@ namespace PaRuX.Services
         private const long MaxKeptPatchBytes = 32L * 1024 * 1024;
         private static readonly TimeSpan UndoRetention = TimeSpan.FromDays(30);
 
-        private sealed record UndoRecord(string Id, string Repository, DateTime AppliedUtc, bool NormalizeLineEndings, string? Head = null);
+        private sealed record UndoRecord(string Id, string Repository, DateTime AppliedUtc, bool NormalizeLineEndings, string? Head = null, string? TaskId = null);
 
         private static string UndoDirectory(string? stateDirectory) =>
             Path.Combine(stateDirectory ?? AppPaths.CodingAgentStateDir, "apply-undo");
 
-        private static string? TryRecordUndo(string? stateDirectory, string repository, string patchPath, bool normalize, string? head)
+        private static string? TryRecordUndo(string? stateDirectory, string repository, string patchPath, bool normalize, string? head, string? taskId = null)
         {
             try
             {
@@ -263,7 +282,7 @@ namespace PaRuX.Services
                 string temp = Path.Combine(dir, id + ".patch.tmp");
                 File.Copy(patchPath, temp, overwrite: true);
                 File.Move(temp, Path.Combine(dir, id + ".patch"), overwrite: true);
-                var record = new UndoRecord(id, repository, DateTime.UtcNow, normalize, head);
+                var record = new UndoRecord(id, repository, DateTime.UtcNow, normalize, head, string.IsNullOrWhiteSpace(taskId) ? null : taskId.Trim());
                 try { File.WriteAllText(Path.Combine(dir, id + ".json"), System.Text.Json.JsonSerializer.Serialize(record)); }
                 catch { DeleteUndo(dir, id); throw; }
                 PruneUndo(dir);
@@ -330,6 +349,175 @@ namespace PaRuX.Services
         public static string? LatestUndoId(string repositoryRoot, string? undoStateDirectory = null) =>
             ReadUndoRecords(UndoDirectory(undoStateDirectory))
                 .FirstOrDefault(r => PathEquals(r.Repository, repositoryRoot))?.Id;
+
+        /// <summary>All kept apply-undo ids recorded for <paramref name="taskId"/>, newest first.</summary>
+        public static IReadOnlyList<string> UndoIdsForTask(string? taskId, string? undoStateDirectory = null)
+        {
+            if (string.IsNullOrWhiteSpace(taskId)) return Array.Empty<string>();
+            return ReadUndoRecords(UndoDirectory(undoStateDirectory))
+                .Where(r => string.Equals(r.TaskId, taskId.Trim(), StringComparison.Ordinal))
+                .Select(r => r.Id)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Reverses one kept patch for a conversation file rewind and captures the exact patch bytes so "Undo last rewind"
+        /// can re-apply it cleanly. Refuses honestly without touching any file if HEAD moved or the user edited any applied file.
+        /// </summary>
+        public static async Task<CodeWorktreeRewindResult> ReverseForRewindAsync(
+            string undoId, CancellationToken ct, string? undoStateDirectory = null)
+        {
+            if (string.IsNullOrEmpty(undoId) || undoId.Length != 32 || !undoId.All(c => char.IsAsciiHexDigitLower(c)))
+                return new CodeWorktreeRewindResult(false, "That applied change is not known. Nothing was changed.");
+            string dir = UndoDirectory(undoStateDirectory);
+            UndoRecord? record = ReadUndoRecords(dir).FirstOrDefault(r => r.Id == undoId);
+            if (record == null)
+                return new CodeWorktreeRewindResult(false, "That applied change is no longer available to rewind. Nothing was changed.");
+            if (!Directory.Exists(record.Repository))
+                return new CodeWorktreeRewindResult(false, "The project folder no longer exists. Nothing was changed.");
+            string patch = Path.Combine(dir, record.Id + ".patch");
+            if (!File.Exists(patch))
+                return new CodeWorktreeRewindResult(false, "The kept patch is missing. Nothing was changed.");
+
+            byte[] patchBytes = await File.ReadAllBytesAsync(patch, ct).ConfigureAwait(false);
+            IReadOnlyList<string> paths = ExtractPatchPaths(patchBytes);
+
+            if (record.Head != null)
+            {
+                GitResult head = await GitAsync(record.Repository, ct, "rev-parse", "HEAD").ConfigureAwait(false);
+                if (!head.Ok)
+                    return new CodeWorktreeRewindResult(false,
+                        "PaRuX could not read the project's current commit, so it cannot rewind safely. Nothing was changed.",
+                        paths, RefusedHeadChanged: true);
+                if (!string.Equals(head.Output.Trim(), record.Head, StringComparison.Ordinal))
+                    return new CodeWorktreeRewindResult(false,
+                        "The project is now on a different commit than when the changes were applied (for example you committed them). Nothing was changed.",
+                        paths, RefusedHeadChanged: true);
+            }
+
+            string[] Exact(params string[] a) => new[] { "-c", "core.autocrlf=false" }.Concat(a).ToArray();
+            bool exactMode = (await GitAsync(record.Repository, ct, Exact("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false)) is { Ok: true, TimedOut: false };
+            string[] Args(params string[] a) => exactMode ? Exact(a) : record.NormalizeLineEndings ? NormalizedApplyArguments(a) : a;
+            GitResult check = await GitAsync(record.Repository, ct, Args("apply", "--reverse", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (check.TimedOut)
+                return new CodeWorktreeRewindResult(false, "Git did not answer in time. Nothing was changed; try again.", paths);
+            if (!check.Ok)
+                return new CodeWorktreeRewindResult(false,
+                    "The applied files were edited since, so PaRuX cannot rewind those changes safely. Nothing was changed. " + Bound(check.Error, 600),
+                    paths, RefusedModifiedByUser: true);
+
+            GitResult reverse = await GitAsync(record.Repository, CancellationToken.None, Args("apply", "--reverse", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (!reverse.Ok || reverse.TimedOut)
+                return new CodeWorktreeRewindResult(false,
+                    "Git could not reverse the changes after the check passed. Inspect the project before retrying: " + Bound(reverse.Error, 600),
+                    paths);
+
+            GitResult forward = await GitAsync(record.Repository, CancellationToken.None, Args("apply", "--check", "--binary", "--whitespace=nowarn", patch)).ConfigureAwait(false);
+            if (!forward.Ok)
+                return new CodeWorktreeRewindResult(false,
+                    "The rewind ran but PaRuX could not confirm it. Inspect the project; the kept patch was not deleted.",
+                    paths);
+
+            DeleteUndo(dir, record.Id);
+            var undoToken = new CodeWorktreeRewindUndo(
+                record.TaskId ?? string.Empty, record.Repository, patchBytes, record.NormalizeLineEndings,
+                record.Head, record.Id, undoStateDirectory);
+            return new CodeWorktreeRewindResult(true, "Rewound the applied task changes. Other local edits were not touched.", paths, Undo: undoToken);
+        }
+
+        /// <summary>
+        /// Re-applies a patch that <see cref="ReverseForRewindAsync"/> reversed (used by "Undo last rewind").
+        /// Refuses honestly without touching any file if HEAD moved or the user edited those files after the rewind.
+        /// </summary>
+        public static async Task<CodeWorktreeRewindResult> ReapplyAfterRewindUndoAsync(
+            CodeWorktreeRewindUndo token, CancellationToken ct)
+        {
+            if (token == null || token.PatchBytes == null || token.PatchBytes.Length == 0)
+                return new CodeWorktreeRewindResult(false, "No rewound patch is available to restore.");
+            IReadOnlyList<string> paths = ExtractPatchPaths(token.PatchBytes);
+            if (!Directory.Exists(token.Repository))
+                return new CodeWorktreeRewindResult(false, "The project folder no longer exists. Nothing was changed.", paths);
+
+            if (token.Head != null)
+            {
+                GitResult head = await GitAsync(token.Repository, ct, "rev-parse", "HEAD").ConfigureAwait(false);
+                if (!head.Ok || !string.Equals(head.Output.Trim(), token.Head, StringComparison.Ordinal))
+                    return new CodeWorktreeRewindResult(false,
+                        "The project moved to a different commit after the rewind, so PaRuX did not re-apply the patch.",
+                        paths, RefusedHeadChanged: true);
+            }
+
+            string patchDir = Path.Combine(token.UndoStateDirectory ?? AppPaths.CodingAgentStateDir, "apply-patches");
+            Directory.CreateDirectory(patchDir);
+            string tempPatch = Path.Combine(patchDir, "rewind-undo-" + Guid.NewGuid().ToString("N") + ".patch");
+            try
+            {
+                await File.WriteAllBytesAsync(tempPatch, token.PatchBytes, ct).ConfigureAwait(false);
+                bool exactLineEndings = (await GitAsync(token.Repository, ct, "-c", "core.autocrlf=false",
+                    "apply", "--check", "--binary", "--whitespace=nowarn", tempPatch).ConfigureAwait(false)) is { Ok: true, TimedOut: false };
+                GitResult check = await GitAsync(token.Repository, ct,
+                    "apply", "--check", "--binary", "--whitespace=nowarn", tempPatch).ConfigureAwait(false);
+                if (exactLineEndings && !check.Ok) check = new GitResult(0, string.Empty, string.Empty);
+                bool normalize = token.NormalizeLineEndings;
+                if (!check.Ok && !check.TimedOut)
+                {
+                    GitResult normalized = await GitAsync(token.Repository, ct, NormalizedApplyArguments(
+                        "apply", "--check", "--binary", "--whitespace=nowarn", tempPatch)).ConfigureAwait(false);
+                    if (normalized.Ok)
+                    {
+                        check = normalized;
+                        normalize = true;
+                    }
+                }
+                if (check.TimedOut)
+                    return new CodeWorktreeRewindResult(false, "Git did not answer in time. Nothing was changed.", paths);
+                if (!check.Ok)
+                    return new CodeWorktreeRewindResult(false,
+                        "The files were modified after the rewind, so PaRuX did not overwrite your edits. " + Bound(check.Error, 600),
+                        paths, RefusedModifiedByUser: true);
+
+                GitResult apply = await GitAsync(token.Repository, CancellationToken.None, exactLineEndings
+                    ? new[] { "-c", "core.autocrlf=false", "apply", "--binary", "--whitespace=nowarn", tempPatch }
+                    : normalize
+                    ? NormalizedApplyArguments("apply", "--binary", "--whitespace=nowarn", tempPatch)
+                    : new[] { "apply", "--binary", "--whitespace=nowarn", tempPatch }).ConfigureAwait(false);
+                if (!apply.Ok || apply.TimedOut)
+                    return new CodeWorktreeRewindResult(false,
+                        "Git could not re-apply the patch during undo: " + Bound(apply.Error, 600), paths);
+                if (!await IsPatchAppliedAsync(token.Repository, tempPatch, normalize).ConfigureAwait(false))
+                    return new CodeWorktreeRewindResult(false,
+                        "The undo apply returned success but could not be verified.", paths);
+
+                TryRecordUndo(token.UndoStateDirectory, token.Repository, tempPatch, normalize, token.Head,
+                    string.IsNullOrWhiteSpace(token.TaskId) ? null : token.TaskId);
+                return new CodeWorktreeRewindResult(true, "Restored the agent's applied changes.", paths);
+            }
+            finally
+            {
+                try { if (File.Exists(tempPatch)) File.Delete(tempPatch); } catch { }
+            }
+        }
+
+        internal static IReadOnlyList<string> ExtractPatchPaths(byte[] patchBytes)
+        {
+            var paths = new List<string>();
+            if (patchBytes == null || patchBytes.Length == 0) return paths;
+            string text = new UTF8Encoding(false).GetString(patchBytes);
+            foreach (string rawLine in text.Split('\n'))
+            {
+                string line = rawLine.TrimEnd('\r');
+                if (!line.StartsWith("diff --git ", StringComparison.Ordinal)) continue;
+                int bIndex = line.LastIndexOf(" b/", StringComparison.Ordinal);
+                if (bIndex > 0 && bIndex + 3 < line.Length)
+                {
+                    string rel = line[(bIndex + 3)..].Trim().Trim('"');
+                    if (rel.Length > 0 && !paths.Contains(rel, StringComparer.OrdinalIgnoreCase))
+                        paths.Add(rel);
+                }
+            }
+            if (paths.Count == 0) paths.Add("*");
+            return paths;
+        }
 
         /// <summary>
         /// Reverses one kept patch. Refuses (changing nothing) when the id is unknown, the repository is gone, or any applied file was

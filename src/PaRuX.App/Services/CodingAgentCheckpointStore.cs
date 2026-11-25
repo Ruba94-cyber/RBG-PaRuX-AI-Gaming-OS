@@ -187,7 +187,7 @@ namespace PaRuX.Services
             {
                 "replace_range", "write_file", "create_file", "rename_file", "delete_file", "apply_patch",
                 "run_command", "verification", "test failed", "test passed", "[USER INPUT",
-                "repair attempt", "infrastructure blocked"
+                "NEW USER INSTRUCTION", "repair attempt", "infrastructure blocked"
             };
             return markers.Any(marker =>
                 observation.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0);

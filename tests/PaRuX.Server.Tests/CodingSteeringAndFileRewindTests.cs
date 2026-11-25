@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using PaRuX.Models;
 using PaRuX.Services;
 using Xunit;
@@ -239,5 +242,274 @@ public sealed class CodingSteeringAndFileRewindTests : IDisposable
         RewindResult result = ConversationRewind.Rewind(chat, 0, _ => true);
         Assert.Equal(new[] { "t2", "t1" }, result.RemovedCodeTaskIds);
         Assert.Equal(3, result.CodingMessagesRemoved);
+    }
+
+    // ---- observable & cancellable steering ----
+
+    [Fact]
+    public void Steering_queue_is_observable_and_cancellable_before_the_next_step()
+    {
+        string session = "steer-obs-" + Guid.NewGuid().ToString("N");
+        int notifications = 0;
+        void OnChanged(string id)
+        {
+            if (id == session) Interlocked.Increment(ref notifications);
+        }
+        void ThrowingObserver(string id)
+        {
+            if (id == session) throw new InvalidOperationException("observer failure must not break loop");
+        }
+
+        CodingAgentSteering.StateChanged += OnChanged;
+        CodingAgentSteering.StateChanged += ThrowingObserver;
+        try
+        {
+            using (CodingAgentSteering.Activate(session))
+            {
+                Assert.Empty(CodingAgentSteering.PeekPending(session));
+                Assert.Equal(CodingSteeringOutcome.Accepted, CodingAgentSteering.Submit(session, "first guidance"));
+                Assert.Equal(CodingSteeringOutcome.Accepted, CodingAgentSteering.Submit(session, "second guidance"));
+
+                IReadOnlyList<string> pending = CodingAgentSteering.PeekPending(session);
+                Assert.Equal(new[] { "first guidance", "second guidance" }, pending);
+
+                int cleared = CodingAgentSteering.ClearPending(session);
+                Assert.Equal(2, cleared);
+                Assert.Empty(CodingAgentSteering.PeekPending(session));
+                Assert.Equal(0, CodingAgentSteering.PendingCount(session));
+
+                var log = new List<string>();
+                Assert.Equal(0, CodingAgentSteering.DeliverAtStepBoundary(session, 2, log, null));
+                Assert.Empty(log);
+            }
+            Assert.True(notifications >= 4); // activate + 2 submits + clear + dispose
+        }
+        finally
+        {
+            CodingAgentSteering.StateChanged -= OnChanged;
+            CodingAgentSteering.StateChanged -= ThrowingObserver;
+        }
+    }
+
+    [Fact]
+    public async Task Steering_is_thread_safe_under_concurrent_submit_peek_and_deliver()
+    {
+        string session = "steer-conc-" + Guid.NewGuid().ToString("N");
+        using IDisposable run = CodingAgentSteering.Activate(session);
+        var deliveredLog = new List<string>();
+        int accepted = 0;
+        int delivered = 0;
+
+        Task producer = Task.Run(() =>
+        {
+            for (int i = 0; i < 40; i++)
+            {
+                if (CodingAgentSteering.Submit(session, "msg-" + i) == CodingSteeringOutcome.Accepted)
+                    Interlocked.Increment(ref accepted);
+                _ = CodingAgentSteering.PeekPending(session);
+            }
+        });
+
+        Task consumer = Task.Run(() =>
+        {
+            for (int step = 1; step <= 60; step++)
+            {
+                delivered += CodingAgentSteering.DeliverAtStepBoundary(session, step, deliveredLog, null);
+                Thread.Yield();
+            }
+        });
+
+        await Task.WhenAll(producer, consumer);
+        delivered += CodingAgentSteering.DeliverAtStepBoundary(session, 61, deliveredLog, null);
+
+        Assert.Equal(accepted, delivered);
+        Assert.Equal(accepted, deliveredLog.Count);
+        Assert.Equal(0, CodingAgentSteering.PendingCount(session));
+    }
+
+    [Fact]
+    public void Recovery_digest_preserves_steered_user_instructions()
+    {
+        var checkpoint = new CodingAgentCheckpoint { SessionId = "s1", WorkspaceRoot = _root, StepsTaken = 3 };
+        var observations = new List<string>
+        {
+            "read_file ok",
+            "NEW USER INSTRUCTION (sent while this task was running; delivered before step 3). Acknowledge it: switch to tabs",
+            "list_dir ok"
+        };
+
+        string digest = CodingAgentRecoveryDigest.Build(checkpoint, observations, 1_200);
+        Assert.Contains("switch to tabs", digest, StringComparison.Ordinal);
+    }
+
+    // ---- durable applied-worktree file rewind & undo ----
+
+    private (string Repo, string Worktree, string UndoState) CreateGitFixture(string name)
+    {
+        string baseDir = Path.Combine(_root, name);
+        string repo = Path.Combine(baseDir, "repo");
+        string worktree = Path.Combine(baseDir, "worktree");
+        string undoState = Path.Combine(baseDir, "undo-state");
+        Directory.CreateDirectory(repo);
+        Git(repo, "init");
+        Git(repo, "config", "user.name", "PaRuX Tests");
+        Git(repo, "config", "user.email", "tests@parux.invalid");
+        File.WriteAllText(Path.Combine(repo, "a.txt"), "orig\n");
+        File.WriteAllText(Path.Combine(repo, "user.txt"), "mine\n");
+        Git(repo, "add", "a.txt", "user.txt");
+        Git(repo, "commit", "-m", "baseline");
+        Git(repo, "worktree", "add", "-b", "parux-" + name, worktree, "HEAD");
+        return (repo, worktree, undoState);
+    }
+
+    private static string Git(string workingDirectory, params string[] args)
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        foreach (string arg in args) start.ArgumentList.Add(arg);
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("git did not start");
+        string output = process.StandardOutput.ReadToEnd();
+        string error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new InvalidOperationException("git " + string.Join(' ', args) + " failed: " + error);
+        return output;
+    }
+
+    private static string ReadLf(string path) => File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
+
+    [Fact]
+    public async Task Rewinding_to_message_N_reverses_applied_worktree_patches_after_N_even_after_restart_and_supports_undo()
+    {
+        (string repo, string worktree, string undoState) = CreateGitFixture("apply-rewind");
+
+        // Task 1: modify a.txt -> v1, create one.txt, apply to repo with taskId "task1"
+        File.WriteAllText(Path.Combine(worktree, "a.txt"), "v1\n");
+        File.WriteAllText(Path.Combine(worktree, "one.txt"), "one\n");
+        CodeApplyResult apply1 = await CodeWorktreeApplyService.ApplyAsync(
+            repo, worktree, CancellationToken.None, undoStateDirectory: undoState, taskId: "task1");
+        Assert.True(apply1.Success, apply1.Message);
+
+        // Task 2: create a second worktree from current repo state to simulate a subsequent task modifying a.txt -> v2 and creating two.txt
+        string worktree2 = Path.Combine(_root, "apply-rewind", "worktree2");
+        Git(repo, "worktree", "add", "-b", "parux-apply-rewind-2", worktree2, "HEAD");
+        // Task 2 patch builds on top of v1 in repo: wait - git diff HEAD in worktree2 is relative to HEAD, so let's make task2 touch two.txt and b.txt
+        File.WriteAllText(Path.Combine(worktree2, "two.txt"), "two\n");
+        File.WriteAllText(Path.Combine(worktree2, "three.txt"), "three\n");
+        CodeApplyResult apply2 = await CodeWorktreeApplyService.ApplyAsync(
+            repo, worktree2, CancellationToken.None, undoStateDirectory: undoState, taskId: "task2");
+        Assert.True(apply2.Success, apply2.Message);
+
+        // Unrelated user edit in repo
+        File.WriteAllText(Path.Combine(repo, "user.txt"), "mine edited\n");
+
+        // Rewind chat to message 1 (keeps task1, removes task2) using a FRESH tracker (simulating app restart)
+        Conversation chat = Chat(("user", null), ("assistant", "task1"), ("user", null), ("assistant", "task2"));
+        RewindResult chatRewind = ConversationRewind.Rewind(chat, 1, _ => true);
+        Assert.Equal(RewindStatus.Rewound, chatRewind.Status);
+        Assert.Equal(new[] { "task2" }, chatRewind.RemovedCodeTaskIds);
+
+        var restartedTracker = new CodingTaskChangeTracker(Path.Combine(_root, ".state-restarted"), null);
+        CodingFileRewindResult files = await restartedTracker.RewindFilesAsync(
+            chatRewind.RemovedCodeTaskIds, CancellationToken.None, applyUndoStateDirectory: undoState);
+
+        Assert.Equal(0, files.TasksWithoutSnapshot);
+        Assert.Equal(2, files.RestoredFiles);
+        Assert.Equal(0, files.SkippedFiles);
+        Assert.True(files.CanUndo);
+        Assert.False(File.Exists(Path.Combine(repo, "two.txt")));
+        Assert.False(File.Exists(Path.Combine(repo, "three.txt")));
+        Assert.Equal("v1\n", ReadLf(Path.Combine(repo, "a.txt")));            // task1 kept
+        Assert.Equal("one\n", ReadLf(Path.Combine(repo, "one.txt")));         // task1 kept
+        Assert.Equal("mine edited\n", ReadLf(Path.Combine(repo, "user.txt"))); // user edit kept
+
+        // Undo the file rewind -> task2 files come back and user edit remains untouched
+        CodingFileRewindResult undone = await restartedTracker.UndoFileRewindAsync(files, CancellationToken.None);
+        Assert.Equal(2, undone.RestoredFiles);
+        Assert.Equal(0, undone.SkippedFiles);
+        Assert.Equal("two\n", ReadLf(Path.Combine(repo, "two.txt")));
+        Assert.Equal("three\n", ReadLf(Path.Combine(repo, "three.txt")));
+        Assert.Equal("mine edited\n", ReadLf(Path.Combine(repo, "user.txt")));
+        Assert.NotEmpty(CodeWorktreeApplyService.UndoIdsForTask("task2", undoState));
+    }
+
+    [Fact]
+    public async Task Applied_patch_rewind_refuses_honestly_when_user_edited_applied_file_after_apply()
+    {
+        (string repo, string worktree, string undoState) = CreateGitFixture("apply-refuse");
+
+        File.WriteAllText(Path.Combine(worktree, "a.txt"), "agent-v1\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            repo, worktree, CancellationToken.None, undoStateDirectory: undoState, taskId: "task1");
+        Assert.True(applied.Success, applied.Message);
+
+        // User modifies the applied file afterwards
+        File.WriteAllText(Path.Combine(repo, "a.txt"), "agent-v1 + user edit\n");
+
+        var tracker = new CodingTaskChangeTracker(Path.Combine(_root, ".state-refuse"), null);
+        CodingFileRewindResult files = await tracker.RewindFilesAsync(
+            new[] { "task1" }, CancellationToken.None, applyUndoStateDirectory: undoState);
+
+        Assert.Equal("agent-v1 + user edit\n", ReadLf(Path.Combine(repo, "a.txt")));
+        Assert.Equal(0, files.RestoredFiles);
+        Assert.True(files.SkippedFiles >= 1);
+        Assert.NotEmpty(files.AppliedPatchRefusals);
+        Assert.False(files.CanUndo);
+    }
+
+    [Fact]
+    public async Task Applied_patch_rewind_refuses_honestly_when_user_committed_applied_changes()
+    {
+        (string repo, string worktree, string undoState) = CreateGitFixture("apply-head");
+
+        File.WriteAllText(Path.Combine(worktree, "a.txt"), "agent-committed\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            repo, worktree, CancellationToken.None, undoStateDirectory: undoState, taskId: "task1");
+        Assert.True(applied.Success, applied.Message);
+
+        Git(repo, "add", "a.txt");
+        Git(repo, "commit", "-m", "user committed agent changes");
+
+        var tracker = new CodingTaskChangeTracker(Path.Combine(_root, ".state-head"), null);
+        CodingFileRewindResult files = await tracker.RewindFilesAsync(
+            new[] { "task1" }, CancellationToken.None, applyUndoStateDirectory: undoState);
+
+        Assert.Equal("agent-committed\n", ReadLf(Path.Combine(repo, "a.txt")));
+        Assert.Equal(0, files.RestoredFiles);
+        Assert.True(files.SkippedFiles >= 1);
+        Assert.Contains(files.AppliedPatchRefusals, m => m.Contains("different commit", StringComparison.OrdinalIgnoreCase));
+        Assert.False(files.CanUndo);
+    }
+
+    [Fact]
+    public async Task Applied_patch_rewind_undo_refuses_honestly_when_user_edited_file_after_rewind()
+    {
+        (string repo, string worktree, string undoState) = CreateGitFixture("apply-undo-refuse");
+
+        File.WriteAllText(Path.Combine(worktree, "a.txt"), "agent-v1\n");
+        CodeApplyResult applied = await CodeWorktreeApplyService.ApplyAsync(
+            repo, worktree, CancellationToken.None, undoStateDirectory: undoState, taskId: "task1");
+        Assert.True(applied.Success, applied.Message);
+
+        var tracker = new CodingTaskChangeTracker(Path.Combine(_root, ".state-undo-refuse"), null);
+        CodingFileRewindResult files = await tracker.RewindFilesAsync(
+            new[] { "task1" }, CancellationToken.None, applyUndoStateDirectory: undoState);
+        Assert.Equal("orig\n", ReadLf(Path.Combine(repo, "a.txt")));
+        Assert.True(files.CanUndo);
+
+        // User edits a.txt after the rewind
+        File.WriteAllText(Path.Combine(repo, "a.txt"), "user wrote this after rewind\n");
+
+        CodingFileRewindResult undone = await tracker.UndoFileRewindAsync(files, CancellationToken.None);
+        Assert.Equal("user wrote this after rewind\n", ReadLf(Path.Combine(repo, "a.txt")));
+        Assert.Equal(0, undone.RestoredFiles);
+        Assert.True(undone.SkippedFiles >= 1);
+        Assert.NotEmpty(undone.AppliedPatchRefusals);
     }
 }
