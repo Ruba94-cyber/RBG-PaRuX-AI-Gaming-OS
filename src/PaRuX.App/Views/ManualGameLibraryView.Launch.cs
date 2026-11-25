@@ -339,7 +339,6 @@ public sealed partial class ManualGameLibraryView
             var result = await GamingOrchestratorClient.Current.RemoveManualGameAsync(game.Id);
             if (!result.Succeeded) { _status.Text = T("Could not remove the entry.", "Impossibile rimuovere la voce."); return; }
             await LoadAsync();
-            if (_universal is not null) await _universal.RefreshTitlesAfterGameAsync();
         }
         catch (Exception) { _status.Text = T("Could not remove the entry.", "Impossibile rimuovere la voce."); }
         finally { SetBusy(false); }

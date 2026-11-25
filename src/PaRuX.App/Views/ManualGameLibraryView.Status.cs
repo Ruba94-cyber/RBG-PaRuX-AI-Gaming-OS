@@ -99,7 +99,6 @@ public sealed partial class ManualGameLibraryView
     public void CancelExpensiveWork()
     {
         _inspectionCancellation?.Cancel();
-        _universal?.CancelPendingQueries();
     }
 
     private bool GamingOnlySetup =>
@@ -113,6 +112,5 @@ public sealed partial class ManualGameLibraryView
         _sessionHeading.Text = gamingOnly
             ? T("Gaming session", "Sessione Gaming")
             : T("AI / Gaming session", "Sessione AI / Gaming");
-        _universal?.ApplySetupProfilePresentation();
     }
 }

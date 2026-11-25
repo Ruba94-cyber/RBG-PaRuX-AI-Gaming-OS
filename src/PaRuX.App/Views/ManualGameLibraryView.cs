@@ -78,9 +78,6 @@ public sealed partial class ManualGameLibraryView : UserControl
     private readonly Button _browse = new();
     private bool _busy;
     private readonly TextBox _filter = new();
-    /// <summary>On-demand, manually confirmed, no auto-send Game-to-Chat handoff.</summary>
-    public event Func<string, IReadOnlyList<string>, bool>? GameGuideChatRequested;
-    private UniversalLibraryPanel? _universal;
     private readonly GameDownloadsPanel _downloads = new();
     private readonly ComboBox _storeFilter = new() { MinWidth = 180 };
     private readonly ComboBox _stateFilter = new() { MinWidth = 180 };
@@ -119,11 +116,8 @@ public sealed partial class ManualGameLibraryView : UserControl
         root.Children.Add(_heading);
         BuildStoreDiscoveryOffer(root);
 
-        // The Gaming home (Continue shelf, tile library, detail panel) opens first; it also hosts the opt-in advanced section.
-        _universal = new UniversalLibraryPanel(LaunchInstallationAsync, LoadAsync);
-        _universal.GameGuideChatRequested += (question, sources) =>
-            GameGuideChatRequested?.Invoke(question, sources) == true;
-        root.Children.Add(_universal);
+        // The native Gaming home (Continue shelf, tiles, detail panel) was removed in gaming-removal step 4: this page keeps only
+        // downloads, adding/importing/installer staging and the Gaming status. Game libraries belong to Playnite.
 
         // Real resource/session status lives on the same Games home in both TV and
         // desktop presentations. No background polling or controller worker.
@@ -413,10 +407,10 @@ public sealed partial class ManualGameLibraryView : UserControl
         {
             ("Downloads", T("Downloads", "Download"), all.Skip(downloadsStart).Take(addStart - downloadsStart).ToList()),
             ("Add", T("Add & import", "Aggiungi e importa"),
-                new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(async () => { await LoadAsync(); if (_universal is not null) await _universal.ReloadTitlesNowAsync(); }), _universal.AddTools }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
+                new UIElement[] { _storeDiscoveryOffer, new PlayniteImportPanel(LoadAsync) }.Concat(all.Skip(addStart).Take(displayStart - addStart)).Concat(all.Skip(displayEnd)).ToList()),
             ("Devices", T("Gaming settings", "Impostazioni gaming"),
                 all.Skip(sessionStart).Take(downloadsStart - sessionStart)
-                    .Concat(all.Skip(displayStart).Take(displayEnd - displayStart)).Append(_universal.BackupTools).ToList()),
+                    .Concat(all.Skip(displayStart).Take(displayEnd - displayStart)).Append(new GameSaveBackupPanel()).ToList()),
         };
         var bar = new SelectorBar { HorizontalAlignment = HorizontalAlignment.Left };
         _sectionBar = bar;
@@ -437,13 +431,6 @@ public sealed partial class ManualGameLibraryView : UserControl
             string? tag = (sender.SelectedItem as SelectorBarItem)?.Tag as string;
             foreach (var pair in panels) pair.Value.Visibility = pair.Key == tag ? Visibility.Visible : Visibility.Collapsed;
         };
-        _universal.ImportGamesRequested += () =>
-        {
-            var addItem = bar.Items.OfType<SelectorBarItem>().First(item => (string?)item.Tag == "Add");
-            bar.SelectedItem = addItem;
-            _pageScroll?.ChangeView(null, 0, null, disableAnimation: true);
-            addItem.Focus(FocusState.Programmatic);
-        };
         // Five sections do not fit a narrow window: the strip scrolls sideways instead of cutting the last tab off.
         root.Children.Add(new ScrollViewer
         {
@@ -459,11 +446,7 @@ public sealed partial class ManualGameLibraryView : UserControl
         bar.SelectedItem = bar.Items[0];
 
         _pageScroll = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        // Console/TV quick actions live in a layer above the scroller (not inside it), so opening one never moves the library.
-        var pageHost = new Grid();
-        pageHost.Children.Add(_pageScroll);
-        pageHost.Children.Add(_universal.QuickActionsLayer);
-        Content = pageHost;
+        Content = _pageScroll;
         Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
         Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
     }

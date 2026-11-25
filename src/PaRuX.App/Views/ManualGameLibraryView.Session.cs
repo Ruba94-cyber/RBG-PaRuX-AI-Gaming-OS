@@ -17,16 +17,29 @@ namespace PaRuX.Views;
 public sealed partial class ManualGameLibraryView
 {
     /// <summary>
-    /// Starts the game a desktop or Steam shortcut named, through the normal Play path and its confirmation.
+    /// Starts the game a desktop or Steam shortcut ("PaRuX.exe --play key", created by an older PaRuX) named, through the normal
+    /// launch path and its confirmation (moved here from the removed Gaming home in gaming-removal step 4; behaviour unchanged).
     /// The workspace must already be shown. A reason is put in the status line when nothing started.
     /// </summary>
     public async Task PlayRequestedByShortcutAsync(string titleKey)
     {
-        if (_universal is null) return;
         try
         {
-            string? problem = await _universal.PlayByKeyAsync(titleKey);
-            if (problem is not null) _status.Text = problem;
+            var result = await GamingLibraryClient.Current.QueryTitlesAsync(new GameTitleListQuery { Hidden = "include" });
+            GameTitleDto? title = result.Succeeded && result.Value is not null
+                ? result.Value.FirstOrDefault(t => string.Equals(t.TitleKey, titleKey, StringComparison.Ordinal))
+                : null;
+            if (!result.Succeeded)
+                _status.Text = T("The game list could not be read, so the shortcut could not start the game.",
+                    "Impossibile leggere l'elenco dei giochi, quindi il collegamento non ha potuto avviare il gioco.");
+            else if (title is null)
+                _status.Text = T("That game is no longer known to PaRuX, so the shortcut did nothing.",
+                    "Quel gioco non è più noto a PaRuX, quindi il collegamento non ha fatto nulla.");
+            else if (GameUi.ChooseInstallation(title) is not { } chosen || !GameUi.CanStart(chosen))
+                _status.Text = T($"{title.Name} cannot start right now (it may be updating or not installed).",
+                    $"{title.Name} non può partire adesso (potrebbe essere in aggiornamento o non installato).");
+            else
+                await LaunchInstallationAsync(chosen);   // the normal confirmation comes first; cancelling it starts nothing
         }
         catch (Exception ex)
         {
@@ -39,16 +52,6 @@ public sealed partial class ManualGameLibraryView
     {
         ApplySetupProfilePresentation();
         UpdateStoreDiscoveryOffer();
-        if ((_sectionBar?.SelectedItem as Microsoft.UI.Xaml.Controls.SelectorBarItem)?.Tag as string == "Tools")
-        {
-            // Desktop controller entry targets Playnite tools, not the obsolete
-            // native tile catalogue. Skip game/store scans and list hydration
-            // unless the owner explicitly returns to the Library section.
-            await UpdateGamingStatusAsync();
-            return;
-        }
-        if (_universal is not null)
-            await _universal.RefreshVisibleTitlesAsync();
         await RefreshAsync();
         await UpdateGamingStatusAsync();
         UpdateStoreDiscoveryOffer();
@@ -151,8 +154,6 @@ public sealed partial class ManualGameLibraryView
                     "Ritorno all'AI non confermato. Controlla lo stato Gaming e riprova.");
             else
             {
-                if (_universal is not null)
-                    await _universal.RefreshTitlesAfterGameAsync();
                 _gamingStatus.Text = T("AI resources ready. PaRuX did not close the game.",
                     "Risorse AI pronte. PaRuX non ha chiuso il gioco.");
             }

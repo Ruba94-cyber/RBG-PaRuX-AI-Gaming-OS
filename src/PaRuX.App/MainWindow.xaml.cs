@@ -122,7 +122,7 @@ namespace PaRuX
             // Opt-in system dictation: registers its own single shortcut only when the person switched it on.
             SystemDictationService.Current.Attach(hwnd, DispatcherQueue);
 
-            // (The Games page is created on first open; its game-guide handoff is wired in CreateGameLibraryPage.)
+            // (The Games tools page is created on first open; its game-guide handoff is wired in EnsurePage.)
 
             ChatSession.Current.ConversationChanged += OnConversationChanged;
             ChatSession.Current.MessageAdded += _ => OnConversationTouched();

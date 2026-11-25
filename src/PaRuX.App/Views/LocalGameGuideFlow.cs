@@ -15,7 +15,7 @@ namespace PaRuX.Views;
 /// <summary>
 /// Local game guide: the owner picks a saved local game and specific indexed document folders, Core verifies them
 /// again, and the question is only PREFILLED in the existing Chat composer (never sent, no background inference).
-/// Extracted unchanged from GamingHomeView so the slim Games tools page and the library share one implementation;
+/// Extracted unchanged from the former Gaming home (removed in gaming-removal step 4); hosted by the slim Games tools page;
 /// every AutomationId (GameHome_LocalGuide_*) is preserved.
 /// </summary>
 internal static class LocalGameGuideFlow

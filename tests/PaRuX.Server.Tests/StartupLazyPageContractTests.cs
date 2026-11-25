@@ -101,8 +101,9 @@ public sealed class StartupLazyPageContractTests
         Assert.Contains("ModelHubPage => _modelHubPage ?? CreateModelHubPage()", lazy, StringComparison.Ordinal);
         Assert.Contains("GameLibraryPage => _gameLibraryPage ?? CreateGameLibraryPage()", lazy, StringComparison.Ordinal);
         Assert.Contains("SettingsPage => _settingsPage ??= AddEagerPage(new SettingsView())", lazy, StringComparison.Ordinal);
-        // The game-guide handoff that used to be wired in the window constructor follows the page's creation.
-        Assert.Contains("page.GameGuideChatRequested += OnGameGuideChatRequested", lazy, StringComparison.Ordinal);
+        // The game-guide handoff that used to be wired in the window constructor follows the page's creation (since gaming-removal
+        // step 4 only the slim Games tools page hosts the local game guide).
+        Assert.Contains("gamesTools.GameGuideChatRequested += OnGameGuideChatRequested", lazy, StringComparison.Ordinal);
 
         // Hiding, visibility checks and the busy flag must use the non-creating accessors so startup, Back/Hide and the
         // Console activation handler never construct a page just to hide it.

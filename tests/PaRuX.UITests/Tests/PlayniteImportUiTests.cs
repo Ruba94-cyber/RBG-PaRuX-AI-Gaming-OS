@@ -62,7 +62,9 @@ public sealed class PlayniteImportUiTests
             extraEnvironment: new Dictionary<string, string> { ["PARUX_PLAYNITE_LIBRARY"] = library });
         try
         {
+            // Since gaming-removal step 2 the import lives on the install/import sub-page opened from Games tools.
             Press(app, "MainWindow_ModeTab_Gaming");
+            Press(app, "GamesToolsPage_InstallStage_Button");
             GamingSectionsPage.SelectSection(app.MainWindow, "Add");
             Press(app, "GameImport_Playnite_Look_Button");
             UiWait.For(() => Summary(app).Contains("Found 4 games: 3 can be imported", StringComparison.Ordinal), "preview counts");
@@ -72,11 +74,8 @@ public sealed class PlayniteImportUiTests
             UiWait.For(() => Summary(app).StartsWith("Imported 3 games", StringComparison.Ordinal), "import result");
             Assert.Contains("Alpha Racer", SharedFile.ReadAllText(libraryFile));
             Assert.Contains("\"EmulatorId\": \"eden\"", SharedFile.ReadAllText(libraryFile));
-            GamingSectionsPage.SelectSection(app.MainWindow, "Library");
-            UiWait.ById(app.MainWindow, "GameTile_alpharacer");
-            UiWait.ById(app.MainWindow, "GameTile_betaquest");
-            UiWait.ById(app.MainWindow, "GameTile_betaquesttwo");
-            Assert.Null(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("GameTile_gammastore")));
+            // The native library tiles were removed (step 4): the imported entries are verified in manual-games.json above.
+            Assert.DoesNotContain("Gamma Store", SharedFile.ReadAllText(libraryFile));
         }
         catch (Exception ex) { app.CaptureFailure(name, ex); throw; }
     }

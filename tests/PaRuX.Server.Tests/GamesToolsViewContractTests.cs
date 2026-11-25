@@ -152,10 +152,47 @@ public sealed class GamesToolsViewContractTests
     }
 
     [Fact]
+    public void Native_library_views_are_gone_and_every_kept_game_function_stays_reachable()
+    {
+        // Gaming-removal step 4: the native library UI is deleted (not just hidden).
+        foreach (string gone in new[]
+        {
+            "GamingHomeView", "GameDetailPanel", "GameTileGrid", "GameShelfFeed", "GameHeroCard", "GroupedGameLibrary",
+            "GameSideFilterPanel", "GamingWishlistDialog", "IGameTileSurface", "GameMotion", "GameShortcutsSection",
+            "GameLaunchProfileSection", "GameHooksSection", "GameControllerProfileSection", "SteamGridDbArtworkDialog", "UniversalLibraryPanel",
+        })
+            Assert.False(File.Exists(Path.Combine(Root(), "src", "PaRuX.App", "Views", gone + ".cs")), gone + " must be removed");
+
+        // Games tools page (the Games home): mods (AI-driven, change-sets/restore, texture, drop-in, skins), Quick Resume and paused
+        // games, downloads, installer staging, handoff, local guide, save backups, controller tools/display, streaming, sign-in apps,
+        // Game Bar / Console settings and controller actions.
+        string tools = Read("src", "PaRuX.App", "Views", "GamesToolsView.cs");
+        foreach (string entry in new[]
+        {
+            "ShowPendingAiProposalsAsync", "ShowRestoreListAsync", "GameAssetModStudioDialog.ShowAsync", "GameModDropInDialog.ShowInstalledAsync",
+            "MinecraftSkinStudioDialog.ShowAsync", "new QuickResumePanel()", "new PausedGameBanner()", "new GameDownloadsPanel()",
+            "OpenLibrarySection(\"Add\")", "UpdateHandoffStatus", "LocalGameGuideFlow.RunAsync", "new GameSaveBackupPanel()", "new GamingDevicesPanel()",
+            "GamingSectionPlaynite", "GamingSectionSignInApps", "GamingSectionConsoleDisplays", "ShowPadControllerSettings",
+        })
+            Assert.Contains(entry, tools, StringComparison.Ordinal);
+
+        // The install/import sub-page keeps installers, stores, manual entries, Playnite import, downloads and the Gaming status.
+        string library = string.Concat(Directory.GetFiles(Path.Combine(Root(), "src", "PaRuX.App", "Views"), "ManualGameLibraryView*.cs").Select(File.ReadAllText));
+        foreach (string kept in new[]
+        {
+            "GameLibrary_Installer_Inspect_Button", "GameLibrary_Installer_Stage_Button", "GameLibrary_AllStores_Refresh_Button",
+            "GameLibrary_Add_Button", "new PlayniteImportPanel(", "_downloads", "GameLibrary_ReturnToAi_Button", "new GameSaveBackupPanel()",
+            "PlayRequestedByShortcutAsync",
+        })
+            Assert.Contains(kept, library, StringComparison.Ordinal);
+        Assert.DoesNotContain("UniversalLibraryPanel", library, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Local_game_guide_is_one_shared_flow_with_unchanged_automation_ids()
     {
         string flow = Read("src", "PaRuX.App", "Views", "LocalGameGuideFlow.cs");
-        string home = Read("src", "PaRuX.App", "Views", "GamingHomeView.cs");
+        string home = Read("src", "PaRuX.App", "Views", "GamesToolsView.cs");
         foreach (string id in new[] { "GameHome_LocalGuide_Game", "GameHome_LocalGuide_Question", "GameHome_LocalGuide_SourceFilter", "GameHome_LocalGuide_Sources" })
             Assert.Contains(id, flow, StringComparison.Ordinal);
         Assert.Contains("LocalGameGuideFlow.RunAsync(XamlRoot", home, StringComparison.Ordinal);

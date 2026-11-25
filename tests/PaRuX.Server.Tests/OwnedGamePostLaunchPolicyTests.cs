@@ -155,7 +155,6 @@ public sealed class OwnedGamePostLaunchPolicyTests : IDisposable
             "OwnedGamePostLaunchService.cs");
         string session = Read("src", "PaRuX.Server", "Orchestration", "Gaming",
             "ManualGameSessionService.cs");
-        string ui = Read("src", "PaRuX.App", "Views", "GameLaunchProfileSection.cs");
 
         Assert.Contains("VerifyOwnedProcess(owned, verifiedImagePath)", service, StringComparison.Ordinal);
         Assert.Contains("GetForegroundWindow() != candidate", service, StringComparison.Ordinal);
@@ -167,8 +166,6 @@ public sealed class OwnedGamePostLaunchPolicyTests : IDisposable
         Assert.Contains("launchProfile?.PostLaunch?.Requested == true", session, StringComparison.Ordinal);
         Assert.Contains("targetConfirmed && _postLaunch != null", session, StringComparison.Ordinal);
         Assert.Contains("_postLaunch.TryApplyAsync(process, path", session, StringComparison.Ordinal);
-        Assert.Contains("GameLaunchProfile_PostLaunch_", ui, StringComparison.Ordinal);
-        Assert.Contains('"' + "PostFocus" + '"', ui, StringComparison.Ordinal);
     }
 
     private static string Read(params string[] components)
