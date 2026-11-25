@@ -839,3 +839,4 @@ DENY POST /api/v1/gaming/support-apps/remove
 DENY POST /api/v1/gaming/support-apps/start
 DENY POST /api/v1/gaming/support-apps/stop
 DENY PUT /api/v1/gaming/support-apps
+DENY GET /api/v1/gaming/support-apps/redist
