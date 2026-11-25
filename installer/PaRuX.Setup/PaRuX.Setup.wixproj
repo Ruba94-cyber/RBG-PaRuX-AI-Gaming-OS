@@ -13,7 +13,14 @@
     <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\publish\win-x64</PublishDir>
     <LicenseRtf>$(MSBuildThisFileDirectory)License.rtf</LicenseRtf>
     <OutputName>PaRuX-$(ProductVersion)-win-x64</OutputName>
-    <DefineConstants>ProductVersion=$(ProductVersion);PublishDir=$(PublishDir);LicenseRtf=$(LicenseRtf)</DefineConstants>
+    <!-- Optional vendor payloads (ViGEmBus + HidHide drivers, Sunshine portable package): "include" (default) stages the hash-locked
+         files from packaging/redist-installers.lock.json and adds two OPTIONAL, off-by-default features; "none" (scripts/build-msi.ps1
+         -NoRedist) builds the MSI without any of it. -->
+    <PaRuXMsiRedist Condition="'$(PaRuXMsiRedist)' == ''">include</PaRuXMsiRedist>
+    <PaRuXRedistDir Condition="'$(PaRuXRedistDir)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\redist-stage</PaRuXRedistDir>
+    <PaRuXIncludeRedist Condition="'$(PaRuXMsiRedist)' == 'none'">0</PaRuXIncludeRedist>
+    <PaRuXIncludeRedist Condition="'$(PaRuXMsiRedist)' != 'none'">1</PaRuXIncludeRedist>
+    <DefineConstants>ProductVersion=$(ProductVersion);PublishDir=$(PublishDir);LicenseRtf=$(LicenseRtf);IncludeRedist=$(PaRuXIncludeRedist);RedistDir=$(PaRuXRedistDir)</DefineConstants>
     <!-- ICE03 flags "Invalid Language Id"/"String overflow" on the .mui satellite resource files
          WindowsAppSDK/WinUI ships one per locale (e.g. Microsoft.ui.xaml.dll.mui under af-ZA,
          gd-gb, ...). Their embedded PE VERSIONINFO language metadata doesn't cleanly encode into
@@ -39,7 +46,14 @@
        (invoking wix.exe against Package.wxs, including its <Files Include="$(PublishDir)\**">
        harvest) happens inside the SDK's own "CoreCompile" target, which "Build" depends on and
        therefore completes before a "BeforeTargets=Build" hook would ever run. -->
-  <Target Name="PreparePaRuXReleasePayload" BeforeTargets="CoreCompile" Condition="'$(OS)' == 'Windows_NT'">
+  <!-- Stages the hash-locked vendor payloads (fails closed on any size/SHA-256/Authenticode mismatch or missing download).
+       PaRuXRedistStaged=true means the caller (build-msi.ps1) already did it. -->
+  <Target Name="StagePaRuXRedistPayload" BeforeTargets="CoreCompile" Condition="'$(OS)' == 'Windows_NT' And '$(PaRuXMsiRedist)' != 'none' And '$(PaRuXRedistStaged)' != 'true'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\stage-msi-redist.ps1&quot; -OutputDir &quot;$(PaRuXRedistDir)&quot;" />
+  </Target>
+
+  <!-- PaRuXSkipPayloadPrep=true is for structural/contract builds of the package definition only (no publish, SBOM or runtime staging). -->
+  <Target Name="PreparePaRuXReleasePayload" BeforeTargets="CoreCompile" Condition="'$(OS)' == 'Windows_NT' And '$(PaRuXSkipPayloadPrep)' != 'true'">
     <Exec Condition="'$(PaRuXWinMlPrepublished)' != 'true'" Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\..\src\PaRuX.WinMlWorker\PaRuX.WinMlWorker.csproj&quot; -c Release -r win-x64 --self-contained true -o &quot;$(PublishDir)\PaRuX.Server\winml&quot; -p:Version=&quot;$(ProductVersion)&quot; -p:FileVersion=&quot;$(ProductVersion).0&quot; -p:AssemblyVersion=&quot;$(ProductVersion).0&quot; -p:InformationalVersion=&quot;$(ProductVersion)&quot; -p:DebugSymbols=false -p:DebugType=None" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;if (-not (Test-Path -LiteralPath '$(PublishDir)\PaRuX.Server\winml\PaRuX.WinMlWorker.exe' -PathType Leaf)) { throw 'Windows ML worker publish did not produce PaRuX.WinMlWorker.exe.' }&quot;" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\generate-sbom.ps1&quot; -Scope windows -OutputPath &quot;$(PublishDir)\PaRuX.Server\SBOM.cyclonedx.json&quot; -ProductVersion &quot;$(ProductVersion)&quot;" />

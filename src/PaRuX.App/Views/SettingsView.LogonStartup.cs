@@ -159,6 +159,7 @@ namespace PaRuX.Views
         private ToggleSwitch? _supportEnabled;
         private SupportAppStatus? _supportState;
         private bool _supportLoading;
+        private List<RedistStatusRow> _redistRows = new();
 
         private StackPanel BuildSupportAppsSection()
         {
@@ -192,6 +193,8 @@ namespace PaRuX.Views
                 ApplySupportStatus(await SupportAppClient.Current.GetAsync(CancellationToken.None));
                 List<SupportAppCatalogEntry> catalog = await SupportAppClient.Current.CatalogAsync(CancellationToken.None);
                 _supportCatalog!.Children.Clear();
+                try { _redistRows = await SupportAppClient.Current.RedistAsync(CancellationToken.None); }
+                catch (Exception) { _redistRows = new List<RedistStatusRow>(); }   // the status line is informative only
                 foreach (SupportAppCatalogEntry c in catalog) _supportCatalog.Children.Add(BuildCatalogRow(c));
             }
             catch (Exception ex) { _supportStatus!.Text = T("Could not read the list: ", "Impossibile leggere l'elenco: ") + ex.Message; }
@@ -246,11 +249,36 @@ namespace PaRuX.Views
             var box = new StackPanel { Spacing = 3 };
             box.Children.Add(new TextBlock { Text = c.Name + " (" + c.License + ")", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
             box.Children.Add(Line(c.Purpose.For(UiText.IsItalian), 0.75));
+            RedistStatusRow? redist = c.RedistId is null ? null : _redistRows.FirstOrDefault(r => r.Id == c.RedistId);
+            if (redist is not null)
+            {
+                string owner = redist.Ownership switch
+                {
+                    ComponentOwnership.PARUX_MANAGED => T("installed by PaRuX", "installato da PaRuX"),
+                    ComponentOwnership.USER_MANAGED => T("your own copy", "la tua copia"),
+                    ComponentOwnership.SYSTEM_DETECTED => T("found on this PC", "trovato su questo PC"),
+                    _ => T("not installed", "non installato"),
+                };
+                string restart = redist.RestartRequired ? "  " + T("Restart Windows to finish.", "Riavvia Windows per completare.") : string.Empty;
+                var state = Line(owner + (redist.Version is null ? string.Empty : " - " + redist.Version) + " - " + (UiText.IsItalian ? redist.MessageIt : redist.Message) + restart, 0.8);
+                AutomationProperties.SetAutomationId(state, SupportIdPrefix + "_Redist_" + c.Id + "_State");
+                box.Children.Add(state);
+            }
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             bool downloaded = _supportState?.Apps.Any(a => a.Entry.CatalogId == c.Id) == true;
+            if (c.Kind == SupportAppKind.Driver)
+            {
+                // A kernel driver is never downloaded, started or removed from this page.
+                if (redist is not { State: RedistState.Installed } && c.NoDownloadReason is { } driverWhy) box.Children.Add(Line(driverWhy.For(UiText.IsItalian), 0.75));
+                box.Children.Add(Line(T("License: ", "Licenza: ") + c.License + " - " + c.ProjectUrl, 0.6));
+                return box;
+            }
             if (c.Download is { } d && !downloaded)
             {
-                var get = new Button { Content = T("Download " + d.Version + " (" + (d.SizeBytes / (1024 * 1024)) + " MB)...", "Scarica " + d.Version + " (" + (d.SizeBytes / (1024 * 1024)) + " MB)...") };
+                bool bundled = redist?.BundledPayloadAvailable == true;
+                var get = new Button { Content = bundled
+                    ? T("Install the bundled " + d.Version + " (no download)...", "Installa la versione inclusa " + d.Version + " (senza scaricare)...")
+                    : T("Download " + d.Version + " (" + (d.SizeBytes / (1024 * 1024)) + " MB)...", "Scarica " + d.Version + " (" + (d.SizeBytes / (1024 * 1024)) + " MB)...") };
                 AutomationProperties.SetAutomationId(get, SupportIdPrefix + "_Download_" + c.Id + "_Button");
                 get.Click += async (_, _) => await DownloadSupportAppAsync(c, d);
                 buttons.Children.Add(get);
@@ -284,6 +312,12 @@ namespace PaRuX.Views
             text.AppendLine();
             text.AppendLine(T("PaRuX downloads this exact file, checks its SHA-256 before unpacking anything, and keeps it in its own folder. It is not installed system-wide, needs no administrator rights and can be removed here. It does not start with Console until you turn that on.",
                               "PaRuX scarica esattamente questo file, ne controlla lo SHA-256 prima di estrarre qualsiasi cosa e lo tiene nella propria cartella. Non è installato nel sistema, non richiede diritti di amministratore e si può rimuovere da qui. Non parte con la Console finché non lo attivi."));
+            if (c.RedistId == "sunshine")
+            {
+                text.AppendLine();
+                text.AppendLine(T("If the PaRuX setup already carries this exact package, it is unpacked from there without any download. Sunshine is a game-stream host: it opens network ports only while it is running, and PaRuX does not start it until you enable streaming. No Windows service or firewall rule is created.",
+                                  "Se il setup di PaRuX contiene già questo pacchetto esatto, viene estratto da lì senza scaricare nulla. Sunshine è un host di streaming: apre porte di rete solo mentre è in esecuzione e PaRuX non lo avvia finché non abiliti lo streaming. Non viene creato alcun servizio di Windows né regola del firewall."));
+            }
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot, Title = T("Download " + c.Name + "?", "Scaricare " + c.Name + "?"),

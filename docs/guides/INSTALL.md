@@ -32,6 +32,47 @@ plus a `.parts.sha256.txt` list. Download every part, then join and verify them 
 3. Run the MSI. The package is per-machine (installs under Program Files, with a Start Menu entry) and asks for administrator approval.
 4. Start RBG – PaRuX from the Start Menu.
 
+## Optional components in the MSI: controller drivers and Sunshine
+
+English first, Italian below. **Both are OFF unless you ask for them.** A silent install (`/qn`) never includes them.
+
+**What they are.** The MSI built with the vendor payloads has two extra features, listed on an "Optional components" page after the install folder:
+
+| Feature | Contains (unmodified, official files) | What the setup does |
+|---|---|---|
+| Controller drivers (ViGEmBus + HidHide) | ViGEmBus 1.22.0 (BSD-3-Clause), HidHide 1.5.230.0 (MIT), signed by Nefarius Software Solutions e.U. | After PaRuX's own setup finishes, an elevated helper checks each file's SHA-256 and Authenticode signature, then runs the vendor installer silently. A driver that is **already on the PC is never touched**. Windows may ask for a restart. |
+| Sunshine (streaming host) | Sunshine 2026.914.233613 portable package (GPL-3.0) | Only places the ZIP under `Redist\Sunshine`. PaRuX unpacks it into its own per-user folder when you click **Install** in Settings > Support apps. No Windows service, firewall rule or autostart is created. |
+
+**Switches for a silent or scripted install** (all public properties):
+
+```powershell
+msiexec /i PaRuX-4.5.1-win-x64.msi /qn                                   # neither feature (default)
+msiexec /i PaRuX-4.5.1-win-x64.msi /qn PARUX_ADD_DRIVERS=1               # drivers only
+msiexec /i PaRuX-4.5.1-win-x64.msi /qn PARUX_ADD_SUNSHINE=1              # Sunshine package only
+msiexec /i PaRuX-4.5.1-win-x64.msi /qn ADDLOCAL=PaRuXMain,PaRuXControllerDrivers,PaRuXSunshine
+```
+
+**Things to know.**
+
+- Needs UAC (the MSI is per-machine); the drivers are kernel drivers and may need a **restart**. Settings > Support apps then says "Restart Windows to finish".
+- Ownership: a driver that the setup installed is `PARUX_MANAGED`; one already present is `SYSTEM_DETECTED` (or `USER_MANAGED` if you pointed PaRuX at it) and PaRuX never updates or removes it. Uninstalling PaRuX removes only the drivers the setup itself recorded (full removal only, never on an upgrade, never on "Change"). Remove the others in Windows Settings > Apps.
+- Log of the helper: `%ProgramData%\PaRuX\logs\redist-install.log`. A refused file (wrong hash or signature) is logged and skipped; PaRuX's own setup still succeeds.
+- **ViGEmBus is no longer maintained** upstream (final release 1.22.0, no security updates).
+- **Sunshine opens network ports while it runs** (streaming and its web UI). PaRuX never starts it until you do, and the support-app entry is added with "Start with Console" off.
+- The MSI is bigger: about 52 MB of payload (about 45 MB after MSI compression) on top of the normal size. `scripts/build-msi.ps1 -NoRedist` builds the smaller MSI without any of it.
+- Vendor files come only from the pins in `packaging/redist-installers.lock.json`; sources and licences are in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), and the Sunshine source offer is installed beside the package.
+- **NOT RUN:** no install of either feature was performed on a real PC (UAC cannot be driven here). Only the package tables, an administrative extraction (`msiexec /a`), `wix msi validate` and unit tests were checked. The wizard page was not displayed. The vendors' silent switches (`/exenoui /qn /norestart`, Advanced Installer) come from the installers' own embedded help, not from a vendor web page, and were not exercised.
+
+**Italiano.** Entrambe le funzioni sono **disattivate** se non le richiedi; un'installazione silenziosa (`/qn`) non le include mai.
+
+- *Driver controller (ViGEmBus + HidHide)*: file ufficiali non modificati, firmati da Nefarius Software Solutions e.U. Dopo il setup di PaRuX, un helper con privilegi elevati controlla SHA-256 e firma Authenticode di ogni file e poi lancia l'installer del produttore in modalità silenziosa. **Un driver già presente sul PC non viene mai toccato.** Windows può chiedere un riavvio.
+- *Sunshine (host di streaming)*: pacchetto portatile ufficiale (GPL-3.0). Il setup lo copia soltanto in `Redist\Sunshine`; PaRuX lo estrae nella propria cartella per utente quando premi **Installa** in Impostazioni > App di supporto. Non crea servizi di Windows, regole del firewall né avvio automatico. Sunshine apre porte di rete solo mentre è in esecuzione e PaRuX non lo avvia finché non lo fai tu.
+- Interruttori: `PARUX_ADD_DRIVERS=1`, `PARUX_ADD_SUNSHINE=1` o `ADDLOCAL=PaRuXMain,PaRuXControllerDrivers,PaRuXSunshine` (vedi gli esempi sopra).
+- Serve UAC; i driver sono del kernel e possono richiedere un **riavvio**. ViGEmBus non è più mantenuto dal produttore.
+- Proprietà: un driver installato dal setup è `PARUX_MANAGED`; uno già presente è `SYSTEM_DETECTED` (o `USER_MANAGED` se lo hai indicato tu) e PaRuX non lo aggiorna né lo rimuove. La disinstallazione di PaRuX rimuove solo i driver registrati come installati dal setup, e solo con la rimozione completa (non negli aggiornamenti né con "Modifica").
+- L'MSI è più grande: circa 52 MB di contenuto (circa 45 MB dopo la compressione). `scripts/build-msi.ps1 -NoRedist` produce l'MSI più piccolo senza questi file.
+- **NON PROVATO:** nessuna installazione reale (UAC non è pilotabile qui); verificati solo tabelle del pacchetto, estrazione amministrativa, `wix msi validate` e test unitari; la pagina della procedura guidata non è stata mostrata.
+
 ## First launch
 
 Onboarding detects your hardware and what is already installed. Components follow **Detect, then Locate existing / Install with PaRuX / Skip**.

@@ -25,9 +25,24 @@ public sealed class SupportAppInstaller
     private readonly Func<bool> _gamingActive;
     private readonly Func<string?, SupportAppCatalogEntry?> _catalog;
 
-    public SupportAppInstaller(HttpClient http, string managedRoot, SupportAppStore store, ISupportAppHost host, Func<bool> gamingActive,
-        Func<string?, SupportAppCatalogEntry?>? catalog = null)
+    private readonly Func<SupportAppCatalogEntry, string?> _bundled;
+
+    /// <summary>
+    /// The unmodified vendor package the PaRuX setup placed beside the app (optional MSI feature), or null. Looked up in the fixed
+    /// folder <c>Redist\&lt;catalog id&gt;</c> next to the Server folder, never from a path a client supplies.
+    /// </summary>
+    public static string? DefaultBundledPackage(SupportAppCatalogEntry entry)
     {
+        if (entry.Download is null || entry.RedistId is null) return null;
+        string name = Path.GetFileName(new Uri(entry.Download.Url).AbsolutePath);
+        string path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Redist", entry.Id, name));
+        return File.Exists(path) ? path : null;
+    }
+
+    public SupportAppInstaller(HttpClient http, string managedRoot, SupportAppStore store, ISupportAppHost host, Func<bool> gamingActive,
+        Func<string?, SupportAppCatalogEntry?>? catalog = null, Func<SupportAppCatalogEntry, string?>? bundledPackage = null)
+    {
+        _bundled = bundledPackage ?? DefaultBundledPackage;
         _catalog = catalog ?? SupportAppCatalog.Find;
         _http = http; _root = Path.GetFullPath(managedRoot); _store = store; _host = host; _gamingActive = gamingActive;
     }
@@ -54,7 +69,7 @@ public sealed class SupportAppInstaller
         if (bad is not null) return new(false, bad);
 
         string target = Path.Combine(_root, entry.Id, d.Version);
-        string exe = Path.Combine(target, d.ExeRelativePath);
+        string exe = Path.GetFullPath(Path.Combine(target, d.ExeRelativePath));   // "Sunshine/sunshine.exe" -> backslashes
         if (File.Exists(exe)) return Register(entry, d, exe, "Already downloaded.");
 
         string staging = Path.Combine(_root, ".staging-" + Guid.NewGuid().ToString("N"));
@@ -62,24 +77,34 @@ public sealed class SupportAppInstaller
         try
         {
             Directory.CreateDirectory(_root);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromMinutes(10));
-            using HttpResponseMessage response = await _http.GetAsync(d.Url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return new(false, "The download server answered " + (int)response.StatusCode + ".");
-            if (response.Content.Headers.ContentLength is long len && len > d.SizeBytes) return new(false, "The file is larger than the pinned size; nothing was kept.");
-
-            using (var fs = new FileStream(archive, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (Stream src = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false))
+            string? local = _bundled(entry);
+            if (local is not null)
             {
-                var buffer = new byte[81920];
-                long total = 0; int n;
-                while ((n = await src.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
+                // Offline path: the package the PaRuX setup carried. Same pinned size and SHA-256 gate as a download; no network.
+                if (new FileInfo(local).Length != d.SizeBytes) return new(false, "The package shipped with PaRuX does not match the pinned size; nothing was installed.");
+                File.Copy(local, archive, overwrite: false);
+            }
+            else
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromMinutes(10));
+                using HttpResponseMessage response = await _http.GetAsync(d.Url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode) return new(false, "The download server answered " + (int)response.StatusCode + ".");
+                if (response.Content.Headers.ContentLength is long len && len > d.SizeBytes) return new(false, "The file is larger than the pinned size; nothing was kept.");
+
+                using (var fs = new FileStream(archive, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (Stream src = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false))
                 {
-                    total += n;
-                    if (total > d.SizeBytes) return new(false, "The file is larger than the pinned size; nothing was kept.");
-                    await fs.WriteAsync(buffer.AsMemory(0, n), timeout.Token).ConfigureAwait(false);
+                    var buffer = new byte[81920];
+                    long total = 0; int n;
+                    while ((n = await src.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
+                    {
+                        total += n;
+                        if (total > d.SizeBytes) return new(false, "The file is larger than the pinned size; nothing was kept.");
+                        await fs.WriteAsync(buffer.AsMemory(0, n), timeout.Token).ConfigureAwait(false);
+                    }
+                    if (total != d.SizeBytes) return new(false, "The downloaded size does not match the pinned size; nothing was kept.");
                 }
-                if (total != d.SizeBytes) return new(false, "The downloaded size does not match the pinned size; nothing was kept.");
             }
 
             string actual;

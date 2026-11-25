@@ -40,6 +40,20 @@ The GitHub MSI includes the self-contained WinUI desktop application, self-conta
 
 The MSI build copies this notice, the NVIDIA CUDA notice, the llama.cpp MIT license text (`LICENSE-llama.cpp.txt`), the PaRuX FSL-1.1-MIT license and `OPEN_SOURCE_PROVENANCE.md` beside the installed binaries. The Microsoft Store (MSIX) package carries the same notices except the NVIDIA CUDA notice, because it contains no CUDA runtime. It does **not** bundle model weights, ComfyUI, Unsloth, TRELLIS or other large AI engines listed below.
 
+## Optional vendor payloads in the Windows MSI (off by default)
+
+The MSI built without `-NoRedist` carries two **optional features that are NOT installed by default** (selectable on a setup page, or `ADDLOCAL=` / `PARUX_ADD_DRIVERS=1` / `PARUX_ADD_SUNSHINE=1` for a silent install). The vendor files are redistributed **byte for byte unmodified**; their pins are in [packaging/redist-installers.lock.json](packaging/redist-installers.lock.json) and are checked at build time (size, SHA-256, Authenticode) and again before anything is run. Licence texts and, for GPL, the written source offer ship beside the payload under `Redist\` in the install folder. Checked 2026-11-25; this is a record of terms, not legal clearance.
+
+| Component | Version | License | Asset (official GitHub release) and SHA-256 | MSI feature / how it is used |
+|---|---|---|---|---|
+| ViGEm Bus Driver (ViGEmBus) | 1.22.0 | BSD-3-Clause (Copyright (c) 2016-2020 Nefarius Software Solutions e.U.) | `ViGEmBus_1.22.0_x64_x86_arm64.exe` from `nefarius/ViGEmBus` tag `v1.22.0`; SHA-256 `89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a`; Authenticode "Nefarius Software Solutions e.U." | Feature "Controller drivers (ViGEmBus + HidHide)". The vendor installer is run silently, elevated, only if the driver is not already on the PC. Upstream retired and archived the project; 1.22.0 is the final release. |
+| HidHide | 1.5.230.0 | MIT (Copyright (c) 2020 Eric Korff de Gidts; (c) 2021-2023 Benjamin Hoglinger-Stelzer) | `HidHide_1.5.230_x64.exe` from `nefarius/HidHide` tag `v1.5.230.0`; SHA-256 `f4bbbcb82e6258641b887c74bc81c4c5f66e4aa811808dfc304347687b7605f6`; Authenticode "Nefarius Software Solutions e.U." | Same feature as above, same rules. |
+| Sunshine | 2026.914.233613 | GPL-3.0-only | `Sunshine-Windows-AMD64-lite.zip` (portable package) from `LizardByte/Sunshine`, now served at `SunshineStream/Sunshine`, tag `v2026.914.233613`; SHA-256 `233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b`; matches the digest GitHub publishes; the binaries inside are not signed | Feature "Sunshine (streaming host)". The ZIP is only placed; PaRuX unpacks it into its own per-user folder when the owner asks in Settings. No Windows service, firewall rule or autostart is created. Run by PaRuX as a separate process, never linked. |
+
+**GPL-3.0 source offer (Sunshine).** The Corresponding Source of exactly this version is at <https://github.com/SunshineStream/Sunshine/tree/v2026.914.233613> (archive: <https://github.com/SunshineStream/Sunshine/archive/refs/tags/v2026.914.233613.tar.gz>, tag commit `63d35f702ee9e362e43263742981836ec0710384`; build dependencies: <https://github.com/LizardByte/build-deps>). The same offer, with the three-year written-offer wording, is installed as `Redist\Sunshine\SOURCE-OFFER-Sunshine.txt`. The GPL text is `Redist\Sunshine\LICENSE-Sunshine.txt`. The vendor Windows MSI of Sunshine is deliberately not bundled (see the lock's `excluded` entry).
+
+The MSI grows by about 52 MB of payload (about 45 MB after MSI compression, because the ZIP and the signed installers barely compress) when the optional payloads are included; `-NoRedist` builds are unchanged in size.
+
 ## Bundled in Standard Portable / Corporate Lite ZIPs — not in the MSI
 
 These artifacts are staged by `scripts/portable-offline-assets.ps1` and `scripts/build-corporate-lite.ps1`. The model licences below were read from the upstream Hugging Face model metadata on 2026-11-11.
@@ -187,9 +201,9 @@ Features whose purpose is explicitly online (for example checking GitHub Release
 Because self-contained .NET and Android builds include transitive dependencies, a public release should still run the package-manager license/vulnerability inventory during local release validation and preserve any upstream NOTICE files that require redistribution. This document is the maintained human-readable summary, not a substitute for the exact upstream license texts.
 
 
-## Optional virtual-controller components (not redistributed)
+## Optional virtual-controller components (also offered as an optional MSI feature)
 
-PaRuX never installs drivers. These are programs the user may install; PaRuX only talks to them when present.
+The PaRuX **application** never installs drivers and only talks to them when present. The **setup (MSI)** can install them, only when its optional "Controller drivers (ViGEmBus + HidHide)" feature is ticked or requested on the command line; see "Optional vendor payloads in the Windows MSI" above for versions, hashes and licences. A copy already on the PC is never touched.
 
 | Component | License | How PaRuX uses it |
 |---|---|---|

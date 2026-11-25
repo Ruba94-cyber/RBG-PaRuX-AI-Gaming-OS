@@ -1,0 +1,25 @@
+Sunshine - written offer / pointer to Corresponding Source (GPL-3.0)
+
+The file Sunshine-Windows-AMD64-lite.zip that accompanies this notice is the
+unmodified official release v2026.914.233613 of Sunshine, a program licensed
+under the GNU General Public License version 3 (see LICENSE-Sunshine.txt).
+RBG / PaRuX did not change a single byte of it.
+
+Corresponding Source of exactly this version:
+
+  Repository at the release tag:
+    https://github.com/SunshineStream/Sunshine/tree/v2026.914.233613
+    (formerly https://github.com/LizardByte/Sunshine/tree/v2026.914.233613)
+  Source archive:
+    https://github.com/SunshineStream/Sunshine/archive/refs/tags/v2026.914.233613.tar.gz
+  Tag commit: 63d35f702ee9e362e43263742981836ec0710384
+  Pre-built third-party build dependencies used by the upstream build:
+    https://github.com/LizardByte/build-deps
+
+If those locations stop being available, write to the PaRuX maintainers through
+the project's GitHub repository and we will provide a copy of the source for
+this version for at least three years from the date you received the binaries,
+for a charge no higher than the cost of physically performing the distribution.
+
+PaRuX itself is a separate program under its own licence. It starts Sunshine as
+a separate process and does not link to it.

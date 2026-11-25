@@ -143,7 +143,34 @@ public sealed class ComponentInventoryService
                 Actions = path != null ? new[] { "locate", "skip" } : skipped ? new[] { "locate", "unskip" } : new[] { "locate", "skip" }
             });
         }
+        result.AddRange(RedistComponents(new PaRuX.Server.Orchestration.Gaming.WindowsRedistProbe()));
         return result;
+    }
+
+    /// <summary>
+    /// Read-only rows for the setup-bundled helpers (Sunshine, ViGEmBus, HidHide). PaRuX installs none of them from here: the
+    /// drivers come only from the MSI's optional feature, so no action is offered.
+    /// </summary>
+    internal static IEnumerable<ComponentStatus> RedistComponents(PaRuX.Server.Orchestration.Gaming.IRedistProbe probe)
+    {
+        var empty = new PaRuX.Server.Orchestration.Gaming.SupportAppListState(false, Array.Empty<SupportAppEntry>(), false);
+        foreach (RedistStatusRow r in PaRuX.Server.Orchestration.Gaming.RedistDetector.BuildRows(probe, empty))
+        {
+            bool installed = r.State == RedistState.Installed;
+            yield return new ComponentStatus
+            {
+                Id = r.Id,
+                DisplayName = r.Name,
+                Ownership = r.Ownership ?? ComponentOwnership.SYSTEM_DETECTED,
+                Detected = installed,
+                Path = r.Path,
+                Version = r.Version,
+                Health = installed ? "detected" : r.State == RedistState.RestartRequired ? "restart-required" : "missing",
+                ValidationStatus = installed ? "unverified" : r.State == RedistState.RestartRequired ? "restart-required" : "missing",
+                ValidationMessage = r.Message,
+                Actions = Array.Empty<string>()
+            };
+        }
     }
 
     private static async Task<ComponentStatus> ManagedPythonComponentAsync(

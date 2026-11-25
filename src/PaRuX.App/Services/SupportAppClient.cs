@@ -21,6 +21,7 @@ namespace PaRuX.Services
         public Task<SupportAppStatus> StartAsync(CancellationToken ct) => Send<SupportAppStatus>(HttpMethod.Post, Base + "/start", null, ct);
         public Task<SupportAppStatus> StopAsync(CancellationToken ct) => Send<SupportAppStatus>(HttpMethod.Post, Base + "/stop", null, ct);
         public Task<List<SupportAppCatalogEntry>> CatalogAsync(CancellationToken ct) => Send<List<SupportAppCatalogEntry>>(HttpMethod.Get, Base + "/catalog", null, ct);
+        public Task<List<RedistStatusRow>> RedistAsync(CancellationToken ct) => Send<List<RedistStatusRow>>(HttpMethod.Get, Base + "/redist", null, ct);
         public Task<SupportAppActionResult> InstallAsync(SupportAppInstallRequest request, CancellationToken ct) => Send<SupportAppActionResult>(HttpMethod.Post, Base + "/install", request, ct);
         public Task<SupportAppActionResult> RemoveAsync(string catalogId, CancellationToken ct) => Send<SupportAppActionResult>(HttpMethod.Post, Base + "/remove", new SupportAppRemoveRequest(catalogId), ct);
 

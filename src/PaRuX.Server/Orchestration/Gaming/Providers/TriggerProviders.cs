@@ -131,8 +131,23 @@ public sealed class SunshineSessionTriggerProvider : IGamingTriggerProvider
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            return FindExecutable(localAppData, programFiles);
+            return FindExecutable(localAppData, programFiles) ?? FindManagedExecutable(SupportAppPolicy.ManagedRoot);
         }
+    }
+
+    /// <summary>The copy PaRuX itself unpacked from the (bundled or downloaded) portable package: <c>support-apps\sunshine\&lt;version&gt;\Sunshine\sunshine.exe</c>.</summary>
+    internal static string? FindManagedExecutable(string managedRoot)
+    {
+        try
+        {
+            string dir = Path.Combine(managedRoot, "sunshine");
+            if (!Directory.Exists(dir)) return null;
+            return Directory.EnumerateDirectories(dir)
+                .OrderByDescending(d => d, StringComparer.Ordinal)
+                .Select(d => Path.Combine(d, "Sunshine", "sunshine.exe"))
+                .FirstOrDefault(File.Exists);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     internal static string? FindExecutable(string localAppData, string programFiles)

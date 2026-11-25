@@ -18,6 +18,10 @@ public static class SupportAppEndpoints
 
         app.MapGet("/api/v1/gaming/support-apps/catalog", () => Results.Ok(SupportAppCatalog.All)).RequireDesktopOwner();
 
+        // Read-only: what the PaRuX setup's optional features and this PC say about Sunshine, ViGEmBus and HidHide.
+        app.MapGet("/api/v1/gaming/support-apps/redist", (SupportAppStore store, IRedistProbe probe) =>
+            Results.Ok(RedistDetector.BuildRows(probe, store.Load()))).RequireDesktopOwner();
+
         app.MapPut("/api/v1/gaming/support-apps", (SupportAppSaveRequest request, SupportAppStore store, SupportAppRunner runner, LocalRuntimeService runtime) =>
         {
             if (runtime.GamingMode) return Results.Conflict(new { error = "Leave Gaming before editing the support apps." });
