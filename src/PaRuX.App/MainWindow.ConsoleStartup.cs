@@ -25,26 +25,17 @@ public sealed partial class MainWindow
             var data = SettingsStore.Current.Data;
             if (data.StartInConsoleMode && await ApplyAlwaysConsoleStartupAsync()) return;   // simple option: no TV, any pad
             if (!data.ConsoleStartOnTvWhenPresent) return;  // default: the app starts exactly as before
-            string targetId = data.ConsoleTargetDisplayId ?? string.Empty;
-            bool tvPresent = false;
-            if (!string.IsNullOrWhiteSpace(targetId))
-            {
-                int absentSeen = 0;
-                for (int probe = 0; probe < ConsoleStartupMaxProbes && !App.IsShuttingDown; probe++)
-                {
-                    var topology = await GamingOrchestratorClient.Current.GetDisplayTopologyAsync();
-                    bool readable = topology.Succeeded;
-                    bool present = readable && ConsoleDisplaySelectionPolicy.SelectTarget(
-                        topology.Value, SettingsStore.Current.Data.ConsoleDisplays, targetId) is not null;
-                    if (readable && !present) absentSeen++;
-                    // Pure, tested decision: present stops, a TV absent twice stops (a TV that just woke can take a moment), otherwise wait and retry within the budget.
-                    ConsoleProbeStep step = ConsoleStartupProbePolicy.Next(probe, ConsoleStartupMaxProbes, readable, present, absentSeen, ConsoleStartupAbsentConfirmations);
-                    tvPresent = step == ConsoleProbeStep.Present;
-                    if (step is ConsoleProbeStep.Present or ConsoleProbeStep.Absent or ConsoleProbeStep.GiveUp) break;
-                    await Task.Delay(ConsoleStartupProbeInterval);
-                }
-            }
+            ConsoleTvSimulation.Mode simulation = ConsoleTvSimulation.FromEnvironment();   // Debug/test seam only; Off in Release
+            await MigrateLegacyTvChoiceAsync();
+            // Any selected TV (from the persistent list) that is connected counts; no TV selected means nothing to wait for.
+            ConsoleStartupTvProbe.Result probe = await ConsoleStartupTvProbe.RunAsync(
+                GamingCoreTopologyProvider.Provider, () => SettingsStore.Current.Data.ConsoleTvs, simulation,
+                (delay, ct) => Task.Delay(delay, ct), () => App.IsShuttingDown, ConsoleStartupMaxProbes,
+                ConsoleStartupAbsentConfirmations, ConsoleStartupProbeInterval);
             if (App.IsShuttingDown) return;
+            RefreshTvSettingsFromSnapshot(probe.Snapshot);
+            string targetId = probe.DisplayId ?? string.Empty;
+            bool tvPresent = probe.TvPresent;
 
             switch (ConsoleStartupPolicy.Decide(data.ConsoleStartOnTvWhenPresent, targetId, tvPresent, data.StartupWithoutTv))
             {
@@ -91,6 +82,30 @@ public sealed partial class MainWindow
             // A failed preference must never stop the app from being usable: it simply stays in the normal window.
             Log.Write("Console/TV start preference failed: " + ex.GetType().Name + ": " + ex.Message);
             _consoleRoutingInProgress = false;
+        }
+    }
+
+    /// <summary>Refreshes the TV history and the older single-target fields from a snapshot Core just returned; saves only when something changed.</summary>
+    internal static void RefreshTvSettingsFromSnapshot(GamingDisplaySnapshotDto? snapshot)
+    {
+        if (snapshot is null) return;
+        if (ConsoleTvSettingsSync.Apply(SettingsStore.Current.Data, snapshot, ConsoleTvSimulation.Mode.Off, DateTime.UtcNow, out _))
+            SettingsStore.Current.Save();
+    }
+
+    /// <summary>
+    /// One-time: an owner who picked a single TV with an older PaRuX has no entry in the new list yet. Wait (bounded) for the first readable
+    /// display list and turn that choice into a selected entry, so the start preference keeps working after the update.
+    /// </summary>
+    private async Task MigrateLegacyTvChoiceAsync()
+    {
+        var data = SettingsStore.Current.Data;
+        if (data.ConsoleTvsMigrated || string.IsNullOrWhiteSpace(data.ConsoleTargetDisplayId)) return;
+        for (int probe = 0; probe < ConsoleStartupMaxProbes && !App.IsShuttingDown; probe++)
+        {
+            GamingDisplaySnapshotDto? snapshot = await GamingCoreTopologyProvider.Provider.ReadAsync(default);
+            if (snapshot is { Supported: true }) { RefreshTvSettingsFromSnapshot(snapshot); return; }
+            await Task.Delay(ConsoleStartupProbeInterval);
         }
     }
 

@@ -1260,14 +1260,17 @@
                     <StackPanel Spacing="{StaticResource PaRuXSpaceM}">
                         <TextBlock x:Name="ConsoleDisplaysHeading" Text="Console / TV display routing" loc:Loc.ItText="Destinazione schermo Console / TV" Style="{StaticResource PaRuXBodyStrongTextStyle}" />
                         <TextBlock x:Name="ConsoleDisplaysIntro" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}"
-                            Text="Choose which Windows screen is a TV and where PaRuX Console fullscreen opens. Other monitors stay available. This moves only the PaRuX window: external games/emulators control their own output. Windows duplicated displays cannot be separated by PaRuX." loc:Loc.ItText="Scegli quale schermo Windows è una TV e dove si apre la Console PaRuX a schermo intero. Gli altri monitor restano disponibili. Sposta solo la finestra di PaRuX: giochi ed emulatori esterni controllano da soli la propria uscita. PaRuX non può separare gli schermi duplicati di Windows." />
+                            Text="Choose which monitors are TVs, among the ones connected now and the ones PaRuX has seen before. You can choose several. Console always starts, with or without a TV. This moves only the PaRuX window and never changes Windows display settings." loc:Loc.ItText="Scegli quali monitor sono TV, tra quelli collegati adesso e quelli già visti da PaRuX. Puoi sceglierne più di uno. La Console parte sempre, con o senza TV. Sposta solo la finestra di PaRuX e non cambia mai le impostazioni schermo di Windows." />
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button x:Name="ConsoleDisplaysRefresh" Content="Detect connected displays" loc:Loc.ItContent="Rileva gli schermi collegati"
                                 AutomationProperties.AutomationId="Settings_ConsoleDisplays_Refresh_Button"
                                 Click="ConsoleDisplaysRefresh_Click" />
-                            <Button x:Name="ConsoleDisplaysUseCurrent" Content="Use current monitor (automatic)" loc:Loc.ItContent="Usa il monitor attuale (automatico)"
+                            <Button x:Name="ConsoleDisplaysUseCurrent" Content="Use the current monitor as TV" loc:Loc.ItContent="Usa il monitor attuale come TV"
                                 AutomationProperties.AutomationId="Settings_ConsoleDisplays_Auto_Button"
                                 Click="ConsoleDisplaysUseCurrent_Click" />
+                            <Button x:Name="ConsoleDisplaysClear" Content="Clear TV choice" loc:Loc.ItContent="Azzera la scelta TV"
+                                AutomationProperties.AutomationId="Settings_ConsoleDisplays_Clear_Button"
+                                Click="ConsoleDisplaysClear_Click" />
                         </StackPanel>
                         <TextBlock x:Name="ConsoleDisplaysStatus" TextWrapping="Wrap"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_Status_Text"
@@ -1284,7 +1287,7 @@
                             Style="{StaticResource PaRuXCaptionTextStyle}"
                             Text="When enabled, PaRuX can bring its existing fullscreen Console window forward only after the directly launched game process closes and the Core verifies AI recovery. External launchers and uncertain child processes do not trigger this. Windows may deny foreground activation." loc:Loc.ItText="Se attivo, PaRuX può portare in primo piano la finestra Console a schermo intero già esistente solo dopo la chiusura del processo del gioco avviato direttamente e dopo che il Core ha verificato il ripristino dell&#x27;IA. Launcher esterni e processi figli incerti non attivano questa funzione. Windows può negare l&#x27;attivazione in primo piano." />
                         <ToggleSwitch x:Name="ConsoleStartOnTvSwitch"
-                            Header="Start PaRuX directly in TV mode when the chosen TV is on" loc:Loc.ItHeader="Avvia PaRuX direttamente in modalità TV quando la TV scelta è accesa"
+                            Header="Start PaRuX directly in TV mode when a chosen TV is on" loc:Loc.ItHeader="Avvia PaRuX direttamente in modalità TV quando una TV scelta è accesa"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartOnTv_Toggle"
                             IsOn="False" Toggled="ConsoleStartOnTvSwitch_Toggled" />
                         <TextBlock x:Name="ConsoleStartOnTvExplanation" TextWrapping="Wrap"
@@ -1292,7 +1295,7 @@
                             Text="When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back."
                             loc:Loc.ItText="All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro." />
                         <ComboBox x:Name="ConsoleStartWithoutTvCombo" MinWidth="320"
-                            Header="When the TV is not connected, start" loc:Loc.ItHeader="Se la TV non è collegata, avvia"
+                            Header="When no chosen TV is connected, start" loc:Loc.ItHeader="Se nessuna TV scelta è collegata, avvia"
                             AutomationProperties.AutomationId="Settings_ConsoleDisplays_StartWithoutTv_Combo"
                             SelectionChanged="ConsoleStartWithoutTvCombo_SelectionChanged">
                             <ComboBoxItem Content="Normal window (AI, desktop mode)" loc:Loc.ItContent="Finestra normale (AI, modalità desktop)" Tag="normal" />

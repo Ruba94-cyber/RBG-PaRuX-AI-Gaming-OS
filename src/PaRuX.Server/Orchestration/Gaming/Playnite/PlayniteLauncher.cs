@@ -108,12 +108,13 @@ internal sealed class PlayniteLauncher
     public string? LastExePath { get; private set; }
 
     /// <summary>Decides the mode to start: an explicit request wins; the owner's "only when the TV is connected" rule uses ConsoleStartupPolicy.</summary>
-    internal (string Mode, bool Minimized, string? Note) ResolveMode(PlayniteSettingsDto settings, string? requestedMode, string? requestedDisplay)
+    internal (string Mode, bool Minimized, string? Note) ResolveMode(PlayniteSettingsDto settings, string? requestedMode, string? requestedDisplay, bool explicitRequest = false)
     {
         string mode = PlayniteModes.IsValid(requestedMode) ? requestedMode! : settings.StartMode;
         if (mode != PlayniteModes.Console) return (PlayniteModes.Desktop, false, null);
         string? display = string.IsNullOrWhiteSpace(requestedDisplay) ? settings.TargetDisplayId : requestedDisplay;
-        if (!settings.ConsoleOnlyWhenTargetConnected) return (PlayniteModes.Console, false, null);
+        // An explicit request (the owner asked for Console now) never depends on a TV being connected.
+        if (explicitRequest || !settings.ConsoleOnlyWhenTargetConnected) return (PlayniteModes.Console, false, null);
         ConsoleStartupDecision decision = ConsoleStartupPolicy.Decide(true, display, _displayConnected(display), settings.FallbackWithoutDisplay);
         return decision switch
         {
@@ -123,11 +124,11 @@ internal sealed class PlayniteLauncher
         };
     }
 
-    public PlayniteLaunchResultDto Launch(PlayniteComponentDto component, PlayniteSettingsDto settings, string? requestedMode, string? requestedDisplay)
+    public PlayniteLaunchResultDto Launch(PlayniteComponentDto component, PlayniteSettingsDto settings, string? requestedMode, string? requestedDisplay, bool explicitRequest = false)
     {
         if (settings.Skipped) return Refused("Playnite is skipped. Choose it again in Settings before starting it.");
         if (!component.Detected || component.Folder is null) return Refused("Playnite was not found. Locate it or install it first.");
-        (string mode, bool minimized, string? note) = ResolveMode(settings, requestedMode, requestedDisplay);
+        (string mode, bool minimized, string? note) = ResolveMode(settings, requestedMode, requestedDisplay, explicitRequest);
         string? exe = mode == PlayniteModes.Console ? component.FullscreenExe : component.DesktopExe;
         if (exe is null) return Refused(mode == PlayniteModes.Console
             ? "This Playnite folder has no Fullscreen executable." : "This Playnite folder has no Desktop executable.");

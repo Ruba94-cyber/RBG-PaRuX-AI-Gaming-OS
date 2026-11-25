@@ -81,6 +81,16 @@ namespace PaRuX.Models
         public List<ConsoleDisplayAssignment> ConsoleDisplays { get; set; } = new();
         public string ConsoleTargetDisplayId { get; set; } = string.Empty;
 
+        /// <summary>Monitors the owner has seen (connected now or in the past) with the ones chosen as TV (<see cref="ConsoleTvEntry.Selected"/>).
+        /// Identified by a hash of the monitor's EDID identity, so a TV is recognised again on any port. A Console start looks for ANY selected
+        /// TV that is connected. <see cref="ConsoleDisplays"/> and <see cref="ConsoleTargetDisplayId"/> are derived from this list at each
+        /// display read and kept for older readers; a missing value (settings written by an older PaRuX) loads as an empty history.</summary>
+        public List<ConsoleTvEntry> ConsoleTvs { get; set; } = new();
+
+        /// <summary>True once the older single-TV choice was turned into a <see cref="ConsoleTvs"/> entry (done once, at the first readable
+        /// display list), so a TV the owner later deselects is never selected again from stale legacy roles.</summary>
+        public bool ConsoleTvsMigrated { get; set; } = false;
+
         /// <summary>Opt-in: at launch, when the chosen Console TV (<see cref="ConsoleTargetDisplayId"/>) is connected, open directly in
         /// Console/TV mode on that screen (the Gaming library), so the owner can play from the couch. Off by default.</summary>
         public bool ConsoleStartOnTvWhenPresent { get; set; } = false;

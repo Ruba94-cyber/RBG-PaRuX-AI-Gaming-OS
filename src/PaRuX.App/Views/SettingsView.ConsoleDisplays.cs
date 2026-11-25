@@ -126,17 +126,47 @@ public sealed partial class SettingsView
 
     private GamingDisplaySnapshotDto? _lastConsoleDisplaySnapshot;
 
-    private void ConsoleDisplaysUseCurrent_Click(object sender, RoutedEventArgs e)
+    /// <summary>"Use the current monitor as TV": the primary connected monitor is remembered and selected. Nothing in Windows changes.</summary>
+    private async void ConsoleDisplaysUseCurrent_Click(object sender, RoutedEventArgs e)
     {
-        SettingsStore.Current.Data.ConsoleTargetDisplayId = string.Empty;
-        SettingsStore.Current.Save();
-        if (_lastConsoleDisplaySnapshot is { Supported: true } snapshot)
-            RenderConsoleDisplays(snapshot);
-        else
+        GamingDisplaySnapshotDto? snapshot = _lastConsoleDisplaySnapshot is { Supported: true }
+            ? _lastConsoleDisplaySnapshot
+            : await GamingCoreTopologyProvider.Provider.ReadAsync(default);
+        if (snapshot is not { Supported: true })
+        {
             ConsoleDisplaysStatus.Text = TvT(
-                "Automatic output restored: Console opens on the current monitor.",
-                "Destinazione automatica ripristinata: Console si apre sul monitor attuale.");
+                "Displays are unavailable, so the current monitor could not be identified. Nothing was changed.",
+                "Schermi non disponibili: il monitor attuale non è stato identificato. Nessuna modifica.");
+            return;
+        }
+        _lastConsoleDisplaySnapshot = snapshot;
+        var data = SettingsStore.Current.Data;
+        data.ConsoleTvs = ConsoleTvRegistry.SelectCurrentMonitor(data.ConsoleTvs, snapshot, DateTime.UtcNow);
+        data.ConsoleTvsMigrated = true;
+        ApplyConsoleTvSelection(snapshot);
     }
+
+    /// <summary>Deselects every TV: Console then opens on the current screen again.</summary>
+    private void ConsoleDisplaysClear_Click(object sender, RoutedEventArgs e)
+    {
+        var data = SettingsStore.Current.Data;
+        data.ConsoleTvs = ConsoleTvRegistry.Sanitize(data.ConsoleTvs).Select(t => { t.Selected = false; return t; }).ToList();
+        data.ConsoleTvsMigrated = true;
+        ApplyConsoleTvSelection(_lastConsoleDisplaySnapshot);
+    }
+
+    /// <summary>Re-derives the older single-target fields from the TV list, saves, and redraws.</summary>
+    private void ApplyConsoleTvSelection(GamingDisplaySnapshotDto? snapshot)
+    {
+        var data = SettingsStore.Current.Data;
+        if (snapshot is { Supported: true })
+            ConsoleTvSettingsSync.Apply(data, snapshot, ConsoleTvSimulation.Mode.Off, DateTime.UtcNow, out _);
+        else if (!data.ConsoleTvs.Any(t => t.Selected))
+            data.ConsoleTargetDisplayId = string.Empty;
+        SettingsStore.Current.Save();
+        RenderConsoleDisplays(snapshot);
+    }
+
     private static bool TvSettingsItalian => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it";
     private static string TvT(string en, string it) => TvSettingsItalian ? it : en;
 
@@ -147,10 +177,11 @@ public sealed partial class SettingsView
     {
         ConsoleDisplaysHeading.Text = TvT("Console / TV display routing", "Destinazione schermo Console / TV");
         ConsoleDisplaysIntro.Text = TvT(
-            "Mark each Windows display as a PC monitor or TV, then explicitly choose one TV for PaRuX Console fullscreen. Other monitors remain available. PaRuX moves its own window only, not external games or emulators. Duplicated Windows displays cannot be separated.",
-            "Classifica ogni schermo Windows come monitor PC o TV, quindi scegli esplicitamente una TV per la Console PaRuX a schermo intero. Gli altri monitor restano disponibili. PaRuX sposta soltanto la propria finestra, non giochi o emulatori esterni. Gli schermi duplicati di Windows non possono essere separati.");
+            "Choose which monitors are TVs, among the ones connected now and the ones PaRuX has seen before (kept even when unplugged). You can choose several. Each monitor is recognised by its own identity, so a TV is found again on any port. Console always starts, with or without a TV; the TV list only decides where it opens and whether PaRuX starts in TV mode. PaRuX moves its own window only and never changes Windows display settings.",
+            "Scegli quali monitor sono TV, tra quelli collegati adesso e quelli già visti da PaRuX (conservati anche se scollegati). Puoi sceglierne più di uno. Ogni monitor è riconosciuto dalla sua identità, quindi una TV viene ritrovata su qualsiasi porta. La Console parte sempre, con o senza TV; l'elenco TV decide solo dove si apre e se PaRuX parte in modalità TV. PaRuX sposta soltanto la propria finestra e non cambia mai le impostazioni schermo di Windows.");
         ConsoleDisplaysRefresh.Content = TvT("Detect connected displays", "Rileva schermi collegati");
-        ConsoleDisplaysUseCurrent.Content = TvT("Use current monitor (automatic)", "Usa monitor attuale (automatico)");
+        ConsoleDisplaysUseCurrent.Content = TvT("Use the current monitor as TV", "Usa il monitor attuale come TV");
+        ConsoleDisplaysClear.Content = TvT("Clear TV choice", "Azzera la scelta TV");
         ConsoleRouteOwnedGamesSwitch.Header = TvT(
             "Prefer selected TV for directly launched windowed games (never force fullscreen or third-party launchers)",
             "Preferisci la TV scelta per i giochi in finestra avviati direttamente (mai forzare fullscreen o launcher esterni)");
@@ -158,12 +189,12 @@ public sealed partial class SettingsView
             "Automatically show Console Home after a verified game exit (off by default)",
             "Mostra automaticamente la Home Console dopo la chiusura verificata del gioco (disattivo di base)");
         ConsoleStartOnTvSwitch.Header = TvT(
-            "Start PaRuX directly in TV mode when the chosen TV is on",
-            "Avvia PaRuX direttamente in modalità TV quando la TV scelta è accesa");
+            "Start PaRuX directly in TV mode when a chosen TV is on",
+            "Avvia PaRuX direttamente in modalità TV quando una TV scelta è accesa");
         ConsoleStartOnTvExplanation.Text = TvT(
             "When PaRuX starts and the TV chosen above is connected, it opens fullscreen on that TV in the Gaming library. Use the controller to move around; View switches between Gaming and AI, B goes back.",
             "All'avvio, se la TV scelta sopra è collegata, PaRuX si apre a schermo intero su quella TV nella libreria giochi. Con il controller ti muovi; View passa tra Gaming e AI, B torna indietro.");
-        ConsoleStartWithoutTvCombo.Header = TvT("When the TV is not connected, start", "Se la TV non è collegata, avvia");
+        ConsoleStartWithoutTvCombo.Header = TvT("When no chosen TV is connected, start", "Se nessuna TV scelta è collegata, avvia");
         ConsoleAutoReturnExplanation.Text = TvT(
             "Only a verified directly launched process exit and completed AI recovery can trigger this. Manual Return, store handoffs and unknown child processes are ignored. Windows may deny foreground activation.",
             "Si attiva soltanto dopo la chiusura verificata di un processo avviato direttamente e il ripristino dell'AI. Il ritorno manuale, gli store e i processi secondari sconosciuti sono esclusi. Windows può impedire l'attivazione in primo piano.");
@@ -199,15 +230,19 @@ public sealed partial class SettingsView
             if (version != _consoleDisplayRefreshVersion) return;
             if (!reply.Succeeded || reply.Value is null || !reply.Value.Supported)
             {
-                ConsoleDisplaysList.Children.Clear();
+                // The remembered monitors can still be reviewed (and forgotten) without the live list.
+                RenderConsoleDisplays(null);
                 ConsoleDisplaysStatus.Text = TvT(
-                    "Displays are unavailable. Check the local Core. Saved TV assignments were not changed.",
-                    "Schermi non disponibili. Controlla il Core locale. Le assegnazioni TV salvate non sono state modificate.");
+                    "Displays are unavailable. Check the local Core. Saved TV choices were not changed.",
+                    "Schermi non disponibili. Controlla il Core locale. Le scelte TV salvate non sono state modificate.");
                 return;
             }
 
             GamingDisplaySnapshotDto snapshot = reply.Value;
             _lastConsoleDisplaySnapshot = snapshot;
+            // Remember what is connected and bring the older single-target fields in line with the selected TVs.
+            if (ConsoleTvSettingsSync.Apply(SettingsStore.Current.Data, snapshot, ConsoleTvSimulation.Mode.Off, DateTime.UtcNow, out _))
+                SettingsStore.Current.Save();
             RenderConsoleDisplays(snapshot);
         }
         catch (Exception)
@@ -224,38 +259,58 @@ public sealed partial class SettingsView
         }
     }
 
-    private void RenderConsoleDisplays(GamingDisplaySnapshotDto snapshot)
+    private void RenderConsoleDisplays(GamingDisplaySnapshotDto? snapshot)
     {
         ConsoleDisplaysList.Children.Clear();
         var settings = SettingsStore.Current.Data;
-        settings.ConsoleDisplays ??= new List<ConsoleDisplayAssignment>();
-        string selected = settings.ConsoleTargetDisplayId ?? string.Empty;
-        var target = ConsoleDisplaySelectionPolicy.SelectTarget(
-            snapshot, settings.ConsoleDisplays, selected);
-        string state = target is not null
-            ? TvT("Console fullscreen destination: ", "Destinazione Console a schermo intero: ") + target.DisplayId
-            : string.IsNullOrWhiteSpace(selected)
-                ? TvT("No TV output chosen. Console opens on the current screen.",
-                    "Nessuna TV selezionata. La Console si apre sullo schermo attuale.")
-                : TvT("Previously selected TV is disconnected or no longer classified as a TV. Console will not silently use another screen.",
-                    "La TV selezionata non è collegata o non è più classificata come TV. La Console non utilizzerà un altro schermo di nascosto.");
-        ConsoleDisplaysStatus.Text = state;
+        settings.ConsoleTvs = ConsoleTvRegistry.Sanitize(settings.ConsoleTvs);
+        bool live = snapshot is { Supported: true };
+        ConsoleTvSimulation.Mode simulation = ConsoleTvSimulation.FromEnvironment();
+        var connectedTvs = ConsoleTvRegistry.ConnectedTvs(settings.ConsoleTvs, snapshot, ConsoleTvSimulation.Mode.Off);
+        int selectedCount = settings.ConsoleTvs.Count(t => t.Selected);
 
-        for (int i = 0; i < snapshot.Displays.Count; i++)
+        string state = selectedCount == 0
+            ? TvT("No TV chosen. Console opens on the current screen and starts normally.",
+                "Nessuna TV scelta. La Console si apre sullo schermo attuale e parte normalmente.")
+            : live && connectedTvs.Count > 0
+                ? TvT("Chosen TVs connected now: ", "TV scelte collegate adesso: ") +
+                    string.Join(", ", connectedTvs.Select(ConsoleTvRegistry.DisplayName))
+                : live
+                    ? TvT("Chosen TVs are not connected. The TV start preference uses its fallback; Console started from Playnite or --playnite-console still starts.",
+                        "Le TV scelte non sono collegate. L'avvio in modalità TV usa l'alternativa scelta; la Console avviata da Playnite o con --playnite-console parte comunque.")
+                    : string.Empty;
+        if (simulation != ConsoleTvSimulation.Mode.Off)
+            state += " " + TvT("[Test mode: the current monitor is simulated as a TV.]", "[Modalità di test: il monitor attuale è simulato come TV.]");
+        if (state.Length > 0) ConsoleDisplaysStatus.Text = state.Trim();
+
+        // Connected monitors first (in Windows order), then the ones only remembered, most recently seen first.
+        var connected = new List<(ConsoleTvEntry Entry, GamingDisplayModeDto? Display)>();
+        var remembered = new List<(ConsoleTvEntry Entry, GamingDisplayModeDto? Display)>();
+        var shownIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (live)
+            foreach (GamingDisplayModeDto display in snapshot!.Displays)
+            {
+                if (!ConsoleDisplaySelectionPolicy.ValidDisplayId(display.DisplayId)) continue;
+                string id = ConsoleMonitorIdentity.IdOf(display);
+                ConsoleTvEntry? entry = settings.ConsoleTvs.FirstOrDefault(t => string.Equals(t.StableId, id, StringComparison.OrdinalIgnoreCase));
+                if (entry is null || !shownIds.Add(entry.StableId)) continue;
+                connected.Add((entry, display));
+            }
+        foreach (ConsoleTvEntry entry in settings.ConsoleTvs.OrderByDescending(t => t.LastSeenUtc))
+            if (shownIds.Add(entry.StableId)) remembered.Add((entry, null));
+
+        int connectedIndex = 0, rememberedIndex = 0;
+        foreach (var (entry, display) in connected.Concat(remembered))
         {
-            GamingDisplayModeDto display = snapshot.Displays[i];
-            if (!ConsoleDisplaySelectionPolicy.ValidDisplayId(display.DisplayId)) continue;
-            string deviceId = display.DisplayId;
-            string role = settings.ConsoleDisplays.LastOrDefault(a =>
-                string.Equals(a.DisplayId, deviceId, StringComparison.OrdinalIgnoreCase))?.Role
-                ?? ConsoleDisplaySelectionPolicy.MonitorRole;
+            // Index 0.. over connected monitors keeps the identifiers the display cards always had.
+            string idPrefix = display is not null
+                ? $"Settings_ConsoleDisplay_{connectedIndex++}"
+                : $"Settings_ConsoleTvHistory_{rememberedIndex++}";
+            string stableId = entry.StableId;
 
             var panel = new StackPanel { Spacing = 8, Padding = new Thickness(10) };
-            panel.Children.Add(new TextBlock
-            {
-                Text = (string.IsNullOrWhiteSpace(display.FriendlyName)
-                    ? deviceId : display.FriendlyName + " · " + deviceId) +
-                    $" · {display.Width} × {display.Height}" +
+            string detail = display is not null
+                ? TvT("Connected", "Collegato") + $" · {display.Width} × {display.Height}" +
                     (display.RefreshRateHz > 0 ? $" · {display.RefreshRateHz} Hz" : "") +
                     (display.Primary ? TvT(" · Primary", " · Principale") : "") +
                     " · " + (display.ColorMode switch
@@ -265,62 +320,48 @@ public sealed partial class SettingsView
                         "sdr" => "SDR",
                         "advanced-color-unknown" => TvT("Advanced Color, HDR unknown", "Colore avanzato, HDR non verificato"),
                         _ => TvT("HDR status unavailable", "Stato HDR non disponibile")
-                    }),
-                TextWrapping = TextWrapping.Wrap
-            });
+                    })
+                : TvT("Not connected · last seen ", "Non collegato · visto l'ultima volta il ") +
+                    entry.LastSeenUtc.ToLocalTime().ToString("d", CultureInfo.CurrentUICulture);
+            panel.Children.Add(new TextBlock { Text = entry.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = detail + (string.IsNullOrEmpty(entry.MonitorCode) ? "" : " · " + entry.MonitorCode), TextWrapping = TextWrapping.Wrap, Opacity = 0.85 });
+
             var roleBox = new ComboBox
             {
                 Header = TvT("Display type", "Tipo di schermo"),
                 MinWidth = 200,
                 HorizontalAlignment = HorizontalAlignment.Left
             };
-            AutomationProperties.SetAutomationId(roleBox, $"Settings_ConsoleDisplay_{i}_Role");
+            AutomationProperties.SetAutomationId(roleBox, idPrefix + "_Role");
             roleBox.Items.Add(new ComboBoxItem { Content = TvT("PC monitor", "Monitor PC"), Tag = ConsoleDisplaySelectionPolicy.MonitorRole });
             roleBox.Items.Add(new ComboBoxItem { Content = "TV", Tag = ConsoleDisplaySelectionPolicy.TvRole });
-            roleBox.SelectedIndex = role == ConsoleDisplaySelectionPolicy.TvRole ? 1 : 0;
-
-            var use = new Button
-            {
-                Content = string.Equals(selected, deviceId, StringComparison.OrdinalIgnoreCase)
-                    ? TvT("Selected Console TV", "TV Console selezionata")
-                    : TvT("Use this TV for Console", "Usa questa TV per Console"),
-                IsEnabled = role == ConsoleDisplaySelectionPolicy.TvRole &&
-                    !string.Equals(selected, deviceId, StringComparison.OrdinalIgnoreCase),
-                HorizontalAlignment = HorizontalAlignment.Left
-            };
-            AutomationProperties.SetAutomationId(use, $"Settings_ConsoleDisplay_{i}_Target");
-
+            roleBox.SelectedIndex = entry.Selected ? 1 : 0;
             roleBox.SelectionChanged += (_, _) =>
             {
-                string chosen = (roleBox.SelectedItem as ComboBoxItem)?.Tag as string
-                    ?? ConsoleDisplaySelectionPolicy.MonitorRole;
+                string chosen = (roleBox.SelectedItem as ComboBoxItem)?.Tag as string ?? ConsoleDisplaySelectionPolicy.MonitorRole;
                 if (!ConsoleDisplaySelectionPolicy.ValidRole(chosen)) return;
+                bool wantTv = chosen == ConsoleDisplaySelectionPolicy.TvRole;
                 var data = SettingsStore.Current.Data;
-                data.ConsoleDisplays ??= new List<ConsoleDisplayAssignment>();
-                data.ConsoleDisplays.RemoveAll(a =>
-                    string.Equals(a.DisplayId, deviceId, StringComparison.OrdinalIgnoreCase));
-                data.ConsoleDisplays.Add(new ConsoleDisplayAssignment(deviceId, chosen));
-                if (chosen != ConsoleDisplaySelectionPolicy.TvRole &&
-                    string.Equals(data.ConsoleTargetDisplayId, deviceId, StringComparison.OrdinalIgnoreCase))
-                    data.ConsoleTargetDisplayId = string.Empty;
-                SettingsStore.Current.Save();
-                // Defer rebuilding the picker until WinUI has finished raising
-                // SelectionChanged for the ComboBox being removed from the tree.
-                _dispatcher.TryEnqueue(() => RenderConsoleDisplays(snapshot));
-            };
-            use.Click += (_, _) =>
-            {
-                var data = SettingsStore.Current.Data;
-                if (ConsoleDisplaySelectionPolicy.SelectTarget(
-                    snapshot, data.ConsoleDisplays, deviceId) is null) return;
-                data.ConsoleTargetDisplayId = deviceId;
-                SettingsStore.Current.Save();
-                RenderConsoleDisplays(snapshot);
+                if (data.ConsoleTvs.FirstOrDefault(t => string.Equals(t.StableId, stableId, StringComparison.OrdinalIgnoreCase))?.Selected == wantTv) return;
+                data.ConsoleTvs = ConsoleTvRegistry.SetSelected(data.ConsoleTvs, stableId, wantTv);
+                data.ConsoleTvsMigrated = true;
+                // Defer rebuilding the list until WinUI has finished raising SelectionChanged for the ComboBox being removed.
+                _dispatcher.TryEnqueue(() => ApplyConsoleTvSelection(snapshot));
             };
             panel.Children.Add(roleBox);
-            panel.Children.Add(use);
-            // Reuse the existing theme's subtle surface; no custom brush keys
-            // or light/dark-specific inline colors are required for this control.
+
+            var forget = new Button { Content = TvT("Forget this monitor", "Dimentica questo monitor"), HorizontalAlignment = HorizontalAlignment.Left };
+            AutomationProperties.SetAutomationId(forget, idPrefix + "_Forget");
+            forget.Click += (_, _) =>
+            {
+                var data = SettingsStore.Current.Data;
+                data.ConsoleTvs = ConsoleTvRegistry.Forget(data.ConsoleTvs, stableId);
+                data.ConsoleTvsMigrated = true;
+                ApplyConsoleTvSelection(snapshot);
+            };
+            panel.Children.Add(forget);
+
+            // Reuse the existing theme's subtle surface; no custom brush keys or light/dark-specific inline colors are required.
             var card = new Border { Child = panel, CornerRadius = new CornerRadius(10) };
             if (Application.Current.Resources.TryGetValue("PaRuXSurfaceSubtleBrush", out object? brush) &&
                 brush is Microsoft.UI.Xaml.Media.Brush surface)

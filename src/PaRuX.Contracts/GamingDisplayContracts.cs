@@ -14,6 +14,13 @@ public sealed record GamingDisplayModeDto(
     /// No EDID serial, hardware instance ID or registry key is transmitted.</summary>
     public string? FriendlyName { get; init; }
 
+    /// <summary>EDID manufacturer + product code (for example "ABC1234"), shared by identical models. Not a serial number.</summary>
+    public string? MonitorCode { get; init; }
+
+    /// <summary>Stable monitor identifier: monitor code plus a one-way hash of the EDID serial. Survives port and arrangement changes;
+    /// the raw serial is never read out of Core.</summary>
+    public string? StableId { get; init; }
+
     /// <summary>
     /// Only true HDR (not WCG) counts as HDR enabled. Values are null when
     /// Windows/driver do not provide a reliable distinction on this display.

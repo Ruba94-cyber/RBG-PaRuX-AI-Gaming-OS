@@ -244,6 +244,9 @@ public sealed partial class MainWindow
         RememberLatestVerifiedReturn();
         // A selected TV changes only THIS app window's display. It does not
         // change Windows' monitor arrangement, mirroring, HDR, VRR, or default.
+        // Windows display names move when ports or the arrangement change: re-resolve the selected TVs (by monitor identity) first.
+        // With no TV selected the target stays empty and Console simply opens on the current screen (single monitor included).
+        RefreshTvSettingsFromSnapshot(await GamingCoreTopologyProvider.Provider.ReadAsync(default));
         string targetId = SettingsStore.Current.Data.ConsoleTargetDisplayId ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(targetId))
         {

@@ -34,8 +34,8 @@ namespace PaRuX.Services
         public Task<GamingCallResult<PlayniteComponentDto>> SkipAsync(bool skip, CancellationToken ct = default) =>
             SendAsync<PlayniteComponentDto>(HttpMethod.Post, Root + (skip ? "/skip" : "/unskip"), null, ct);
 
-        public Task<GamingCallResult<PlayniteLaunchResultDto>> LaunchAsync(string? mode, string? displayId, CancellationToken ct = default) =>
-            SendAsync<PlayniteLaunchResultDto>(HttpMethod.Post, Root + "/launch", new PlayniteLaunchRequest { Mode = mode, DisplayId = displayId }, ct);
+        public Task<GamingCallResult<PlayniteLaunchResultDto>> LaunchAsync(string? mode, string? displayId, CancellationToken ct = default, bool explicitRequest = false) =>
+            SendAsync<PlayniteLaunchResultDto>(HttpMethod.Post, Root + "/launch", new PlayniteLaunchRequest { Mode = mode, DisplayId = displayId, Explicit = explicitRequest }, ct);
 
         public Task<GamingCallResult<PlayniteLaunchResultDto>> SwitchAsync(string? displayId, CancellationToken ct = default) =>
             SendAsync<PlayniteLaunchResultDto>(HttpMethod.Post, Root + "/switch", new PlayniteLaunchRequest { DisplayId = displayId }, ct);

@@ -4,7 +4,7 @@ using PaRuX.Contracts;
 namespace PaRuX.Server.Orchestration.Gaming;
 
 /// <summary>
-/// Captures the OS-reported desktop monitors on demand. No EDID serial numbers,
+/// Captures the OS-reported desktop monitors on demand. No raw EDID serial numbers (only a one-way hash),
 /// display setting writes, driver calls, long-running polling or user tracking.
 /// </summary>
 public sealed class GamingDisplayTopologyService
@@ -46,7 +46,8 @@ public sealed class GamingDisplayTopologyService
     internal static bool ValidMode(GamingDisplayModeDto mode) =>
         !string.IsNullOrWhiteSpace(mode.DisplayId) && mode.DisplayId.Length <= 64 &&
         mode.Width is > 0 and <= 32768 && mode.Height is > 0 and <= 32768 &&
-        mode.RefreshRateHz is >= 0 and <= 1000;
+        mode.RefreshRateHz is >= 0 and <= 1000 &&
+        (mode.StableId is null || ConsoleMonitorIdentity.ValidStableId(mode.StableId));
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -92,6 +93,34 @@ public sealed class GamingDisplayTopologyService
         if (string.IsNullOrWhiteSpace(value)) return null;
         string trimmed = value.Trim();
         return trimmed.Length <= 100 && !trimmed.Any(char.IsControl) ? trimmed : null;
+    }
+
+    private const uint GetDeviceInterfaceName = 1;   // EDD_GET_DEVICE_INTERFACE_NAME
+
+    /// <summary>
+    /// Read-only stable identity of the monitor on this output: EDID manufacturer/product plus a one-way hash of its serial, read from the
+    /// per-user-readable Windows device registry. The raw serial never leaves this method; only the code, model name and hash do.
+    /// Returns an empty identity when Windows or the registry does not expose it.
+    /// </summary>
+    internal static ConsoleMonitorIdentity.Info ReadMonitorIdentity(string id)
+    {
+        try
+        {
+            var device = new DisplayDevice { Size = (uint)Marshal.SizeOf<DisplayDevice>() };
+            if (!EnumDisplayDevices(id, 0, ref device, GetDeviceInterfaceName)) return new(null, null, null);
+            (string? code, string? instance) = ConsoleMonitorIdentity.ParseInterfaceName(device.DeviceId);
+            if (code is null || instance is null) return new(null, null, null);
+            using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Enum\DISPLAY\" + code + @"\" + instance + @"\Device Parameters", writable: false);
+            ConsoleMonitorIdentity.Info info = ConsoleMonitorIdentity.FromEdid(key?.GetValue("EDID") as byte[], instance);
+            return info.StableId is not null ? info : ConsoleMonitorIdentity.FromInstancePath(code, instance);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
+            or System.ComponentModel.Win32Exception or System.Security.SecurityException or UnauthorizedAccessException
+            or IOException or ArgumentException)
+        {
+            return new(null, null, null);
+        }
     }
 
     private static string? ReadFriendlyName(string id)
@@ -194,10 +223,14 @@ public sealed class GamingDisplayTopologyService
 
                 GamingHdrDisplayProbe.ColorState color =
                     GamingHdrDisplayProbe.Read(info.Device);
+                ConsoleMonitorIdentity.Info identity = ReadMonitorIdentity(info.Device);
                 result.Add(new GamingDisplayModeDto(info.Device, (info.Flags & PrimaryMonitor) != 0,
                     left, top, width, height, hz)
                 {
-                    FriendlyName = ReadFriendlyName(info.Device),
+                    // The EDID model name is usually clearer than Windows' generic "Generic PnP Monitor".
+                    FriendlyName = SafeFriendlyName(identity.ModelName) ?? ReadFriendlyName(info.Device),
+                    MonitorCode = identity.Code,
+                    StableId = identity.StableId,
                     HdrSupported = color.HdrSupported,
                     HdrEnabled = color.HdrEnabled,
                     ColorMode = color.ColorMode
