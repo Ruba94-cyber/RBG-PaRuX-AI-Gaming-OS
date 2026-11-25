@@ -289,6 +289,21 @@ namespace PaRuX.Views
                 "Esegue un breve test su un corpus sintetico incluso (nessun documento personale) e confronta ricerca per parole chiave, per significato e ibrida.");
             DispatcherTimer? poll = null;
 
+            static string RecoveryText(KnowledgeRetrievalPlanView plan)
+            {
+                string head = KT("Missing vectors: ", "Vettori mancanti: ") + plan.MissingVectors + " · ";
+                return head + plan.RecoveryReason switch
+                {
+                    "memory_pressure" => KT("automatic repair paused: the PC is short of free memory; it resumes by itself.", "ripristino automatico in pausa: la memoria libera è poca; riprende da solo."),
+                    "gaming" => KT("automatic repair paused while Gaming Mode is on.", "ripristino automatico in pausa finché la Modalità Gaming è attiva."),
+                    "indexing" => KT("automatic repair waits for indexing to finish.", "il ripristino automatico attende la fine dell’indicizzazione."),
+                    "cooldown" or "model_failing" or "partial" when plan.RecoveryState == "waiting" => KT("the search model could not run yet (antivirus or low memory); PaRuX will retry by itself a few times.", "il modello di ricerca non è ancora partito (antivirus o poca memoria); PaRuX riproverà da solo alcune volte."),
+                    "model_failing" => KT("the search model keeps failing, so automatic repair stopped. Use Re-embed index when it works.", "il modello di ricerca continua a fallire, quindi il ripristino automatico si è fermato. Usa Rigenera i vettori quando funziona."),
+                    "cancelled" => KT("automatic repair was cancelled. Use Re-embed index to finish.", "ripristino automatico annullato. Usa Rigenera i vettori per completare."),
+                    _ => KT("automatic repair is pending.", "ripristino automatico in attesa.")
+                };
+            }
+
             void Apply(KnowledgeRetrievalPlanView plan)
             {
                 loading = true;
@@ -316,11 +331,14 @@ namespace PaRuX.Views
                 cancel.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
                 reembedStatus.Text = plan.ReembedState switch
                 {
+                    "running" when plan.ReembedAutomatic => KT("Missing vectors: repair in progress, ", "Vettori mancanti: ripristino in corso, ") + plan.ReembedProcessed + "/" + plan.ReembedTotal
+                        + KT(" (automatic, low priority; you can cancel it)", " (automatico, a bassa priorità; puoi annullarlo)"),
                     "running" => KT("Re-embedding: ", "Rigenerazione: ") + plan.ReembedProcessed + "/" + plan.ReembedTotal,
                     "cancelled" => KT("Re-embed stopped. Nothing was lost; run it again to finish.", "Rigenerazione interrotta. Nulla è andato perso; riavviala per completare."),
                     "partial" => KT("Re-embed reached its limit; ", "La rigenerazione ha raggiunto il limite; ") + plan.ReembedRemaining + KT(" passages remain.", " passaggi rimasti."),
                     "recovered" => KT("The index file was damaged and was moved aside (not deleted). Re-index your folders.", "Il file dell’indice era danneggiato ed è stato spostato (non eliminato). Reindicizza le cartelle."),
                     "failed" => KT("Re-embed failed.", "Rigenerazione non riuscita."),
+                    _ when plan.MissingVectors > 0 && plan.RecoveryState is "waiting" or "deferred" or "gave_up" or "cancelled" => RecoveryText(plan),
                     _ => plan.NeedsReembed ? KT("The index has passages without a vector from this model. Re-embed to use meaning search on all of them.",
                         "L’indice ha passaggi senza vettore di questo modello. Rigenera per usare la ricerca per significato su tutti.") : string.Empty
                 };

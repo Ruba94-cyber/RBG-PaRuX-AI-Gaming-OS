@@ -37,7 +37,7 @@ public static class KnowledgeContextProvider
 /// source, pausable and cancellable, at below-normal priority with an optional throttle so small PCs stay responsive.
 /// Reads documents only; the index lives in the user's data root.
 /// </summary>
-public sealed class KnowledgeJobService : IDisposable
+public sealed partial class KnowledgeJobService : IDisposable
 {
     private readonly RagStore _sources;
     private readonly KnowledgeSettingsStore _settings;
@@ -99,6 +99,7 @@ public sealed class KnowledgeJobService : IDisposable
 
     public void Dispose()
     {
+        StopAutoRecovery();
         _unloader?.Dispose();
         _rerankerUnloader?.Dispose();
     }
@@ -174,6 +175,7 @@ public sealed class KnowledgeJobService : IDisposable
             {
                 IndexProgress final = await Index.IndexFolderAsync(sourceId, source.FolderPath, progress, control, cts.Token).ConfigureAwait(false);
                 _status[sourceId] = new KnowledgeJobStatus(sourceId, "done", final, null, DateTime.UtcNow);
+                KickAutoRecovery();   // documents indexed while the model could not run are repaired once it can
             }
             catch (OperationCanceledException) { _status[sourceId] = new KnowledgeJobStatus(sourceId, "cancelled", null, null, DateTime.UtcNow); }
             catch (Exception ex) { _status[sourceId] = new KnowledgeJobStatus(sourceId, "failed", null, ex.GetType().Name, DateTime.UtcNow); }
@@ -208,33 +210,66 @@ public sealed class KnowledgeJobService : IDisposable
     public bool ReembedRunning { get { lock (_reembedGate) return _reembedTask is { IsCompleted: false }; } }
 
     /// <summary>Starts the bounded background re-embed. False with a reason when it cannot start; true when started or already running.</summary>
-    public bool StartReembed(out string? refusal)
+    public bool StartReembed(out string? refusal) => StartReembedCore(false, out refusal);
+
+    private bool StartReembedCore(bool automatic, out string? refusal)
     {
         refusal = null;
         lock (_reembedGate)
         {
-            if (_reembedTask is { IsCompleted: false }) return true;
+            Task? predecessor = null;
+            if (_reembedTask is { IsCompleted: false } running)
+            {
+                // A second automatic request, or any request while the person's own run is going, is the same single job.
+                if (automatic || !_reembedAutomatic) return true;
+                // The person asked for the full re-embed while the automatic repair runs: the repair yields (it is cancelled
+                // between batches, nothing is lost) and the full run follows it, so there is still never more than one job.
+                _reembedCts?.Cancel();
+                predecessor = running;
+            }
             if (GamingActive()) { refusal = "gaming_active"; return false; }
             if (Embedder is not { IsAvailable: true }) { refusal = "no_embedder"; return false; }
             Index.UpdateOptions(BuildOptions());
             var cts = new CancellationTokenSource();
             _reembedCts = cts;
-            _reembed = new KnowledgeReembedStatus("running", 0, 0, 0, 0, 0, null, false, DateTime.UtcNow);
+            _reembedAutomatic = automatic;
+            _reembed = new KnowledgeReembedStatus("running", 0, 0, 0, 0, 0, null, false, DateTime.UtcNow, automatic);
             var progress = new Progress<KnowledgeReembedProgress>(p =>
-                _reembed = new KnowledgeReembedStatus("running", p.Processed, p.Updated, p.Failed, p.Total, 0, null, false, DateTime.UtcNow));
+                _reembed = new KnowledgeReembedStatus("running", p.Processed, p.Updated, p.Failed, p.Total, 0, null, false, DateTime.UtcNow, automatic));
             _reembedTask = Task.Run(async () =>
             {
+                if (predecessor != null) { try { await predecessor.ConfigureAwait(false); } catch (Exception) { } }
                 try
                 {
-                    KnowledgeReembedResult r = await Index.ReembedAsync(progress, KnowledgeIndex.DefaultReembedLimit, cts.Token).ConfigureAwait(false);
+                    KnowledgeReembedResult r;
+                    bool deferred = false;
+                    if (automatic)
+                    {
+                        r = await Index.ReembedAsync(progress, KnowledgeIndex.DefaultReembedLimit, cts.Token, missingOnly: true,
+                            stopAfterEmptyBatches: 2, beforeBatch: async ct =>
+                            {
+                                bool go = await RecoveryGateAsync(ct).ConfigureAwait(false);
+                                if (!go) deferred = true;
+                                return go;
+                            }).ConfigureAwait(false);
+                    }
+                    else r = await Index.ReembedAsync(progress, KnowledgeIndex.DefaultReembedLimit, cts.Token).ConfigureAwait(false);
                     string state = r.Cancelled ? "cancelled" : r.RecoveredFromCorruption ? "recovered" : r.Remaining > 0 ? "partial" : "done";
-                    _reembed = new KnowledgeReembedStatus(state, r.Processed, r.Updated, r.Failed, r.Processed, r.Remaining, null, r.RecoveredFromCorruption, DateTime.UtcNow);
+                    _reembed = new KnowledgeReembedStatus(state, r.Processed, r.Updated, r.Failed, r.Processed, r.Remaining, null, r.RecoveredFromCorruption, DateTime.UtcNow, automatic);
+                    if (automatic) OnAutoRecoveryFinished(r, deferred, cts.IsCancellationRequested);
+                    else OnManualReembedFinished(r);
                 }
-                catch (Exception ex) { _reembed = new KnowledgeReembedStatus("failed", 0, 0, 0, 0, 0, ex.GetType().Name, false, DateTime.UtcNow); }
+                catch (Exception ex)
+                {
+                    _reembed = new KnowledgeReembedStatus("failed", 0, 0, 0, 0, 0, ex.GetType().Name, false, DateTime.UtcNow, automatic);
+                    if (automatic) OnAutoRecoveryFailed();
+                }
             });
             return true;
         }
     }
+
+    private bool _reembedAutomatic;
 
     /// <summary>The Gaming hard-off signal (the persisted marker); replaceable so tests need not touch the real marker file.</summary>
     internal Func<bool> GamingActive { get; set; } = GamingHardOffWatch.MarkerActive;
@@ -248,6 +283,7 @@ public sealed class KnowledgeJobService : IDisposable
         lock (_reembedGate)
         {
             if (_reembedTask is not { IsCompleted: false }) return false;
+            if (_reembedAutomatic) NoteAutoRecoveryCancelledByPerson();   // a person's Cancel is respected: no automatic restart
             _reembedCts?.Cancel();
             return true;
         }
@@ -298,7 +334,7 @@ public sealed class KnowledgeJobService : IDisposable
 }
 
 public sealed record KnowledgeReembedStatus(string State, int Processed, int Updated, int Failed, int Total, int Remaining, string? Error,
-    bool RecoveredFromCorruption, DateTime UpdatedUtc);
+    bool RecoveredFromCorruption, DateTime UpdatedUtc, bool Automatic = false);
 
 public sealed class KnowledgeRetrievalUpdate
 {
@@ -338,6 +374,7 @@ public static class KnowledgeEndpoints
             rerankerInstalled = svc.Reranker is { IsAvailable: true },
             embedding = new { state.EmbedderAvailable, state.TotalChunks, state.Current, state.Stale, state.Missing, needsReembed = state.NeedsReembed },
             reembed = svc.ReembedStatus,
+            recovery = svc.RecoveryStatus,
             offlineBlocked = OfflinePolicy.IsBlocked(svc.Settings)
         };
     }

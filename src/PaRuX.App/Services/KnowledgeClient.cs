@@ -27,7 +27,8 @@ namespace PaRuX.Services
 
     public sealed record KnowledgeRetrievalPlanView(string Workspace, string RequestedMode, string EffectiveMode, string? DegradedReason,
         IReadOnlyList<KnowledgeEmbedderView> Embedders, bool RerankerInstalled, int TotalChunks, int CurrentVectors, int StaleVectors, int MissingVectors,
-        bool NeedsReembed, string ReembedState, int ReembedProcessed, int ReembedTotal, int ReembedRemaining);
+        bool NeedsReembed, string ReembedState, int ReembedProcessed, int ReembedTotal, int ReembedRemaining,
+        string RecoveryState = "idle", int RecoveryMissing = 0, string? RecoveryReason = null, bool ReembedAutomatic = false);
 
     public sealed record KnowledgeBenchmarkRow(string Mode, string? EmbedderModel, double Precision, double Recall, double Mrr, double MedianLatencyMs,
         double P95LatencyMs, double DocumentsPerSecond, string? Note);
@@ -151,12 +152,15 @@ namespace PaRuX.Services
                     embedders.Add(new KnowledgeEmbedderView(Str(x, "id"), Str(x, "label"), Int(x, "dimensions"), Bool(x, "installed"), Bool(x, "selected"), Str(x, "key")));
             JsonElement emb = e.TryGetProperty("embedding", out JsonElement em) ? em : default;
             JsonElement re = e.TryGetProperty("reembed", out JsonElement r2) ? r2 : default;
+            JsonElement rec = e.TryGetProperty("recovery", out JsonElement r3) ? r3 : default;
             return new KnowledgeRetrievalPlanView(Str(e, "workspace"), Str(e, "requestedMode"), Str(e, "effectiveMode"), NullableStr(e, "degradedReason"), embedders,
                 Bool(e, "rerankerInstalled"), emb.ValueKind == JsonValueKind.Object ? Int(emb, "totalChunks") : 0, emb.ValueKind == JsonValueKind.Object ? Int(emb, "current") : 0,
                 emb.ValueKind == JsonValueKind.Object ? Int(emb, "stale") : 0, emb.ValueKind == JsonValueKind.Object ? Int(emb, "missing") : 0,
                 emb.ValueKind == JsonValueKind.Object && Bool(emb, "needsReembed"), re.ValueKind == JsonValueKind.Object ? Str(re, "state") : "idle",
                 re.ValueKind == JsonValueKind.Object ? Int(re, "processed") : 0, re.ValueKind == JsonValueKind.Object ? Int(re, "total") : 0,
-                re.ValueKind == JsonValueKind.Object ? Int(re, "remaining") : 0);
+                re.ValueKind == JsonValueKind.Object ? Int(re, "remaining") : 0,
+                rec.ValueKind == JsonValueKind.Object ? Str(rec, "state") : "idle", rec.ValueKind == JsonValueKind.Object ? Int(rec, "missing") : 0,
+                rec.ValueKind == JsonValueKind.Object ? NullableStr(rec, "reason") : null, re.ValueKind == JsonValueKind.Object && Bool(re, "automatic"));
         }
 
         private static double Dbl(JsonElement e, string name) => e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;

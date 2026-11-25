@@ -1255,6 +1255,7 @@ PaRuX.Server.Meetings.MeetingEndpoints.MapMeetingEndpoints(app);
 PaRuX.Server.Knowledge.WebKnowledgeSources.Shared = app.Services.GetRequiredService<PaRuX.Server.Knowledge.WebKnowledgeSources>();
 PaRuX.Server.Knowledge.KnowledgeWebWatchEndpoints.RestoreWatchers(app.Services.GetRequiredService<RagStore>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeFolderWatcher>(), app.Services.GetRequiredService<PaRuX.Server.Knowledge.WatchedFolderStore>());
 PaRuX.Server.Knowledge.KnowledgeContextProvider.Current = app.Services.GetRequiredService<PaRuX.Server.Knowledge.KnowledgeJobService>();
+PaRuX.Server.Knowledge.KnowledgeContextProvider.Current.StartAutoRecovery();
 
 app.MapDelete("/api/v1/rag/sources/{id}", (string id, RagStore rag) =>
 {
