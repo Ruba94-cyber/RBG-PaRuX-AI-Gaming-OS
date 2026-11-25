@@ -42,7 +42,7 @@ This is **step 1** of `docs/GAMING_REMOVAL_MAP_2026-11-22.md`: a navigable tools
 - **PR #12** must first pass real Windows tests: Playnite single-process launch, safe switch and return tracking.
 - **PR #13** separately adds PaRuX controller bindings for Console and Desktop. This PR must not claim those gamepad shortcuts are currently enabled on main.
 - **PR #14** separately adds reversible JSON one-key AI mod previews. This hub reuses the existing mod review UI; JSON must pass native build and tests before inclusion.
-- **Later verified PRs**: promote Tools to default Games entry, move (not copy) Quick Resume, backup and install panels to the tools hierarchy, remove tile-library/Console shell in stages, preserve the routing IDs and persisted settings migration, re-point old UI tests and remove only truly unreachable code. Controller driver/profile support and real-game Playnite handoff still need acceptance. Never blindly delete files or alter the legacy ConsoleMode.exe.
+- **Later verified PRs**: promote Tools to default Games entry, move (not copy) Quick Resume, backup and install panels to the tools hierarchy, remove tile-library/Console shell in stages, preserve the routing IDs and persisted settings migration, re-point old UI tests and remove only truly unreachable code. Controller driver/profile support and real-game Playnite handoff still need acceptance. Never blindly delete files or alter any other launcher app.
 
 This session used the GitHub connector to edit branches directly, **not** a Windows runtime. Nothing was merged into main, packaged, signed, published or verified on the owner's hardware.
 
