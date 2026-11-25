@@ -411,12 +411,42 @@ namespace PaRuX.Views
             catch (Exception ex) { _status.Text = T("Could not add the folder: ", "Impossibile aggiungere la cartella: ") + ex.Message; }
         }
 
-        private void OnDocumentDragOver(object sender, DragEventArgs e)
+        private async void OnDocumentDragOver(object sender, DragEventArgs e)
         {
             if (!e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
-            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
-            e.DragUIOverride.Caption = T("Add to my documents", "Aggiungi ai miei documenti");
-            e.DragUIOverride.IsGlyphVisible = false;
+            var deferral = e.GetDeferral();
+            try
+            {
+                e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+                DropPlan plan = await PlanDropAsync(await e.DataView.GetStorageItemsAsync());
+                e.DragUIOverride.Caption = plan.DragCaption(UiText.IsItalian);
+                e.DragUIOverride.IsGlyphVisible = false;
+                if (plan.Accepted.Count == 0) e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.None;
+            }
+            catch (Exception ex) { Log.Write("Knowledge drag-over failed: " + ex.Message); }
+            finally { deferral.Complete(); }
+        }
+
+        private static async Task<DropPlan> PlanDropAsync(IReadOnlyList<Windows.Storage.IStorageItem> items)
+        {
+            var dropped = new List<DroppedItem>();
+            foreach (Windows.Storage.IStorageItem item in items)
+            {
+                if (item is Windows.Storage.StorageFile file)
+                {
+                    long size = 0; bool link = false;
+                    try { size = (long)(await file.GetBasicPropertiesAsync()).Size; } catch (Exception) { }
+                    try { link = (System.IO.File.GetAttributes(file.Path) & System.IO.FileAttributes.ReparsePoint) != 0; } catch (Exception) { }
+                    dropped.Add(new DroppedItem(file.Name, false, size, link));
+                }
+                else
+                {
+                    bool link = false;
+                    try { link = (System.IO.File.GetAttributes(item.Path) & System.IO.FileAttributes.ReparsePoint) != 0; } catch (Exception) { }
+                    dropped.Add(new DroppedItem(item.Name, true, 0, link));
+                }
+            }
+            return AttachmentDropPolicy.Plan(dropped, DropTarget.Knowledge);
         }
 
         private async void OnDocumentDrop(object sender, DragEventArgs e)
@@ -425,13 +455,21 @@ namespace PaRuX.Views
             try
             {
                 IReadOnlyList<Windows.Storage.IStorageItem> items = await e.DataView.GetStorageItemsAsync();
+                DropPlan plan = await PlanDropAsync(items);
                 var files = new List<string>();
-                foreach (Windows.Storage.IStorageItem item in items)
+                for (int i = 0; i < items.Count && i < plan.Decisions.Count; i++)
                 {
-                    if (item is Windows.Storage.StorageFolder dropped) await AddFolderPathAsync(dropped.Path);
-                    else if (item is Windows.Storage.StorageFile file) files.Add(file.Path);
+                    if (!plan.Decisions[i].Accepted) continue;
+                    if (items[i] is Windows.Storage.StorageFolder dropped) await AddFolderPathAsync(dropped.Path);
+                    else if (items[i] is Windows.Storage.StorageFile file) files.Add(file.Path);
                 }
                 if (files.Count > 0) await AddDroppedFilesAsync(files);
+                // Say what was left out and why (unsupported type, empty, link): nothing is dropped silently.
+                if (plan.Rejected.Count > 0)
+                {
+                    string refused = plan.RejectedSummary(UiText.IsItalian);
+                    _status.Text = files.Count > 0 && !string.IsNullOrEmpty(_status.Text) ? _status.Text + " " + refused : refused;
+                }
             }
             catch (Exception ex) { _status.Text = T("Could not add the dropped items: ", "Impossibile aggiungere gli elementi trascinati: ") + ex.Message; }
             finally { deferral.Complete(); }

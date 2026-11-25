@@ -37,7 +37,7 @@ public sealed class SupportAppTests : IDisposable
         public List<string> Started = new();
         public List<int> Stopped = new();
         public DateTime? ExeWritten;
-        public bool StartFails, AppearsAfterStart = true;
+        public bool StartFails, AppearsAfterStart = true, StopSucceeds = true;
         private int _pid = 100;
         public IReadOnlyList<SupportAppProcess> Find(string name) => Running.TryGetValue(name, out var l) ? l.ToList() : [];
         public SupportAppProcess? Start(string path, string? args, bool minimized)
@@ -48,7 +48,7 @@ public sealed class SupportAppTests : IDisposable
             if (AppearsAfterStart) Running[Path.GetFileNameWithoutExtension(path)] = new() { p };
             return p;
         }
-        public bool Stop(SupportAppProcess p) { Stopped.Add(p.Pid); foreach (var l in Running.Values) l.RemoveAll(x => x.Pid == p.Pid); return true; }
+        public bool Stop(SupportAppProcess p) { if (!StopSucceeds) return false; Stopped.Add(p.Pid); foreach (var l in Running.Values) l.RemoveAll(x => x.Pid == p.Pid); return true; }
         public DateTime? ExeWriteUtc(string path) => ExeWritten ?? File.GetLastWriteTimeUtc(path);
     }
 
@@ -233,6 +233,69 @@ public sealed class SupportAppTests : IDisposable
         var stopped = await runner.StopAsync(default);
         Assert.Equal("stopme", Assert.Single(stopped).Id);
         Assert.DoesNotContain(900, host.Stopped);
+    }
+
+    [Fact]
+    public async Task Stop_with_Console_stops_each_started_app_once_and_leaves_apps_without_the_option_running()
+    {
+        var host = new FakeHost();
+        SupportAppStore store = NewStore();
+        string stopMe = Exe("stopme.exe"), keep = Exe("keep.exe");
+        store.Save(new SupportAppSaveRequest(true, [Entry("stopme", stopMe, e => e with { StopWithConsole = true }), Entry("keep", keep)]));
+        SupportAppRunner runner = Runner(store, host);
+        await runner.StartAsync(default);
+        Assert.Equal(2, host.Started.Count);
+
+        Assert.Equal("stopme", Assert.Single(await runner.StopAsync(default)).Id);
+        Assert.Empty(await runner.StopAsync(default));          // a second Console end never stops anything twice
+        Assert.Single(host.Stopped);
+        Assert.Single(host.Find("keep"));                        // the app without the option is still running
+        Assert.Empty(host.Find("stopme"));
+    }
+
+    [Fact]
+    public async Task Stop_with_Console_reports_a_failed_stop_honestly_instead_of_claiming_success()
+    {
+        var host = new FakeHost { StopSucceeds = false };
+        SupportAppStore store = NewStore();
+        store.Save(new SupportAppSaveRequest(true, [Entry("stopme", Exe("stopme.exe"), e => e with { StopWithConsole = true })]));
+        SupportAppRunner runner = Runner(store, host);
+        await runner.StartAsync(default);
+        SupportAppResult r = Assert.Single(await runner.StopAsync(default));
+        Assert.Equal(SupportAppOutcome.NotStopped, r.Outcome);
+        Assert.Empty(host.Stopped);
+    }
+
+    [Fact]
+    public async Task Switching_Stop_with_Console_off_before_the_Console_ends_is_honoured()
+    {
+        var host = new FakeHost();
+        SupportAppStore store = NewStore();
+        string exe = Exe("later.exe");
+        store.Save(new SupportAppSaveRequest(true, [Entry("later", exe, e => e with { StopWithConsole = true })]));
+        SupportAppRunner runner = Runner(store, host);
+        await runner.StartAsync(default);
+        store.Save(new SupportAppSaveRequest(true, [Entry("later", exe)]));   // the person turned the option off in Settings
+        Assert.Empty(await runner.StopAsync(default));
+        Assert.Empty(host.Stopped);
+    }
+
+    [Fact]
+    public void Settings_explains_Stop_with_Console_in_both_languages_next_to_the_checkbox()
+    {
+        string src = File.ReadAllText(Path.Combine(RepoRootForSource(), "src", "PaRuX.App", "Views", "SettingsView.LogonStartup.cs"));
+        Assert.Contains("Stop when Console ends", src);
+        Assert.Contains("Ferma a fine Console", src);
+        Assert.Contains("StopWithConsoleHelp", src);              // the explanation text, shown under the options row
+        Assert.Contains("only apps PaRuX started itself", src);   // honest scope: a copy that was already running is never stopped
+        Assert.Contains("solo le app avviate da PaRuX", src);
+    }
+
+    private static string RepoRootForSource()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "PaRuX.sln"))) dir = Path.GetDirectoryName(dir)!;
+        return dir ?? throw new InvalidOperationException("repository root not found");
     }
 
     // ---- catalog ----

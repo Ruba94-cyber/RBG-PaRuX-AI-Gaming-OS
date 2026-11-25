@@ -54,6 +54,9 @@ namespace PaRuX.Views
             _ => name
         };
 
+        /// <summary>Opens the Image tab (used by the "Create an image" quick action).</summary>
+        public void ShowImageMode() => SelectMode("Image");
+
         private void SelectMode(string name)
         {
             if (_modeBar != null && _modeItems.TryGetValue(name, out SelectorBarItem? item)) _modeBar.SelectedItem = item;

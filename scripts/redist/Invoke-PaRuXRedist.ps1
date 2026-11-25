@@ -261,6 +261,19 @@ function Invoke-RedistUninstall($Lock) {
     }
 }
 
+# After a full removal the Redist folder can survive as an empty shell (it is touched at run time, not owned by a component).
+# Removes ONLY directories that contain no file at all, deepest first, and never anything outside RedistRoot.
+function Remove-RedistEmptyFolders([string]$Root) {
+    if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return }
+    if ((Split-Path -Leaf $Root) -ne 'Redist') { Write-RedistLog 'Not a Redist folder; left untouched.'; return }
+    $dirs = @(Get-ChildItem -LiteralPath $Root -Directory -Recurse -Force -ErrorAction SilentlyContinue | Sort-Object { $_.FullName.Length } -Descending) + @(Get-Item -LiteralPath $Root)
+    foreach ($d in $dirs) {
+        if (@(Get-ChildItem -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+            try { Remove-Item -LiteralPath $d.FullName -Force -ErrorAction Stop; Write-RedistLog "Removed the empty folder $($d.FullName)." } catch { Write-RedistLog "Could not remove $($d.FullName): $($_.Exception.Message)" }
+        }
+    }
+}
+
 function New-RedistRunDir {
     $base = Join-Path ([Environment]::SystemDirectory) 'config\systemprofile\PaRuX-redist-run'
     $dir = Join-Path $base ([Guid]::NewGuid().ToString('N'))
@@ -347,7 +360,7 @@ try {
     $runDir = Split-Path -Parent $LockPath
     if (-not (Wait-RedistMsiIdle)) { Write-RedistLog 'Windows Installer stayed busy for 15 minutes; giving up without changes.'; exit 0 }
     Start-Sleep -Seconds 2
-    if ($Action -eq 'Install') { Invoke-RedistInstall $lock $RedistRoot $runDir } else { Invoke-RedistUninstall $lock }
+    if ($Action -eq 'Install') { Invoke-RedistInstall $lock $RedistRoot $runDir } else { Invoke-RedistUninstall $lock; Remove-RedistEmptyFolders $RedistRoot }
     Write-RedistLog 'Done.'
 } catch {
     Write-RedistLog ('Unexpected error: ' + $_.Exception.Message)
