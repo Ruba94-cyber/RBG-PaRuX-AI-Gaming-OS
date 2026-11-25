@@ -203,6 +203,11 @@ internal static class RuntimeDependencyFingerprint
             if (!GetFileInformationByHandleEx(handle, 0 /* FileBasicInfo */, out FILE_BASIC_INFO basic,
                     (uint)Marshal.SizeOf<FILE_BASIC_INFO>())) return null;
             if (basic.ChangeTime == 0) return null;
+            // Racy-timestamp guard (as in Git's index): a file written or changed within the last
+            // few seconds can be rewritten again inside the same filesystem timestamp tick with
+            // identical size, so its identity would not change. Such a file is never cached.
+            long newest = Math.Max(basic.LastWriteTime, basic.ChangeTime);
+            if (newest > DateTime.UtcNow.ToFileTimeUtc() - 3 * TimeSpan.TicksPerSecond) return null;
             long size = ((long)info.FileSizeHigh << 32) | info.FileSizeLow;
             return string.Create(CultureInfo.InvariantCulture,
                 $"{info.VolumeSerialNumber:x}:{info.FileIndexHigh:x8}:{info.FileIndexLow:x8}:{size}:{basic.LastWriteTime}:{basic.ChangeTime}");
