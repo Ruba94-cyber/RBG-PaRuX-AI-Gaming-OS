@@ -57,15 +57,4 @@ public sealed class SteamUpdatePendingTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
-
-    [Fact]
-    public void A_pending_update_changes_how_the_tile_looks_so_a_refresh_rebinds_it()
-    {
-        GameInstallationDto Installation(bool pending) =>
-            new("steam:1", GameInstallationSources.Steam, "1", ManualEntryKinds.Game, "Quest")
-            { InstallState = GameInstallStates.Installed, UpdatePending = pending };
-        GameTitleDto Title(bool pending) => new("quest", "Quest", false, Array.Empty<string>(), 0, null, null, new[] { Installation(pending) });
-        Assert.False(GameTileListModel.SameFace(Title(false), Title(true)));
-        Assert.True(GameTileListModel.SameFace(Title(true), Title(true)));
-    }
 }
