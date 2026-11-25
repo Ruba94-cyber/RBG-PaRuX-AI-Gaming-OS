@@ -383,8 +383,8 @@ public sealed class CorporateGpuBackendTests : IDisposable
         Assert.Contains("Start PaRuX Corporate Lite (CPU only).cmd", script, StringComparison.Ordinal);
         Assert.Contains("PARUX_CORPORATE_GPU=0", script, StringComparison.Ordinal);
         Assert.Contains("The default launcher must not disable the GPU path", script, StringComparison.Ordinal);
-        // the CPU shell is still built without the Standard Vulkan pack, and the CPU engine remains required
-        Assert.Contains("-WithoutVulkan", script, StringComparison.Ordinal);
+        // the CPU shell comes from the internal Corporate shell stage (no Vulkan pack), and the CPU engine remains required
+        Assert.Contains("build-corporate-app-shell.ps1", script, StringComparison.Ordinal);
         Assert.Contains("Bundled CPU runtime executable missing from ZIP", script, StringComparison.Ordinal);
     }
 

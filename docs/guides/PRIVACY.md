@@ -14,7 +14,7 @@ Conversations, projects, attachments, indexes of folders you choose, settings, m
 Secrets you enter (for example API keys) are protected with Windows DPAPI for your user.
 
 - MSI: `%LOCALAPPDATA%\PaRuX`
-- Portable and Corporate: `PaRuXData` next to the executable
+- Corporate Lite: `PaRuXData` next to the executable
 - Store edition: the per-package `LocalState` folder
 
 The Core listens on `127.0.0.1` only and protected requests need a random session token. The bootstrap file holds local runtime state; never share it.

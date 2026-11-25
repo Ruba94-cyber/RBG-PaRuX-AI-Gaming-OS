@@ -1,12 +1,16 @@
-# Portable use
+# Portable use (Corporate Lite)
 
-The Portable ZIP runs RBG – PaRuX without installing it. Short name: RBG – PaRuX. Status: BETA.
+PaRuX has **two distributions**: the **MSI** (normal Windows installation) and **Corporate Lite** (portable, offline, for company PCs).
+The former *Standard Portable* ZIP (`PaRuX-<version>-portable-win-x64.zip`) is **discontinued**: it is no longer built, published or
+updated. If you still have one, see [Moving from the discontinued Standard Portable](INSTALL.md#moving-from-the-discontinued-standard-portable).
+
+This page describes the layout shared by the portable Corporate Lite package. Setup and policy: [CORPORATE.md](CORPORATE.md).
 
 ## Use it
 
-1. Extract the ZIP to a writable **NTFS** folder (any drive). Removable FAT/exFAT drives are not certified.
-2. Double-click `PaRuX.exe`. The optional `launchers\PaRuX (portable data).cmd` starts the same app with the same data location.
-3. A `parux.portable` marker in `app\`, plus the `PaRuXData` folder next to `PaRuX.exe`, switches the app into portable mode.
+1. Extract the Corporate Lite ZIP to a writable **NTFS** folder (any drive). Removable FAT/exFAT drives are not certified.
+2. Double-click `PaRuX.exe` or one of the `.cmd` files in `launchers\` (offline / CPU only / model downloads).
+3. A `parux.corporate` marker in `app\`, plus the `PaRuXData` folder next to `PaRuX.exe`, keeps all data in the package folder.
    Chats, settings, models and indexes stay in `PaRuXData`, not in your Windows profile.
 
 ### Folder layout
@@ -14,34 +18,30 @@ The Portable ZIP runs RBG – PaRuX without installing it. Short name: RBG – P
 The ZIP root folder holds **one** file, `PaRuX.exe`, and four folders:
 
 ```text
-PaRuX\
+PaRuX-Corporate-Lite\
   PaRuX.exe                       small launcher, the only visible file (starts app\PaRuX.exe, waits, returns its exit code)
-  app\                            the application: PaRuX.exe, PaRuX.Server\, .NET/WinUI runtime, languages, parux.portable
+  app\                            the application: PaRuX.exe, PaRuX.Server\, .NET/WinUI runtime, languages, parux.corporate
   PaRuXData\                      all your data (settings, models, history, indexes)
-  docs\                           README-portable.txt, LICENSE.txt, third-party notices, MANIFEST-portable.json
-  launchers\                      PaRuX (portable data).cmd
+  docs\                           README-corporate-lite.txt, MANIFEST.json, licences, third-party notices
+  launchers\                      Start PaRuX Corporate Lite.cmd and the CPU-only / model-download variants
 ```
 
 The build verifies this and fails if anything else is at the root. `PaRuX.exe --exit` goes through the launcher to the running
-application. Killing the launcher also stops the application. Flat portable folders extracted from older ZIPs keep working;
-for those, update by extracting the new ZIP into a new folder and moving `PaRuXData` into it. MSI and MSIX are not affected.
+application. Killing the launcher also stops the application. You can move the extracted folder to another path or drive.
 
-You can move the extracted folder to another path or drive; the 4.1.0 record shows the app starting healthy after a move with
-`settings.json` byte-identical.
+## Download in parts (large Corporate Lite package)
 
-## Download in parts (large Standard Portable)
+GitHub allows at most 2 GiB per release file. A Corporate Lite package that bundles a model may be larger, so a release can publish
+it as numbered parts instead of one file:
 
-GitHub allows at most 2 GiB per release file. The Standard Portable ZIP bundles a starter model and is larger than that, so a
-release may publish it as numbered parts instead of one file:
-
-- `PaRuX-<version>-portable-win-x64.zip.part001`, `.part002`, ... (each at most 1.9 GiB)
-- `PaRuX-<version>-portable-win-x64.zip.parts.sha256.txt` (SHA-256 of every part and of the joined ZIP)
+- `PaRuX-Corporate-Lite-Offline-win-x64.zip.part001`, `.part002`, ... (each at most 1.9 GiB)
+- `PaRuX-Corporate-Lite-Offline-win-x64.zip.parts.sha256.txt` (SHA-256 of every part and of the joined ZIP)
 
 Put **all** parts and the `.parts.sha256.txt` file in one folder, then join them with plain Windows PowerShell (no extra software).
-Replace `<version>` and run from that folder:
+Run from that folder (adjust `$name` to the file you downloaded):
 
 ```powershell
-$name  = "PaRuX-<version>-portable-win-x64.zip"
+$name  = "PaRuX-Corporate-Lite-Offline-win-x64.zip"
 $lines = Get-Content "$name.parts.sha256.txt"
 # 1. every part must match the published hash (also catches a missing or truncated download)
 foreach ($l in $lines) {
@@ -63,34 +63,19 @@ if ((Get-FileHash $name -Algorithm SHA256).Hash -ne $want) { throw "Joined ZIP h
 The repository also provides `tools/join-release-asset.ps1` (same steps with better error messages):
 `powershell -NoProfile -ExecutionPolicy Bypass -File .\join-release-asset.ps1 -FirstPart .\<name>.zip.part001`.
 `copy /b <name>.zip.part001+<name>.zip.part002 <name>.zip` in `cmd` also joins two parts, but it does not verify anything, so
-compare `Get-FileHash` with the list yourself. Extract the joined ZIP as described above; the part files can then be deleted.
-This is a transport workaround for the host's size limit, not a different product. A release can also offer the ZIP as one file.
-
-## What is included
-
-- Self-contained desktop app and Core (no .NET, Windows App Runtime, Python, Ollama or LM Studio needed for the shell).
-- The **4.1.0** Portable ZIP bundles the Vulkan llama.cpp runtime and **no model**: download or import one in Model Hub
-  (see [README](../../README.md#set-up-a-model)).
-- The **unreleased** Standard Portable builder (`scripts/build-portable.ps1 -FetchAssets -Smoke`) also bundles a CPU runtime, a Qwen3-4B
-  GGUF starter and ONNX embedding and reranker models. That build has not passed fresh-machine tests and is not part of the published 4.1.0 beta.
+compare `Get-FileHash` with the list yourself. The part files can be deleted after extraction.
+This is a transport workaround for the host's size limit, not a different product.
 
 ## Not included
 
-Windows drivers, game stores, games, and optional image/video/training engines (installed on request). In 4.1.0 the Portable
-has no CUDA or media pack, no terminal CLI and no in-app updater.
-
-## Update
-
-Download the new ZIP, replace `PaRuX.exe`, `app\`, `docs\` and `launchers\`, keep `PaRuXData`.
+Windows drivers, game stores, games, and optional image/video/training engines. Corporate Lite has no in-app updater: IT replaces the
+application files (`PaRuX.exe`, `app\`, `docs\`, `launchers\`) and keeps `PaRuXData`.
 
 ## Limits
 
 - Closing the window does not quit the app: PaRuX hides to the system tray so background work and the local Core keep running.
   Quit from the tray icon (Exit). This is by design, not a hang.
-- The ZIP container cannot carry a signature. Builds made with a signing certificate (4.2.0 onward) Authenticode-sign the
-  first-party executables and DLLs inside it; the certificate is self-signed, so Windows still shows "Unknown publisher"
-  unless you trust it, and SmartScreen and antivirus rules still apply (no bypass). Earlier ZIPs (4.1.0) were not signed.
-- Settings persistence across a move was shown by file identity, not by changing a setting in the UI.
-- Other GPUs and SmartScreen behaviour were not verified. Source: [release record](../RELEASE_CANDIDATE_4.1.0.md).
+- The ZIP container cannot carry a signature. Builds made with a signing certificate Authenticode-sign the first-party executables
+  and DLLs inside it; Windows can still show "Unknown publisher", and SmartScreen and antivirus rules still apply (no bypass).
 
-For offline office use see [CORPORATE.md](CORPORATE.md). For problems see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+For problems see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

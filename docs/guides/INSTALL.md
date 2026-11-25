@@ -12,13 +12,12 @@ Short name: RBG – PaRuX. Status: **BETA** (v4.1.0 pre-release). Read [Known li
 | Package | Use it when | Guide |
 |---|---|---|
 | MSI installer (`PaRuX-<version>-win-x64.msi`) | Normal PC, per-machine install, in-app update | this page |
-| Portable ZIP | No install, USB or relocatable folder | [PORTABLE.md](PORTABLE.md) |
-| Corporate Lite (CPU, offline, AI + documents) | Managed or offline PCs | [CORPORATE.md](CORPORATE.md) |
+| Corporate Lite (portable, CPU, offline, AI + documents) | Managed or offline PCs, relocatable folder | [CORPORATE.md](CORPORATE.md), [PORTABLE.md](PORTABLE.md) |
 | Android APK | Companion for a paired Windows PC (not standalone) | [Android setup](../PARUX_ANDROID_README.md) |
 
-Large assets: GitHub limits each release file to 2 GiB, so the Standard Portable ZIP may be published as `.part001`, `.part002`, ...
+Large assets: GitHub limits each release file to 2 GiB, so the Corporate Lite ZIP may be published as `.part001`, `.part002`, ...
 plus a `.parts.sha256.txt` list. Download every part, then join and verify them with the PowerShell steps in
-[PORTABLE.md](PORTABLE.md#download-in-parts-large-standard-portable) before extracting. The MSI is a single file.
+[PORTABLE.md](PORTABLE.md#download-in-parts-large-corporate-lite-package) before extracting. The MSI is a single file.
 
 ## Install with the MSI
 
@@ -42,7 +41,7 @@ Then see [model setup in the README](../../README.md#set-up-a-model).
 ## Where your data lives
 
 - MSI: `%LOCALAPPDATA%\PaRuX` (override with the `PARUX_DATA_ROOT` environment variable, which must be an absolute path).
-- Portable and Corporate packages: `PaRuXData` next to the launcher `PaRuX.exe` (the application itself is in `app`).
+- Corporate Lite: `PaRuXData` next to the launcher `PaRuX.exe` (the application itself is in `app`).
 - Microsoft Store (MSIX) edition: the per-package `LocalState` folder.
 
 Back up before uninstalling or changing machines. See [PRIVACY.md](PRIVACY.md).
@@ -51,7 +50,21 @@ Back up before uninstalling or changing machines. See [PRIVACY.md](PRIVACY.md).
 
 Open **Updates** (shown in the Advanced interface). PaRuX checks the release metadata, a signed envelope and the MSI SHA-256, then offers
 **Download & install verified MSI**. Installation is done by an elevated helper and only for a signed, strictly newer release.
-Details: [WINDOWS_MSI_RELEASE.md](../WINDOWS_MSI_RELEASE.md). Portable packages have no in-app updater: replace the application files and keep `PaRuXData`.
+Details: [WINDOWS_MSI_RELEASE.md](../WINDOWS_MSI_RELEASE.md). Corporate Lite has no in-app updater: replace the application files and keep `PaRuXData`. The Standard Portable channel is closed (see below).
+
+## Moving from the discontinued Standard Portable
+
+The Standard Portable ZIP is discontinued: it receives no more updates and the in-app updater says so. Nothing is deleted or migrated
+automatically. To keep your chats, settings, models and indexes:
+
+1. Close PaRuX completely (tray icon, Exit) and make a copy of the old `PaRuXData` folder (next to the old `PaRuX.exe`) as a backup.
+2. Install the MSI as described above and start PaRuX once, then close it from the tray icon.
+3. Copy the contents of the old `PaRuXData` into `%LOCALAPPDATA%\PaRuX` (or into the folder set by `PARUX_DATA_ROOT`), merging over the
+   fresh files, and start the MSI build.
+4. Keep the old Standard Portable folder until you have checked the MSI build; remove it yourself afterwards.
+
+The old copy keeps running and reading its adjacent `PaRuXData` in the meantime; it just never gets a new version. For a portable,
+offline use on a company PC use Corporate Lite instead ([CORPORATE.md](CORPORATE.md)).
 
 ## Uninstall
 

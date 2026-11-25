@@ -18,7 +18,7 @@ Not every model works on every PC.
 
 **Will the AI slow my game?** Gaming Mode stops PaRuX AI processes while a game runs. In-game FPS impact was **not measured**.
 
-**Can I run it from a USB drive?** The Portable ZIP is designed to be relocatable; use NTFS. See [PORTABLE.md](PORTABLE.md).
+**Can I run it from a USB drive?** Corporate Lite is the relocatable portable package; use NTFS. See [PORTABLE.md](PORTABLE.md). The old Standard Portable ZIP is discontinued; use the MSI.
 
 **Is there a Corporate version with roles and an audit log?** No. Corporate Lite is AI plus documents, offline, and PARTIAL; roles, per-user
 policies and an audit log do not exist. See [CORPORATE.md](CORPORATE.md).

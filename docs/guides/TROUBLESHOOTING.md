@@ -7,10 +7,10 @@ RBG – PaRuX (BETA). Review logs for prompts and local paths before sharing the
 | Chat does not answer, "AI paused by Gaming" | Gaming Mode is active and is a hard-off. Close the game or use **Return to AI** (chat header, or Settings, Gaming). The previous model reloads on your next request. |
 | Request fails but the UI is open | Use Settings diagnostics to tell the PaRuX server from the model runtime. If an image adapter fails, the error is returned as a recoverable chat error. |
 | "No candidate fits the current memory" (HTTP 503) | Not enough RAM/VRAM for the chosen model. Close other apps, pick a smaller model or quantization in Model Hub. Corporate Lite used about 7 GB in total on the reference PC. A Corporate-specific false refusal was fixed in source at `e6c3b062`; older packages may still show it. |
-| No model installed | Open Model Hub and download or import a model. The 4.1.0 MSI and Portable do not bundle a chat model; the NoModel Corporate package has none either. |
+| No model installed | Open Model Hub and download or import a model. The MSI does not bundle a chat model; the NoModel Corporate package has none either. |
 | Model download blocked | Corporate Lite offline refuses downloads (403) by design. Use the IT-approved download launcher, or import a GGUF file. |
-| Windows warns "Unknown publisher" | The 4.1.0 MSI uses a self-signed certificate. Verify the SHA-256 hash first ([INSTALL.md](INSTALL.md)). The Portable ZIP is unsigned. |
-| Portable app loses data after moving | Keep the whole extracted folder together: `PaRuX.exe`, `app\` (with the `parux.portable` marker) and `PaRuXData` side by side. Use NTFS, not FAT/exFAT. |
+| Windows warns "Unknown publisher" | The 4.1.0 MSI uses a self-signed certificate. Verify the SHA-256 hash first ([INSTALL.md](INSTALL.md)). |
+| Corporate Lite loses data after moving | Keep the whole extracted folder together: `PaRuX.exe`, `app\` (with the `parux.corporate` marker) and `PaRuXData` side by side. Use NTFS, not FAT/exFAT. |
 | Gateway port 11435 is held by another program | A second Core now survives this, but the gateway does not fall back to another port. Free the port. |
 | Voice input is off in Gaming | Intended: voice input and speech warm-up are disabled while Gaming Mode is active. |
 | Italian UI shows an English message | Some state-machine strings are English only (known; listed in the plan). |

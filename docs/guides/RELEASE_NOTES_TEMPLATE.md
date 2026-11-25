@@ -25,7 +25,6 @@ for capabilities, and write NOT RUN for what was not run.
 | File | Size (bytes) | SHA-256 | Signed by |
 |---|---|---|---|
 | `PaRuX-<version>-win-x64.msi` | | | |
-| `PaRuX-<version>-portable-win-x64.zip` | | | |
 | Corporate Lite ZIP (with model or NoModel) | | | |
 | `PaRuX-<version>-android.apk` | | | |
 
@@ -49,7 +48,7 @@ State clearly which files are unsigned or self-signed.
 
 ## Upgrade notes
 
-- MSI: <in-app Updates or manual>. Portable: replace application files, keep `PaRuXData`.
+- MSI: <in-app Updates or manual>. Corporate Lite: replace application files, keep `PaRuXData`.
 
 ## Links
 

@@ -53,7 +53,7 @@ public sealed class PaRuXDataRootTests
             Assert.Null(PaRuXDataRoot.FindPortableDataRoot(root));
 
             // A marker without the actual data folder does not make an ordinary MSI portable.
-            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.PortableMarkerFileName), "Standard ZIP");
+            File.WriteAllText(Path.Combine(root, PaRuXDataRoot.LegacyStandardPortableMarkerFileName), "Standard ZIP");
             Assert.Null(PaRuXDataRoot.FindPortableDataRoot(root));
             string data = Path.Combine(root, "PaRuXData");
             Directory.CreateDirectory(data);

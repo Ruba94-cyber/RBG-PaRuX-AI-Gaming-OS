@@ -103,7 +103,15 @@ namespace PaRuX.Services
 
                 if (!updateAvailable)
                 {
-                    status.SecureInstallerMessage = UiText.Pick("No application upgrade is required.", "Nessun aggiornamento dell'applicazione necessario.");
+                    status.SecureInstallerMessage = AppUpdateInstallBoundary.StandardPortableClosedMessage(AppContext.BaseDirectory)
+                        ?? UiText.Pick("No application upgrade is required.", "Nessun aggiornamento dell'applicazione necessario.");
+                    return status;
+                }
+
+                // The Standard Portable channel is closed: never offer it a package, point it to the MSI instead.
+                if (AppUpdateInstallBoundary.StandardPortableClosedMessage(AppContext.BaseDirectory) is { } closedChannel)
+                {
+                    status.SecureInstallerMessage = closedChannel;
                     return status;
                 }
 

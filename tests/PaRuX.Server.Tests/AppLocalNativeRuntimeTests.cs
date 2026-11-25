@@ -58,19 +58,26 @@ public sealed class AppLocalNativeRuntimeTests : IDisposable
     }
 
     [Fact]
-    public void Both_portable_builders_bundle_the_signed_runtime_and_require_it_in_the_zip()
+    public void Corporate_builder_bundles_the_signed_runtime_and_the_standard_portable_builder_is_gone()
     {
         string assets = Read("scripts", "portable-offline-assets.ps1");
-        string standard = Read("scripts", "build-portable.ps1");
+        Assert.False(File.Exists(Path.Combine(RepoRootFor(), "scripts", "build-portable.ps1")),
+            "The Standard Portable builder was retired; the product ships only the MSI and Corporate Lite.");
         string corporate = Read("scripts", "build-corporate-lite.ps1");
         Assert.Contains("function Copy-PaRuXVcRuntime", assets, StringComparison.Ordinal);
         Assert.Contains("O=Microsoft Corporation", assets, StringComparison.Ordinal);
         Assert.Contains("$signature.Status -ne \"Valid\"", assets, StringComparison.Ordinal);
-        Assert.Contains("Copy-PaRuXVcRuntime -Destinations", standard, StringComparison.Ordinal);
-        // The application lives in app\ since the layered package layout.
-        Assert.Contains("$required += \"app/PaRuX.Server/\" + $vcFile", standard, StringComparison.Ordinal);
         Assert.Contains("Copy-PaRuXVcRuntime -Destinations", corporate, StringComparison.Ordinal);
         Assert.Contains("Visual C++ runtime not staged", corporate, StringComparison.Ordinal);
+    }
+
+    private static string RepoRootFor()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "PaRuX.sln")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        return directory!.FullName;
     }
 
     private static string Read(params string[] path)

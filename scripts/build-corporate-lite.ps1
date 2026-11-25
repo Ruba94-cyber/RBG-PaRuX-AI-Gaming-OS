@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Output: artifacts\corporate-lite\PaRuX-Corporate-Lite-Offline-win-x64.zip (+ SHA-256 and manifest).
-    Contents: the app and Core (from build-portable.ps1's stage or a fresh publish), a CPU llama.cpp runtime, the hash-pinned
-    Vulkan llama.cpp runtime (same lock entry 'llama.cpp-vulkan' as the Standard builder; optional GPU offload with automatic
+    Contents: the app and Core (from build-corporate-app-shell.ps1, the internal CPU-only stage), a CPU llama.cpp runtime, the hash-pinned
+    Vulkan llama.cpp runtime (lock entry 'llama.cpp-vulkan'; optional GPU offload with automatic
     CPU fallback, switched off with PARUX_CORPORATE_GPU=0), ONE small
     quantised model with a redistribution-friendly licence, the light embedding model, offline configuration
     (`parux.corporate` marker in app\, launchers that set PARUX_CORPORATE=1 and keep all data in .\PaRuXData), licences and a manifest.
@@ -56,7 +56,7 @@ param(
     [string]$RuntimeDir = "",
     [string]$RuntimeTag = "",
     # Directory holding (or receiving) the locked Vulkan runtime archive. Default: artifacts\cache\runtime, the same cache
-    # the Standard builder uses. The archive is verified against packaging\windows-baseline-runtime.lock.json (size + SHA-256).
+    # the baseline staging uses. The archive is verified against packaging\windows-baseline-runtime.lock.json (size + SHA-256).
     [string]$VulkanCacheDir = "",
     [switch]$Fetch,
     [switch]$AllowUnpinnedLlamaCpuRuntime,
@@ -94,17 +94,17 @@ $stage = Join-Path $work "PaRuX-Corporate-Lite"
 $assets = Join-Path $outRoot "assets"
 New-Item -ItemType Directory -Force $outRoot, $assets | Out-Null
 
-# --- 1. The application (reuse the portable build; it already excludes models, indexes and tokens) --------------------------
-# Reuse only the dedicated, CPU-only build shell. This no longer overwrites
-# the Standard Portable stage/ZIP when both editions are prepared for release.
-$portableStage = Join-Path $repoRoot "artifacts\portable\cpu-shell-stage\PaRuX"
+# --- 1. The application (reuse the internal CPU shell; it already excludes models, indexes and tokens) --------------------------
+# Reuse only the dedicated, CPU-only build shell.
+# (it shares no stage with any other package).
+$portableStage = Join-Path $repoRoot "artifacts\corporate-lite\app-shell-stage\PaRuX"
 if (-not $SkipPublish) {
     $pv = @{}; if ($Version) { $pv["Version"] = $Version }
-    # Corporate Lite has its own CPU engine and must not inherit the Standard portable Vulkan pack.
-    & (Join-Path $PSScriptRoot "build-portable.ps1") @pv -WithoutVulkan
-    if ($LASTEXITCODE -ne 0) { throw "Portable build failed." }
+    # Corporate Lite has its own CPU engine; the shell carries no Vulkan pack.
+    & (Join-Path $PSScriptRoot "build-corporate-app-shell.ps1") @pv
+    if ($LASTEXITCODE -ne 0) { throw "Corporate shell build failed." }
 }
-if (-not (Test-Path (Join-Path $portableStage "PaRuX.exe"))) { throw "Portable stage not found. Run without -SkipPublish." }
+if (-not (Test-Path (Join-Path $portableStage "PaRuX.exe"))) { throw "Corporate shell stage not found. Run without -SkipPublish." }
 $sourceCommit = ([string](& git -C $repoRoot rev-parse HEAD)).Trim().ToLowerInvariant()
 $sourceMarker = Join-Path $portableStage "app\.parux-publish-source"
 if ($sourceCommit -notmatch '^[a-f0-9]{40}$' -or
@@ -113,15 +113,14 @@ if ($sourceCommit -notmatch '^[a-f0-9]{40}$' -or
     throw "Corporate Lite CPU shell was compiled from a different commit or edition. Rebuild without -SkipPublish."
 }
 if (Test-Path (Join-Path $portableStage "app\PaRuX.Server\runtime-baseline")) {
-    throw "Corporate Lite requires a CPU-only portable stage. Rebuild without -SkipPublish using -WithoutVulkan."
+    throw "Corporate Lite requires a CPU-only shell stage. Rebuild without -SkipPublish."
 }
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item -Path (Join-Path $portableStage "*") -Destination $stage -Recurse -Force
-# Not part of this edition: CLI and the portable launchers/readme/manifest are replaced below.
+# Not part of this edition: the CLI and any launchers/readme/manifest are replaced below.
 Remove-Item (Join-Path $stage "app\Cli") -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $stage "launchers") -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $stage "docs\README-portable.txt"), (Join-Path $stage "docs\MANIFEST-portable.json") -Force -ErrorAction SilentlyContinue
 $appStage = Join-Path $stage "app"
 $docsStage = Join-Path $stage "docs"
 $launchersStage = Join-Path $stage "launchers"
@@ -369,7 +368,7 @@ if (-not $NoModel) { Set-Content (Join-Path (Join-Path $data "models") ".corpora
 if (-not (Test-Path (Join-Path $runtimeDest "llama-server.exe"))) { throw "Bundled CPU runtime was not staged." }
 # llama.cpp is MIT: ship its license text beside the engine.
 Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) "llama-cpp-conversion\LICENSE-llama.cpp") -Destination (Join-Path $runtimeDest "LICENSE-llama.cpp.txt") -Force
-# --- 3b. The pinned Vulkan runtime (same lock entry, archive hash and staging code as the Standard Portable) --------------------------
+# --- 3b. The pinned Vulkan runtime (lock entry, archive hash and staging code shared with the MSI) --------------------------
 # No download at run time and no unpinned asset: stage-msi-runtime.ps1 verifies the archive size and SHA-256 from the lock, expands it
 # into a throw-away publish folder and writes a per-file SHA-256 inventory; the verified payload is then copied into the data root
 # where LocalAiPaths.RuntimeVulkanPath looks for it. The CPU runtime above stays the validated default and the automatic fallback.

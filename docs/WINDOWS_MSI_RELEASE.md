@@ -377,21 +377,11 @@ The in-app Update Manager enables installation only when the release is newer, b
 
 Cancelling the PaRuX confirmation or UAC leaves the installed application unchanged. Desktop exits only after the elevated bootstrap helper reports that protected staging and the staged worker were created successfully.
 
-## Portable build policy (Standard vs Corporate Lite)
+## Distribution policy (MSI and Corporate Lite only)
 
-The Standard portable is an independent ZIP distribution (not an MSI extraction). It contains **Desktop + Core + hash-locked llama.cpp b10549 Vulkan native runtime/DLLs**, plus required licence/provenance notices. It deliberately omits model weights, CUDA/cuBLAS, ComfyUI/media packs, Python/uv, data/indexes, the Update Helper, and the self-contained terminal CLI by default. The CLI is opt-in through `-IncludeCli`. The full AI/Gaming application remains one application; optional features install their dependencies only on explicit request.
+PaRuX has two distributions: the MSI and Corporate Lite. The former Standard Portable ZIP is **discontinued**: `scripts/build-portable.ps1` and `tests/portable/verify-standard-portable.ps1` are removed and `tools/release-gate.ps1` never looks for `PaRuX-<version>-portable-win-x64.zip`. Users of an old Standard Portable move to the MSI and copy their `PaRuXData` (see `docs/guides/INSTALL.md`); nothing is deleted automatically.
 
-```powershell
-.\scripts\build-portable.ps1 -Smoke
-# If a standalone terminal CLI is required as well:
-.\scripts\build-portable.ps1 -IncludeCli -Smoke
-```
-
-The portable reuses `stage-msi-runtime.ps1 -ArtifactIds llama.cpp-vulkan`: the upstream archive must match the locked size/SHA-256, and the emitted ZIP verification rehashes **all** staged native files (including `ggml-vulkan.dll`) against the per-file manifest. There is no requirement to pre-install a separate Vulkan SDK. A compatible **GPU driver/Vulkan loader and ICD** are host prerequisites, however; an archive cannot embed the vendor driver or guarantee Vulkan-capable hardware. The ZIP includes no GGUF, so baseline chat requires downloading/locating an approved model. Vulkan-only is not a guarantee of usability on a CPU-only PC; this is an explicit remaining acceptance gap.
-
-Use `PaRuX.exe` for the current PC user profile or `PaRuX (portable data).cmd` for an isolated `PaRuXData` folder beside the executable. The isolated mode must not inherit a pre-existing `Documents\LocalAI` directory. The shipped Vulkan baseline is verified and bootstrapped to the selected data root on first Core launch; no CUDA hardware probe runs for the Vulkan-only package. Copying the folder preserves any downloaded data, but **models are not embedded in the initial Standard ZIP**.
-
-Corporate Lite is a separate CPU-only/offline-by-default package built using `build-portable.ps1 -WithoutVulkan` as its lean application shell, then adding its **preinstalled CPU llama.cpp runtime, one initial quantized GGUF and an embedding model**. Neither Vulkan nor the optional CLI should leak into its ZIP. This runtime does not have to be downloaded again on the target PC.
+Corporate Lite is a separate CPU-only/offline-by-default portable package. `scripts/build-corporate-lite.ps1` stages its lean application shell with the internal `scripts/build-corporate-app-shell.ps1` (launcher, `app\`, Core; no Vulkan, no CLI, no data, no marker), then adds its **preinstalled CPU llama.cpp runtime, one initial quantized GGUF and an embedding model**, the pinned Vulkan runtime for optional GPU offload and the `parux.corporate` marker. The CLI must not leak into its ZIP. This runtime does not have to be downloaded again on the target PC. Layout rules are shared in `scripts/portable-layout.ps1`.
 
 ### Corporate Lite: manage models after deployment
 
@@ -420,9 +410,9 @@ Double-clicking **`PaRuX.exe`** within the extracted marked Corporate folder als
 2. Extract to a clean Windows VM/PC without an MSI; `-Smoke` proves isolated Core bootstrap and native Vulkan binary presence. Confirm no path reads from a host `Documents\LocalAI`.
 3. On supported AMD/NVIDIA/Intel GPU drivers, run `llama-server.exe --list-devices` from the extracted Vulkan runtime, install a small approved GGUF via Runtime/Model Hub, send a streaming chat and confirm GPU offload/device choice. Also test no Vulkan ICD, unsupported CPU and misleading iGPU-vs-dGPU enumeration (fail with an actionable UI message; do not claim success).
 4. Compare cold launch, warm launch, time-to-first-token, tokens/s, peak RSS/VRAM, disk footprint and running child processes against the MSI **on the same hardware/model**, and check Gaming hard-off after exiting text generation.
-5. Run xUnit (`PortableLocalAiRootPolicyTests` and baseline tests), release build, full FlaUI, integrity/security gates, and sign/publish only with the owner's local Windows release workflow. **Do not equate ZIP smoke with actual inference or a signed release.**
+5. Run xUnit (`PortableLocalAiRootPolicyTests`, `Corporate*` and baseline tests), release build, full FlaUI, integrity/security gates, and sign/publish only with the owner's local Windows release workflow. **Do not equate ZIP smoke with actual inference or a signed release.**
 
-Portable builds are not self-updating: replace the ZIP with a newer verified release. The MSI's privileged update helper and its manifest-signature trust boundary are not copied into Portable.
+Corporate Lite is not self-updating: replace the application files with a newer verified release and keep `PaRuXData`. The MSI's privileged update helper and its manifest-signature trust boundary are not copied into Corporate Lite.
 
 ## Local release-candidate verification (no network, no upload)
 

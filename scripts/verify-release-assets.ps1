@@ -13,7 +13,7 @@
     requires vX.Y.Z to resolve to the same source commit. This is an offline/local release gate; it
     creates or dispatches no GitHub Actions workflow.
 
-    Split assets: GitHub release files are limited to 2 GiB, so a larger asset (the Standard Portable ZIP) is
+    Split assets: GitHub release files are limited to 2 GiB, so a larger asset (for example the Corporate Lite ZIP) is
     published as <file>.part001... plus <file>.parts.sha256.txt (tools/split-release-asset.ps1). Every checksum
     list found in -InstallerDirectory (or -SplitAssetDirectory) is verified: each part's size (< 2 GiB) and SHA-256,
     consecutive numbering, no unlisted parts, the streamed concatenation equal to the listed joined-file hash and,
