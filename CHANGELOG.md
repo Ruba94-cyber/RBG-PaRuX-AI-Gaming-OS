@@ -1,3 +1,17 @@
+## 4.5.0 (pre-release candidate, 2026-11-25; built and signed locally, not published until the owner decides)
+
+Consolidates everything merged after the 4.4.0 tag (the older "unreleased" and "integration" sections below describe the same work in more detail).
+
+- **Layered portable layout:** Standard Portable and Corporate Lite ZIPs now hold a small `PaRuX.exe` launcher plus `app\`, `PaRuXData\`, `docs\` and `launchers\`; the builders verify the ZIP root. MSI and MSIX are unchanged.
+- **Corporate Lite:** CPU engine by default, bundled Vulkan runtime for discrete GPUs (integrated GPUs stay on CPU), dynamic RAM admission with actionable refusals, per-data-root single instance, fail-closed loopback dials, visible start-up failure message, two bundled models. The automatic small-model fallback is not active yet.
+- **Console mode:** simple "Start PaRuX in Console mode" (no TV needed, any pad), Playnite Fullscreen handoff with journaled, reversible Aniki theme changes and recovery, configurable pad hold time, opt-in Console power plan with crash-safe restore, opt-in per-user Xbox Game Bar block with consent, journal and crash recovery.
+- **Games tools page:** slim, additive Games tools workspace page; per-game launch focus and post-launch actions; game-file writes refused while a Playnite game runs; unverified torrent downloads are marked not installable.
+- **AI / Chat (slices A, B, C, D):** self-healing tool calls, managed Python in chat with approval UI, constrained-output guard, agent loop guard, OpenAPI bodies, MCP lifecycle REST, fail-closed MCP admission (committed `tool_calls`, duplicate/oversized arguments refused, SSE memory budget); Canvas sandbox preview, real token usage and `/usage`, prompt variables and document pins, chat appearance themes, group chat; Paperless-ngx connector, Brave + Readability web search with numbered sources, guided re-embed, meeting assistant, system dictation, Agent Flows; training parity (full/DoRA/embedding/GSPO admission, FP8 refusal, export verifier).
+- **Knowledge:** readers for Vector CAN traces, Outlook `.msg`, Word 97-2003 `.doc`, PowerPoint 97-2003 `.ppt`; exact short identifiers; file-metadata questions about a named trace.
+- **UI fixes:** Italian gaps found by a real-window audit, Orbit selection tint, Settings/Help pinned in the navigation footer, Projects page alignment.
+- **Sandbox / security:** AppContainer Job Object caps memory and active processes; MCP tool names are case-sensitive.
+- **Version:** `Directory.Build.props` 4.5.0; Android `versionName` 4.5.0, `versionCode` 27.
+- **Known limits (not established):** no physical test with a real pad, Playnite Fullscreen or a training GPU in this build; no run on a real corporate PC; the Windows Game Bar block is opt-in and does not stop the Win+G shortcut; self-signed certificate without SmartScreen reputation; Android pairing on a physical phone not tested. See `docs/RELEASE_NOTES_4.5.0.md`.
 ## 4.2.0 (release candidate, 2026-11-15; not published until the owner decides)
 
 - **RBG rebrand:** display names and executable/assembly metadata now read "RBG – PaRuX AI & Gaming OS" (Company "RBG"), including the Contracts and Intelligence assemblies; Android shows "RBG – PaRuX" as its in-app title (the launcher label stays short). Technical identifiers (package ids, namespaces, data folders, ports, API routes) are unchanged, so existing installs, pairings and data keep working.
