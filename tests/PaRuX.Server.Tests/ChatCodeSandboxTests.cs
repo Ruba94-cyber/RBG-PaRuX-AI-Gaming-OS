@@ -424,6 +424,62 @@ public sealed class ChatCodeAppContainerIntegrationTests : IDisposable
         return false;
     }
 
+    /// <summary>Writes a DACL with an explicit entry after an inherited one (what other agents/EDR tools leave behind).</summary>
+    private static void WriteNonCanonicalDacl(string folder)
+    {
+        var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+        var everyone = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null);
+        var acl = new System.Security.AccessControl.RawAcl(2, 3);
+        acl.InsertAce(0, new System.Security.AccessControl.CommonAce(System.Security.AccessControl.AceFlags.ContainerInherit | System.Security.AccessControl.AceFlags.ObjectInherit | System.Security.AccessControl.AceFlags.Inherited,
+            System.Security.AccessControl.AceQualifier.AccessAllowed, 0x1200a9, everyone, false, null));
+        acl.InsertAce(1, new System.Security.AccessControl.CommonAce(System.Security.AccessControl.AceFlags.ContainerInherit | System.Security.AccessControl.AceFlags.ObjectInherit,
+            System.Security.AccessControl.AceQualifier.AccessAllowed, unchecked((int)0x1f01ff), user, false, null));   // explicit AFTER inherited: not canonical
+        var raw = new System.Security.AccessControl.RawSecurityDescriptor(System.Security.AccessControl.ControlFlags.DiscretionaryAclPresent
+            | System.Security.AccessControl.ControlFlags.SelfRelative, null, null, null, acl);
+        byte[] binary = new byte[raw.BinaryLength];
+        raw.GetBinaryForm(binary, 0);
+        // SetFileSecurity stores the list verbatim (the managed/NT setters would strip or re-order the inherited flag).
+        Assert.True(SetFileSecurity(folder, 4 /*DACL*/, binary), "SetFileSecurity failed: " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+    }
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool SetFileSecurity(string fileName, int securityInformation, byte[] securityDescriptor);
+
+    [Fact]
+    public void Canonicalizing_a_non_canonical_folder_acl_allows_adding_the_sandbox_rule()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        string folder = Path.Combine(_root, "noncanonical");
+        Directory.CreateDirectory(folder);
+        WriteNonCanonicalDacl(folder);
+        var info = new DirectoryInfo(folder);
+        var security = info.GetAccessControl(System.Security.AccessControl.AccessControlSections.Access);
+        var sid = new System.Security.Principal.SecurityIdentifier("S-1-15-2-1-2-3-4-5-6-7");
+        var rule = new System.Security.AccessControl.FileSystemAccessRule(sid, System.Security.AccessControl.FileSystemRights.Modify,
+            System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+            System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow);
+        Assert.Throws<InvalidOperationException>(() => security.AddAccessRule(rule));   // the original defect: .NET refuses the list
+
+        var updated = PaRuX.Contracts.AclCanonicalizer.AddRule(security, rule);
+        info.SetAccessControl(updated);
+
+        var after = info.GetAccessControl(System.Security.AccessControl.AccessControlSections.Access)
+            .GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)).Cast<System.Security.AccessControl.FileSystemAccessRule>().ToList();
+        Assert.Contains(after, r => r.IdentityReference == sid && r.AccessControlType == System.Security.AccessControl.AccessControlType.Allow);
+        Assert.True(after.Count >= 3);   // original entries kept (plus any re-inherited from the parent), one added
+        Assert.False(after.First().IsInherited);   // explicit entries now precede the inherited one
+    }
+
+    [Fact]
+    public async Task Sandbox_starts_when_the_private_run_root_has_a_non_canonical_acl()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        WriteNonCanonicalDacl(_runs);
+        ChatCodeProcessResult? r = await Run(System32("cmd.exe"), new[] { "/c", "echo sandboxed-ok" });
+        if (Unavailable(r)) return;
+        Assert.Contains("sandboxed-ok", r!.Output);
+    }
+
     [Fact]
     public async Task Program_runs_and_its_output_is_captured()
     {

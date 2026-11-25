@@ -86,7 +86,7 @@ public sealed class WindowsCodingSandboxPolicyTests
             Assert.False(WindowsCodingSandbox.HasEquivalentAllowRule(dir, appPackages, "(OI)(CI)(RX)"));
             var info = new DirectoryInfo(dir);
             var security = info.GetAccessControl(System.Security.AccessControl.AccessControlSections.Access);
-            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+            security = PaRuX.Contracts.AclCanonicalizer.AddRule(security, new System.Security.AccessControl.FileSystemAccessRule(
                 new System.Security.Principal.SecurityIdentifier(appPackages),
                 System.Security.AccessControl.FileSystemRights.ReadAndExecute,
                 System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,

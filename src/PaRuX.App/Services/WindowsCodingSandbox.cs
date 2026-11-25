@@ -813,7 +813,7 @@ namespace PaRuX.Services
             try
             {
                 var security = new DirectorySecurity(directory, AccessControlSections.Access);
-                security.AddAccessRule(new FileSystemAccessRule(
+                security = PaRuX.Contracts.AclCanonicalizer.AddRule(security, new FileSystemAccessRule(
                     new SecurityIdentifier(sid),
                     FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize,
                     InheritanceFlags.None, PropagationFlags.None, AccessControlType.Allow));
@@ -1144,15 +1144,19 @@ namespace PaRuX.Services
                             PropagationFlags.None,
                             AccessControlType.Allow);
 
-                        if (replaceExisting)
+                        // A DACL left non-canonical by another tool is re-ordered once (no entry added or removed) instead of failing the grant.
+                        directorySecurity = PaRuX.Contracts.AclCanonicalizer.Modify(directorySecurity, security =>
                         {
-                            RemoveAppContainerWriteRules(directorySecurity);
-                            directorySecurity.SetAccessRule(rule);
-                        }
-                        else
-                        {
-                            directorySecurity.AddAccessRule(rule);
-                        }
+                            if (replaceExisting)
+                            {
+                                RemoveAppContainerWriteRules(security);
+                                security.SetAccessRule(rule);
+                            }
+                            else
+                            {
+                                security.AddAccessRule(rule);
+                            }
+                        });
                         directoryInfo.SetAccessControl(directorySecurity);
                         result = true;
                     }
@@ -1173,7 +1177,7 @@ namespace PaRuX.Services
                             PropagationFlags.None,
                             AccessControlType.Allow);
 
-                        fileSecurity.AddAccessRule(rule);
+                        fileSecurity = PaRuX.Contracts.AclCanonicalizer.AddRule(fileSecurity, rule);
                         fileInfo.SetAccessControl(fileSecurity);
                         result = true;
                     }

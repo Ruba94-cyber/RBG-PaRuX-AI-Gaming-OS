@@ -419,6 +419,20 @@ public sealed class KnowledgeLksTests : IDisposable
         try { Assert.False(LocalFileProtection.IsRestricted(plain)); } finally { Directory.Delete(plain); }
     }
 
+    [Fact]
+    public void Restricting_the_shared_temp_or_profile_folders_is_refused_and_leaves_their_acl_untouched()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        string temp = Path.GetTempPath().TrimEnd('\\');
+        string before = new DirectoryInfo(temp).GetAccessControl(System.Security.AccessControl.AccessControlSections.Access).GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access);
+        Assert.False(LocalFileProtection.RestrictToCurrentUser(temp));
+        Assert.False(LocalFileProtection.RestrictToCurrentUser(Directory.GetParent(temp)!.FullName));   // %LOCALAPPDATA%
+        Assert.False(LocalFileProtection.RestrictToCurrentUser(Path.GetPathRoot(temp)!));
+        string after = new DirectoryInfo(temp).GetAccessControl(System.Security.AccessControl.AccessControlSections.Access).GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access);
+        Assert.Equal(before, after);
+        Assert.True(LocalFileProtection.RestrictToCurrentUser(_root.Length > 0 && Directory.Exists(_root) ? _root : Directory.CreateDirectory(_root).FullName));   // a PaRuX-owned sub-folder is still protected
+    }
+
     // ------------------------------------------------------------------------------------------------ 7) smart search + benchmark
 
     [Fact]

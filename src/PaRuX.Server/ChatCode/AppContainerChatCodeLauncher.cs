@@ -221,8 +221,9 @@ internal sealed class AppContainerChatCodeLauncher : IChatCodeProcessLauncher
             && (rule.FileSystemRights & rights) == rights && rule.InheritanceFlags.HasFlag(InheritanceFlags.ObjectInherit));
         if (!present)
         {
-            security.AddAccessRule(new FileSystemAccessRule(sid, rights, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                PropagationFlags.None, AccessControlType.Allow));
+            var rule = new FileSystemAccessRule(sid, rights, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None, AccessControlType.Allow);
+            security = PaRuX.Contracts.AclCanonicalizer.AddRule(security, rule);
             info.SetAccessControl(security);
         }
         GrantedFolders.Add(key);
@@ -241,7 +242,7 @@ internal sealed class AppContainerChatCodeLauncher : IChatCodeProcessLauncher
             if (!present)
             {
                 // Non-inheritable, directory-only, and SetFileSecurity does not re-propagate to children: traverse only.
-                security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize,
+                security = PaRuX.Contracts.AclCanonicalizer.AddRule(security, new FileSystemAccessRule(sid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize,
                     InheritanceFlags.None, PropagationFlags.None, AccessControlType.Allow));
                 SetFileSecurity(folder, 4 /*DACL*/, security.GetSecurityDescriptorBinaryForm());
             }

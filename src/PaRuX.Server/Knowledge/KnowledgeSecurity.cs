@@ -137,6 +137,10 @@ public static class LocalFileProtection
         {
             if (OperatingSystem.IsWindows())
             {
+                // Never strip inheritance from a folder PaRuX does not own: the system temp folder, the profile roots or a drive
+                // root are shared with every other tool of the user (sandboxes, EDR agents, installers). Callers must pass a
+                // PaRuX-owned sub-folder; a misconfigured data root is reported as "could not protect" instead of being rewritten.
+                if (IsSharedSystemFolder(path)) return false;
                 SecurityIdentifier me = WindowsIdentity.GetCurrent().User!;
                 var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
                 if (Directory.Exists(path))
@@ -166,6 +170,32 @@ public static class LocalFileProtection
             return false;
         }
         catch (Exception) { return false; }
+    }
+
+    /// <summary>True for the system/user temp folder, the user profile, Windows and Program Files roots, a drive root, and any folder that contains them.</summary>
+    internal static bool IsSharedSystemFolder(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        string full = Normalize(path);
+        string?[] shared =
+        {
+            System.IO.Path.GetTempPath(), Environment.GetEnvironmentVariable("TEMP"), Environment.GetEnvironmentVariable("TMP"),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows), Environment.GetFolderPath(Environment.SpecialFolder.System),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        };
+        foreach (string? candidate in shared)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) continue;
+            string other = Normalize(candidate);
+            // The folder itself, or an ancestor of it (the Local folder contains Temp): never rewritten.
+            if (full.Equals(other, StringComparison.OrdinalIgnoreCase) || other.StartsWith(full + "\\", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        string? root = System.IO.Path.GetPathRoot(full);
+        return root != null && full.Equals(Normalize(root), StringComparison.OrdinalIgnoreCase);
+
+        static string Normalize(string value) => System.IO.Path.GetFullPath(value).TrimEnd('\\', '/');
     }
 
     /// <summary>True when only the current user and SYSTEM (and no broad group) can access the path on Windows.</summary>
