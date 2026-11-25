@@ -3,7 +3,8 @@ param(
     [string]$Version = "",
     [switch]$SkipPublish,
     [switch]$Release,
-    [switch]$AllowUnsignedRelease
+    [switch]$AllowUnsignedRelease,
+    [switch]$NoRedist
 )
 
 $ErrorActionPreference = "Stop"
@@ -253,8 +254,23 @@ if ($signTool) {
 if (Test-Path $installerDir) { Remove-Item $installerDir -Recurse -Force }
 New-Item -ItemType Directory -Path $installerDir -Force | Out-Null
 
+# Optional vendor payloads (ViGEmBus + HidHide drivers, Sunshine portable package). They come ONLY from the pinned, hash-locked
+# release assets of packaging/redist-installers.lock.json; any size/SHA-256/Authenticode mismatch or missing download stops the
+# build here with a clear message. -NoRedist builds the MSI without them (tests, quick local builds).
+$redistDir = Join-Path $repoRoot "artifacts\redist-stage"
+if ($NoRedist) {
+    Write-Warning "-NoRedist: this MSI carries NO optional controller-driver or Sunshine payload (the setup then has no such features)."
+} else {
+    Write-Host "Staging the hash-locked optional payloads (ViGEmBus, HidHide, Sunshine)..."
+    & (Join-Path $PSScriptRoot "stage-msi-redist.ps1") -OutputDir $redistDir
+    if (-not $?) { throw "Staging the redist payloads failed. Fix the message above or build with -NoRedist." }
+}
+
 Write-Host "Building PaRuX MSI with WiX v7..."
 & dotnet build $wixProject `
+    "-p:PaRuXMsiRedist=$(if ($NoRedist) { 'none' } else { 'include' })" `
+    "-p:PaRuXRedistDir=$redistDir" `
+    "-p:PaRuXRedistStaged=$(if ($NoRedist) { 'false' } else { 'true' })" `
     -c Release `
     "-p:ProductVersion=$Version" `
     "-p:PublishDir=$publishDir" `
@@ -317,6 +333,7 @@ Write-Host "Server:    PaRuX.Server\PaRuX.Server.exe"
 Write-Host "CLI:       Cli\parux.exe"
 Write-Host "Updater:   UpdateHelper\PaRuX.UpdateHelper.exe"
 Write-Host "Size:      $($msi.Length) bytes"
+Write-Host "Redist:    $(if ($NoRedist) { 'NOT included (-NoRedist)' } else { 'optional features included (drivers + Sunshine, off by default)' })"
 if ($Release) {
     Write-Host "Envelope:  $envelopePath"
     Write-Host "Provenance:$provenancePath"

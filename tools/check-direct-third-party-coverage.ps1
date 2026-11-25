@@ -87,6 +87,32 @@ function Get-RedistributedAssetPackages([string]$AssetsJson) {
     return @($names | Sort-Object)
 }
 
+function Find-RedistNoticeGaps([string]$LockJson, [string]$NoticeText, [string]$Root) {
+    $gaps = New-Object System.Collections.Generic.List[string]
+    $lock = $LockJson | ConvertFrom-Json
+    foreach ($c in @($lock.components | Where-Object { [string]$_.status -like "included*" })) {
+        $id = [string]$c.id
+        foreach ($token in @([string]$c.displayName, [string]$c.version, [string]$c.license.spdx, [string]$c.asset.sha256, [string]$c.asset.name)) {
+            if ([string]::IsNullOrWhiteSpace($token) -or $NoticeText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+                if ($token -eq [string]$c.displayName -and $NoticeText.IndexOf(([string]$c.displayName -split ' ')[0], [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
+                $gaps.Add("$id notice is missing '$token'")
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$c.license.textFile) -or -not (Test-Path -LiteralPath (Join-Path $Root ([string]$c.license.textFile)) -PathType Leaf)) { $gaps.Add("$id licence text file is missing") }
+        if (([string]$c.license.spdx).StartsWith("GPL")) {
+            if ($null -eq $c.sourceOffer) { $gaps.Add("$id is GPL but has no source offer") }
+            else {
+                foreach ($u in @([string]$c.sourceOffer.sourceRepository, [string]$c.sourceOffer.sourceArchive)) {
+                    if ($u -notlike "*$([string]$c.releaseTag)*") { $gaps.Add("$id source offer link is not at the shipped tag: $u") }
+                    elseif ($NoticeText.IndexOf($u, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { $gaps.Add("$id source link is not in the notices: $u") }
+                }
+                if (-not (Test-Path -LiteralPath (Join-Path $Root ([string]$c.sourceOffer.textFile)) -PathType Leaf)) { $gaps.Add("$id written source offer file is missing") }
+            }
+        }
+    }
+    return @($gaps.ToArray())
+}
+
 function Test-ManagedPe([string]$Path) {
     $fs = [IO.File]::OpenRead($Path)
     try {
@@ -132,6 +158,19 @@ if ($SelfTest) {
     if ($bad.Count -ne 2 -or ($bad -join ';') -notmatch 'mystery\.dll' -or ($bad -join ';') -notmatch 'DirectML\.dll') { throw "Synthetic native-rule test failed: $($bad -join ';')" }
     if (@(Find-NativeRuleViolations -DllNames @("msquic.dll", "e_sqlite3.dll", "parux_xinput.dll") -NoticeText $native).Count -ne 0) { throw "Synthetic native positive test failed." }
     if ((Find-MissingRuleTokens -NoticeText "").Count -lt 5) { throw "Synthetic rule-token test failed." }
+    # Optional MSI payload gate: a GPL component without a same-tag source link, or with a missing hash/version in the notices, fails.
+    $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("redist-notice-selftest-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tmpRoot | Out-Null
+    try {
+        Set-Content -LiteralPath (Join-Path $tmpRoot "L.txt") -Value "licence" -Encoding ascii
+        Set-Content -LiteralPath (Join-Path $tmpRoot "S.txt") -Value "offer" -Encoding ascii
+        $sample = '{"components":[{"id":"x","displayName":"Foo Tool","version":"1.2.3","releaseTag":"v1.2.3","status":"included","asset":{"name":"foo.zip","sha256":"' + ("a" * 64) + '"},"license":{"spdx":"GPL-3.0-only","textFile":"L.txt"},"sourceOffer":{"sourceRepository":"https://example.invalid/src/v1.2.3","sourceArchive":"https://example.invalid/a/v1.2.3.tgz","textFile":"S.txt"}}]}'
+        $good = "Foo Tool 1.2.3 GPL-3.0-only foo.zip " + ("a" * 64) + " https://example.invalid/src/v1.2.3 https://example.invalid/a/v1.2.3.tgz"
+        if (@(Find-RedistNoticeGaps -LockJson $sample -NoticeText $good -Root $tmpRoot).Count -ne 0) { throw "Synthetic redist positive test failed." }
+        if (@(Find-RedistNoticeGaps -LockJson $sample -NoticeText "Foo Tool 1.2.3 GPL-3.0-only foo.zip" -Root $tmpRoot).Count -lt 3) { throw "Synthetic redist missing-hash/source test failed." }
+        $wrongTag = $sample.Replace("src/v1.2.3", "src/v0.0.1")
+        if (@(Find-RedistNoticeGaps -LockJson $wrongTag -NoticeText $good -Root $tmpRoot).Count -lt 1) { throw "Synthetic redist wrong-tag test failed." }
+    } finally { Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue }
     Write-Host "[notices] Synthetic fixture tests passed; no repository files changed."
     return
 }
@@ -213,5 +252,15 @@ if ($msixText -match '(?m)^\s*foreach \(\$notice in @\([^\r\n]*NVIDIA_CUDA_NOTIC
     throw "[notices] build-msix.ps1 ships NVIDIA_CUDA_NOTICE.txt but the Store package contains no CUDA runtime."
 }
 
-Write-Host "[notices] PASS: $($packages.Count) direct PackageReference entries, $(@($transitive | Sort-Object -Unique).Count) transitive redistributed packages ($($assetFiles.Count) assets file(s)), $($script:NativeRules.Count) native rules, $nativeCount native DLLs scanned. This is not license clearance."
+# 6) Optional vendor payloads of the MSI (packaging/redist-installers.lock.json): every included component needs its name, version,
+#    SPDX licence and pinned SHA-256 in the notices, its licence text file in the repo, and (GPL) a same-tag source offer.
+$redistLock = Join-Path $Root "packaging/redist-installers.lock.json"
+$redistCount = 0
+if (Test-Path -LiteralPath $redistLock -PathType Leaf) {
+    $redistGaps = @(Find-RedistNoticeGaps -LockJson (Get-Content -LiteralPath $redistLock -Raw) -NoticeText $notice -Root $Root)
+    if ($redistGaps.Count -gt 0) { throw "[notices] Optional MSI payload gaps: $($redistGaps -join '; ')" }
+    $redistCount = @((Get-Content -LiteralPath $redistLock -Raw | ConvertFrom-Json).components).Count
+}
+
+Write-Host "[notices] PASS: $redistCount optional MSI payloads, $($packages.Count) direct PackageReference entries, $(@($transitive | Sort-Object -Unique).Count) transitive redistributed packages ($($assetFiles.Count) assets file(s)), $($script:NativeRules.Count) native rules, $nativeCount native DLLs scanned. This is not license clearance."
 Write-Host "[notices] Run tools/validate-license-inventory.ps1 and scripts/generate-sbom.ps1 on Windows as separate gates."

@@ -390,6 +390,7 @@ builder.Services.AddSingleton(sp => new SignInAppListRunner(
     sp.GetRequiredService<SignInAppListStore>(), new SignInAppProcessLauncher(),
     () => sp.GetRequiredService<LocalRuntimeService>().GamingMode));
 builder.Services.AddSingleton<SupportAppStore>();
+builder.Services.AddSingleton<IRedistProbe, WindowsRedistProbe>();
 builder.Services.AddSingleton<ISupportAppHost, SupportAppProcessHost>();
 builder.Services.AddSingleton(sp => new SupportAppRunner(
     sp.GetRequiredService<SupportAppStore>(), sp.GetRequiredService<ISupportAppHost>(),

@@ -72,6 +72,8 @@ Key rotation requires shipping a PaRuX build that trusts the new public key befo
 
 ## 2. Development/test MSI
 
+`build-msi.ps1` stages the optional ViGEmBus, HidHide and Sunshine payloads from `packaging/redist-installers.lock.json` (pinned URLs, size, SHA-256, Authenticode; fails closed) into optional, off-by-default features. Add `-NoRedist` for the small MSI without them (what the unit tests and quick local builds use). See [INSTALL.md](guides/INSTALL.md).
+
 ```powershell
 .\scripts\build-msi.ps1 -Version 1.9.6
 ```

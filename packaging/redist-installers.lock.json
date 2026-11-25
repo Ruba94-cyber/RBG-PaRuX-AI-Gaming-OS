@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "platform": "win-x64",
+  "purpose": "Vendor payloads that the optional MSI features carry unmodified. scripts/stage-msi-redist.ps1 downloads ONLY the pinned asset URLs below and fails closed on any size, SHA-256 or Authenticode mismatch. No vendor binary is committed to git.",
+  "verifiedOn": "2026-11-25",
+  "components": [
+    {
+      "id": "vigembus",
+      "displayName": "ViGEm Bus Driver",
+      "msiFeature": "PaRuXControllerDrivers",
+      "payloadFolder": "Drivers",
+      "install": {
+        "type": "advanced-installer-exe",
+        "elevated": true,
+        "silentArgs": [ "/exenoui", "/qn", "/norestart" ],
+        "silentArgsBasis": "Caphyon Advanced Installer setup.exe command line (/exenoui = no bootstrapper UI, /qn and /norestart are forwarded to msiexec). The vendor's own docs publish no silent switches; the bootstrapper's embedded help lists /exenoui, /qn, /norestart. NOT run on a real system by PaRuX.",
+        "rebootPossible": true,
+        "exitCodesOk": [ 0 ],
+        "exitCodesRebootRequired": [ 1641, 3010 ],
+        "arpDisplayName": "ViGEm Bus Driver",
+        "arpPublisher": "Nefarius Software Solutions e.U.",
+        "presenceProbes": [
+          { "kind": "service", "name": "ViGEmBus" },
+          { "kind": "file", "path": "%SystemRoot%\\System32\\drivers\\ViGEmBus.sys" }
+        ]
+      },
+      "version": "1.22.0",
+      "releaseTag": "v1.22.0",
+      "tagCommit": "d986e1d93708ec9b11049542fa6027272cce716c",
+      "channel": "stable (GitHub latest, not prerelease)",
+      "project": "https://github.com/nefarius/ViGEmBus",
+      "releasePage": "https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0",
+      "publishedAt": "2023-11-02T16:40:49Z",
+      "asset": {
+        "name": "ViGEmBus_1.22.0_x64_x86_arm64.exe",
+        "url": "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe",
+        "sizeBytes": 6278576,
+        "sha256": "89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a",
+        "githubDigest": null,
+        "sha256Basis": "computed locally from the downloaded file on 2026-11-25; GitHub publishes no digest for this 2023 release, so this is a first-download pin and the Authenticode pin below is the second check"
+      },
+      "signature": {
+        "required": true,
+        "subject": "CN=Nefarius Software Solutions e.U.",
+        "thumbprint": "1F431092EC96A80B41AB5317F53AC02EA6F9B89B",
+        "observedStatus": "Valid"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "textFile": "packaging/redist-licenses/LICENSE-ViGEmBus.txt",
+        "copyright": "Copyright (c) 2016-2020, Nefarius Software Solutions e.U.",
+        "redistribution": "allowed with the copyright notice and conditions reproduced (done: licence text ships beside the payload)"
+      },
+      "sourceOffer": null,
+      "status": "included",
+      "notes": [
+        "Upstream retired and archived the project (end-of-life statement, 2023-11); 1.22.0 is its final release and receives no security updates.",
+        "Kernel driver: installing it needs administrator rights and may need a restart."
+      ]
+    },
+    {
+      "id": "hidhide",
+      "displayName": "HidHide",
+      "msiFeature": "PaRuXControllerDrivers",
+      "payloadFolder": "Drivers",
+      "install": {
+        "type": "advanced-installer-exe",
+        "elevated": true,
+        "silentArgs": [ "/exenoui", "/qn", "/norestart" ],
+        "silentArgsBasis": "Caphyon Advanced Installer setup.exe command line (see vigembus). The vendor's own updater passes /norestart for this exact installer; /exenoui and /qn are the Advanced Installer switches embedded in the bootstrapper. NOT run on a real system by PaRuX.",
+        "rebootPossible": true,
+        "exitCodesOk": [ 0 ],
+        "exitCodesRebootRequired": [ 1641, 3010 ],
+        "arpDisplayName": "HidHide",
+        "arpPublisher": "Nefarius Software Solutions e.U.",
+        "presenceProbes": [
+          { "kind": "service", "name": "HidHide" },
+          { "kind": "file", "path": "%ProgramFiles%\\Nefarius Software Solutions\\HidHide\\x64\\HidHideCLI.exe" }
+        ]
+      },
+      "version": "1.5.230.0",
+      "releaseTag": "v1.5.230.0",
+      "tagCommit": "722d997ce75db58f5aa36e40ca920f99022c020a",
+      "channel": "stable (GitHub latest, not prerelease)",
+      "project": "https://github.com/nefarius/HidHide",
+      "releasePage": "https://github.com/nefarius/HidHide/releases/tag/v1.5.230.0",
+      "publishedAt": "2024-05-11T17:03:22Z",
+      "asset": {
+        "name": "HidHide_1.5.230_x64.exe",
+        "url": "https://github.com/nefarius/HidHide/releases/download/v1.5.230.0/HidHide_1.5.230_x64.exe",
+        "sizeBytes": 8078016,
+        "sha256": "f4bbbcb82e6258641b887c74bc81c4c5f66e4aa811808dfc304347687b7605f6",
+        "githubDigest": null,
+        "sha256Basis": "computed locally from the downloaded file on 2026-11-25; GitHub publishes no digest for this release, so this is a first-download pin and the Authenticode pin below is the second check"
+      },
+      "signature": {
+        "required": true,
+        "subject": "CN=Nefarius Software Solutions e.U.",
+        "thumbprint": "1F431092EC96A80B41AB5317F53AC02EA6F9B89B",
+        "observedStatus": "Valid"
+      },
+      "license": {
+        "spdx": "MIT",
+        "textFile": "packaging/redist-licenses/LICENSE-HidHide.txt",
+        "copyright": "Copyright (c) 2020 Eric Korff de Gidts; Copyright (c) 2021-2023 Benjamin Hoglinger-Stelzer",
+        "redistribution": "allowed with the copyright notice and permission notice included (done: licence text ships beside the payload)"
+      },
+      "sourceOffer": null,
+      "status": "included",
+      "notes": [
+        "Kernel filter driver: installing it needs administrator rights and may need a restart; the vendor setup also reboots when upgrading an older copy (PaRuX never upgrades an existing copy)."
+      ]
+    },
+    {
+      "id": "sunshine",
+      "displayName": "Sunshine (game stream host)",
+      "msiFeature": "PaRuXSunshine",
+      "payloadFolder": "Sunshine",
+      "install": {
+        "type": "portable-zip-app-extract",
+        "elevated": false,
+        "silentArgs": [],
+        "silentArgsBasis": "Nothing is executed at install time. The MSI only places the vendor ZIP; PaRuX extracts it (hash-checked, guarded unzip) into its own per-user folder when the owner clicks Install in Settings > Support apps. No Windows service, no firewall rule, no autostart is created.",
+        "rebootPossible": false,
+        "exitCodesOk": [],
+        "exitCodesRebootRequired": [],
+        "arpDisplayName": null,
+        "arpPublisher": null,
+        "presenceProbes": [
+          { "kind": "file", "path": "%ProgramFiles%\\Sunshine\\sunshine.exe" }
+        ]
+      },
+      "version": "2026.914.233613",
+      "releaseTag": "v2026.914.233613",
+      "tagCommit": "63d35f702ee9e362e43263742981836ec0710384",
+      "channel": "stable (GitHub latest, not prerelease; newer v2026.1122/v2026.1123 tags are prereleases and are not used)",
+      "project": "https://github.com/LizardByte/Sunshine",
+      "canonicalProject": "https://github.com/SunshineStream/Sunshine",
+      "canonicalProjectNote": "github.com/LizardByte/Sunshine now 301-redirects to SunshineStream/Sunshine (same repository id 438803890, created 2021-12-15, project site sunshine.lizardbyte.dev). Asset URLs are pinned to the canonical location.",
+      "releasePage": "https://github.com/SunshineStream/Sunshine/releases/tag/v2026.914.233613",
+      "publishedAt": "2026-09-15T01:17:17Z",
+      "asset": {
+        "name": "Sunshine-Windows-AMD64-lite.zip",
+        "url": "https://github.com/SunshineStream/Sunshine/releases/download/v2026.914.233613/Sunshine-Windows-AMD64-lite.zip",
+        "sizeBytes": 38060196,
+        "sha256": "233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b",
+        "githubDigest": "sha256:233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b",
+        "sha256Basis": "computed locally from the downloaded file on 2026-11-25 and identical to the digest GitHub publishes for the asset"
+      },
+      "innerFiles": {
+        "sunshine.exe": { "relativePath": "Sunshine/sunshine.exe", "sha256": "a8ddf74e93297529ca5aa9c59234a7043b94587e8d11ea24c521fa69d6f59fd3", "sizeBytes": 70910996, "authenticode": "NotSigned" },
+        "unpackedFiles": 135,
+        "unpackedBytes": 99132246
+      },
+      "signature": {
+        "required": false,
+        "subject": null,
+        "thumbprint": null,
+        "observedStatus": "NotSigned (a ZIP has no Authenticode; the binaries inside are unsigned). Integrity rests on the GitHub-published digest plus the locally computed SHA-256."
+      },
+      "license": {
+        "spdx": "GPL-3.0-only",
+        "textFile": "packaging/redist-licenses/LICENSE-Sunshine.txt",
+        "copyright": "Copyright (c) LizardByte and Sunshine contributors (see the upstream repository)",
+        "redistribution": "GPL-3.0: allowed when the licence text and a written offer / pointer to the corresponding source of the SAME version accompany the binaries (done: SOURCE-OFFER-Sunshine.txt ships beside the payload). Binaries are not modified. PaRuX never links Sunshine; it only starts it as a separate process."
+      },
+      "sourceOffer": {
+        "sourceRepository": "https://github.com/SunshineStream/Sunshine/tree/v2026.914.233613",
+        "sourceArchive": "https://github.com/SunshineStream/Sunshine/archive/refs/tags/v2026.914.233613.tar.gz",
+        "legacyRepositoryUrl": "https://github.com/LizardByte/Sunshine/tree/v2026.914.233613",
+        "buildDependencies": "https://github.com/LizardByte/build-deps",
+        "textFile": "packaging/redist-licenses/SOURCE-OFFER-Sunshine.txt"
+      },
+      "status": "included-as-portable-payload",
+      "notes": [
+        "The vendor Windows MSI was NOT used (see excluded[]). The lite ZIP carries the same sunshine.exe without service/firewall/autostart setup scripts being run.",
+        "Sunshine keeps its configuration next to its executable (config\\ beside sunshine.exe, upstream misc.cpp appdata()); that is why PaRuX extracts it into a user-writable folder instead of Program Files.",
+        "The lite ZIP ships no third-party licence inventory of its own; ffmpeg/Boost/OpenSSL and the other statically linked libraries are covered by the upstream source and build-deps offer."
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "sunshine-windows-installer-msi",
+      "asset": "Sunshine-Windows-AMD64-installer.msi",
+      "version": "2026.914.233613",
+      "sizeBytes": 33710080,
+      "sha256": "1d7fed8beecd5889dc7ff14cf9f42d6d38f37c3066c13c6c2a5f4e91847e0ccf",
+      "githubDigest": "sha256:1d7fed8beecd5889dc7ff14cf9f42d6d38f37c3066c13c6c2a5f4e91847e0ccf",
+      "authenticode": "Valid; signer CN=David Lane (individual), thumbprint A3B692F446B48AEF2F40D34F1FCE91F268654DEC, certificate expired 2026-09-17 but timestamped",
+      "reason": "Not bundled. (1) An MSI cannot run another MSI inside its own transaction (error 1618), so it could only run after PaRuX's setup ends. (2) Its silent path runs the vendor's CA_SunshineInstallSilent scripts, which register a Windows service and firewall rules and open network ports at install time, contradicting 'off until the owner enables streaming'. (3) The signer is an individual rather than an organisation, which is a weaker trust anchor than the pinned digest of the ZIP. Rejected, recorded only for the audit trail."
+    }
+  ]
+}

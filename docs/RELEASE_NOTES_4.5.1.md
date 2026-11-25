@@ -12,6 +12,7 @@
 - **Console:** TV selector with a persistent multi-select list and monitor history; Console mode always starts; TV names from the legacy Console config are imported; PaRuX returns to the foreground when Playnite Fullscreen closes.
 - **Start-up:** generic sign-in start orchestrator, support apps, never-pause list, timing log, dry-run.
 - **Background downloads need consent:** downloads in the background and online catalog checks are OFF by default. Migration: the old implicit default (on) is not carried over; existing settings read as OFF until you switch it on once. Corporate Lite is always off.
+- **Optional MSI features, off by default:** "Controller drivers (ViGEmBus + HidHide)" and "Sunshine (streaming host)". Official, unmodified, hash-pinned vendor files (`packaging/redist-installers.lock.json`); a silent install includes them only with `PARUX_ADD_DRIVERS=1`, `PARUX_ADD_SUNSHINE=1` or `ADDLOCAL=`. Existing driver installs are never touched; uninstalling PaRuX removes only drivers the setup itself installed. Settings > Support apps shows the state and ownership. The MSI is about 52 MB larger with these payloads; `-NoRedist` builds without them. Details and limits: [INSTALL.md](guides/INSTALL.md).
 - Everything from 4.5.0 (layered Portable layout, Corporate Lite with automatic small-model fallback, Console mode, Games tools, AI/Chat, Knowledge readers, reliability fixes) is included.
 
 ## Signing
@@ -25,6 +26,7 @@ MSI, PE files in the packages and ZIP launchers are signed with the self-signed 
 - Win+G is not blocked: the Game Bar block is opt-in and covers the Game Bar settings, not the shortcut.
 - Self-signed certificate; no SmartScreen reputation.
 - The MSI was not installed on a clean PC: only a silent administrative extraction and content checks were done.
+- The optional MSI features (controller drivers, Sunshine) were never installed on a real PC: UAC cannot be driven here, so only the package tables, an administrative extraction, `wix msi validate` and unit tests were checked; the "Optional components" wizard page was not displayed; the vendor silent switches were not exercised. The drivers need UAC and may need a restart; ViGEmBus is retired upstream; Sunshine opens network ports only while it runs.
 - Android: pairing with a real Core and a physical device not tested.
 - `.pst/.ost` and MF4/MDF are not read; the bundled starter model is weak on multi-part and numeric questions.
 - Competitors: no superiority is claimed.

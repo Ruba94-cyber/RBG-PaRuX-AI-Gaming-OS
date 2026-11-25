@@ -306,6 +306,38 @@ if ($Scope -in @("windows", "all")) {
         Add-Component $key $runtimeComponent
     }
 
+    # Optional vendor payloads of the MSI (controller drivers, Sunshine package). They are listed from the lock whether or not a
+    # given MSI was built with -NoRedist: the SBOM then names what the redist-enabled MSI can carry (property parux:optionalFeature).
+    $redistLockPath = Join-Path $repoRoot "packaging\redist-installers.lock.json"
+    if (Test-Path -LiteralPath $redistLockPath -PathType Leaf) {
+        $redistLock = Get-Content -LiteralPath $redistLockPath -Raw | ConvertFrom-Json
+        foreach ($rc in @($redistLock.components | Where-Object { [string]$_.status -like "included*" })) {
+            $redistComponent = [ordered]@{
+                type = "application"
+                name = [string]$rc.displayName
+                version = [string]$rc.version
+                hashes = @([ordered]@{ alg = "SHA-256"; content = ([string]$rc.asset.sha256).ToLowerInvariant() })
+                licenses = @([ordered]@{ expression = [string]$rc.license.spdx })
+                externalReferences = @(
+                    [ordered]@{ type = "distribution"; url = [string]$rc.asset.url },
+                    [ordered]@{ type = "vcs"; url = [string]$rc.project }
+                )
+                properties = @(
+                    [ordered]@{ name = "parux:ecosystem"; value = "optional-redist" },
+                    [ordered]@{ name = "parux:optionalFeature"; value = [string]$rc.msiFeature },
+                    [ordered]@{ name = "parux:redistAsset"; value = [string]$rc.asset.name },
+                    [ordered]@{ name = "parux:unmodifiedVendorBinary"; value = "true" },
+                    [ordered]@{ name = "parux:licenseFile"; value = [string]$rc.license.textFile }
+                )
+            }
+            if ($null -ne $rc.sourceOffer) {
+                $redistComponent["externalReferences"] = @($redistComponent["externalReferences"]) + [ordered]@{ type = "source-distribution"; url = [string]$rc.sourceOffer.sourceArchive }
+            }
+            $script:LicensesResolved++
+            Add-Component ("redist:" + [string]$rc.id + "@" + [string]$rc.version) $redistComponent
+        }
+    }
+
     # Vendored llama.cpp conversion scripts are copied next to PaRuX Server and therefore belong
     # in the Windows distribution SBOM even though they are not package-manager dependencies.
     Add-Component "vendored:llama-cpp-conversion" ([ordered]@{

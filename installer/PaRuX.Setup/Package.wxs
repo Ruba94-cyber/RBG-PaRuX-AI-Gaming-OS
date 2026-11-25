@@ -65,9 +65,11 @@
     </StandardDirectory>
 
     <!-- Harvest the complete self-contained Desktop + Core + CLI publish output. Debug symbols are not shipped. -->
-    <Files Include="$(var.PublishDir)\**" Directory="INSTALLFOLDER">
-      <Exclude Files="$(var.PublishDir)\**\*.pdb" />
-    </Files>
+    <ComponentGroup Id="PaRuXAppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**">
+        <Exclude Files="$(var.PublishDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
 
     <Icon Id="PaRuX.ico" SourceFile="$(var.PublishDir)\Assets\parux.ico" />
     <Property Id="ARPPRODUCTICON" Value="PaRuX.ico" />
@@ -104,6 +106,105 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" ExtendedPathValidation="yes" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
 
-    <!-- WiX v5+ creates a single default feature and assigns the harvested/component resources. -->
+    <!-- WiX v5+ creates a single default feature and assigns the harvested/component resources.
+         Without -NoRedist an explicit "Main" feature (everything above) sits beside two OPTIONAL features that are NOT installed by
+         default (Level 2 > INSTALLLEVEL 1): the controller drivers and the Sunshine portable package. -->
+    <?if $(IncludeRedist) = 1?>
+
+    <!-- Public, secure properties: the optional-components dialog sets them; a silent install uses them (or ADDLOCAL=...). -->
+    <Property Id="PARUX_ADD_DRIVERS" Secure="yes" />
+    <Property Id="PARUX_ADD_SUNSHINE" Secure="yes" />
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Directory Id="REDISTDIR" Name="Redist">
+        <Directory Id="REDISTDRIVERSDIR" Name="Drivers" />
+        <Directory Id="REDISTSUNSHINEDIR" Name="Sunshine" />
+      </Directory>
+    </DirectoryRef>
+
+    <ComponentGroup Id="PaRuXMainPayload" Directory="INSTALLFOLDER">
+      <ComponentGroupRef Id="PaRuXAppFiles" />
+      <ComponentRef Id="PaRuXCliPathComponent" />
+      <ComponentRef Id="PaRuXStartMenuComponent" />
+    </ComponentGroup>
+
+    <!-- Small, always present with the redist build: the verifying helper and the lock it reads. It acts only on what the
+         selected feature carries, and on removal only on what PaRuX itself recorded as installed. -->
+    <ComponentGroup Id="PaRuXRedistBase" Directory="REDISTDIR">
+      <Files Include="$(var.RedistDir)\Base\**" />
+    </ComponentGroup>
+
+    <!-- Feature markers (HKLM, written by the feature's own component): a rolled-back or cancelled setup leaves none, so the
+         post-setup helper then does nothing. -->
+    <ComponentGroup Id="PaRuXControllerDriversPayload" Directory="REDISTDRIVERSDIR">
+      <Files Include="$(var.RedistDir)\Drivers\**" />
+      <Component Id="PaRuXControllerDriversMarker" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Ruba94-cyber\PaRuX\Features" Name="PaRuXControllerDrivers" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="PaRuXSunshinePayload" Directory="REDISTSUNSHINEDIR">
+      <Files Include="$(var.RedistDir)\Sunshine\**" />
+      <Component Id="PaRuXSunshineMarker" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Ruba94-cyber\PaRuX\Features" Name="PaRuXSunshine" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="PaRuXMain" Title="PaRuX" Description="The PaRuX application." Level="1" AllowAbsent="no" Display="expand">
+      <ComponentGroupRef Id="PaRuXMainPayload" />
+      <ComponentGroupRef Id="PaRuXRedistBase" />
+    </Feature>
+
+    <Feature Id="PaRuXControllerDrivers" Title="Controller drivers (ViGEmBus + HidHide)"
+             Description="Optional, off by default. Installs the vendors' unmodified, signed installers silently, only if the driver is not already on this PC. Needs administrator rights; Windows may ask for a restart."
+             Level="2" AllowAbsent="yes" AllowAdvertise="no" Display="expand">
+      <Level Value="1" Condition="PARUX_ADD_DRIVERS = &quot;1&quot;" />
+      <ComponentGroupRef Id="PaRuXControllerDriversPayload" />
+    </Feature>
+
+    <Feature Id="PaRuXSunshine" Title="Sunshine (streaming host)"
+             Description="Optional, off by default. Places the official portable Sunshine package (GPL-3.0). PaRuX unpacks it for you only when you ask in Settings; no Windows service, firewall rule or network port is created by this setup."
+             Level="2" AllowAbsent="yes" AllowAdvertise="no" Display="expand">
+      <Level Value="1" Condition="PARUX_ADD_SUNSHINE = &quot;1&quot;" />
+      <ComponentGroupRef Id="PaRuXSunshinePayload" />
+    </Feature>
+
+    <!-- Elevated, deferred, only when the drivers feature is selected (install) or PaRuX is fully removed (uninstall, never on a
+         major upgrade). The helper is launched in two steps because a vendor installer is an MSI and cannot run inside this
+         transaction (error 1618): the step started here only schedules the real work for after this setup ends. A failure never
+         fails PaRuX's own setup; it is written to %ProgramData%\PaRuX\logs\redist-install.log. -->
+    <CustomAction Id="PaRuXRedistDriversInstall" Directory="REDISTDIR" Execute="deferred" Impersonate="no" Return="ignore"
+        ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REDISTDIR]Invoke-PaRuXRedist.ps1&quot; -Mode Launch -Action Install -RedistRoot &quot;[INSTALLFOLDER]Redist&quot;" />
+    <CustomAction Id="PaRuXRedistDriversUninstall" Directory="REDISTDIR" Execute="deferred" Impersonate="no" Return="ignore"
+        ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REDISTDIR]Invoke-PaRuXRedist.ps1&quot; -Mode Launch -Action Uninstall -RedistRoot &quot;[INSTALLFOLDER]Redist&quot;" />
+
+    <InstallExecuteSequence>
+      <Custom Action="PaRuXRedistDriversInstall" After="InstallFiles" Condition="&amp;PaRuXControllerDrivers = 3" />
+      <Custom Action="PaRuXRedistDriversUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <!-- One extra wizard page after the install folder: two unchecked boxes. -->
+    <UI>
+      <Dialog Id="PaRuXOptionalDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Optional components" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="Both are off unless you tick them. You can add them later with Change." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="DriversCheck" Type="CheckBox" X="20" Y="58" Width="330" Height="18" CheckBoxValue="1" Property="PARUX_ADD_DRIVERS" Text="Controller drivers (ViGEmBus + HidHide)" />
+        <Control Id="DriversNote" Type="Text" X="36" Y="78" Width="318" Height="42" Transparent="yes" NoPrefix="yes" Text="Runs the drivers' official signed installers silently after this setup, only if they are not already installed. Needs administrator rights (this setup is already elevated). Windows may ask for a restart. ViGEmBus is no longer maintained upstream." />
+        <Control Id="SunshineCheck" Type="CheckBox" X="20" Y="126" Width="330" Height="18" CheckBoxValue="1" Property="PARUX_ADD_SUNSHINE" Text="Sunshine (streaming host, GPL-3.0)" />
+        <Control Id="SunshineNote" Type="Text" X="36" Y="146" Width="318" Height="42" Transparent="yes" NoPrefix="yes" Text="Adds the official portable package (about 38 MB). Nothing is started: PaRuX unpacks it only when you ask in Settings, and Sunshine opens network ports only while you run it." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+      <Publish Dialog="PaRuXOptionalDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
+      <Publish Dialog="PaRuXOptionalDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="PaRuXOptionalDlg" Order="5" Condition="WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PaRuXOptionalDlg" Order="4" Condition="NOT Installed" />
+    </UI>
+    <?endif?>
   </Package>
 </Wix>
