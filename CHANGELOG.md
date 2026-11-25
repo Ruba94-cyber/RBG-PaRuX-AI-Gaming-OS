@@ -10,6 +10,10 @@ Consolidates everything merged after the 4.4.0 tag (the older "unreleased" and "
 - **Knowledge:** readers for Vector CAN traces, Outlook `.msg`, Word 97-2003 `.doc`, PowerPoint 97-2003 `.ppt`; exact short identifiers; file-metadata questions about a named trace.
 - **UI fixes:** Italian gaps found by a real-window audit, Orbit selection tint, Settings/Help pinned in the navigation footer, Projects page alignment.
 - **Sandbox / security:** AppContainer Job Object caps memory and active processes; MCP tool names are case-sensitive.
+- **Corporate retrieval reliability:** the bundled ONNX embedding and reranker engines retry and recover on their own after a transient load failure, and Corporate RAM admission no longer blocks the small alternative model.
+- **Knowledge:** passages indexed without a vector are repaired automatically (bounded background job); local file protection for indexed content hardened.
+- **Sandbox:** the AppContainer chat-code and coding sandboxes tolerate non-canonical folder ACLs and never restrict system folders.
+- **Evaluation:** the runtime-dependency hash cache no longer trusts a file changed in the last 3 seconds (a same-size rewrite inside one timestamp tick could keep a stale hash).
 - **Version:** `Directory.Build.props` 4.5.0; Android `versionName` 4.5.0, `versionCode` 27.
 - **Known limits (not established):** no physical test with a real pad, Playnite Fullscreen or a training GPU in this build; no run on a real corporate PC; the Windows Game Bar block is opt-in and does not stop the Win+G shortcut; self-signed certificate without SmartScreen reputation; Android pairing on a physical phone not tested. See `docs/RELEASE_NOTES_4.5.0.md`.
 ## 4.2.0 (release candidate, 2026-11-15; not published until the owner decides)

@@ -13,6 +13,10 @@
 - **Games tools page** and per-game launch focus / post-launch actions.
 - **AI / Chat:** self-healing tool calls, managed Python in chat, constrained output, loop guard, fail-closed MCP admission, Canvas preview, token usage, prompt variables, document pins, group chat, Paperless-ngx, Brave web search with sources, meeting assistant, dictation, Agent Flows, training parity.
 - **Knowledge:** CAN traces (`.asc`, `.blf`), `.msg`, `.doc`, `.ppt`.
+- **Corporate reliability:** ONNX retrieval engines recover on their own after a transient load failure; RAM admission no longer blocks the small alternative model.
+- **Knowledge:** passages indexed without a vector are repaired automatically (bounded); local file protection hardened.
+- **Sandbox:** non-canonical folder ACLs are tolerated, system folders are never restricted.
+- **Evaluation:** runtime-dependency hash cache ignores files changed in the last 3 seconds.
 - **UI:** Italian localisation gaps, Settings/Help always reachable, Projects page alignment.
 
 ## Signing
