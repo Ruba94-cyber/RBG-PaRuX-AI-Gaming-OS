@@ -37,6 +37,23 @@ namespace PaRuX.Views
         private void InitDocumentsButton()
         {
             if (DocumentsButton == null) return;
+            var flyout = new Flyout();
+            flyout.Opening += async (s, e) =>
+            {
+                EnsureDocumentsFlyoutContent(flyout);
+                await LoadDocumentSourcesAsync();
+            };
+            DocumentsButton.Flyout = flyout;
+            UpdateDocumentsButtonVisual();
+        }
+
+        private void EnsureDocumentsFlyoutContent(Flyout flyout)
+        {
+            if (flyout.Content != null)
+            {
+                if (_documentsSwitch != null) _documentsSwitch.IsOn = ChatDocumentScopeState.Enabled;
+                return;
+            }
             _documentsSwitch = new ToggleSwitch { Header = DT("Answer from my documents", "Rispondi dai miei documenti"), IsOn = ChatDocumentScopeState.Enabled, MinWidth = 280 };
             AutomationProperties.SetAutomationId(_documentsSwitch, "Chat_Documents_Switch");
             _documentsSwitch.Toggled += (s, e) =>
@@ -98,10 +115,7 @@ namespace PaRuX.Views
                    "Riassumi solo i passaggi recuperati pertinenti a questo argomento. Cita ogni punto, indica le parti non coperte e non affermare di aver letto tutti i file. Argomento: ")));
             panel.Children.Add(SkillButton(DT("Compare two versions", "Confronta due versioni"), "Chat_Documents_Skill_Diff", "/diff  |  ", caret: "/diff ".Length));
             panel.Children.Add(SkillButton(DT("Check for contradictions", "Cerca contraddizioni"), "Chat_Documents_Skill_Contradictions", "/contradictions "));
-            var flyout = new Flyout { Content = panel };
-            flyout.Opening += async (s, e) => await LoadDocumentSourcesAsync();
-            DocumentsButton.Flyout = flyout;
-            UpdateDocumentsButtonVisual();
+            flyout.Content = panel;
         }
 
         /// <summary>Quick action: turns Documents on and puts the command template in the composer for the person to complete and send.</summary>

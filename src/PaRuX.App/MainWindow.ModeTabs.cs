@@ -78,7 +78,7 @@ public sealed partial class MainWindow
         // Only restore over the plain startup Chat page; first-run onboarding and test/deep-link
         // initial pages keep priority.
         if (wantsGaming && SettingsStore.Current.Data.OnboardingCompleted
-            && NavView.IsPaneVisible && ChatPage.Visibility == Visibility.Visible)
+            && NavView.IsPaneVisible && ChatPageIfCreated is { Visibility: Visibility.Visible })
         {
             SelectModeTab(ModeKeyGaming, navigate: true);
         }
@@ -99,7 +99,7 @@ public sealed partial class MainWindow
         if (!setup.ShowModeTabs)
         {
             string forced = setup.StartInGamingTab ? ModeKeyGaming : ModeKeyAi;
-            bool settledShell = SettingsStore.Current.Data.OnboardingCompleted && OnboardingPage.Visibility != Visibility.Visible;
+            bool settledShell = SettingsStore.Current.Data.OnboardingCompleted && OnboardingPageIfCreated is not { Visibility: Visibility.Visible };
             if (!string.Equals(_modeTab, forced, StringComparison.Ordinal))
                 SelectModeTab(forced, navigate: settledShell);
         }

@@ -150,9 +150,6 @@ namespace PaRuX.Views
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Re-attach (or settle) any media job this conversation was waiting on when the app last closed.
-            ChatSession.Current.ReconcileMediaJobs();
-            _ = RefreshWorkbookEditAsync();
             // UserControl.OnApplyTemplate() is not reliably invoked for a plain UserControl that has
             // no Style/ControlTemplate of its own (ChatView has none) - confirmed live via a temporary
             // diagnostic log: at the point right after InitializeComponent() runs in the constructor,
@@ -170,24 +167,18 @@ namespace PaRuX.Views
             InitializeBoundedChatRendering();
             InitializeNativeCodingHandoffUpgrade();
             InitializeConversationBranchHistory();
-            EnsureModelRoutingSubscribed();
-            RefreshSimpleModeAnsweringModel();
-            RefreshSimpleModeRuntimeHealth();
 
             SyncProfileToggles(SettingsStore.Current.Data.DefaultProfile);
 #if DEBUG
             SeedCompletedCodingTaskUiTestFixture();
 #endif
             RebuildMessages();
-            _ = RefreshHeaderAsync();
-            _gameMarkerTimer.Start();
             Unloaded -= OnChatUnloadedStopGameMarkerTimer;
             Unloaded += OnChatUnloadedStopGameMarkerTimer;
             Unloaded -= OnChatUnloadedStopVoice;
             Unloaded += OnChatUnloadedStopVoice;
             GamingManager.Current.StateChanged -= OnVoiceGamingStateChanged;
             GamingManager.Current.StateChanged += OnVoiceGamingStateChanged;
-            ObserveVoiceGaming(GamingManager.Current.IsActive);
             PreviewKeyDown -= OnChatPreviewKeyDownVoice;
             PreviewKeyDown += OnChatPreviewKeyDownVoice;
             LostFocus -= OnChatLostFocusPushToTalk;
@@ -202,7 +193,21 @@ namespace PaRuX.Views
             MicButton.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(MicButton_PttPressed), true);
             MicButton.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(MicButton_PttReleased), true);
             MicButton.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(MicButton_PttReleased), true);
-            _ = LoadSkillsAsync();
+
+            // Non-first-frame background/network refreshes run at Low priority so the first frame paints immediately.
+            _dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (!IsLoaded) return;
+                ChatSession.Current.ReconcileMediaJobs();
+                _ = RefreshWorkbookEditAsync();
+                EnsureModelRoutingSubscribed();
+                RefreshSimpleModeAnsweringModel();
+                RefreshSimpleModeRuntimeHealth();
+                _ = RefreshHeaderAsync();
+                _gameMarkerTimer.Start();
+                ObserveVoiceGaming(GamingManager.Current.IsActive);
+                _ = LoadSkillsAsync();
+            });
         }
 
         // ------------------------------------------------------------------

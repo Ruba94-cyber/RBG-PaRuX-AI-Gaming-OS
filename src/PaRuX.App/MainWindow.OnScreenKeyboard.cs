@@ -16,11 +16,13 @@ public sealed partial class MainWindow
 {
     private OnScreenKeyboardOverlay? _keyboardOverlay;
 
-    private void InitializeOnScreenKeyboard()
+    /// <summary>Lazily constructs the pad-operable on-screen keyboard on first use so cold start never runs XamlReader.Load.</summary>
+    private OnScreenKeyboardOverlay EnsureOnScreenKeyboard()
     {
-        if (_keyboardOverlay != null) return;
+        if (_keyboardOverlay != null) return _keyboardOverlay;
         _keyboardOverlay = new OnScreenKeyboardOverlay();
         Microsoft.UI.Xaml.Controls.Grid.SetRowSpan(_keyboardOverlay, 2);
         RootGrid.Children.Add(_keyboardOverlay);
+        return _keyboardOverlay;
     }
 }

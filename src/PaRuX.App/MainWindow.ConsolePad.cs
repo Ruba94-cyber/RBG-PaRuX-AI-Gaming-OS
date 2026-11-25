@@ -189,7 +189,7 @@ public sealed partial class MainWindow
         if (focused is ToggleSwitch toggle) { toggle.IsOn = !toggle.IsOn; return true; }
         if (focused is Slider) return true;   // left/right adjust it; A has nothing to do
         if (focused is RichEditBox rich) { rich.Focus(FocusState.Keyboard); return true; }
-        if (_keyboardOverlay is { IsOpen: false } keyboard
+        if (_keyboardOverlay is not { IsOpen: true }
             && Views.OnScreenKeyboardOverlay.IsSupportedField(focused, out Control? field) && field is not null)
         {
             RequestConsoleKeyboard(field);
@@ -204,7 +204,7 @@ public sealed partial class MainWindow
     private void RequestConsoleKeyboard(Control field)
     {
         ConsoleKeyboardRequests++;
-        bool opened = _keyboardOverlay?.Open(field, RootGrid.ActualHeight) == true;
+        bool opened = EnsureOnScreenKeyboard().Open(field, RootGrid.ActualHeight);
         Log.Write("Console pad: A on a text field -> on-screen keyboard " + (opened ? "opened" : "could not open") + " (" + field.GetType().Name + ").");
     }
 }

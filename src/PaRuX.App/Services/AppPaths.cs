@@ -79,9 +79,14 @@ namespace PaRuX.Services
             public string Root { get; set; } = string.Empty;
         }
 
+        private static string? _ensuredRoot;
+
         public static void EnsureCreated()
         {
-            Directory.CreateDirectory(PaRuXRoot);
+            string root = PaRuXRoot;
+            if (string.Equals(_ensuredRoot, root, StringComparison.OrdinalIgnoreCase))
+                return;
+            Directory.CreateDirectory(root);
             Directory.CreateDirectory(HistoryDir);
             Directory.CreateDirectory(AttachmentsDir);
             Directory.CreateDirectory(GeneratedImagesDir);
@@ -91,6 +96,7 @@ namespace PaRuX.Services
             Directory.CreateDirectory(GeneratedPresentationsDir);
             Directory.CreateDirectory(BackupsDir);
             Directory.CreateDirectory(CodingAgentStateDir);
+            _ensuredRoot = root;
         }
     }
 }

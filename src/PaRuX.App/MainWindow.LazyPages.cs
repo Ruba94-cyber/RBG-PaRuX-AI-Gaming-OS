@@ -50,17 +50,23 @@ namespace PaRuX
             [StudioWorkspace.GamesTools] = new("Workspace_GamesTools_Page", "Games tools", "Strumenti giochi", () => new GamesToolsView()),
         };
 
-        // Model Hub, Games and Settings are heavy to construct (about 120, 100 and 150 ms) and are not visible on a normal
-        // launch, so they are created on first use instead of by InitializeComponent. Code that only needs to HIDE or
+        // Chat, Onboarding, Model Hub, Games and Settings are created on first use instead of by InitializeComponent
+        // so only the page actually shown at launch is constructed before the first frame. Code that only needs to HIDE or
         // inspect a page uses the *IfCreated property (a page that was never built cannot be visible, busy or running);
         // code that needs the page itself uses the creating property.
+        private ChatView? _chatPage;
+        private OnboardingView? _onboardingPage;
         private ModelHubView? _modelHubPage;
         private ManualGameLibraryView? _gameLibraryPage;
         private SettingsView? _settingsPage;
 
+        private ChatView ChatPage => _chatPage ?? CreateChatPage();
+        private OnboardingView OnboardingPage => _onboardingPage ?? CreateOnboardingPage();
         private ModelHubView ModelHubPage => _modelHubPage ?? CreateModelHubPage();
         private ManualGameLibraryView GameLibraryPage => _gameLibraryPage ?? CreateGameLibraryPage();
         private SettingsView SettingsPage => _settingsPage ??= AddEagerPage(new SettingsView());
+        private ChatView? ChatPageIfCreated => _chatPage;
+        private OnboardingView? OnboardingPageIfCreated => _onboardingPage;
         private ModelHubView? ModelHubPageIfCreated => _modelHubPage;
         private ManualGameLibraryView? GameLibraryPageIfCreated => _gameLibraryPage;
         private SettingsView? SettingsPageIfCreated => _settingsPage;
@@ -73,6 +79,23 @@ namespace PaRuX
         }
 
         private bool GameLibraryBusy => _gameLibraryPage?.IsInteractionBusy ?? false;
+
+        private ChatView CreateChatPage()
+        {
+            var page = new ChatView();
+            page.ApplyInterfaceMode(StudioModeToggle.IsOn);
+            _chatPage = AddEagerPage(page);
+            return page;
+        }
+
+        private OnboardingView CreateOnboardingPage()
+        {
+            var page = new OnboardingView();
+            page.Completed += OnOnboardingCompleted;
+            page.FindModelRequested += OnFirstModelRequested;
+            _onboardingPage = AddEagerPage(page);
+            return page;
+        }
 
         private ModelHubView CreateModelHubPage()
         {

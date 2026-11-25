@@ -139,6 +139,7 @@ namespace PaRuX
                 Log.Write("PaRuX starting (setup profile: " + SetupProfilePolicy.ToStorage(SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId)) + ").");
 
                 MainWin = new MainWindow();
+                ApplyTheme();
                 MainWin.Activate();
                 Microsoft.UI.Dispatching.DispatcherQueue uiQueue = MainWin.DispatcherQueue;
                 _exitSignal = PaRuX.Contracts.AppExitSignal.Listen(exitSignalName, () =>
@@ -151,14 +152,19 @@ namespace PaRuX
                 // queue by an earlier launch that could not reach us) is handled now. Stale requests are dropped.
                 _playSignal = PaRuX.Contracts.GameLaunchRequestChannel.Listen(AppPaths.PaRuXRoot, () =>
                     uiQueue.TryEnqueue(ProcessGameShortcutRequests));
-                if (hasPlayRequest) PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
-                uiQueue.TryEnqueue(ProcessGameShortcutRequests);
+                if (hasPlayRequest)
+                {
+                    PaRuX.Contracts.GameLaunchRequestChannel.TryEnqueue(AppPaths.PaRuXRoot, playTitleKey);
+                    uiQueue.TryEnqueue(ProcessGameShortcutRequests);
+                }
+                else
+                {
+                    uiQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, ProcessGameShortcutRequests);
+                }
 
                 // Console Mode launcher requests from other PaRuX processes (shortcut, Jump List task, second launch).
                 _launcherSignal = PaRuX.Contracts.PlayniteLauncherRequestChannel.Listen(AppPaths.PaRuXRoot, () =>
                     uiQueue.TryEnqueue(ProcessPlayniteLauncherRequests));
-
-                ApplyTheme();
 
                 // Console/TV start preference (opt-in): TV connected -> fullscreen Gaming library on it; otherwise the chosen
                 // fallback (normal window or minimized). Skipped when this launch is a game shortcut. Runs after the first paint.
@@ -241,18 +247,22 @@ namespace PaRuX
         /// <summary>Non-first-paint startup work, run after the main window is shown (see OnLaunched).</summary>
         private static void FinishDeferredStartup()
         {
+            try { MainWin?.FinishDeferredWindowSetup(); }
+            catch (Exception ex) { Log.Write("Deferred main window setup failed: " + ex.GetType().Name + ": " + ex.Message); }
+
             try
             {
                 BubbleWin = new BubbleWindow();
                 BubbleWin.ApplyVisibilityMode();
-                ApplyTheme();
+                if (BubbleWin.Content is FrameworkElement bubbleRoot)
+                    bubbleRoot.RequestedTheme = CurrentElementTheme;
             }
             catch (Exception ex)
             {
                 Log.Write("Deferred Quick Chat window creation failed: " + ex.GetType().Name + ": " + ex.Message);
             }
 
-            try { MainWin.StartPadActions(); }
+            try { MainWin?.StartPadActions(); }
             catch (Exception ex) { Log.Write("PadActions start failed: " + ex.GetType().Name + ": " + ex.Message); }
 
             // Honour a setup-profile switch or an exit that happened before this ran: start only what is still wanted.

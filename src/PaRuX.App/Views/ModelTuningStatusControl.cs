@@ -20,12 +20,12 @@ namespace PaRuX.Views
 
         private readonly Mode _mode;
         private readonly string? _kind;
-        private readonly InfoBar _bar = new InfoBar { IsOpen = false, IsClosable = true, Visibility = Visibility.Collapsed };
-        private readonly StackPanel _line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Visibility = Visibility.Collapsed };
-        private readonly ProgressRing _ring = new ProgressRing { Width = 14, Height = 14, IsActive = true, VerticalAlignment = VerticalAlignment.Center };
-        private readonly TextBlock _lineText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 560 };
-        private readonly Button _lineCancel = new Button { Content = UiText.Pick("Cancel", "Annulla"), Padding = new Thickness(8, 2, 8, 2) };
-        private readonly Button _barCancel = new Button { Content = UiText.Pick("Cancel", "Annulla") };
+        private readonly InfoBar? _bar;
+        private readonly StackPanel? _line;
+        private readonly ProgressRing? _ring;
+        private readonly TextBlock? _lineText;
+        private readonly Button? _lineCancel;
+        private readonly Button? _barCancel;
         private DispatcherTimer? _timer;
         private bool _inFlight;
         private string? _cancelId;
@@ -36,15 +36,28 @@ namespace PaRuX.Views
             _mode = mode;
             _kind = kind;
             AutomationProperties.SetAutomationId(this, mode == Mode.Hub ? "ModelTuning_Hub_Status" : "ModelTuning_Line_Status");
-            _bar.ActionButton = _barCancel;
-            _bar.Closed += (_, _) => _dismissedKey = _bar.Title + "|" + _bar.Message;
-            _barCancel.Click += async (_, _) => await CancelAsync();
-            _lineCancel.Click += async (_, _) => await CancelAsync();
-            _line.Children.Add(_ring);
-            _line.Children.Add(_lineText);
-            _line.Children.Add(_lineCancel);
-            Content = mode == Mode.Hub ? (UIElement)_bar : _line;
-            Loaded += (_, _) => Start();
+            if (mode == Mode.Hub)
+            {
+                _bar = new InfoBar { IsOpen = false, IsClosable = true, Visibility = Visibility.Collapsed };
+                _barCancel = new Button { Content = UiText.Pick("Cancel", "Annulla") };
+                _bar.ActionButton = _barCancel;
+                _bar.Closed += (_, _) => _dismissedKey = _bar.Title + "|" + _bar.Message;
+                _barCancel.Click += async (_, _) => await CancelAsync();
+                Content = _bar;
+            }
+            else
+            {
+                _line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Visibility = Visibility.Collapsed };
+                _ring = new ProgressRing { Width = 14, Height = 14, IsActive = false, VerticalAlignment = VerticalAlignment.Center };
+                _lineText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 560 };
+                _lineCancel = new Button { Content = UiText.Pick("Cancel", "Annulla"), Padding = new Thickness(8, 2, 8, 2) };
+                _lineCancel.Click += async (_, _) => await CancelAsync();
+                _line.Children.Add(_ring);
+                _line.Children.Add(_lineText);
+                _line.Children.Add(_lineCancel);
+                Content = _line;
+            }
+            Loaded += (_, _) => DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Start);
             Unloaded += (_, _) => { _timer?.Stop(); _timer = null; };
         }
 
@@ -79,6 +92,7 @@ namespace PaRuX.Views
             _cancelId = vm.CancelId;
             if (_mode == Mode.Hub)
             {
+                if (_bar is null || _barCancel is null) return;
                 string key = vm.Title + "|" + vm.Detail;
                 if (!vm.Visible || (_dismissedKey == key && !vm.CanCancel))
                 {
@@ -99,7 +113,8 @@ namespace PaRuX.Views
                 _bar.IsOpen = true;
                 return;
             }
-            if (!vm.Visible) { _line.Visibility = Visibility.Collapsed; return; }
+            if (_line is null || _lineText is null || _ring is null || _lineCancel is null) return;
+            if (!vm.Visible) { _ring.IsActive = false; _line.Visibility = Visibility.Collapsed; return; }
             _lineText.Text = vm.Title + ". " + vm.Detail;
             ToolTipService.SetToolTip(_lineText, vm.Title + ". " + vm.Detail);
             _ring.IsActive = vm.Busy;

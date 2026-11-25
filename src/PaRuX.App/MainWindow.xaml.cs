@@ -117,15 +117,6 @@ namespace PaRuX
             // Never focus-steal or run an idle status poll during gameplay.
             Activated += OnWindowActivatedForIndicators;
             UiPollCadence.WindowHiddenProbe = IsMainWindowHidden;
-            InitializeOnScreenKeyboard();
-
-            IntPtr hwnd = WindowNative.GetWindowHandle(this);
-            App.Hotkey.Attach(hwnd);
-            App.Hotkey.Pressed += OnHotkeyPressed;
-            App.Hotkey.Register(SettingsStore.Current.Data.Hotkey);
-            // Opt-in system dictation: registers its own single shortcut only when the person switched it on.
-            SystemDictationService.Current.Attach(hwnd, DispatcherQueue);
-
             // (The Games tools page is created on first open; its game-guide handoff is wired in EnsurePage.)
 
             ChatSession.Current.ConversationChanged += OnConversationChanged;
@@ -134,18 +125,6 @@ namespace PaRuX
             ChatSession.Current.StateChanged += OnSessionStateChangedForTrayNotification;
             ChatSession.Current.StateChanged += OnSessionStateChangedForGuidedTour;
             ChatSession.Current.StateChanged += () => _dispatcher.TryEnqueue(RefreshActiveIndicators);
-
-            _activeIndicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            _activeIndicatorTimer.Tick += OnActiveIndicatorTimerTick;
-            // Reuse the existing Gaming marker watcher. No agent API polling
-            // while the game owns CPU/GPU/VRAM, even if Core is unreachable.
-            GamingManager.Current.StateChanged += OnGamingModeChangedForIndicatorTimer;
-            if (!GamingManager.Current.IsActive) _activeIndicatorTimer.Start();
-            InitializeAchievementToasts();
-            InitializeGameExtensionTheme();
-
-            OnboardingPage.Completed += OnOnboardingCompleted;
-            OnboardingPage.FindModelRequested += OnFirstModelRequested;
 
             RefreshHistory();
 
@@ -178,6 +157,35 @@ namespace PaRuX
                 }
             }
             else ShowOnboarding(returningFromModelHub: false);
+        }
+
+        private bool _deferredWindowSetupDone;
+
+        /// <summary>
+        /// Non-first-frame window setup (global hotkeys, system dictation, indicator polling,
+        /// achievement toasts, game extension theme restore, and server conversation sync).
+        /// Called once after <c>Activate()</c> from <see cref="App.FinishDeferredStartup"/>.
+        /// </summary>
+        internal void FinishDeferredWindowSetup()
+        {
+            if (_deferredWindowSetupDone || App.IsShuttingDown) return;
+            _deferredWindowSetupDone = true;
+
+            IntPtr hwnd = WindowNative.GetWindowHandle(this);
+            App.Hotkey.Attach(hwnd);
+            App.Hotkey.Pressed += OnHotkeyPressed;
+            App.Hotkey.Register(SettingsStore.Current.Data.Hotkey);
+            // Opt-in system dictation: registers its own single shortcut only when the person switched it on.
+            SystemDictationService.Current.Attach(hwnd, DispatcherQueue);
+
+            _activeIndicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _activeIndicatorTimer.Tick += OnActiveIndicatorTimerTick;
+            // Reuse the existing Gaming marker watcher. No agent API polling
+            // while the game owns CPU/GPU/VRAM, even if Core is unreachable.
+            GamingManager.Current.StateChanged += OnGamingModeChangedForIndicatorTimer;
+            if (!GamingManager.Current.IsActive) _activeIndicatorTimer.Start();
+            InitializeAchievementToasts();
+            InitializeGameExtensionTheme();
 
             // One best-effort pull from PaRuX Server at startup, off the UI thread, so a
             // conversation started on a paired Android device shows up here too. Never
@@ -815,7 +823,7 @@ namespace PaRuX
             HideAllWorkspacePages();
             ChatPage.Visibility = Visibility.Visible;
             if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
-            OnboardingPage.Visibility = Visibility.Collapsed;
+            if (OnboardingPageIfCreated is { } onboardingPage) onboardingPage.Visibility = Visibility.Collapsed;
             // Quick Chat is a separate always-on-top window. It is useful over other apps,
             // but must not sit over the main shell when returning from Settings.
             App.BubbleWin?.ApplyVisibilityMode();
@@ -831,9 +839,9 @@ namespace PaRuX
             // workspace before the Settings entrance animation starts; otherwise both visual
             // trees paint during the animation and Model Hub text/cards bleed through Settings.
             HideAllWorkspacePages();
-            ChatPage.Visibility = Visibility.Collapsed;
+            if (ChatPageIfCreated is { } chatPage) chatPage.Visibility = Visibility.Collapsed;
             SettingsPage.Visibility = Visibility.Visible;
-            OnboardingPage.Visibility = Visibility.Collapsed;
+            if (OnboardingPageIfCreated is { } onboardingPage) onboardingPage.Visibility = Visibility.Collapsed;
             // Settings is part of the main shell; hiding the always-on-top bubble prevents
             // its separate HWND from being composited over the category rail/content area.
             App.BubbleWin?.HideBubble();
@@ -841,15 +849,15 @@ namespace PaRuX
             PlayPageEntrance(SettingsPage);
         }
 
-        /// <summary>First run only - see the OnboardingPage.Completed wiring in the
-        /// constructor. Hides the nav pane too, so Settings/history aren't reachable as a
+        /// <summary>First run only - see the OnboardingPage.Completed wiring in
+        /// CreateOnboardingPage. Hides the nav pane too, so Settings/history aren't reachable as a
         /// side door around the guided folder-confirmation step.</summary>
         public void ShowOnboarding(bool returningFromModelHub = true)
         {
             if (OnboardingReturnBanner != null) OnboardingReturnBanner.IsOpen = false;
             NavView.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
             SetNavPaneVisible(false);
-            ChatPage.Visibility = Visibility.Collapsed;
+            if (ChatPageIfCreated is { } chatPage) chatPage.Visibility = Visibility.Collapsed;
             if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();
             OnboardingPage.Visibility = Visibility.Visible;

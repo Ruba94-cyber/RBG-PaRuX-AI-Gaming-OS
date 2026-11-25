@@ -125,7 +125,7 @@ namespace PaRuX
             ObservabilityNavItem.Visibility = advanced;
             UpdatesNavItem.Visibility = advanced;
             RuntimeNavItem.Visibility = advanced;
-            ChatPage.ApplyInterfaceMode(studio);
+            ChatPageIfCreated?.ApplyInterfaceMode(studio);
             ModelHubPageIfCreated?.ApplyInterfaceMode(studio);
             ApplyModeTabVisibility();
 
@@ -234,7 +234,7 @@ namespace PaRuX
         /// </summary>
         internal void OpenGameFromShortcut(string titleKey)
         {
-            bool setupOpen = OnboardingPage.Visibility == Visibility.Visible;
+            bool setupOpen = OnboardingPageIfCreated is { Visibility: Visibility.Visible };
             if (setupOpen || !IsWorkspaceAllowedForSetup("__games__"))
             {
                 // Never dropped silently: the person clicked a shortcut and is told why nothing started.
@@ -361,9 +361,9 @@ namespace PaRuX
 
             SyncModeTabToWorkspace(gaming: workspace is StudioWorkspace.Games or StudioWorkspace.GamesTools);
             SetNavPaneVisible(true);
-            ChatPage.Visibility = Visibility.Collapsed;
+            if (ChatPageIfCreated is { } chatPage) chatPage.Visibility = Visibility.Collapsed;
             if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
-            OnboardingPage.Visibility = Visibility.Collapsed;
+            if (OnboardingPageIfCreated is { } onboardingPage) onboardingPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();
             SelectWorkspaceNavigationItem(NavigationItemFor(workspace));
 
@@ -395,7 +395,7 @@ namespace PaRuX
         /// page after restart or restored deep links. Never switches away from first-run setup.</summary>
         private void EnsureWorkspaceFitsSetupProfile()
         {
-            if (OnboardingPage.Visibility == Visibility.Visible) return;
+            if (OnboardingPageIfCreated is { Visibility: Visibility.Visible }) return;
             string? activeTag = ActiveWorkspaceTag();
             if (activeTag == null || IsWorkspaceAllowedForSetup(activeTag)) return;
 
@@ -424,7 +424,7 @@ namespace PaRuX
             if (IsLazyPageVisible(StudioWorkspace.Observability)) return "__observability__";
             if (IsLazyPageVisible(StudioWorkspace.Updates)) return "__updates__";
             if (IsLazyPageVisible(StudioWorkspace.Runtime)) return "__runtime__";
-            if (ChatPage.Visibility == Visibility.Visible) return "__chat__";
+            if (ChatPageIfCreated is { Visibility: Visibility.Visible }) return "__chat__";
             if (SettingsPageIfCreated is { Visibility: Visibility.Visible }) return "__settings__";
             return null;
         }

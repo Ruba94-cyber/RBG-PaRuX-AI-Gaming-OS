@@ -22,6 +22,9 @@
          separately installed .NET runtime or Windows App Runtime before PaRuX can launch. -->
     <SelfContained>true</SelfContained>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Precompile Release publishes (MSI/portable) with ReadyToRun to eliminate first-launch JIT overhead;
+         kept Release-only so Debug UI-test publishes stay fast. -->
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
     <UseWinUI>true</UseWinUI>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <WindowsPackageType>None</WindowsPackageType>

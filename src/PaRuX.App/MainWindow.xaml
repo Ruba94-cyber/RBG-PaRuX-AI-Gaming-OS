@@ -294,11 +294,8 @@
                         </InfoBar>
                     </StackPanel>
 
-                    <!-- The ten advanced workspace pages, Model Hub, Games and Settings are created in code on first open (MainWindow.LazyPages.cs) and added here. -->
-                    <Grid Grid.Row="1" x:Name="WorkspacePagesHost">
-                        <views:ChatView x:Name="ChatPage" />
-                        <views:OnboardingView x:Name="OnboardingPage" Visibility="Collapsed" />
-                    </Grid>
+                    <!-- Workspace pages (including Chat and Onboarding) are created in code on first open (MainWindow.LazyPages.cs) and added here so only the initial view is constructed before the first frame. -->
+                    <Grid Grid.Row="1" x:Name="WorkspacePagesHost" />
                 </Grid>
             </Border>
         </NavigationView>

@@ -59,13 +59,18 @@ namespace PaRuX.Views
             RenderBundledOverview(BundledRuntimeOverviewPresenter.BuildOverview(null, null));
             InitializeSetupProfileChoice();
             ApplyBackgroundDownloadsChoice(BackgroundDownloadsChoice.DefaultOn);
-            Loaded += async (s, e) => await LoadBackgroundDownloadsChoiceAsync();
             Loaded += (s, e) =>
             {
                 _modelDownloadViewLoaded = true;
                 _modelDownloadPoll ??= CreateModelDownloadPoll();
-                // Gaming only needs no language model, runtime or chat check, so none of the AI detection runs.
-                if (SetupProfilePolicy.Plan(StoredSetupProfile).RequireLanguageModel) StartAiRefreshes();
+                // Defer background HTTP/Core detection and optional console panel creation until after the first frame paints.
+                _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                {
+                    if (!_modelDownloadViewLoaded) return;
+                    _ = LoadBackgroundDownloadsChoiceAsync();
+                    // Gaming only needs no language model, runtime or chat check, so none of the AI detection runs.
+                    if (SetupProfilePolicy.Plan(StoredSetupProfile).RequireLanguageModel) StartAiRefreshes();
+                });
             };
             Unloaded += (s, e) =>
             {
