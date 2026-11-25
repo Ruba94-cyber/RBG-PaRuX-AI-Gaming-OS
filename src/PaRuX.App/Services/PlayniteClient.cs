@@ -25,6 +25,10 @@ namespace PaRuX.Services
         public Task<GamingCallResult<PlayniteStatusDto>> GetStatusAsync(CancellationToken ct = default) =>
             SendAsync<PlayniteStatusDto>(HttpMethod.Get, Root + "/status", null, ct);
 
+        /// <summary>Status with a fresh process check (not the cached detection): used by the Playnite return watch.</summary>
+        public Task<GamingCallResult<PlayniteStatusDto>> GetLiveStatusAsync(CancellationToken ct = default) =>
+            SendAsync<PlayniteStatusDto>(HttpMethod.Get, Root + "/status?live=true", null, ct);
+
         public Task<GamingCallResult<PlayniteSettingsDto>> SaveSettingsAsync(PlayniteSettingsDto settings, CancellationToken ct = default) =>
             SendAsync<PlayniteSettingsDto>(HttpMethod.Put, Root + "/settings", settings, ct);
 
