@@ -53,6 +53,7 @@ public static class PlayniteEndpoints
         app.MapGet(root + "/status", (PlayniteSessionService session, PlayniteSettingsStore settings, PlayniteInstaller installer, bool live = false) =>
         {
             bool refresh = live || installer.Status.Stage == "completed";
+            if (live) session.Boost();   // the UI is watching the return: keep the watcher on its fast tick
             return Results.Ok(new PlayniteStatusDto
             {
                 Component = session.Component(refresh),
@@ -114,12 +115,14 @@ public static class PlayniteEndpoints
             // since shortcuts and controller hotkeys also reach this endpoint.
             PlayniteLaunchResultDto? blocked = PlayniteForegroundAdmission.Check(session.GameRunning, runtime.GamingMode);
             if (blocked is not null) return Results.Conflict(blocked);
+            session.Boost();   // PaRuX is starting Playnite: a game may follow within seconds
             PlayniteLaunchResultDto result = launcher.Launch(session.Component(true), settings.Get(), request?.Mode, request?.DisplayId, request?.Explicit == true);
             return result.Outcome == "refused" ? Results.Conflict(result) : Results.Ok(result);
         }).RequireDesktopOwner();
 
         app.MapPost(root + "/switch", (PlayniteLaunchRequest? request, PlayniteSessionService session, PlayniteLauncher launcher, PlayniteSettingsStore settings) =>
         {
+            session.Boost();
             PlayniteLaunchResultDto result = launcher.Switch(session.Component(true), settings.Get(), session.GameRunning, request?.DisplayId);
             return result.Outcome == "refused" ? Results.Conflict(result) : Results.Ok(result);
         }).RequireDesktopOwner();

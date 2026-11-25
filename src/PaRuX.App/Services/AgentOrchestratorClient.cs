@@ -27,8 +27,28 @@ namespace PaRuX.Services
 
         private AgentOrchestratorClient() { }
 
-        public Task<AgentTaskListResponse> ListAsync(CancellationToken ct) =>
-            SendAsync<AgentTaskListResponse>(HttpMethod.Get, "/api/v1/orchestrator/tasks", null, ct);
+        private readonly object _listGate = new();
+        private readonly SharedSnapshotPolicy _listPolicy = new();
+        private AgentTaskListResponse? _listSnapshot;
+
+        /// <summary>
+        /// The task list is polled by four desktop workers and the badge timer. Concurrent and back-to-back callers share one answer
+        /// (see <see cref="SharedSnapshotPolicy"/>): a short lifetime while a task is live, a longer one when nothing is. Any task change
+        /// made through this client drops it, so the app never shows its own action late.
+        /// </summary>
+        public async Task<AgentTaskListResponse> ListAsync(CancellationToken ct)
+        {
+            lock (_listGate)
+            {
+                if (_listSnapshot is { } cached && _listPolicy.IsFresh(DateTime.UtcNow)) return cached;
+            }
+            AgentTaskListResponse fresh = await SendAsync<AgentTaskListResponse>(HttpMethod.Get, "/api/v1/orchestrator/tasks", null, ct).ConfigureAwait(false);
+            bool live = fresh.Tasks.Any(t => !AgentTaskStatus.Terminal.Contains(t.Status));
+            lock (_listGate) { _listSnapshot = fresh; _listPolicy.Record(DateTime.UtcNow, live); }
+            return fresh;
+        }
+
+        private void InvalidateList() { lock (_listGate) { _listPolicy.Invalidate(); _listSnapshot = null; } }
 
         public Task<AgentTaskDto> GetAsync(string id, CancellationToken ct) =>
             SendAsync<AgentTaskDto>(HttpMethod.Get, "/api/v1/orchestrator/tasks/" + Uri.EscapeDataString(id), null, ct);
@@ -226,6 +246,7 @@ namespace PaRuX.Services
 
         private static async Task SendNoContentAsync(HttpMethod method, string path, object? body, CancellationToken ct)
         {
+            if (method != HttpMethod.Get) Current.InvalidateList();
             ServerBootstrap bootstrap = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
             using var request = new HttpRequestMessage(method, bootstrap.Endpoint.TrimEnd('/') + path);
             request.Headers.Add("X-PaRuX-Token", bootstrap.Token);
@@ -240,6 +261,7 @@ namespace PaRuX.Services
 
         private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
         {
+            if (method != HttpMethod.Get) Current.InvalidateList();
             ServerBootstrap bootstrap = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
             using var request = new HttpRequestMessage(method, bootstrap.Endpoint.TrimEnd('/') + path);
             request.Headers.Add("X-PaRuX-Token", bootstrap.Token);
