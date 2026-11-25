@@ -49,9 +49,10 @@ public static class PlayniteEndpoints
     {
         const string root = "/api/v1/gaming/playnite";
 
-        app.MapGet(root + "/status", (PlayniteSessionService session, PlayniteSettingsStore settings, PlayniteInstaller installer) =>
+        // ?live=true: the return watch needs a fresh "is Playnite still running" (the cached detection can be ~20 s old).
+        app.MapGet(root + "/status", (PlayniteSessionService session, PlayniteSettingsStore settings, PlayniteInstaller installer, bool live = false) =>
         {
-            bool refresh = installer.Status.Stage == "completed";
+            bool refresh = live || installer.Status.Stage == "completed";
             return Results.Ok(new PlayniteStatusDto
             {
                 Component = session.Component(refresh),

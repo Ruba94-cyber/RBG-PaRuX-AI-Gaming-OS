@@ -144,9 +144,7 @@ public sealed partial class MainWindow
     {
         App.ShowMainWindow();
         IntPtr hwnd = WindowNative.GetWindowHandle(this);
-        if (IsIconic(hwnd)) ShowWindow(hwnd, 9 /* SW_RESTORE */);
-        if (GetForegroundWindow() != hwnd) SwitchToThisWindow(hwnd, true);
-        if (GetForegroundWindow() != hwnd)
+        if (!ForegroundWindowHelper.BringToForeground(hwnd))
             PadToast(PadT("Windows kept the focus on the game; PaRuX is ready in the taskbar.", "Windows ha lasciato il focus al gioco; PaRuX è pronto nella barra delle applicazioni."));
     }
 
