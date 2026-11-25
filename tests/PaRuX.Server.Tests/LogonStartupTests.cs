@@ -414,6 +414,139 @@ public sealed class LogonStartupTests : IDisposable
     }
 
     [Fact]
+    public void Uninstall_cleanup_argument_is_recognised_case_insensitively_and_never_triggers_logon_start()
+    {
+        Assert.False(LogonStartupArguments.IsUninstallCleanupRequest(null));
+        Assert.False(LogonStartupArguments.IsUninstallCleanupRequest(new[] { "PaRuX.exe" }));
+        Assert.False(LogonStartupArguments.IsUninstallCleanupRequest(new[] { "PaRuX.exe", "--logon" }));
+        Assert.True(LogonStartupArguments.IsUninstallCleanupRequest(new[] { "PaRuX.exe", "--uninstall-logon-cleanup" }));
+        Assert.True(LogonStartupArguments.IsUninstallCleanupRequest(new[] { "PaRuX.exe", "--UNINSTALL-LOGON-CLEANUP" }));
+        Assert.False(LogonStartupArguments.Parse(new[] { "PaRuX.exe", "--uninstall-logon-cleanup" }).Logon);
+    }
+
+    [Fact]
+    public void Uninstall_cleanup_removes_own_task_and_run_value_with_or_without_logon_flag()
+    {
+        var run = new FakeRunKeyStore();
+        var tasks = new FakeLogonTaskStore();
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(Exe, true));
+        tasks.Register(LogonRegistration.TaskName, LogonRegistration.BuildTaskXml(Exe, User, Sid));
+
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, Exe);
+        Assert.Null(run.Get(LogonRegistration.ValueName));
+        Assert.Null(tasks.Get(LogonRegistration.TaskName));
+
+        // Plain Run value (without --logon) and plain task pointing to Exe are also removed.
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(Exe, false));
+        tasks.Tasks[LogonRegistration.TaskName] = new LogonTaskInfo("\"" + Exe + "\"", null, true, null, null, "<Task/>");
+
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, Exe);
+        Assert.Null(run.Get(LogonRegistration.ValueName));
+        Assert.Null(tasks.Get(LogonRegistration.TaskName));
+    }
+
+    [Fact]
+    public void Uninstall_cleanup_never_touches_foreign_entries_or_entries_for_another_parux_copy()
+    {
+        const string otherPaRuX = @"D:\Portable\PaRuX\PaRuX.exe";
+        var run = new FakeRunKeyStore();
+        var tasks = new FakeLogonTaskStore();
+
+        // Entries pointing to a different copy of PaRuX must stay untouched.
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(otherPaRuX, true));
+        tasks.Register(LogonRegistration.TaskName, LogonRegistration.BuildTaskXml(otherPaRuX, User, Sid));
+
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, Exe);
+        Assert.Equal(LogonRegistration.CommandFor(otherPaRuX, true), run.Get(LogonRegistration.ValueName));
+        Assert.Equal(otherPaRuX, tasks.Get(LogonRegistration.TaskName)!.Command);
+
+        // Completely foreign entries must also stay untouched.
+        run.Set(LogonRegistration.ValueName, "\"D:\\Other\\tool.exe\" /x");
+        tasks.Tasks[LogonRegistration.TaskName] = new LogonTaskInfo(@"D:\Other\tool.exe", "--logon", true, null, null, "<Task/>");
+
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, Exe);
+        Assert.Equal("\"D:\\Other\\tool.exe\" /x", run.Get(LogonRegistration.ValueName));
+        Assert.Equal(@"D:\Other\tool.exe", tasks.Get(LogonRegistration.TaskName)!.Command);
+    }
+
+    private sealed class ThrowingRunKeyStore : IRunKeyStore
+    {
+        public string? Get(string name) => throw new UnauthorizedAccessException("denied");
+        public void Set(string name, string value) => throw new UnauthorizedAccessException("denied");
+        public void Delete(string name) => throw new UnauthorizedAccessException("denied");
+    }
+
+    private sealed class FailingDeleteTaskStore : ILogonTaskStore
+    {
+        public LogonTaskInfo? Task { get; set; }
+        public LogonTaskInfo? Get(string name) => Task;
+        public LogonTaskCallResult Register(string name, string xml) => LogonTaskCallResult.Failed("denied", accessDenied: true);
+        public LogonTaskCallResult Delete(string name) => LogonTaskCallResult.Failed("denied", accessDenied: true);
+    }
+
+    [Fact]
+    public void Uninstall_cleanup_ignores_missing_entries_invalid_paths_and_permission_errors()
+    {
+        var run = new FakeRunKeyStore();
+        var tasks = new FakeLogonTaskStore();
+
+        // Missing entries: no-op, no exception.
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, Exe);
+        LogonRegistration.RemoveOwnOnUninstall(null, null, Exe);
+
+        // Invalid path: never touches even a matching-looking store.
+        run.Set(LogonRegistration.ValueName, LogonRegistration.CommandFor(Exe, true));
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, "relative.exe");
+        LogonRegistration.RemoveOwnOnUninstall(run, tasks, "");
+        Assert.Equal(LogonRegistration.CommandFor(Exe, true), run.Get(LogonRegistration.ValueName));
+
+        // Permission / access-denied errors: swallowed cleanly so uninstall never fails.
+        var failingTasks = new FailingDeleteTaskStore { Task = new LogonTaskInfo(Exe, "--logon", true, null, null, "<Task/>") };
+        LogonRegistration.RemoveOwnOnUninstall(new ThrowingRunKeyStore(), failingTasks, Exe);
+    }
+
+    [Fact]
+    public void Msi_uninstall_runs_headless_logon_cleanup_as_user_and_elevated_only_on_full_removal_even_with_NoRedist()
+    {
+        string repoRoot = FindRepoRoot();
+        string wxs = File.ReadAllText(Path.Combine(repoRoot, "installer", "PaRuX.Setup", "Package.wxs"));
+        string outsideRedist = System.Text.RegularExpressions.Regex.Replace(
+            wxs, @"<\?if \$\(IncludeRedist\) = 1\?>.*?<\?endif\?>", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        Assert.Contains("Id=\"PaRuXLogonCleanupUser\"", outsideRedist);
+        Assert.Contains("Id=\"PaRuXLogonCleanupElevated\"", outsideRedist);
+
+        System.Text.RegularExpressions.Match userCa = System.Text.RegularExpressions.Regex.Match(
+            outsideRedist, @"<CustomAction\s+Id=""PaRuXLogonCleanupUser"".*?/>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        System.Text.RegularExpressions.Match elevatedCa = System.Text.RegularExpressions.Regex.Match(
+            outsideRedist, @"<CustomAction\s+Id=""PaRuXLogonCleanupElevated"".*?/>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(userCa.Success);
+        Assert.True(elevatedCa.Success);
+
+        foreach (string ca in new[] { userCa.Value, elevatedCa.Value })
+        {
+            Assert.Contains("Directory=\"INSTALLFOLDER\"", ca);
+            Assert.Contains("Execute=\"deferred\"", ca);
+            Assert.Contains("Return=\"ignore\"", ca);
+            Assert.Contains("ExeCommand=\"&quot;[INSTALLFOLDER]PaRuX.exe&quot; --uninstall-logon-cleanup\"", ca);
+        }
+        Assert.Contains("Impersonate=\"yes\"", userCa.Value);
+        Assert.Contains("Impersonate=\"no\"", elevatedCa.Value);
+
+        // Scheduled strictly before RemoveFiles and ONLY on full uninstall (never on a major upgrade).
+        Assert.Contains("<Custom Action=\"PaRuXLogonCleanupUser\" Before=\"PaRuXLogonCleanupElevated\" Condition=\"REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE\" />", outsideRedist);
+        Assert.Contains("<Custom Action=\"PaRuXLogonCleanupElevated\" Before=\"RemoveFiles\" Condition=\"REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE\" />", outsideRedist);
+
+        // Headless entry point runs before WinUI Application.Start and does not log to PaRuXData.
+        string program = File.ReadAllText(Path.Combine(repoRoot, "src", "PaRuX.App", "Program.cs"));
+        int cleanupIdx = program.IndexOf("IsUninstallCleanupRequest", StringComparison.Ordinal);
+        int appStartIdx = program.IndexOf("Application.Start", StringComparison.Ordinal);
+        Assert.True(cleanupIdx > 0 && appStartIdx > cleanupIdx, "Uninstall cleanup must execute before WinUI Application.Start.");
+        Assert.Contains("LogonRegistration.RemoveOwnOnUninstall", program);
+        Assert.Contains("new ScheduledTaskLogonStore(log: false)", program);
+    }
+
+    [Fact]
     public void The_start_dry_run_has_no_process_launch_or_registry_dependency_in_the_pure_policy()
     {
         // Contract: the decision lives in Contracts and only reads its inputs; the executor is the app shell.

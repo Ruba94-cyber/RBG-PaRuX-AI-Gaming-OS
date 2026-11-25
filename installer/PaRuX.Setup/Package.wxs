@@ -106,6 +106,20 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" ExtendedPathValidation="yes" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
 
+    <!-- On a full uninstall (never on a major upgrade), ask this installation's own PaRuX.exe to remove the
+         "PaRuX at sign-in" scheduled task and HKCU Run\PaRuX value ONLY when they point to this executable.
+         Run twice before RemoveFiles: once impersonating the user (HKCU Run + user-owned task) and once
+         elevated/SYSTEM (task created with admin rights). Return="ignore" guarantees uninstall never fails. -->
+    <CustomAction Id="PaRuXLogonCleanupUser" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="yes" Return="ignore"
+        ExeCommand="&quot;[INSTALLFOLDER]PaRuX.exe&quot; --uninstall-logon-cleanup" />
+    <CustomAction Id="PaRuXLogonCleanupElevated" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+        ExeCommand="&quot;[INSTALLFOLDER]PaRuX.exe&quot; --uninstall-logon-cleanup" />
+
+    <InstallExecuteSequence>
+      <Custom Action="PaRuXLogonCleanupUser" Before="PaRuXLogonCleanupElevated" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="PaRuXLogonCleanupElevated" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
     <!-- WiX v5+ creates a single default feature and assigns the harvested/component resources.
          Without -NoRedist an explicit "Main" feature (everything above) sits beside two OPTIONAL features that are NOT installed by
          default (Level 2 > INSTALLLEVEL 1): the controller drivers and the Sunshine portable package. -->

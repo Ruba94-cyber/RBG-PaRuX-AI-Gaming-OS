@@ -224,7 +224,9 @@ public sealed class RedistPackagingTests : IDisposable
         string withoutBlock = Regex.Replace(Wxs(), @"<\?if \$\(IncludeRedist\) = 1\?>.*?<\?endif\?>", string.Empty, RegexOptions.Singleline);
         withoutBlock = Regex.Replace(withoutBlock, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
         Assert.DoesNotContain("Redist", withoutBlock.Replace("IncludeRedist", string.Empty));
-        Assert.DoesNotContain("<CustomAction", withoutBlock);
+        Assert.DoesNotContain("Invoke-PaRuXRedist", withoutBlock);
+        foreach (Match ca in Regex.Matches(withoutBlock, @"<CustomAction .*?/>", RegexOptions.Singleline))
+            Assert.Contains("Id=\"PaRuXLogonCleanup", ca.Value);
         Assert.DoesNotContain("PARUX_ADD_", withoutBlock);
         Assert.DoesNotContain("<Feature", withoutBlock);
     }

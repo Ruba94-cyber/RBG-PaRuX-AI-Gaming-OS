@@ -21,6 +21,10 @@ namespace PaRuX.Services
         private const int AccessDeniedHr = unchecked((int)0x80070005);
         private const int NotFoundHr = unchecked((int)0x80070002);
 
+        private readonly bool _log;
+
+        public ScheduledTaskLogonStore(bool log = true) => _log = log;
+
         public LogonTaskInfo? Get(string name)
         {
             object? svc = null, folder = null, task = null;
@@ -41,7 +45,7 @@ namespace PaRuX.Services
             }
             catch (Exception ex)
             {
-                Log.Write("Sign-in task: read failed (" + Describe(ex) + ").");
+                if (_log) Log.Write("Sign-in task: read failed (" + Describe(ex) + ").");
                 return null;
             }
             finally { Release(task); Release(folder); Release(svc); }
@@ -55,12 +59,12 @@ namespace PaRuX.Services
                 svc = Connect();
                 folder = Call(svc, "GetFolder", "\\");
                 task = Call(folder!, "RegisterTask", name, xml, CreateOrUpdate, null, null, LogonInteractiveToken, null);
-                Log.Write("Sign-in task registered for the current user.");
+                if (_log) Log.Write("Sign-in task registered for the current user.");
                 return LogonTaskCallResult.Success;
             }
             catch (Exception ex)
             {
-                Log.Write("Sign-in task: register failed (" + Describe(ex) + ").");
+                if (_log) Log.Write("Sign-in task: register failed (" + Describe(ex) + ").");
                 return LogonTaskCallResult.Failed(Describe(ex), HResultOf(ex) == AccessDeniedHr || Inner(ex) is UnauthorizedAccessException);
             }
             finally { Release(task); Release(folder); Release(svc); }
@@ -75,12 +79,12 @@ namespace PaRuX.Services
                 folder = Call(svc, "GetFolder", "\\");
                 try { Call(folder!, "DeleteTask", name, 0); }
                 catch (Exception ex) when (HResultOf(ex) == NotFoundHr) { }
-                Log.Write("Sign-in task removed.");
+                if (_log) Log.Write("Sign-in task removed.");
                 return LogonTaskCallResult.Success;
             }
             catch (Exception ex)
             {
-                Log.Write("Sign-in task: remove failed (" + Describe(ex) + ").");
+                if (_log) Log.Write("Sign-in task: remove failed (" + Describe(ex) + ").");
                 return LogonTaskCallResult.Failed(Describe(ex), HResultOf(ex) == AccessDeniedHr || Inner(ex) is UnauthorizedAccessException);
             }
             finally { Release(folder); Release(svc); }

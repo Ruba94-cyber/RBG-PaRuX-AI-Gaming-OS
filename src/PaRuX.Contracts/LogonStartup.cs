@@ -19,6 +19,15 @@ public static class LogonStartupArguments
     public const string LogonArgument = "--logon";
     public const string ForceArgument = "--logon-force";
     public const string NoStartArgument = "--no-start";
+    public const string UninstallCleanupArgument = "--uninstall-logon-cleanup";
+
+    public static bool IsUninstallCleanupRequest(IReadOnlyList<string>? commandLine)
+    {
+        if (commandLine is null || commandLine.Count < 2) return false;
+        for (int i = 1; i < commandLine.Count; i++)
+            if (Same((commandLine[i] ?? string.Empty).Trim(), UninstallCleanupArgument)) return true;
+        return false;
+    }
 
     public static LogonStartupRequest Parse(IReadOnlyList<string>? commandLine)
     {
@@ -373,9 +382,50 @@ public sealed class LogonRegistration
         && string.Equals((task.Command ?? string.Empty).Trim().Trim('"'), exePath, StringComparison.OrdinalIgnoreCase)
         && string.Equals((task.Arguments ?? string.Empty).Trim(), LogonStartupArguments.LogonArgument, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsOwnRunValue(string? v, string exePath) =>
+    /// <summary>True when the task points to this executable (with <c>--logon</c> or without arguments).</summary>
+    public static bool IsOwnUninstallTask(LogonTaskInfo? task, string exePath) =>
+        task is not null
+        && string.Equals((task.Command ?? string.Empty).Trim().Trim('"'), exePath, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the Run value points to this executable (with or without <c>--logon</c>).</summary>
+    public static bool IsOwnRunValue(string? v, string exePath) =>
         string.Equals(v, CommandFor(exePath, true), StringComparison.OrdinalIgnoreCase)
         || string.Equals(v, CommandFor(exePath, false), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Best-effort uninstall cleanup: removes the HKCU Run value and the scheduled task ONLY when they point to
+    /// <paramref name="exePath"/> (this installation). Foreign entries or entries pointing to another copy of PaRuX
+    /// are never touched. Errors (missing entries, access denied) are ignored so uninstall is never blocked.
+    /// </summary>
+    public static void RemoveOwnOnUninstall(IRunKeyStore? runStore, ILogonTaskStore? taskStore, string exePath)
+    {
+        if (string.IsNullOrWhiteSpace(exePath) || !Path.IsPathFullyQualified(exePath) || exePath.Any(char.IsControl) || exePath.Contains('"'))
+            return;
+        string normalizedExe = exePath.Trim();
+
+        if (runStore is not null)
+        {
+            try
+            {
+                if (IsOwnRunValue(runStore.Get(ValueName), normalizedExe))
+                    runStore.Delete(ValueName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+        }
+
+        if (taskStore is not null)
+        {
+            try
+            {
+                LogonTaskInfo? currentTask = taskStore.Get(TaskName);
+                if (IsOwnUninstallTask(currentTask, normalizedExe))
+                    _ = taskStore.Delete(TaskName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+        }
+    }
+
+    public void RemoveOwnOnUninstall(string exePath) => RemoveOwnOnUninstall(_store, _tasks, exePath);
 
     /// <summary>
     /// The task definition: logon trigger for this user only, interactive token, least privilege, normal priority, no time limit,
