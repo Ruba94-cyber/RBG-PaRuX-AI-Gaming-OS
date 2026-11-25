@@ -12,6 +12,7 @@ namespace PaRuX.Models
         /// <summary>#RRGGBB for the "custom" accent; ignored otherwise. An invalid value falls back to Orbit.</summary>
         public string? AccentCustomHex { get; set; }
         /// <summary>Id of the enabled game extension whose library theme is applied on top of the accent (empty = none). The theme is dropped at start if the extension is no longer enabled and valid.</summary>
+        /// <summary>Obsolete (gaming-removal step 5): game extension themes were removed; kept for settings.json backward compatibility.</summary>
         public string ActiveLibraryThemeExtensionId { get; set; } = string.Empty;
         /// <summary>Interface language: "en" (default, independent of the Windows display language) or "it".</summary>
         public string UiLanguage { get; set; } = "en";
@@ -223,7 +224,7 @@ namespace PaRuX.Models
         public bool NotifyOnDownloads { get; set; } = true;
         public bool NotifyOnInstalls { get; set; } = true;
 
-        /// <summary>Announce newly unlocked Steam / RetroAchievements achievements while a PaRuX-launched game runs (needs saved credentials and the Internet switch; on by default, owner can turn it off).</summary>
+        /// <summary>Obsolete (gaming-removal step 5): achievement toasts were removed; kept for settings.json backward compatibility.</summary>
         public bool AchievementToastsEnabled { get; set; } = true;
     }
 

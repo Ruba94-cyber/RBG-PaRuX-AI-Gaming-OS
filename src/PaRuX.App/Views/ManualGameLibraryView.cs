@@ -447,8 +447,6 @@ public sealed partial class ManualGameLibraryView : UserControl
 
         _pageScroll = new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Content = _pageScroll;
-        Loaded += (_, _) => { LibraryThemeState.Changed += ApplyLibraryThemeBackground; ApplyLibraryThemeBackground(); };
-        Unloaded += (_, _) => LibraryThemeState.Changed -= ApplyLibraryThemeBackground;
     }
 
     /// <summary>Opens one section of this page from the slim Games tools page. Navigation only.</summary>

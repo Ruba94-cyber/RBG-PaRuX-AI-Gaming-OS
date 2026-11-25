@@ -12,15 +12,7 @@ public sealed class AgentDiscoverQuickResumeToolsTests
     private class FakeBackend : IAgentLibraryBackend
     {
         public bool GamingActive { get; set; }
-        public string? Blocked;
-        public string? SearchFailure;
         public List<string> Calls = new();
-        public List<GameCatalogEntryDto> Store = new()
-        {
-            new("steam", "1145360", "Hades", new[] { "Action", "Indie" }, new[] { "Roguelike" }, "$24.99", false, null,
-                @"C:\evil\page", "Hades blurb"),
-            new("steam", "../x", "Odd\nTitle C:\\Users\\paolo\\secret.txt", Array.Empty<string>(), Array.Empty<string>(), null, true, null, "x"),
-        };
         public List<QuickResumeAppDto> Apps = new()
         {
             new(4242, "eden", @"Eden - C:\Users\paolo\Games\mk8.nsp", EdenStart, false, true, null),
@@ -36,20 +28,6 @@ public sealed class AgentDiscoverQuickResumeToolsTests
         public bool RemoveManualEntry(string id) => true;
         public string EnqueueDownload(string url, string? f, string? s) => "dl";
 
-        public string? DiscoverBlockedMessage() => Blocked;
-        public Task<GameCatalogListDto> DiscoverSearchAsync(string query, CancellationToken ct)
-        {
-            Calls.Add("search:" + query);
-            return Task.FromResult(SearchFailure != null
-                ? new GameCatalogListDto(GameDiscoverStatus.Failed, SearchFailure, Array.Empty<GameCatalogEntryDto>())
-                : new GameCatalogListDto(GameDiscoverStatus.Ok, null, Store));
-        }
-        public Task<GameDiscoverResultDto> DiscoverRecommendAsync(CancellationToken ct)
-        {
-            Calls.Add("recommend");
-            return Task.FromResult(new GameDiscoverResultDto(GameDiscoverStatus.Ok, null,
-                new[] { new GameRecommendationDto(Store[0], 0.9, new[] { "Celeste" }, new[] { "Indie" }, "Because you like Celeste") }));
-        }
         public Task<QuickResumeStatusDto> QuickResumeListAsync(CancellationToken ct) => Task.FromResult(new QuickResumeStatusDto(Apps));
         public Task<QuickResumeActionResult> QuickResumeSuspendAsync(QuickResumeActionRequest r, CancellationToken ct)
         { Calls.Add($"pause:{r.ProcessId}"); return Task.FromResult(new QuickResumeActionResult(true, "eden is paused.")); }
@@ -83,107 +61,17 @@ public sealed class AgentDiscoverQuickResumeToolsTests
     {
         var (tools, _, _) = Make();
         var byName = tools.GetToolSchemas().ToDictionary(s => s!["function"]!["name"]!.GetValue<string>(), s => s!["function"]!["parameters"]!);
-        foreach (string n in new[] { "discover_search", "discover_recommend", "quick_resume_list", "quick_resume_pause", "quick_resume_resume" })
+        foreach (string n in new[] { "quick_resume_list", "quick_resume_pause", "quick_resume_resume" })
         {
             Assert.True(byName.ContainsKey(n));
             Assert.True(AgentLibraryTools.IsBuiltInTool(n));
             Assert.False(byName[n]["additionalProperties"]!.GetValue<bool>());
         }
-        Assert.Equal(80, byName["discover_search"]["properties"]!["query"]!["maxLength"]!.GetValue<int>());
-        Assert.Equal(25, byName["discover_search"]["properties"]!["limit"]!["maximum"]!.GetValue<int>());
-        Assert.Equal(10, byName["discover_recommend"]["properties"]!["limit"]!["maximum"]!.GetValue<int>());
         Assert.Equal(1, byName["quick_resume_pause"]["properties"]!["process_id"]!["minimum"]!.GetValue<int>());
         Assert.Contains("process_id", byName["quick_resume_resume"]["required"]!.AsArray().Select(x => x!.GetValue<string>()));
 
-        Assert.All(new[] { "discover_search", "discover_recommend", "quick_resume_list" }, n => Assert.False(AgentLibraryTools.RequiresConfirmation(n)));
+        Assert.False(AgentLibraryTools.RequiresConfirmation("quick_resume_list"));
         Assert.All(new[] { "quick_resume_pause", "quick_resume_resume" }, n => Assert.True(AgentLibraryTools.RequiresConfirmation(n)));
-    }
-
-    [Fact]
-    public async Task Discover_search_lists_titles_with_price_and_store_page_and_never_leaks_paths_or_untrusted_urls()
-    {
-        var (tools, b, _) = Make();
-        string r = await Call(tools, "discover_search", """{"query":"hades"}""");
-        Assert.Contains("Hades [store: steam, id: 1145360] price $24.99", r);
-        Assert.Contains("https://store.steampowered.com/app/1145360/", r);
-        Assert.DoesNotContain(@"C:\", r);
-        Assert.DoesNotContain("evil", r);          // store-supplied URL is rebuilt from the validated id
-        Assert.DoesNotContain("Odd\nTitle", r);    // control characters in store text are flattened
-        Assert.Contains("free to play", r);
-        Assert.Contains("Nothing was downloaded", r);
-        Assert.Contains("search:hades", b.Calls);
-        Assert.Contains(tools.Audit.Snapshot(), e => e.Tool == "discover_search" && e.Outcome == "success");
-    }
-
-    [Theory]
-    [InlineData("{}")]
-    [InlineData("""{"query":""}""")]
-    [InlineData("""{"query":"a","limit":26}""")]
-    [InlineData("""{"query":"a","extra":1}""")]
-    public async Task Discover_search_rejects_invalid_arguments(string json)
-    {
-        var (tools, b, _) = Make();
-        Assert.StartsWith("Library tool failed:", await Call(tools, "discover_search", json));
-        Assert.Empty(b.Calls);
-    }
-
-    [Fact]
-    public async Task Discover_search_rejects_a_query_over_the_bound()
-    {
-        var (tools, b, _) = Make();
-        string r = await Call(tools, "discover_search", "{\"query\":\"" + new string('a', 81) + "\"}");
-        Assert.StartsWith("Library tool failed:", r);
-        Assert.Empty(b.Calls);
-    }
-
-    [Theory]
-    [InlineData("discover_search", """{"query":"hades"}""")]
-    [InlineData("discover_recommend", "{}")]
-    public async Task Discover_is_refused_with_a_clear_message_when_disabled_and_contacts_nothing(string tool, string json)
-    {
-        var (tools, b, _) = Make();
-        b.Blocked = "Game Discover is off. Turn it on in Gaming settings to contact the Steam store.";
-        string r = await Call(tools, tool, json);
-        Assert.StartsWith("Library tool failed:", r);
-        Assert.Contains("Game Discover is off", r);
-        Assert.Empty(b.Calls);
-        Assert.Contains(tools.Audit.Snapshot(), e => e.Tool == tool && e.Outcome == "discover-disabled");
-    }
-
-    [Theory]
-    [InlineData("discover_search", """{"query":"hades"}""")]
-    [InlineData("discover_recommend", "{}")]
-    public async Task Discover_is_refused_while_gaming_hard_off_is_active(string tool, string json)
-    {
-        var (tools, b, _) = Make();
-        b.GamingActive = true;
-        string r = await Call(tools, tool, json);
-        Assert.StartsWith("Library tool failed:", r);
-        Assert.Contains("Gaming Mode", r);
-        Assert.Empty(b.Calls);
-        Assert.Contains(tools.Audit.Snapshot(), e => e.Tool == tool && e.Outcome == "gaming-hard-off");
-    }
-
-    [Fact]
-    public async Task Discover_recommend_returns_store_titles_with_reason_and_no_download()
-    {
-        var (tools, _, consent) = Make();
-        string r = await Call(tools, "discover_recommend", "{}");
-        Assert.Contains("Hades", r);
-        Assert.Contains("because you play: Celeste", r);
-        Assert.Contains("Nothing was downloaded", r);
-        Assert.Empty(consent.List());
-    }
-
-    [Fact]
-    public async Task Discover_surfaces_a_provider_failure_status_honestly()
-    {
-        var (tools, b, _) = Make();
-        b.SearchFailure = "Discover could not reach the store.";
-        string r = await Call(tools, "discover_search", """{"query":"x"}""");
-        Assert.StartsWith("Library tool failed:", r);
-        Assert.Contains("could not reach", r);
-        Assert.Contains(tools.Audit.Snapshot(), e => e.Tool == "discover_search" && e.Outcome == "failed");
     }
 
     [Fact]
@@ -305,9 +193,8 @@ public sealed class AgentDiscoverQuickResumeToolsTests
         var (tools, _, _) = Make();
         await Call(tools, "quick_resume_list", "{}");
         await Call(tools, "quick_resume_pause", PauseJson());
-        await Call(tools, "discover_search", """{"query":"hades"}""");
         var audit = tools.Audit.Snapshot();
-        Assert.Equal(3, audit.Count);
+        Assert.Equal(2, audit.Count);
         Assert.Contains(audit, e => e.Tool == "quick_resume_pause" && e.Subject == "eden");
         Assert.All(audit, e => { Assert.DoesNotContain(@":\", e.Subject ?? string.Empty); Assert.DoesNotContain("4242", e.Subject ?? string.Empty); });
     }

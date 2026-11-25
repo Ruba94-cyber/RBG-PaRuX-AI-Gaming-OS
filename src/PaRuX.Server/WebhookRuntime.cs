@@ -8,7 +8,7 @@ internal static class WebhookRuntime
 {
     private static Func<bool>? _internetEnabled;
 
-    /// <summary>Called once at startup with the app's own Internet switch, so webhooks and Steam read the live value instead of a private copy.</summary>
+    /// <summary>Called once at startup with the app's own Internet switch, so webhooks read the live value instead of a private copy.</summary>
     public static void Configure(Func<bool> internetEnabled) => _internetEnabled = internetEnabled;
 
     private static bool InternetEnabled() => _internetEnabled?.Invoke() ?? false;
@@ -21,14 +21,4 @@ internal static class WebhookRuntime
     });
 
     public static WebhookService Service => Instance.Value;
-
-    private static readonly Lazy<SteamAchievementsService> Steam = new(() =>
-        new SteamAchievementsService(ServerState.StateDirectory, InternetEnabled));
-
-    public static SteamAchievementsService SteamAchievements => Steam.Value;
-
-    private static readonly Lazy<RetroAchievementsService> Retro = new(() =>
-        new RetroAchievementsService(ServerState.StateDirectory, InternetEnabled));
-
-    public static RetroAchievementsService RetroAchievements => Retro.Value;
 }

@@ -50,29 +50,6 @@ namespace PaRuX.Services
             return value ?? throw new LocalAiException("PaRuX Core answered " + (int)response.StatusCode + ".");
         }
 
-        public Task<SteamCredentialsStatus> SteamStatusAsync(CancellationToken ct) => Get<SteamCredentialsStatus>("/api/v2/steam/credentials", ct);
-        public Task<SteamCredentialsStatus> SaveSteamAsync(SteamCredentialsRequest request, CancellationToken ct) =>
-            Send<SteamCredentialsStatus>(HttpMethod.Put, "/api/v2/steam/credentials", request, ct);
-        public Task DeleteSteamAsync(CancellationToken ct) => SendNoContent(HttpMethod.Delete, "/api/v2/steam/credentials", ct);
-        public Task<SteamAchievementsResult> SteamAchievementsAsync(int appId, CancellationToken ct) =>
-            Get<SteamAchievementsResult>("/api/v2/steam/achievements/" + appId, ct);
-
-        public Task<RetroAchievementsCredentialsStatus> RetroAchievementsStatusAsync(CancellationToken ct) =>
-            Get<RetroAchievementsCredentialsStatus>("/api/v2/retroachievements/credentials", ct);
-        public Task<RetroAchievementsCredentialsStatus> SaveRetroAchievementsAsync(RetroAchievementsCredentialsRequest request, CancellationToken ct) =>
-            Send<RetroAchievementsCredentialsStatus>(HttpMethod.Put, "/api/v2/retroachievements/credentials", request, ct);
-        public Task DeleteRetroAchievementsAsync(CancellationToken ct) => SendNoContent(HttpMethod.Delete, "/api/v2/retroachievements/credentials", ct);
-        public Task<RetroAchievementsResult> RetroAchievementsAsync(int gameId, string title, string platform, CancellationToken ct) =>
-            Get<RetroAchievementsResult>("/api/v2/retroachievements/achievements?gameId=" + gameId
-                + "&title=" + Uri.EscapeDataString(title ?? string.Empty) + "&platform=" + Uri.EscapeDataString(platform ?? string.Empty), ct);
-
-        public Task<List<GameSmartCollection>> ListSmartCollectionsAsync(CancellationToken ct) =>
-            Get<List<GameSmartCollection>>("/api/v1/gaming/smart-collections", ct);
-        public Task<GameSmartCollection> SaveSmartCollectionAsync(GameSmartCollection collection, CancellationToken ct) =>
-            Send<GameSmartCollection>(HttpMethod.Put, "/api/v1/gaming/smart-collections", collection, ct);
-        public Task DeleteSmartCollectionAsync(string id, CancellationToken ct) =>
-            SendNoContent(HttpMethod.Delete, "/api/v1/gaming/smart-collections/" + Uri.EscapeDataString(id), ct);
-
         public Task<List<SamplingPreset>> ListPresetsAsync(CancellationToken ct) => Get<List<SamplingPreset>>("/api/v2/sampling-presets", ct);
         public Task<SamplingPreset> SavePresetAsync(SamplingPreset preset, CancellationToken ct) =>
             Send<SamplingPreset>(HttpMethod.Put, "/api/v2/sampling-presets", preset, ct);

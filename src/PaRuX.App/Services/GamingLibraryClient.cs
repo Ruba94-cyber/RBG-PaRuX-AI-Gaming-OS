@@ -146,37 +146,6 @@ namespace PaRuX.Services
             SendAsync<LocalGameGuidePreparationDto>(HttpMethod.Post,
                 "/api/v1/gaming/assistant/prepare", request, ct);
 
-        /// <summary>Read locally saved wishlist metadata. Never calls a game store.</summary>
-        public Task<GamingCallResult<List<LocalWishlistItemDto>>> GetWishlistAsync(CancellationToken ct = default) =>
-            SendAsync<List<LocalWishlistItemDto>>(HttpMethod.Get, "/api/v1/gaming/wishlist", null, ct);
-
-        /// <summary>Save a public Steam app id and target with monitoring OFF.</summary>
-        public Task<GamingCallResult<LocalWishlistItemDto>> AddWishlistItemAsync(
-            LocalWishlistItemDto item, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistItemDto>(HttpMethod.Post, "/api/v1/gaming/wishlist", item, ct);
-
-        /// <summary>Owner's separate explicit consent; still no automatic network polling.</summary>
-        public Task<GamingCallResult<LocalWishlistItemDto>> SetWishlistWatchAsync(
-            string productId, bool enabled, bool consent, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistItemDto>(HttpMethod.Put,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId) + "/watch",
-                new LocalWishlistWatchUpdate(enabled, consent), ct);
-
-        /// <summary>
-        /// Only a direct user action may request one indicative Steam storefront quote.
-        /// Discover must already be opted in; no polling or notification is started.
-        /// </summary>
-        public Task<GamingCallResult<LocalWishlistQuoteDto>> QuoteWishlistPriceAsync(
-            string productId, bool consent, CancellationToken ct = default) =>
-            SendAsync<LocalWishlistQuoteDto>(HttpMethod.Post,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId) + "/quote",
-                new LocalWishlistQuoteRequest(consent), ct);
-
-        public Task<GamingCallResult<object>> RemoveWishlistItemAsync(
-            string productId, CancellationToken ct = default) =>
-            SendAsync<object>(HttpMethod.Delete,
-                "/api/v1/gaming/wishlist/" + Uri.EscapeDataString(productId), null, ct);
-
         /// <summary>Edits a saved manual or emulator entry. Never touches game files.</summary>
         public Task<GamingCallResult<ManualGameDto>> UpdateManualGameAsync(string id, UpdateManualGameRequest request, CancellationToken ct = default) =>
             SendAsync<ManualGameDto>(HttpMethod.Put, "/api/v1/gaming/library/" + Uri.EscapeDataString(id), request, ct);
