@@ -44,4 +44,15 @@
     <string name="settings_profile_active">✓ Active</string>
     <string name="settings_profile_select">Select</string>
     <string name="settings_auto">Auto</string>
+
+    <!-- Chat: the PC rejected a turn (HTTP error with the Core's own sanitized reason) -->
+    <string name="chat_error_server_detail">Your PaRuX PC couldn\'t answer (HTTP %1$d): %2$s</string>
+    <string name="chat_error_server_no_detail">Your PaRuX PC couldn\'t answer (HTTP %1$d) and gave no reason. Open PaRuX on the PC, check Runtime Manager, then try again.</string>
+    <string name="chat_error_details">Details from the PC (HTTP %1$d): %2$s</string>
+    <string name="chat_error_missing_runtime">The local AI engine on your PC (llama-server) is missing. On the PC, open PaRuX → Runtime Manager to locate or install the runtime, then try again.</string>
+    <string name="chat_error_missing_model">The selected model file is missing on your PC. Open Model Hub in PaRuX on the PC and choose an installed model.</string>
+    <string name="chat_error_out_of_memory">Your PC doesn\'t have enough free memory for this model. Choose a smaller model in Model Hub on the PC, or free memory and try again.</string>
+    <string name="chat_error_gaming_active">Gaming is active on your PC, so PaRuX keeps the GPU free for the game. Close the game and try again.</string>
+    <string name="chat_error_ai_off">Local AI is switched off on your PC. Choose AI Auto or AI On from the PaRuX tray menu, then try again.</string>
+    <string name="chat_error_timed_out">The model on your PC didn\'t become ready in time. It may still be loading: wait a moment, then try again.</string>
 </resources>

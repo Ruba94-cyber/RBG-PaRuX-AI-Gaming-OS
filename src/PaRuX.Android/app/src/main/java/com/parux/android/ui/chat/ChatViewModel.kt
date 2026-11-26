@@ -387,22 +387,26 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
                     ChatStreamEvent.Done -> {
-                        updateAssistantMessage(assistantMessage.id, builder.toString(), false)
+                        updateAssistantMessage(assistantMessage.id, finalAssistantText(builder.toString()), false)
                         finishTurn()
                         finalized = true
                     }
                     is ChatStreamEvent.Error -> {
-                        updateAssistantMessage(assistantMessage.id, builder.toString(), false, isError = builder.isEmpty())
-                        _state.value = _state.value.copy(isStreaming = false, errorMessage = event.message)
+                        val message = event.failure?.let { failure ->
+                            ChatErrors.render(failure) { id, args -> container.appContext.getString(id, *args) }
+                        } ?: event.message
+                        val partial = finalAssistantText(builder.toString())
+                        updateAssistantMessage(assistantMessage.id, if (partial.isNotEmpty()) partial else message, false, isError = partial.isEmpty())
+                        _state.value = _state.value.copy(isStreaming = false, errorMessage = message)
                         finishTurn(persist = builder.isNotEmpty())
                         finalized = true
                     }
                 }
             }
-            return builder.toString().takeIf { finalized && it.isNotBlank() }
+            return finalAssistantText(builder.toString()).takeIf { finalized && it.isNotBlank() }
         } catch (e: CancellationException) {
             if (!finalized) {
-                updateAssistantMessage(assistantMessage.id, builder.toString(), false)
+                updateAssistantMessage(assistantMessage.id, finalAssistantText(builder.toString()), false)
                 finishTurn(persist = builder.isNotEmpty())
                 finalized = true
             }
@@ -410,7 +414,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         } catch (e: Exception) {
             if (!finalized) {
                 val message = friendlyError(e)
-                updateAssistantMessage(assistantMessage.id, if (builder.isNotEmpty()) builder.toString() else message, false, isError = builder.isEmpty())
+                updateAssistantMessage(assistantMessage.id, if (builder.isNotEmpty()) finalAssistantText(builder.toString()) else message, false, isError = builder.isEmpty())
                 _state.value = _state.value.copy(isStreaming = false, errorMessage = message)
                 finishTurn(persist = builder.isNotEmpty())
                 finalized = true

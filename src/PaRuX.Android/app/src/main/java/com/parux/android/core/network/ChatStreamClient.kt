@@ -27,7 +27,11 @@ import okhttp3.Response
 sealed interface ChatStreamEvent {
     data class Delta(val text: String) : ChatStreamEvent
     data object Done : ChatStreamEvent
-    data class Error(val message: String) : ChatStreamEvent
+    /** [failure] is set when the Core rejected the request with an HTTP error, so the UI can localize it. */
+    data class Error(
+        val message: String,
+        val failure: com.parux.android.ui.chat.ChatServerFailure? = null
+    ) : ChatStreamEvent
     data object SwitchedToUncensored : ChatStreamEvent
     data class RagSources(val files: List<String>) : ChatStreamEvent
     data class SkillSelected(val displayName: String, val mode: String) : ChatStreamEvent
@@ -63,6 +67,7 @@ class ChatStreamClient(private val okHttp: OkHttpClient, private val endpoint: S
 
     companion object {
         private const val PROJECT_SCOPE_PARAMETER = "__parux_project_scope"
+        private const val MAX_ERROR_BODY_BYTES = 16L * 1024
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -102,8 +107,14 @@ class ChatStreamClient(private val okHttp: OkHttpClient, private val endpoint: S
             override fun onResponse(call: Call, response: Response) {
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        trySend(ChatStreamEvent.Error(
-                            com.parux.android.ui.chat.ChatErrors.forHttpStatus(resp.code, "PaRuX Server rejected the request (HTTP ${resp.code}).")))
+                        // Keep the Core's own reason (e.g. the runtime executable is missing): a bare
+                        // "HTTP 503" gives the user nothing to act on. Bounded read; sanitized in ChatErrors.
+                        val errorBody = try { resp.peekBody(MAX_ERROR_BODY_BYTES).string() } catch (_: Exception) { null }
+                        val failure = com.parux.android.ui.chat.ChatErrors.serverFailure(resp.code, errorBody)
+                        val fallback = com.parux.android.ui.chat.ChatErrors.forHttpStatus(
+                            resp.code,
+                            "PaRuX Server rejected the request (HTTP ${resp.code})" + (failure.detail?.let { ": $it" } ?: "."))
+                        trySend(ChatStreamEvent.Error(fallback, failure))
                         close()
                         return
                     }
