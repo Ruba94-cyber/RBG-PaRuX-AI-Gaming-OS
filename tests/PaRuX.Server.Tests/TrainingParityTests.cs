@@ -96,6 +96,19 @@ public sealed class TrainingParityTests : IDisposable
             .GetRawConstantValue()!;
         Assert.Contains("importance_sampling_level", script, StringComparison.Ordinal);
         Assert.Contains("does not support GSPO", script, StringComparison.Ordinal);
+        Assert.Contains("num_iterations", script, StringComparison.Ordinal);
+
+        var status = new TrainingJobStatus
+        {
+            Id = "abc",
+            Method = TrainingMethod.Sft,
+            Precision = TrainingPrecision.Full16Bit,
+            OutputModelPath = @"C:\tmp\full-model"
+        };
+        string json = JsonSerializer.Serialize(status);
+        TrainingJobStatus roundTrip = JsonSerializer.Deserialize<TrainingJobStatus>(json)!;
+        Assert.Equal(TrainingPrecision.Full16Bit, roundTrip.Precision);
+        Assert.Equal(@"C:\tmp\full-model", roundTrip.OutputModelPath);
     }
 
     [Fact]

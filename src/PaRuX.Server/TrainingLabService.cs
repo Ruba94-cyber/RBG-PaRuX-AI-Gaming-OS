@@ -448,6 +448,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
         try
         {
             Directory.Delete(RuntimeRoot, recursive: true);
+            TrainingRuntimeCatalog.InvalidateCache(RuntimeRoot, VenvRoot);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -470,6 +471,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
     public async Task<string> InstallEngineAsync(CancellationToken ct)
     {
         string log = await TrainingRuntimeCatalog.InstallAsync(RuntimeRoot, VenvRoot, ct).ConfigureAwait(false);
+        TrainingRuntimeCatalog.InvalidateCache(RuntimeRoot, VenvRoot);
         WriteTrainScript();
         return log;
     }
@@ -481,6 +483,24 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             throw new InvalidDataException("trainJsonlPath must point to a real existing JSONL file.");
         if (string.IsNullOrWhiteSpace(request.BaseModel)) throw new InvalidDataException("baseModel is required.");
         string method = NormalizeMethod(request.Method);
+        TrainingRuntimeStatus runtimeStatus = TrainingRuntimeJobGate.GetVerifiedStatus(RuntimeRoot, VenvRoot, method);
+        return CreateJobCore(request, method, runtimeStatus);
+    }
+
+    internal TrainingJobStatus CreateJobWithVerifiedRuntime(TrainingJobRequest request, TrainingRuntimeStatus verifiedStatus)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(verifiedStatus);
+        if (string.IsNullOrWhiteSpace(request.TrainJsonlPath) || !File.Exists(request.TrainJsonlPath))
+            throw new InvalidDataException("trainJsonlPath must point to a real existing JSONL file.");
+        if (string.IsNullOrWhiteSpace(request.BaseModel)) throw new InvalidDataException("baseModel is required.");
+        string method = NormalizeMethod(request.Method);
+        TrainingRuntimeJobGate.ValidateStatus(verifiedStatus, method);
+        return CreateJobCore(request, method, verifiedStatus);
+    }
+
+    private TrainingJobStatus CreateJobCore(TrainingJobRequest request, string method, TrainingRuntimeStatus runtimeStatus)
+    {
         ValidateDatasetForMethod(request.TrainJsonlPath, method, request.GrpoRewardMode);
         ValidateRequest(request, method);
         // Training is additive GPU load. Two jobs would fight over the same VRAM (and over what chat or a game
@@ -492,7 +512,6 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             throw new InvalidOperationException(
                 "A training job is already " + active.Status + ". Wait for it or cancel it first; PaRuX runs one training job at a time so it never takes VRAM from itself, chat or a game.");
 
-        TrainingRuntimeStatus runtimeStatus = TrainingRuntimeJobGate.GetVerifiedStatus(RuntimeRoot, VenvRoot, method);
         if (method == TrainingMethod.Kto)
         {
             var batchShape = PlanBatchShape(request.MaxSequenceLength);
@@ -507,6 +526,7 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
             Id = Guid.NewGuid().ToString("N"),
             TotalSteps = Math.Max(1, requestSnapshot.MaxSteps),
             Method = method,
+            Precision = TrainingPrecision.Normalize(requestSnapshot.Precision),
             CreatedUtc = DateTime.UtcNow,
             UpdatedUtc = DateTime.UtcNow
         };
@@ -562,6 +582,8 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
     {
         lock (entry.Gate)
         {
+            entry.Status.OutputModelPath = entry.Status.AdapterPath;
+            entry.Status.Precision ??= TrainingPrecision.Full16Bit;
             entry.Status.Stage = "Completed - full model saved (not an adapter; export it from the Export step)";
             entry.Status.UpdatedUtc = DateTime.UtcNow;
         }
@@ -1371,7 +1393,8 @@ print("PARUX_ENGINE_PROBE " + json.dumps(payload))
                 CurrentStep = s.CurrentStep, TotalSteps = s.TotalSteps, LastLoss = s.LastLoss,
                 LastGradientNorm = s.LastGradientNorm, LastLearningRate = s.LastLearningRate,
                 LastEpoch = s.LastEpoch, History = s.History.ToList(),
-                Error = s.Error, AdapterPath = s.AdapterPath, Method = s.Method,
+                Error = s.Error, AdapterPath = s.AdapterPath, OutputModelPath = s.OutputModelPath,
+                Precision = s.Precision, Method = s.Method,
                 CreatedUtc = s.CreatedUtc, UpdatedUtc = s.UpdatedUtc
             };
         }
@@ -1826,6 +1849,8 @@ else:
                 if "epsilon_high" in accepted:
                     grpo_extra["epsilon"] = 3e-4
                     grpo_extra["epsilon_high"] = 4e-4
+                if "num_iterations" in accepted:
+                    grpo_extra["num_iterations"] = 2
             trainer = GRPOTrainer(
                 model=model, processing_class=tokenizer, reward_funcs=reward_func, train_dataset=dataset,
                 args=GRPOConfig(

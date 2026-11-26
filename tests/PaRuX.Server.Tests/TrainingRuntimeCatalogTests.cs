@@ -69,4 +69,26 @@ public sealed class TrainingRuntimeCatalogTests
         Assert.Equal(TrainingRuntimeCatalog.Sha256(canonicalLeft), TrainingRuntimeCatalog.Sha256(canonicalRight));
         Assert.Equal(64, TrainingRuntimeCatalog.Sha256(canonicalLeft).Length);
     }
+
+    [Fact]
+    public async Task Status_returns_not_installed_and_invalidates_cleanly_when_venv_is_absent()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "parux-trcat-" + Guid.NewGuid().ToString("N"));
+        string venv = Path.Combine(root, ".venv");
+        Directory.CreateDirectory(root);
+        try
+        {
+            TrainingRuntimeStatus first = await TrainingRuntimeCatalog.GetStatusAsync(root, venv, CancellationToken.None);
+            Assert.False(first.Installed);
+            Assert.False(first.Ready);
+
+            TrainingRuntimeCatalog.InvalidateCache(root, venv);
+            TrainingRuntimeStatus forced = await TrainingRuntimeCatalog.GetStatusAsync(root, venv, CancellationToken.None, forceProbe: true);
+            Assert.False(forced.Installed);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
 }

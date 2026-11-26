@@ -46,6 +46,7 @@ namespace PaRuX.Views
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, MinWidth = 120
         };
         private readonly ComboBox _grpoReward = new() { MinWidth = 190 };
+        private readonly ComboBox _grpoImportanceSampling = new() { MinWidth = 185 };
         private readonly ComboBox _trainingPrecision = new() { MinWidth = 155 };
         private readonly ComboBox _trainingTargets = new() { MinWidth = 160 };
         private readonly CheckBox _trainingPacking = new()
@@ -81,6 +82,7 @@ namespace PaRuX.Views
         {
             EnsureAllTrainingMethods();
             EnsureGrpoRewards();
+            EnsureGrpoImportanceSampling();
             EnsureTrainingVariants();
             EnsureMultiGpuStrategies();
             _trainingPath.PlaceholderText = T("JSONL: messages | prompt/chosen/rejected | text | prompt/reference | image+messages | audio+text", "JSONL: messages | prompt/chosen/rejected | text | prompt/reference | image+messages | audio+text");
@@ -130,6 +132,8 @@ namespace PaRuX.Views
             preference.Children.Add(_dpoBeta);
             preference.Children.Add(Caption("GRPO reward"));
             preference.Children.Add(_grpoReward);
+            preference.Children.Add(Caption("Policy"));
+            preference.Children.Add(_grpoImportanceSampling);
             preference.Children.Add(Caption("Generations"));
             preference.Children.Add(_grpoGenerations);
             panel.Children.Add(preference);
@@ -156,7 +160,7 @@ namespace PaRuX.Views
             panel.Children.Add(_planFindings);
 
             _trainingMethod.SelectionChanged += (_, _) => RefreshMethodControlsAndDraft();
-            _trainingPrecision.SelectionChanged += (_, _) => SyncInteractiveDraft();
+            _trainingPrecision.SelectionChanged += (_, _) => { RefreshPrecisionControls(); SyncInteractiveDraft(); };
             _trainingTargets.SelectionChanged += (_, _) => SyncInteractiveDraft();
             _trainingPacking.Checked += (_, _) => SyncInteractiveDraft();
             _trainingPacking.Unchecked += (_, _) => SyncInteractiveDraft();
@@ -165,6 +169,7 @@ namespace PaRuX.Views
             _maxSequenceLength.ValueChanged += (_, _) => SyncInteractiveDraft();
             _dpoBeta.ValueChanged += (_, _) => SyncInteractiveDraft();
             _grpoReward.SelectionChanged += (_, _) => SyncInteractiveDraft();
+            _grpoImportanceSampling.SelectionChanged += (_, _) => SyncInteractiveDraft();
             _grpoGenerations.ValueChanged += (_, _) => SyncInteractiveDraft();
             _textField.TextChanged += (_, _) => SyncInteractiveDraft();
             _imageField.TextChanged += (_, _) => SyncInteractiveDraft();
@@ -203,7 +208,24 @@ namespace PaRuX.Views
             Add("GRPO", TrainingMethod.Grpo);
             Add("Vision SFT", TrainingMethod.VisionSft);
             Add("TTS SFT", TrainingMethod.TtsSft);
+            Add(T("Embedding fine-tune", "Fine-tuning embedding"), TrainingMethod.EmbeddingFt);
             if (_trainingMethod.SelectedIndex < 0) _trainingMethod.SelectedIndex = 0;
+        }
+
+        private void EnsureGrpoImportanceSampling()
+        {
+            if (_grpoImportanceSampling.Items.Count > 0) return;
+            _grpoImportanceSampling.Items.Add(new ComboBoxItem
+            {
+                Content = T("GRPO · token-level", "GRPO · livello token"),
+                Tag = GrpoImportanceSampling.Token
+            });
+            _grpoImportanceSampling.Items.Add(new ComboBoxItem
+            {
+                Content = T("GSPO · sequence-level", "GSPO · livello sequenza"),
+                Tag = GrpoImportanceSampling.Sequence
+            });
+            _grpoImportanceSampling.SelectedIndex = 0;
         }
 
         private void EnsureGrpoRewards()
@@ -227,6 +249,10 @@ namespace PaRuX.Views
                 _trainingPrecision.Items.Add(new ComboBoxItem
                 {
                     Content = T("LoRA · 16-bit", "LoRA · 16 bit"), Tag = TrainingPrecision.Lora16Bit
+                });
+                _trainingPrecision.Items.Add(new ComboBoxItem
+                {
+                    Content = T("Full fine-tuning · 16-bit (full model)", "Fine-tuning completo · 16 bit (modello completo)"), Tag = TrainingPrecision.Full16Bit
                 });
                 _trainingPrecision.SelectedIndex = 0;
             }
@@ -366,6 +392,34 @@ namespace PaRuX.Views
             SyncInteractiveDraft();
         }
 
+        private void SelectComboTag(ComboBox combo, string tag)
+        {
+            for (int i = 0; i < combo.Items.Count; i++)
+            {
+                if (combo.Items[i] is ComboBoxItem item && string.Equals(item.Tag as string, tag, StringComparison.Ordinal))
+                {
+                    combo.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        private void RefreshPrecisionControls()
+        {
+            string method = SelectedTag(_trainingMethod) ?? TrainingMethod.Sft;
+            string precision = SelectedTag(_trainingPrecision) ?? TrainingPrecision.Qlora4Bit;
+            bool supportsFull = method is TrainingMethod.Sft or TrainingMethod.ContinuedPretraining;
+            if (!supportsFull && precision == TrainingPrecision.Full16Bit)
+            {
+                SelectComboTag(_trainingPrecision, TrainingPrecision.Qlora4Bit);
+                precision = TrainingPrecision.Qlora4Bit;
+            }
+            bool full16 = precision == TrainingPrecision.Full16Bit;
+            bool textOnly = method is not TrainingMethod.VisionSft and not TrainingMethod.TtsSft and not TrainingMethod.EmbeddingFt;
+            _rank.IsEnabled = !full16;
+            _trainingTargets.IsEnabled = textOnly && !full16;
+        }
+
         private void RefreshMethodControlsAndDraft()
         {
             string method = SelectedTag(_trainingMethod) ?? TrainingMethod.Sft;
@@ -378,16 +432,19 @@ namespace PaRuX.Views
                 _previousTrainingMethod = method;
             }
             bool textOnly = method is not TrainingMethod.VisionSft and not TrainingMethod.TtsSft;
-            if (!textOnly && SelectedTag(_trainingPrecision) == TrainingPrecision.Lora16Bit)
-                _trainingPrecision.SelectedIndex = 0;
-            if (!textOnly && SelectedTag(_trainingTargets) == TrainingTargetPreset.AllLinear)
+            if (method == TrainingMethod.EmbeddingFt)
+                SelectComboTag(_trainingPrecision, TrainingPrecision.Lora16Bit);
+            else if (!textOnly && SelectedTag(_trainingPrecision) != TrainingPrecision.Qlora4Bit)
+                SelectComboTag(_trainingPrecision, TrainingPrecision.Qlora4Bit);
+            if ((!textOnly || method == TrainingMethod.EmbeddingFt) && SelectedTag(_trainingTargets) == TrainingTargetPreset.AllLinear)
                 _trainingTargets.SelectedIndex = 0;
-            _trainingPrecision.IsEnabled = textOnly;
-            _trainingTargets.IsEnabled = textOnly;
+            _trainingPrecision.IsEnabled = textOnly && method != TrainingMethod.EmbeddingFt;
+            RefreshPrecisionControls();
             _trainingPacking.IsEnabled = method is TrainingMethod.Sft or TrainingMethod.ContinuedPretraining;
             if (!_trainingPacking.IsEnabled) _trainingPacking.IsChecked = false;
             _dpoBeta.IsEnabled = method is TrainingMethod.Dpo or TrainingMethod.Orpo or TrainingMethod.Kto;
             _grpoReward.IsEnabled = method == TrainingMethod.Grpo;
+            _grpoImportanceSampling.IsEnabled = method == TrainingMethod.Grpo;
             _grpoGenerations.IsEnabled = method == TrainingMethod.Grpo;
             _textField.IsEnabled = method is TrainingMethod.ContinuedPretraining or TrainingMethod.TtsSft;
             _imageField.IsEnabled = method == TrainingMethod.VisionSft;
@@ -399,9 +456,10 @@ namespace PaRuX.Views
                 TrainingMethod.Orpo => T("ORPO · prompt/chosen/rejected preference pairs; trains chosen answers and penalizes rejected ones without a separate reference model. Beta controls odds-ratio weight.", "ORPO · coppie di preferenza prompt/chosen/rejected; addestra le risposte scelte e penalizza quelle rifiutate senza un modello di riferimento separato. Beta controlla il peso del rapporto di odds."),
                 TrainingMethod.Kto => T("KTO · each JSONL line needs prompt and completion text plus a real boolean label (true=desirable, false=undesirable). Include both classes and at least four examples. The GPU must fit four concurrent examples (effective batch 16). The default learning rate is 1e-6; beta controls feedback strength.", "KTO · ogni riga JSONL richiede il testo di prompt e completion più una vera etichetta booleana (true=desiderabile, false=indesiderabile). Includi entrambe le classi e almeno quattro esempi. La GPU deve contenere quattro esempi contemporanei (batch effettivo 16). Il learning rate predefinito è 1e-6; beta controlla l'intensità del feedback."),
                 TrainingMethod.ContinuedPretraining => T("Continued pretraining · every row needs the selected text field. Use conservative learning rates for domain adaptation.", "Pre-addestramento continuato · ogni riga richiede il campo di testo selezionato. Usa learning rate prudenti per l'adattamento al dominio."),
-                TrainingMethod.Grpo => T("GRPO · prompt is required. Reference reward modes also require reference; XML/JSON rewards are deterministic format checks and never execute dataset code.", "GRPO · il prompt è obbligatorio. Le modalità di reward con riferimento richiedono anche reference; i reward XML/JSON sono controlli di formato deterministici e non eseguono mai codice del dataset."),
+                TrainingMethod.Grpo => T("GRPO / GSPO · prompt is required. Reference reward modes also require reference; XML/JSON rewards are deterministic format checks and never execute dataset code. GSPO computes sequence-level importance ratios.", "GRPO / GSPO · il prompt è obbligatorio. Le modalità di reward con riferimento richiedono anche reference; i reward XML/JSON sono controlli di formato deterministici e non eseguono mai codice del dataset. GSPO calcola i rapporti di importanza a livello di sequenza."),
                 TrainingMethod.VisionSft => T("Vision SFT · each row needs the selected image field plus messages (or prompt/response); the base model must be vision-language capable.", "SFT visione · ogni riga richiede il campo immagine selezionato più messages (o prompt/response); il modello base deve supportare visione e linguaggio."),
                 TrainingMethod.TtsSft => T("TTS SFT · each row needs the selected audio + text fields. The current real PaRuX trainer is SpeechT5-family only.", "SFT TTS · ogni riga richiede i campi audio + testo selezionati. L'attuale trainer reale di PaRuX supporta solo la famiglia SpeechT5."),
+                TrainingMethod.EmbeddingFt => T("Embedding fine-tune · each row needs query and positive (optional negative). Trains a 16-bit LoRA adapter with InfoNCE contrastive loss.", "Fine-tuning embedding · ogni riga richiede query e positive (negative facoltativo). Addestra un adapter LoRA a 16 bit con loss contrastiva InfoNCE."),
                 _ => T("SFT · each row needs a messages[] conversation.", "SFT · ogni riga richiede una conversazione messages[].")
             };
             SyncInteractiveDraft();
@@ -422,6 +480,7 @@ namespace PaRuX.Views
                     PackSequences = _trainingPacking.IsChecked == true,
                     GrpoRewardMode = SelectedTag(_grpoReward) ?? GrpoRewardMode.ExactReference,
                     GrpoGenerations = SafeWholeNumber(_grpoGenerations.Value, 4),
+                    GrpoImportanceSampling = SelectedTag(_grpoImportanceSampling) ?? GrpoImportanceSampling.Token,
                     TextField = (_textField.Text ?? "text").Trim(),
                     ImageField = (_imageField.Text ?? "image").Trim(),
                     AudioField = (_audioField.Text ?? "audio").Trim(),
@@ -462,6 +521,9 @@ namespace PaRuX.Views
                     LoraRank = SafeWholeNumber(_rank.Value, 16),
                     LearningRate = SafeDouble(_learningRate.Value, 0.0002),
                     MaxSequenceLength = SafeWholeNumber(_maxSequenceLength.Value, 2048),
+                    Precision = SelectedTag(_trainingPrecision) ?? TrainingPrecision.Qlora4Bit,
+                    TargetPreset = SelectedTag(_trainingTargets) ?? TrainingTargetPreset.Attention,
+                    PackSequences = _trainingPacking.IsChecked == true,
                     GrpoRewardMode = SelectedTag(_grpoReward) ?? GrpoRewardMode.ExactReference,
                     MultiGpuStrategy = SelectedMultiGpuStrategy(),
                     GpuDeviceIds = SelectedGpuDeviceIds()

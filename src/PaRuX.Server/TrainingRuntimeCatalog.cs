@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -177,17 +178,112 @@ internal static class TrainingRuntimeCatalog
             + "; torch=" + probe.TorchVersion
             + "; backend=" + probe.Backend
             + "; freezeSha256=" + freezeHash);
+        InvalidateCache(runtimeRoot, venvRoot);
         return log.ToString();
     }
+
+    private sealed record CachedRuntimeStatus(
+        TrainingRuntimeStatus Status,
+        string Fingerprint,
+        DateTime CachedUtc);
+
+    private static readonly ConcurrentDictionary<string, CachedRuntimeStatus> StatusCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> StatusLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan StatusCacheTtl = TimeSpan.FromMinutes(5);
+
+    private static string CacheKey(string runtimeRoot, string venvRoot) =>
+        Path.GetFullPath(runtimeRoot) + "|" + Path.GetFullPath(venvRoot);
+
+    internal static void InvalidateCache(string runtimeRoot, string venvRoot) =>
+        StatusCache.TryRemove(CacheKey(runtimeRoot, venvRoot), out _);
+
+    private static string ComputeFilesystemFingerprint(string runtimeRoot, string venvRoot, string python)
+    {
+        string manifestPath = ManifestPath(runtimeRoot);
+        string pyvenvCfg = Path.Combine(venvRoot, "pyvenv.cfg");
+        string sitePackages = Path.Combine(venvRoot, "Lib", "site-packages");
+        if (!Directory.Exists(sitePackages))
+            sitePackages = Path.Combine(venvRoot, "lib");
+
+        static string FileStamp(string path)
+        {
+            if (!File.Exists(path)) return "0";
+            var fi = new FileInfo(path);
+            return fi.Length.ToString() + ":" + fi.LastWriteTimeUtc.Ticks.ToString();
+        }
+
+        static string DirStamp(string path) =>
+            Directory.Exists(path) ? Directory.GetLastWriteTimeUtc(path).Ticks.ToString() : "0";
+
+        return string.Join("|",
+            FileStamp(manifestPath),
+            FileStamp(python),
+            FileStamp(pyvenvCfg),
+            DirStamp(sitePackages));
+    }
+
+    internal static Task<TrainingRuntimeStatus> GetStatusAsync(
+        string runtimeRoot,
+        string venvRoot,
+        CancellationToken cancellationToken) =>
+        GetStatusAsync(runtimeRoot, venvRoot, cancellationToken, forceProbe: false);
 
     internal static async Task<TrainingRuntimeStatus> GetStatusAsync(
         string runtimeRoot,
         string venvRoot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool forceProbe)
     {
         string python = ManagedPythonRuntime.VenvPython(venvRoot);
         if (!ManagedPythonRuntime.IsManagedVenv(venvRoot) || !File.Exists(python))
+        {
+            InvalidateCache(runtimeRoot, venvRoot);
             return TrainingRuntimeStatus.NotInstalled("PaRuX-managed Training Lab environment is not installed.");
+        }
+
+        string key = CacheKey(runtimeRoot, venvRoot);
+        string fp = ComputeFilesystemFingerprint(runtimeRoot, venvRoot, python);
+        if (!forceProbe
+            && StatusCache.TryGetValue(key, out CachedRuntimeStatus? cached)
+            && string.Equals(cached.Fingerprint, fp, StringComparison.Ordinal)
+            && (DateTime.UtcNow - cached.CachedUtc) < StatusCacheTtl)
+        {
+            return cached.Status;
+        }
+
+        SemaphoreSlim gate = StatusLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            fp = ComputeFilesystemFingerprint(runtimeRoot, venvRoot, python);
+            if (!forceProbe
+                && StatusCache.TryGetValue(key, out cached)
+                && string.Equals(cached.Fingerprint, fp, StringComparison.Ordinal)
+                && (DateTime.UtcNow - cached.CachedUtc) < StatusCacheTtl)
+            {
+                return cached.Status;
+            }
+
+            TrainingRuntimeStatus computed = await ComputeStatusUncachedAsync(runtimeRoot, venvRoot, python, cancellationToken).ConfigureAwait(false);
+            if (computed.Installed)
+            {
+                string afterFp = ComputeFilesystemFingerprint(runtimeRoot, venvRoot, python);
+                StatusCache[key] = new CachedRuntimeStatus(computed, afterFp, DateTime.UtcNow);
+            }
+            return computed;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private static async Task<TrainingRuntimeStatus> ComputeStatusUncachedAsync(
+        string runtimeRoot,
+        string venvRoot,
+        string python,
+        CancellationToken cancellationToken)
+    {
 
         TrainingRuntimeManifest? manifest = ReadManifest(runtimeRoot);
         TrainingRuntimeProbe probe;

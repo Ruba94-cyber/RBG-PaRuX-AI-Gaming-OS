@@ -159,6 +159,7 @@ namespace PaRuX.Views
             Id(_maxSequenceLength, "LifecycleLab_MaxSequence_NumberBox", "Max sequence length");
             Id(_dpoBeta, "LifecycleLab_DpoBeta_NumberBox", "DPO beta");
             Id(_grpoReward, "LifecycleLab_GrpoReward_ComboBox", "GRPO reward");
+            Id(_grpoImportanceSampling, "LifecycleLab_GrpoImportanceSampling_ComboBox", "GRPO or GSPO policy");
             Id(_grpoGenerations, "LifecycleLab_GrpoGenerations_NumberBox", "GRPO generations");
             Id(_textField, "LifecycleLab_TextField_TextBox");
             Id(_imageField, "LifecycleLab_ImageField_TextBox");
@@ -404,7 +405,7 @@ namespace PaRuX.Views
             _refreshCts?.Dispose();
             _refreshCts = new CancellationTokenSource();
             CancellationToken ct = _refreshCts.Token;
-            SetBusy(true, "Refreshing lifecycle state…");
+            SetBusy(true, _trainingSubmissionInProgress ? null : T("Refreshing lifecycle state…", "Aggiornamento dello stato del ciclo di vita…"));
             try
             {
                 await RefreshEvalAsync(ct);
@@ -412,11 +413,12 @@ namespace PaRuX.Views
                 await RefreshTrainingAsync(ct);
                 await RefreshAdaptersAsync(ct);
                 await RefreshExperimentsAsync(ct);
-                _status.Text = T("Lifecycle state refreshed.", "Stato del ciclo di vita aggiornato.");
+                if (!_trainingSubmissionInProgress)
+                    _status.Text = T("Lifecycle state refreshed.", "Stato del ciclo di vita aggiornato.");
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { _status.Text = T("Refresh failed: ", "Aggiornamento non riuscito: ") + ex.Message; }
-            finally { SetBusy(false); }
+            catch (Exception ex) { if (!_trainingSubmissionInProgress) _status.Text = T("Refresh failed: ", "Aggiornamento non riuscito: ") + ex.Message; }
+            finally { if (!_trainingSubmissionInProgress) SetBusy(false); }
         }
 
         private async Task SearchDatasetsAsync()
@@ -862,7 +864,15 @@ namespace PaRuX.Views
             foreach (TrainingJobStatus job in jobs.OrderByDescending(j => j.CreatedUtc).Take(20))
             {
                 string metrics = DescribeTrainingMetrics(job);
-                var row = ActionRow(job.Method.ToUpperInvariant() + " · " + job.Status + " · " + job.Stage + " · " + job.CurrentStep + "/" + job.TotalSteps + metrics + (string.IsNullOrWhiteSpace(job.AdapterPath) ? string.Empty : " · adapter ready"));
+                bool isFullModel = string.Equals(job.Precision, TrainingPrecision.Full16Bit, StringComparison.OrdinalIgnoreCase)
+                    || !string.IsNullOrWhiteSpace(job.OutputModelPath);
+                string? fullModelPath = !string.IsNullOrWhiteSpace(job.OutputModelPath)
+                    ? job.OutputModelPath
+                    : (isFullModel ? job.AdapterPath : null);
+                string artifactNote = isFullModel && !string.IsNullOrWhiteSpace(fullModelPath)
+                    ? T(" · full model ready", " · modello completo pronto")
+                    : (string.IsNullOrWhiteSpace(job.AdapterPath) ? string.Empty : " · adapter ready");
+                var row = ActionRow(job.Method.ToUpperInvariant() + " · " + job.Status + " · " + job.Stage + " · " + job.CurrentStep + "/" + job.TotalSteps + metrics + artifactNote);
                 if (job.Status is "queued" or "running")
                 {
                     var cancel = new Button { Content = T("Cancel", "Annulla") };
@@ -873,6 +883,34 @@ namespace PaRuX.Views
                         catch (Exception ex) { _status.Text = T("Training cancel failed: ", "Annullamento del training non riuscito: ") + ex.Message; }
                     };
                     Grid.SetColumn(cancel, 1); row.Children.Add(cancel);
+                }
+                else if (job.Status == "completed" && isFullModel && !string.IsNullOrWhiteSpace(fullModelPath))
+                {
+                    var exportGguf = new Button { Content = T("Export GGUF & add to models", "Esporta GGUF e aggiungi ai modelli") };
+                    Id(exportGguf, "LifecycleLab_ExportFullModelGguf_Button");
+                    string capturedDir = fullModelPath;
+                    string capturedMethod = job.Method;
+                    string capturedId = job.Id.Length >= 8 ? job.Id[..8] : job.Id;
+                    exportGguf.Click += async (_, _) =>
+                    {
+                        SetBusy(true, T("Converting full 16-bit model to GGUF and adding to models…", "Conversione del modello completo a 16 bit in GGUF e aggiunta ai modelli…"));
+                        try
+                        {
+                            TrainingExportGgufResult exported = await TrainingLabClient.Current.ExportFullModelGgufAsync(
+                                capturedDir, "f16", CancellationToken.None);
+                            if (string.IsNullOrWhiteSpace(exported.GgufPath))
+                                throw new InvalidOperationException(T("GGUF export produced no file.", "L'esportazione GGUF non ha prodotto alcun file."));
+                            ManagedModelInfo model = await ModelDownloadClient.Current.ImportManagedModelAsync(new ImportManagedModelRequest
+                            {
+                                SourcePath = exported.GgufPath,
+                                FileName = $"full16-{capturedMethod}-{capturedId}-f16.gguf"
+                            }, CancellationToken.None);
+                            _status.Text = T("Full 16-bit model added to your models: ", "Modello completo a 16 bit aggiunto ai tuoi modelli: ") + model.FileName;
+                        }
+                        catch (Exception ex) { _status.Text = T("Full-model GGUF export failed: ", "Esportazione GGUF del modello completo non riuscita: ") + ex.Message; }
+                        finally { SetBusy(false); }
+                    };
+                    Grid.SetColumn(exportGguf, 1); row.Children.Add(exportGguf);
                 }
                 _trainingJobs.Children.Add(row);
                 if (job.History.Count > 0)
@@ -1001,6 +1039,7 @@ namespace PaRuX.Views
                 DpoBeta = SafeDouble(_dpoBeta.Value, 0.1),
                 GrpoRewardMode = SelectedTag(_grpoReward) ?? GrpoRewardMode.ExactReference,
                 GrpoGenerations = SafeWholeNumber(_grpoGenerations.Value, 4),
+                GrpoImportanceSampling = SelectedTag(_grpoImportanceSampling) ?? GrpoImportanceSampling.Token,
                 TextField = string.IsNullOrWhiteSpace(_textField.Text) ? "text" : _textField.Text.Trim(),
                 ImageField = string.IsNullOrWhiteSpace(_imageField.Text) ? "image" : _imageField.Text.Trim(),
                 AudioField = string.IsNullOrWhiteSpace(_audioField.Text) ? "audio" : _audioField.Text.Trim(),
@@ -1011,9 +1050,9 @@ namespace PaRuX.Views
             _trainingSubmissionInProgress = true;
             _quickTrainButton.IsEnabled = false;
             _startTrainingButton.IsEnabled = false;
+            SetBusy(true, T("Validating advanced training settings…", "Convalida delle impostazioni di training avanzato…"));
             try
             {
-                _status.Text = T("Validating advanced training settings…", "Convalida delle impostazioni di training avanzato…");
                 TrainingPlanResult plan = await TrainingLabClient.Current.PlanAsync(new TrainingPlanRequest
                 {
                     TrainJsonlPath = request.TrainJsonlPath, BaseModel = request.BaseModel, Method = request.Method,
@@ -1033,15 +1072,17 @@ namespace PaRuX.Views
                     return;
                 }
 
+                _status.Text = T("Submitting training job…", "Invio del job di training…");
                 TrainingJobStatus job = await TrainingLabClient.Current
                     .CreateJobExplicitAsync(request, CancellationToken.None);
-                _status.Text = T("Training job ", "Job di training ") + job.Id
-                    + T(" queued. Successful output auto-registers in Adapter Manager with provenance.", " messo in coda. L'output riuscito si registra automaticamente in Adapter Manager con la provenienza.");
                 await RefreshTrainingAsync(CancellationToken.None);
+                _status.Text = T("Training job ", "Job di training ") + job.Id
+                    + T(" queued. Successful output is saved locally.", " messo in coda. L'output riuscito viene salvato in locale.");
             }
             catch (Exception ex) { _status.Text = T("Training start failed: ", "Avvio del training non riuscito: ") + ex.Message; }
             finally
             {
+                SetBusy(false);
                 _trainingSubmissionInProgress = false;
                 _quickTrainButton.IsEnabled = true;
                 _startTrainingButton.IsEnabled = true;

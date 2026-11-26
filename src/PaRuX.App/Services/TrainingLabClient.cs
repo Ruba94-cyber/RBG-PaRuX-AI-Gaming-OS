@@ -26,6 +26,7 @@ namespace PaRuX.Services
         public bool PackSequences { get; init; }
         public string GrpoRewardMode { get; init; } = PaRuX.Contracts.GrpoRewardMode.ExactReference;
         public int GrpoGenerations { get; init; } = 4;
+        public string GrpoImportanceSampling { get; init; } = PaRuX.Contracts.GrpoImportanceSampling.Token;
         public string TextField { get; init; } = "text";
         public string ImageField { get; init; } = "image";
         public string AudioField { get; init; } = "audio";
@@ -101,6 +102,7 @@ namespace PaRuX.Services
                 PackSequences = options.PackSequences,
                 GrpoRewardMode = PaRuX.Contracts.GrpoRewardMode.Normalize(options.GrpoRewardMode),
                 GrpoGenerations = options.GrpoGenerations,
+                GrpoImportanceSampling = PaRuX.Contracts.GrpoImportanceSampling.Normalize(options.GrpoImportanceSampling),
                 TextField = NormalizeField(options.TextField, "text"),
                 ImageField = NormalizeField(options.ImageField, "image"),
                 AudioField = NormalizeField(options.AudioField, "audio"),
@@ -128,6 +130,7 @@ namespace PaRuX.Services
                 request.PackSequences = options.PackSequences;
                 request.GrpoRewardMode = options.GrpoRewardMode;
                 request.GrpoGenerations = options.GrpoGenerations;
+                request.GrpoImportanceSampling = options.GrpoImportanceSampling;
                 request.TextField = options.TextField;
                 request.ImageField = options.ImageField;
                 request.AudioField = options.AudioField;
@@ -152,6 +155,12 @@ namespace PaRuX.Services
         public Task CancelJobAsync(string id, CancellationToken ct) =>
             SendNoContentOrJsonAsync(HttpMethod.Post,
                 "/api/v1/training/jobs/" + Uri.EscapeDataString(id) + "/cancel", null, ct);
+
+        public Task<TrainingExportGgufResult> ExportFullModelGgufAsync(string modelDirectory, string outtype, CancellationToken ct) =>
+            SendAsync<TrainingExportGgufResult>(HttpMethod.Post,
+                "/api/v1/training/export/gguf",
+                new { modelDirectory, outtype },
+                ct);
 
         private static string NormalizeField(string? value, string fallback)
         {
@@ -189,5 +198,11 @@ namespace PaRuX.Services
                 throw new LocalAiException("Training Lab request failed (" + (int)response.StatusCode + "): " + detail);
             }
         }
+    }
+
+    public sealed class TrainingExportGgufResult
+    {
+        public string GgufPath { get; set; } = string.Empty;
+        public string? Log { get; set; }
     }
 }

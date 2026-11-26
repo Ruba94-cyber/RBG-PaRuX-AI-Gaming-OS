@@ -117,7 +117,7 @@ public static class TrainingRuntimeV2Endpoints
 
                 // TrainingLabService remains the single owner of full dataset checks,
                 // physical KTO microbatch validation, durable jobs and Gaming hard-off.
-                return Results.Ok(training.CreateJob(request));
+                return Results.Ok(training.CreateJobWithVerifiedRuntime(request, runtimeStatus));
             }
             catch (OperationCanceledException) { throw; }
             catch (InvalidDataException ex)

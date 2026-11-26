@@ -241,6 +241,10 @@ public sealed class TrainingJobStatus
     public List<TrainingMetricSample> History { get; set; } = new();
     public string? Error { get; set; }
     public string? AdapterPath { get; set; }
+    /// <summary>Complete Hugging Face model folder produced by full 16-bit fine-tuning (not a PEFT adapter).</summary>
+    public string? OutputModelPath { get; set; }
+    /// <summary>Base precision / mode used for this job (qlora-4bit, lora-16bit, full-16bit).</summary>
+    public string? Precision { get; set; }
     public string Method { get; set; } = TrainingMethod.Sft;
     public DateTime CreatedUtc { get; set; }
     public DateTime UpdatedUtc { get; set; }
