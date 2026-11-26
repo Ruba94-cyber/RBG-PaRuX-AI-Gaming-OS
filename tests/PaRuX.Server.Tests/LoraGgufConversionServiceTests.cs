@@ -252,6 +252,31 @@ public sealed class LoraGgufConversionServiceTests : IDisposable
     }
 
     [Fact]
+    public void Trained_model_library_name_is_a_simple_unique_gguf_file_name()
+    {
+        var adapter = new AdapterDto { Id = "6c8c34c74ae4435bb8c547a5c0b1fd1d", BaseModel = "HuggingFaceTB/SmolLM2-135M-Instruct", Method = "LoRA-16bit-DPO" };
+        string name = TrainedModelNaming.LibraryFileName(adapter, "f16");
+        Assert.Equal("SmolLM2-135M-Instruct-LoRA-16bit-DPO-6c8c34c7-f16.gguf", name);
+        Assert.True(PaRuXPathSafety.IsSimpleFileName(name));
+
+        var odd = new AdapterDto { Id = "x y/z", BaseModel = "C:\\models\\My Model:v2", Method = "QLoRA" };
+        string oddName = TrainedModelNaming.LibraryFileName(odd, "f16");
+        Assert.True(PaRuXPathSafety.IsSimpleFileName(oddName));
+        Assert.EndsWith(".gguf", oddName, StringComparison.Ordinal);
+        Assert.DoesNotContain(' ', oddName);
+    }
+
+    [Theory]
+    [InlineData("LoRA-16bit-DPO", true)]
+    [InlineData("QLoRA", true)]
+    [InlineData("LoRA-16bit-GSPO", true)]
+    [InlineData("LoRA-16bit-EMBEDDING-FT", false)]
+    [InlineData("LoRA-TTS-SFT", false)]
+    [InlineData("QLoRA-VISION-SFT", false)]
+    public void Only_causal_text_adapters_offer_a_chat_gguf_export(string method, bool expected) =>
+        Assert.Equal(expected, TrainedModelNaming.CanExportChatGguf(new AdapterDto { Method = method }));
+
+    [Fact]
     public async Task MergeAsync_refuses_when_the_engine_is_not_installed()
     {
         string adapter = Path.Combine(_root, "adapter");

@@ -100,6 +100,32 @@ public sealed class MergeAdapterRequest
     public string? GgufOuttype { get; set; }
 }
 
+/// <summary>Naming for a trained model published into the managed model library after a merge + GGUF export.</summary>
+public static class TrainedModelNaming
+{
+    /// <summary>True for adapters whose base is a causal LLM that the merge script and llama-server can load. Embedding
+    /// (encoder) and SpeechT5 TTS adapters are not chat models and cannot become a chat GGUF.</summary>
+    public static bool CanExportChatGguf(AdapterDto adapter) =>
+        adapter != null
+        && !adapter.Method.Contains("EMBEDDING", StringComparison.OrdinalIgnoreCase)
+        && !adapter.Method.Contains("TTS", StringComparison.OrdinalIgnoreCase)
+        && !adapter.Method.Contains("VISION", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A simple, unique-per-adapter .gguf library file name: base model leaf + method + adapter id prefix + outtype.</summary>
+    public static string LibraryFileName(AdapterDto adapter, string outtype)
+    {
+        ArgumentNullException.ThrowIfNull(adapter);
+        string baseLeaf = (adapter.BaseModel ?? string.Empty).Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "model";
+        string id = new string((adapter.Id ?? string.Empty).Where(char.IsLetterOrDigit).Take(8).ToArray());
+        string raw = baseLeaf + "-" + adapter.Method + (id.Length > 0 ? "-" + id : string.Empty) + "-" + outtype;
+        var safe = new System.Text.StringBuilder(raw.Length);
+        foreach (char ch in raw) safe.Append(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '-');
+        string name = safe.ToString().Trim('-', '.');
+        if (name.Length > 120) name = name[..120];
+        return (name.Length == 0 ? "trained-model" : name) + ".gguf";
+    }
+}
+
 public sealed class MergeAdapterResult
 {
     public string OutputDirectory { get; set; } = string.Empty;

@@ -35,6 +35,10 @@ namespace PaRuX.Services
             SendAsync<AdapterDto>(HttpMethod.Post, "/api/v1/adapters/" + Uri.EscapeDataString(id) + "/convert",
                 new ConvertAdapterRequest { Outtype = outtype }, ct);
 
+        public Task<MergeAdapterResult> MergeAsync(string id, string outputDirectory, string? ggufOuttype, CancellationToken ct) =>
+            SendAsync<MergeAdapterResult>(HttpMethod.Post, "/api/v1/adapters/" + Uri.EscapeDataString(id) + "/merge",
+                new MergeAdapterRequest { OutputDirectory = outputDirectory, GgufOuttype = ggufOuttype }, ct);
+
         private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
         {
             ServerBootstrap server = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
