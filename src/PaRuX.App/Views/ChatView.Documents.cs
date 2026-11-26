@@ -67,7 +67,9 @@ namespace PaRuX.Views
             AutomationProperties.SetAutomationId(_documentsNote, "Chat_Documents_Note");
             _documentsSources = new StackPanel { Spacing = 2 };
             AutomationProperties.SetAutomationId(_documentsSources, "Chat_Documents_Sources");
-            var panel = new StackPanel { Spacing = 8, Padding = new Thickness(4) };
+            // A fixed width keeps the flyout content inside the presenter: unconstrained, the wrapping hint and the stretched
+            // search box were measured wider than the flyout and were cut off on its right edge.
+            var panel = new StackPanel { Spacing = 8, Padding = new Thickness(4), Width = 360 };
             panel.Children.Add(_documentsSwitch);
             panel.Children.Add(new TextBlock
             {

@@ -192,7 +192,8 @@ namespace PaRuX.Views
             _desktop = Big("Desktop", T("Desktop", "Desktop"), T("Playnite in a normal window", "Playnite in una finestra normale"), () => LaunchAsync(PlayniteModes.Desktop, false));
             _streaming = Big("Streaming", T("Streaming", "Streaming"), T("Sunshine plus the display plan", "Sunshine più il piano degli schermi"), () => StreamingAsync(true, false));
             _settingsButton = Big("Settings", T("Settings", "Impostazioni"), T("Choose how Console Mode starts", "Scegli come parte la modalità Console"), () => { Show(Page.Settings); return Task.CompletedTask; });
-            var grid = new Grid { ColumnSpacing = 10, RowSpacing = 10 };
+            // Arrow keys move between the four tiles like the pad directions do; without this a keyboard user could only Tab.
+            var grid = new Grid { ColumnSpacing = 10, RowSpacing = 10, XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled };
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.RowDefinitions.Add(new RowDefinition());

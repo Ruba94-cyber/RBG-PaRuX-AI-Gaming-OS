@@ -271,7 +271,11 @@ namespace PaRuX.Views
             if (CoreJson.Str(a, "lastResult").Length > 0)
                 box.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.8, Text = T("Last result: ", "Ultimo esito: ") + CoreJson.Str(a, "lastResult") });
 
-            var enabled = new ToggleSwitch { IsOn = CoreJson.Bool(a, "enabled"), Header = T("On", "Attivo") };
+            // The header names what the switch controls; its own On/Off text shows the state. A header that read "On"
+            // above a switch showing "Off" contradicted itself.
+            var enabled = new ToggleSwitch { IsOn = CoreJson.Bool(a, "enabled"), Header = T("Flow switched on", "Flusso attivo") };
+            AutomationProperties.SetAutomationId(enabled, "Flows_Enabled_" + id);
+            AutomationProperties.SetName(enabled, T("Flow switched on: ", "Flusso attivo: ") + CoreJson.Str(a, "name"));
             bool loading = true;
             enabled.Toggled += async (_, _) =>
             {

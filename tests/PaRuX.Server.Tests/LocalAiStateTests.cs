@@ -13,6 +13,9 @@ public sealed class LocalAiStateTests
     [InlineData("Mistral-7B Uncensored CPU/Vulkan", "Mistral-7B · Uncensored")]
     [InlineData("Custom 4B", "Custom 4B")]
     [InlineData(" ", "Model idle")]
+    // A role launch reports "Role: <role>"; the header used to read "Role: · Standard".
+    [InlineData("Role: Standard", "Role: Standard")]
+    [InlineData("Role: Uncensored GPU", "Role: Uncensored GPU")]
     public void Header_identifies_the_actual_role_without_misrepresenting_media_quality(string profile, string expected)
     {
         var state = new LocalAiState { ActiveProfile = profile, Healthy = true };

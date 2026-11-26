@@ -44,7 +44,9 @@ namespace PaRuX.Services
                         if (p.EndsWith(suffix, comparison))
                         {
                             string model = p[..^suffix.Length].TrimEnd();
-                            return model.Length == 0 ? p : model + " · " + role;
+                            // A role launch is reported as "Role: Standard": stripping the role left "Role:" and the
+                            // header read "Role: · Standard". Without a model name there is nothing to strip.
+                            return model.Length == 0 || model.EndsWith(':') ? p : model + " · " + role;
                         }
                     }
                 }
