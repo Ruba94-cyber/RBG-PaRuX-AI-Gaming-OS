@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -204,7 +205,10 @@ private fun PaRuXApp(container: AppContainer, openPcRequests: StateFlow<Long>) {
             }
         }
     ) { padding ->
-        Surface(Modifier.padding(padding)) {
+        // consumeWindowInsets: the bottom NavigationBar (and the system bars it already pads for) is part of
+        // `padding`. Without marking it consumed, each tab's own Scaffold and Chat's imePadding() add the full
+        // keyboard height on top of it, so with the keyboard open Chat lost the whole transcript to blank space.
+        Surface(Modifier.padding(padding).consumeWindowInsets(padding)) {
             when (tab) {
                 PaRuXTab.Chat -> ChatScreen(chatViewModel)
                 PaRuXTab.PC -> PcStudioScreen(pcStudioViewModel)
