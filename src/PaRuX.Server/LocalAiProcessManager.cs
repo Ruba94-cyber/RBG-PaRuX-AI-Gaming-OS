@@ -329,6 +329,8 @@ public sealed class LocalAiProcessManager
 
     private static int TextPort => LocalAiPaths.TextPort;
     private const int MediaPort = 8188;
+    internal int MediaPortForTests { get; set; } = MediaPort;
+    internal Func<CancellationToken, Task<bool>>? FreeMediaCachedModelsForTests { get; set; }
     // A sleeping llama-server keeps the process alive but unloads the model. On a 27B profile
     // that turns the next message into another minute-scale cold load while the UI misleadingly
     // looks ready. Keep the selected text model resident until an explicit media/game/OFF
@@ -338,6 +340,9 @@ public sealed class LocalAiProcessManager
     /// <summary>Loopback URL of the resident text runtime (read-only; used by the Model Arena runner).</summary>
     public string TextEndpointUrl => TextEndpoint;
     private static readonly string MediaEndpointUrl = "http://127.0.0.1:" + MediaPort;
+    private string CurrentMediaEndpointUrl => MediaPortForTests == MediaPort
+        ? MediaEndpointUrl
+        : "http://127.0.0.1:" + MediaPortForTests;
     internal const string MediaAssistantProfileLabel = "Qwen3.5-4B Uncensored media assistant";
     // A live llama-server under heavy prompt-processing load (large context, GPU offload short of
     // ideal) can leave its HTTP listener thread starved for several seconds before it answers even
@@ -707,14 +712,40 @@ public sealed class LocalAiProcessManager
         if (MediaHealthProbeForTests is { } probe) return await probe(ct).ConfigureAwait(false);
         // Same reasoning as IsTextHealthyAsync: ComfyUI is absent far more often than present, and
         // asking a port nobody is listening on costs an exception every time.
-        if (!IsPortListening(MediaPort)) return false;
+        if (!IsPortListening(MediaPortForTests)) return false;
         try
         {
-            using HttpResponseMessage response = await Http.GetAsync(MediaEndpointUrl + "/system_stats", ct).ConfigureAwait(false);
+            using HttpResponseMessage response = await Http.GetAsync(CurrentMediaEndpointUrl + "/system_stats", ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return false;
             using JsonDocument doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
             return doc.RootElement.TryGetProperty("system", out _);
         }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Asks ComfyUI to unload cached models and free memory via its loopback /free endpoint.
+    /// Safely no-ops and returns false if media is not running or not healthy.
+    /// </summary>
+    public async Task<bool> TryFreeMediaCachedModelsAsync(CancellationToken ct)
+    {
+        if (FreeMediaCachedModelsForTests is { } probe) return await probe(ct).ConfigureAwait(false);
+        if (!await IsMediaHealthyAsync(ct).ConfigureAwait(false)) return false;
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            using var content = new StringContent(
+                "{\"unload_models\":true,\"free_memory\":true}",
+                Encoding.UTF8,
+                "application/json");
+            using HttpResponseMessage response = await Http.PostAsync(
+                CurrentMediaEndpointUrl + "/free",
+                content,
+                timeoutCts.Token).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { return false; }
     }
 
@@ -809,6 +840,17 @@ public sealed class LocalAiProcessManager
         try
         {
             Process? process = GetManagedProcess(LocalAiPaths.TextPidFile, "llama-server");
+            if (process == null) return 0;
+            return Math.Max(0, ProcessWorkingSet.Read(process));
+        }
+        catch { return 0; }
+    }
+
+    public long GetMediaWorkingSetBytes()
+    {
+        try
+        {
+            using Process? process = GetManagedProcess(LocalAiPaths.MediaPidFile, "python", "pythonw");
             if (process == null) return 0;
             return Math.Max(0, ProcessWorkingSet.Read(process));
         }

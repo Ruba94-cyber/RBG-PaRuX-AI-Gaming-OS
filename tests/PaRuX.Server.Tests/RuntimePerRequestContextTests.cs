@@ -180,6 +180,7 @@ public sealed class RuntimePerRequestContextTests
     /// same reasoning long-context has always used.
     /// </summary>
     [Theory]
+    [InlineData("chat")]
     [InlineData("coding")]
     [InlineData("long-context")]
     public void Sequential_workloads_never_recommend_more_than_one_slot(string workload)

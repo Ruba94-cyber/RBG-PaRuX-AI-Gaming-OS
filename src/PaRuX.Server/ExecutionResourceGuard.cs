@@ -100,8 +100,7 @@ internal static class ExecutionResourceGuard
             violations.Add($"system RAM {admissionRamUsed.Value:0.0}% > {budget.MaxSystemRamPercent}%{reclaimNote}");
             remedies.Add(snapshot.SystemRamReclaimablePercent > 0
                 ? "free memory used by other applications"
-                : "free system memory - a chat model held in memory is usually the largest single user, "
-                    + "and stopping it in Runtime Manager releases it");
+                : "free system memory by closing heavy applications or stopping any loaded model or media runtime in Runtime Manager");
         }
         if (maxTemperature.HasValue && maxTemperature.Value > budget.MaxGpuTemperatureC)
         {

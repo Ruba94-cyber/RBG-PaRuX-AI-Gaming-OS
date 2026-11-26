@@ -317,19 +317,14 @@ public static class RuntimeLaunchOptimizer
 
     internal static int RecommendParallelSlots(long modelSizeBytes, long largestVramBytes, string workload)
     {
-        workload = RuntimePerformanceTuner.NormalizeWorkload(workload);
-        // Coding is a single long-horizon agent driving one request at a time. Extra slots buy it
-        // no concurrency it can use and cost it the thing it needs most: llama.cpp divides
-        // --ctx-size across slots, so every additional slot is a proportional cut to the window a
-        // coding turn can actually see. Measured on the physical PC (2026-09-21): the coding role
-        // ran with 4 slots, leaving 8192 tokens per request, and the agent looped on re-reads until
-        // its exploration budget stopped it without producing a single edit. Same reasoning as
-        // long-context, which has always pinned 1.
-        if (workload is "coding" or "long-context") return 1;
-        if (largestVramBytes <= 0 || modelSizeBytes <= 0) return 1;
-        long estimated = EstimateLoadedBytes(modelSizeBytes);
-        long headroom = Math.Max(0, largestVramBytes - estimated);
-        if (headroom >= 6 * GiB) return 2;
+        _ = RuntimePerformanceTuner.NormalizeWorkload(workload);
+        _ = modelSizeBytes;
+        _ = largestVramBytes;
+        // Single-stream inference is the common desktop case for chat, coding, and long-context.
+        // Returning 2 for chat doubled --ctx-size (e.g. 32768) and emitted --parallel 2 --kv-unified,
+        // which pushed KV cache from f16 back to q8_0 and slowed single-stream CUDA decode.
+        // Explicit multi-slot tuning (profile.ParallelSlots >= 2) and PARUX_PARALLEL_SLOTS still
+        // engage LaunchPlanner.PlanPooledParallelSlots when concurrency is requested.
         return 1;
     }
 

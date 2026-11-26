@@ -138,7 +138,18 @@ public sealed partial class MainWindow
         DateTimeOffset started = DateTimeOffset.UtcNow;
         try { using Process me = Process.GetCurrentProcess(); started = new DateTimeOffset(me.StartTime.ToUniversalTime(), TimeSpan.Zero); }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
-        LogonStartMarker.Write(RegistryRunKeyStore.LogonStartMarkerPath, started, null);
+        string via = "CommandLine";
+        try
+        {
+            string? exe = StartupService.LaunchExecutable;
+            if (exe != null)
+            {
+                LogonMechanism mechanism = RegistryRunKeyStore.CreateRegistration().Describe(exe).Mechanism;
+                if (mechanism != LogonMechanism.None) via = mechanism.ToString();
+            }
+        }
+        catch { }
+        LogonStartMarker.Write(RegistryRunKeyStore.LogonStartMarkerPath, started, via);
     }
 
     private async Task StartLogonConsoleAsync(bool playniteOnly)

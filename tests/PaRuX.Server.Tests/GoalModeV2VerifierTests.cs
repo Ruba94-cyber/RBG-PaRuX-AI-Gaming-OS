@@ -242,4 +242,86 @@ public sealed class GoalModeV2VerifierTests : IDisposable
         });
         Assert.NotEqual(records[0].Id, records[1].Id);
     }
+
+    [Fact]
+    public async Task Hallucinated_surplus_criterion_id_when_all_bound_criteria_are_evaluated_does_not_block_goal()
+    {
+        var tasks = new TaskStore(_tempDir);
+        var goals = new GoalModeV2Store(_tempDir);
+        GoalSpecificationVersionDto specification = goals.Create(new CreateGoalSpecificationRequest
+        {
+            Goal = "Verify a single-criterion goal cleanly",
+            AcceptanceCriteria = new List<string>
+            {
+                "The recorded result contains concrete verification evidence."
+            }
+        });
+        AgentTaskDto task = tasks.Create(new CreateAgentTaskRequest
+        {
+            Goal = specification.Goal,
+            Role = "planner",
+            MaxRepairAttempts = 0,
+            DelegatedContext = GoalModeV2Store.BuildAcceptanceContext(specification)
+        });
+        goals.BindTask(task.Id, specification);
+        tasks.UpdateStatus(task.Id, new UpdateAgentTaskStatusRequest
+        {
+            Status = AgentTaskStatus.Verifying,
+            ResultJson = JsonSerializer.Serialize(new
+            {
+                response = "Concrete verification evidence is recorded.",
+                executionModelKey = "goal-v2-test-model"
+            })
+        });
+        task = tasks.Get(task.Id)!;
+
+        var client = new FakeLocalCompletionClient { HonorStructuredOutput = true };
+        client.EnqueueOk(Verdict(
+            ("AC-001", true, "Concrete verification evidence is present."),
+            ("AC-002", false, "Hallucinated surplus criterion from small model.")));
+        VerifierService verifier = NewVerifier(tasks, goals, client);
+
+        await verifier.ReviewAsync(task, CancellationToken.None);
+
+        AgentTaskDto completed = tasks.Get(task.Id)!;
+        Assert.Equal(AgentTaskStatus.Completed, completed.Status);
+        Assert.Equal("pass", completed.VerificationStatus);
+        GoalVerificationRecordDto record = Assert.Single(goals.ListVerificationRecords(task.Id));
+        Assert.True(record.AllRequiredSatisfied);
+        GoalAcceptanceCriterionVerificationDto single = Assert.Single(record.Criteria);
+        Assert.Equal("AC-001", single.CriterionId);
+        Assert.True(single.Satisfied);
+    }
+
+    [Fact]
+    public async Task Goal_verifier_structured_schema_constrains_criterion_id_enum_and_bounds()
+    {
+        var tasks = new TaskStore(_tempDir);
+        var goals = new GoalModeV2Store(_tempDir);
+        (AgentTaskDto task, _) = CreateBoundVerifyingTask(tasks, goals);
+        var client = new FakeLocalCompletionClient { HonorStructuredOutput = true };
+        client.EnqueueOk(Verdict(
+            ("AC-001", true, "Implementation evidence is present."),
+            ("AC-002", true, "Verification evidence is present.")));
+        VerifierService verifier = NewVerifier(tasks, goals, client);
+
+        await verifier.ReviewAsync(task, CancellationToken.None);
+
+        FakeLocalCompletionClient.StructuredCall call = Assert.Single(client.StructuredCalls);
+        using JsonDocument doc = JsonDocument.Parse(call.Request.JsonSchema);
+        JsonElement criteriaSchema = doc.RootElement
+            .GetProperty("properties")
+            .GetProperty("criteria");
+        Assert.Equal(2, criteriaSchema.GetProperty("minItems").GetInt32());
+        Assert.Equal(2, criteriaSchema.GetProperty("maxItems").GetInt32());
+        string[] enumIds = criteriaSchema
+            .GetProperty("items")
+            .GetProperty("properties")
+            .GetProperty("criterionId")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(element => element.GetString()!)
+            .ToArray();
+        Assert.Equal(new[] { "AC-001", "AC-002" }, enumIds);
+    }
 }

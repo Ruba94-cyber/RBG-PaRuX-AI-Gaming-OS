@@ -318,6 +318,10 @@ public sealed class LocalRuntimeService
         if (GamingMode) throw new InvalidOperationException("Gaming Mode became active while media execution was waiting for text to drain.");
     }
 
+    private const long MediaCachedWeightsEvictThresholdBytes = 1_500_000_000L;
+    private const long MediaStaleProcessRestartThresholdBytes = 2_500_000_000L;
+    private static readonly TimeSpan MediaCacheEvictionSettleDelay = TimeSpan.FromMilliseconds(250);
+
     /// <summary>
     /// Starts the media assistant and ComfyUI before admission so the guard measures the actual
     /// post-transition process working sets instead of crediting the outgoing text model while
@@ -341,12 +345,46 @@ public sealed class LocalRuntimeService
             // Fast failure: if the machine is over its RAM budget even after PaRuX's own outgoing
             // text resident exits, loading ComfyUI cannot fit either. Refuse now instead of after
             // minutes of runtime startup. The outgoing text model is discounted, never counted.
-            () => ExecutionResourceGuard.CheckCurrentAsync(
-                profile,
-                enforceCurrentVram: false,
-                cancellationToken,
-                _process.GetTextWorkingSetBytes()),
+            // If a pre-warmed/stale ComfyUI process is holding cached weights in RAM, free its
+            // cache (or stop the stale process) before admitting or refusing.
+            () => EvaluateRamWithMediaCacheEvictionAsync(
+                () => ExecutionResourceGuard.CheckCurrentAsync(
+                    profile,
+                    enforceCurrentVram: false,
+                    cancellationToken,
+                    _process.GetTextWorkingSetBytes()),
+                _process.GetMediaWorkingSetBytes,
+                _process.TryFreeMediaCachedModelsAsync,
+                _ => Task.FromResult(_process.StopMedia()),
+                cancellationToken),
             () => _process.StartMediaAsync(cancellationToken)).ConfigureAwait(false);
+    }
+
+    internal static async Task<ExecutionResourceDecision> EvaluateRamWithMediaCacheEvictionAsync(
+        Func<Task<ExecutionResourceDecision>> checkRam,
+        Func<long> getMediaWorkingSetBytes,
+        Func<CancellationToken, Task<bool>> tryFreeMediaCachedModels,
+        Func<CancellationToken, Task<bool>> evictStaleMediaRuntime,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? settleDelay = null)
+    {
+        ExecutionResourceDecision decision = await checkRam().ConfigureAwait(false);
+        if (decision.Allowed || getMediaWorkingSetBytes() <= MediaCachedWeightsEvictThresholdBytes)
+            return decision;
+
+        await tryFreeMediaCachedModels(cancellationToken).ConfigureAwait(false);
+        await (settleDelay != null
+            ? settleDelay(cancellationToken)
+            : Task.Delay(MediaCacheEvictionSettleDelay, cancellationToken)).ConfigureAwait(false);
+
+        decision = await checkRam().ConfigureAwait(false);
+        if (decision.Allowed || getMediaWorkingSetBytes() <= MediaStaleProcessRestartThresholdBytes)
+            return decision;
+
+        if (!await evictStaleMediaRuntime(cancellationToken).ConfigureAwait(false))
+            return decision;
+
+        return await checkRam().ConfigureAwait(false);
     }
 
     internal static async Task StartMediaRuntimeAfterPreflightAsync(
@@ -369,10 +407,23 @@ public sealed class LocalRuntimeService
     /// Checks resources only after the media transition is live. No resident RAM is subtracted:
     /// this includes the media assistant even when it was already warm and reused.
     /// </summary>
-    internal static Task<ExecutionResourceDecision> CheckMediaWorkloadAdmissionAsync(CancellationToken cancellationToken)
+    internal Task<ExecutionResourceDecision> CheckMediaWorkloadAdmissionAsync(CancellationToken cancellationToken)
     {
         PaRuX.Contracts.ModelExecutionProfile profile = ExecutionProfileStore.Current.Get().Effective;
-        return ExecutionResourceGuard.CheckCurrentAsync(profile, enforceCurrentVram: false, cancellationToken);
+        return EvaluateRamWithMediaCacheEvictionAsync(
+            () => ExecutionResourceGuard.CheckCurrentAsync(profile, enforceCurrentVram: false, cancellationToken),
+            _process.GetMediaWorkingSetBytes,
+            _process.TryFreeMediaCachedModelsAsync,
+            async ct =>
+            {
+                if (!_process.StopMedia()) return false;
+                LocalAiProcessManager.RuntimeResult restarted = await _process.StartMediaAsync(ct).ConfigureAwait(false);
+                if (!restarted.Success)
+                    throw new InvalidOperationException("Generation did not start: the local media-assistant runtime is missing or failed to start ("
+                        + restarted.Message + "). Open Runtime Manager to repair or reinstall it, then try again. No media was generated.");
+                return true;
+            },
+            cancellationToken);
     }
 
     public async Task<RuntimeResult> RunActionAsync(string action, CancellationToken cancellationToken)

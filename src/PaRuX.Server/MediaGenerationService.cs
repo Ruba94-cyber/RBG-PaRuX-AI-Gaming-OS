@@ -113,7 +113,7 @@ public sealed class MediaGenerationService
         // over its RAM budget. Any failure after this transition schedules normal-profile restore.
         ExecutionResourceDecision resourceAdmission = await PrepareAndAdmitMediaAsync(
             () => _runtime.PrepareMediaRuntimeForAdmissionAsync(ct),
-            () => LocalRuntimeService.CheckMediaWorkloadAdmissionAsync(ct),
+            () => _runtime.CheckMediaWorkloadAdmissionAsync(ct),
             _comfy.ScheduleTextRestoreAfterFailedGeneration).ConfigureAwait(false);
 
         ModelExecutionProfile executionProfile = ExecutionProfileStore.Current.Get().Effective;

@@ -265,7 +265,7 @@ public sealed class VerifierService
                     goalResult = await _client.CompleteStructuredAsync(
                         GoalVerifierSystemPrompt,
                         goalPrompt!,
-                        GoalVerifierStructuredOutput,
+                        BuildGoalVerifierStructuredOutput(goalSpecification),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { return; }
@@ -543,6 +543,29 @@ public sealed class VerifierService
         return prompt.ToString();
     }
 
+    internal static LocalStructuredOutputRequest BuildGoalVerifierStructuredOutput(GoalSpecificationVersionDto spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        List<string> ids = spec.AcceptanceCriteria
+            .Select(x => x.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0)
+            return GoalVerifierStructuredOutput;
+
+        string enumJson = JsonSerializer.Serialize(ids);
+        string count = ids.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string schema =
+            "{\"type\":\"object\",\"properties\":{\"criteria\":{\"type\":\"array\",\"minItems\":"
+            + count
+            + ",\"maxItems\":"
+            + count
+            + ",\"items\":{\"type\":\"object\",\"properties\":{\"criterionId\":{\"type\":\"string\",\"enum\":"
+            + enumJson
+            + "},\"satisfied\":{\"type\":\"boolean\"},\"evidence\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":2000}},\"required\":[\"criterionId\",\"satisfied\",\"evidence\"],\"additionalProperties\":false}}},\"required\":[\"criteria\"],\"additionalProperties\":false}";
+        return new LocalStructuredOutputRequest(GoalVerifierStructuredOutput.Name, schema, Strict: true);
+    }
+
     internal static bool TryParseGoalCriteriaVerdict(
         string value,
         GoalSpecificationVersionDto specification,
@@ -572,6 +595,7 @@ public sealed class VerifierService
             }
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
+            var unknownIds = new List<string>();
             foreach (JsonElement item in criteriaNode.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object
@@ -590,8 +614,8 @@ public sealed class VerifierService
                 string evidence = (evidenceNode.GetString() ?? string.Empty).Trim();
                 if (!expected.ContainsKey(criterionId))
                 {
-                    error = "Verifier returned unknown criterion id: " + criterionId;
-                    return false;
+                    unknownIds.Add(criterionId);
+                    continue;
                 }
                 if (!seen.Add(criterionId))
                 {
@@ -613,10 +637,18 @@ public sealed class VerifierService
 
             if (criteria.Count != expected.Count)
             {
-                List<string> missing = expected.Keys.Where(id => !seen.Contains(id)).OrderBy(id => id).ToList();
-                error = "Verifier did not cover every immutable acceptance criterion. Missing: " +
-                    (missing.Count == 0 ? "unknown" : string.Join(", ", missing));
+                List<string> missing = expected.Keys.Where(id => !seen.Contains(id)).OrderBy(id => id, StringComparer.Ordinal).ToList();
+                error = unknownIds.Count > 0
+                    ? "Verifier returned unknown criterion id(s): " + string.Join(", ", unknownIds)
+                        + (missing.Count > 0 ? ". Missing: " + string.Join(", ", missing) : string.Empty)
+                    : "Verifier did not cover every immutable acceptance criterion. Missing: " +
+                        (missing.Count == 0 ? "unknown" : string.Join(", ", missing));
                 return false;
+            }
+            if (unknownIds.Count > 0)
+            {
+                System.Diagnostics.Trace.TraceWarning(
+                    $"Goal Mode V2 verifier returned {unknownIds.Count} surplus unknown criterion id(s) ({string.Join(", ", unknownIds)}) after evaluating all {expected.Count} bound criteria; ignoring surplus entries.");
             }
             criteria = criteria.OrderBy(item => expected[item.CriterionId].Order).ToList();
             return true;

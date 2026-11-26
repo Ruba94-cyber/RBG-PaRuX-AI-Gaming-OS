@@ -380,8 +380,12 @@ public sealed class LogonStartupTests : IDisposable
         string path = Path.Combine(_root, "logs", "last-logon-start.json");
         Assert.Null(LogonStartMarker.Read(path));
         var when = new DateTimeOffset(2026, 11, 25, 21, 45, 9, TimeSpan.Zero);
-        LogonStartMarker.Write(path, when, null);
+        LogonStartMarker.Write(path, when, "ScheduledTask");
         Assert.Equal(when, LogonStartMarker.Read(path));
+        using (var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path)))
+        {
+            Assert.Equal("ScheduledTask", doc.RootElement.GetProperty("Via").GetString());
+        }
         File.WriteAllText(path, "{not json");
         Assert.Null(LogonStartMarker.Read(path));
     }
