@@ -161,4 +161,35 @@ public sealed class ManagedPipInstallPolicyTests : IDisposable
         Assert.True(at >= 0);
         Assert.Contains("--hash=sha256:", text[at..(at + 400)]);
     }
+    [Fact]
+    public void Build_constraints_under_a_folder_with_spaces_are_passed_by_name_from_the_lock_folder()
+    {
+        // uv splits --build-constraints on spaces, so "C:\Program Files\PaRuX\...\build-constraints.lock.txt" failed
+        // every hash-locked install of an MSI layout with "File not found: C:\Program".
+        string folder = Path.Combine(_dir, "Program Files", "PaRuX", "managed-locks");
+        string constraints = Path.Combine(folder, "build-constraints.lock.txt");
+        string lockPath = Path.Combine(folder, "lora-convert.lock.txt");
+        var input = new[] { "--require-hashes", "--no-deps", "--build-constraints", constraints, "-r", lockPath };
+
+        (IReadOnlyList<string> args, string? workingDirectory) = ManagedPipInstallPolicy.WithSpaceSafeBuildConstraints(input);
+
+        Assert.Equal(new[] { "--require-hashes", "--no-deps", "--build-constraints", "build-constraints.lock.txt", "-r", lockPath }, args);
+        Assert.Equal(folder, workingDirectory);
+        Assert.Equal(constraints, input[3]); // the caller's list is not mutated
+    }
+
+    [Fact]
+    public void Build_constraints_without_spaces_and_installs_without_them_are_left_untouched()
+    {
+        string constraints = Path.Combine(_dir, "build-constraints.lock.txt");
+        var withConstraints = new[] { "--require-hashes", "--no-deps", "--build-constraints", constraints, "-r", "x.lock.txt" };
+        (IReadOnlyList<string> args, string? cwd) = ManagedPipInstallPolicy.WithSpaceSafeBuildConstraints(withConstraints);
+        Assert.Equal(withConstraints, args);
+        Assert.Null(cwd);
+
+        var torch = new[] { "--require-hashes", "--no-deps", "--index-url", "https://download.pytorch.org/whl/cu128", "-r", Path.Combine(_dir, "a b", "torch.lock.txt") };
+        (args, cwd) = ManagedPipInstallPolicy.WithSpaceSafeBuildConstraints(torch);
+        Assert.Equal(torch, args);
+        Assert.Null(cwd);
+    }
 }

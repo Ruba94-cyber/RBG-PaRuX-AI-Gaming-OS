@@ -290,10 +290,12 @@ public static class ManagedPythonRuntime
                     "The hash locks target CPython " + ManagedRequirementLocks.LockPythonMinor + " but this managed environment uses "
                     + actual + ". Repair the engine so PaRuX recreates its own environment.");
         }
+        (IReadOnlyList<string> uvArguments, string? lockFolder) =
+            ManagedPipInstallPolicy.WithSpaceSafeBuildConstraints(arguments.ToList());
         var args = new List<string> { "pip", "install", "--python", python };
-        args.AddRange(arguments);
+        args.AddRange(uvArguments);
         (int exit, string stdout, string stderr) = await RunUvAsync(
-            args, ct, timeout ?? TimeSpan.FromMinutes(20)).ConfigureAwait(false);
+            args, ct, timeout ?? TimeSpan.FromMinutes(20), workingDirectory: lockFolder).ConfigureAwait(false);
         string log = stdout + (string.IsNullOrWhiteSpace(stderr) ? string.Empty : "\n" + stderr);
         if (exit != 0)
         {
