@@ -172,6 +172,23 @@ namespace PaRuX.Views
                 : (ChatItalian ? "Non è più possibile annullare il riavvolgimento." : "The rewind can no longer be undone.")) + fileNote);
         }
 
+        public const string MoreMessageActionsAutomationId = "Chat_Message_MoreActions_Button";
+
+        /// <summary>
+        /// "More actions" (…) at the end of every message's action row. It opens the same menu as right-clicking the bubble
+        /// (branch, duplicate, rewind, rewind with agent files, undo rewind). The bubble's context menu alone was reachable
+        /// only from its few pixels of padding, because the selectable message text shows its own Copy/Select all menu, and
+        /// not at all from the keyboard.
+        /// </summary>
+        private Button BuildMoreMessageActionsButton(ChatMessage message)
+        {
+            string label = ChatItalian ? "Altre azioni sul messaggio" : "More message actions";
+            Button more = BuildActionButton("", label);
+            AutomationProperties.SetAutomationId(more, MoreMessageActionsAutomationId);
+            more.Flyout = BuildMessageBranchFlyout(message);
+            return more;
+        }
+
         /// <summary>Visible per-message button next to Copy/Regenerate on assistant replies.</summary>
         private Button BuildBranchActionButton(ChatMessage message)
         {

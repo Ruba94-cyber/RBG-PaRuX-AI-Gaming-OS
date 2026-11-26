@@ -1293,7 +1293,7 @@ namespace PaRuX.Views
                 Margin = new Thickness(0, 4, 0, 0)
             };
 
-            Button copy = BuildActionButton("\uE8C8", "Copy");
+            Button copy = BuildActionButton("\uE8C8", T("Copy", "Copia"));
             copy.Click += (s, e) =>
             {
                 try
@@ -1324,7 +1324,7 @@ namespace PaRuX.Views
             ConfigureReadAloudButton(readAloud, message);
             actions.Children.Add(readAloud);
 
-            Button regenerate = BuildActionButton("\uE72C", "Regenerate");
+            Button regenerate = BuildActionButton("\uE72C", T("Regenerate", "Rigenera"));
             // Regenerate the reply whose button was selected. Using the conversation's latest
             // assistant message made buttons on older media silently replay an unrelated newer
             // reply instead of resubmitting the original image/video job.
@@ -1339,7 +1339,7 @@ namespace PaRuX.Views
             // construction) SkillUsed has not been set yet - it arrives later via the
             // skill_selected SSE event - so IsGrillMeTurn(message) would always read false here and
             // the button would show for every turn regardless of skill.
-            Button edit = BuildActionButton("\uE70F", "Edit and continue");
+            Button edit = BuildActionButton("\uE70F", T("Edit and continue", "Modifica e continua"));
             edit.Click += (s, e) => BeginEditingMessage(message);
             actions.Children.Add(edit);
             visuals.EditButton = edit;
@@ -1347,8 +1347,9 @@ namespace PaRuX.Views
             Brush? ratingActiveBrush = LocalBrush("PaRuXBrandTextBrush");
             Brush? ratingQuietBrush = LocalBrush("PaRuXDotOffBrush");
 
-            Button thumbsUp = BuildActionButton("\uE8E1", "Good reply");
-            Button thumbsDown = BuildActionButton("\uE8E2", "Not useful");
+            // E8E1 is "Like" and E8E0 is "Dislike" in Segoe Fluent Icons; E8E2 (used before) is "Align right".
+            Button thumbsUp = BuildActionButton("\uE8E1", T("Good reply", "Risposta utile"));
+            Button thumbsDown = BuildActionButton("\uE8E0", T("Not useful", "Non utile"));
             void SyncRatingButtons()
             {
                 thumbsUp.Foreground = message.FeedbackRating == "up" ? ratingActiveBrush : ratingQuietBrush;
@@ -1370,7 +1371,9 @@ namespace PaRuX.Views
             actions.Children.Add(thumbsUp);
             actions.Children.Add(thumbsDown);
 
-            Button trainingCandidate = BuildActionButton("\uE734", message.TrainingCandidate ? "Marked as a training candidate" : "Save as a training candidate");
+            Button trainingCandidate = BuildActionButton("\uE734", message.TrainingCandidate
+                ? T("Marked as a training candidate", "Contrassegnato come candidato al training")
+                : T("Save as a training candidate", "Salva come candidato al training"));
             trainingCandidate.Foreground = message.TrainingCandidate ? ratingActiveBrush : ratingQuietBrush;
             trainingCandidate.Click += (s, e) =>
             {
@@ -1386,7 +1389,8 @@ namespace PaRuX.Views
             // carry the answer somewhere else by hand. Any reply can become a coding task against
             // the configured workspace, with the request and the proposal as its goal - the same
             // isolated worktree, verification and repair path every other coding task gets.
-            Button applyAsCodingTask = BuildActionButton("", "Apply this as a coding task");
+            // E943 ("Code") so it no longer looks like "Edit and continue", which uses the same pencil E70F.
+            Button applyAsCodingTask = BuildActionButton("\uE943", T("Apply this as a coding task", "Applica come attività di programmazione"));
             applyAsCodingTask.Click += async (s, e) =>
             {
                 string workspace = (SettingsStore.Current.Data.AgentCodingWorkspaceRoot ?? string.Empty).Trim();
@@ -1431,6 +1435,7 @@ namespace PaRuX.Views
                 finally { applyAsCodingTask.IsEnabled = true; }
             };
             actions.Children.Add(applyAsCodingTask);
+            actions.Children.Add(BuildMoreMessageActionsButton(message));
 
             if (message.ActionKind == "computer-launch" && !string.IsNullOrWhiteSpace(message.ActionPayload))
             {
@@ -1829,6 +1834,7 @@ namespace PaRuX.Views
             edit.Click += async (_, _) => await EditAndResendAsync(message);
             actions.Children.Add(copy);
             actions.Children.Add(edit);
+            actions.Children.Add(BuildMoreMessageActionsButton(message));
             return actions;
         }
 
@@ -2536,7 +2542,7 @@ namespace PaRuX.Views
         private static void SetReadAloudButtonState(Button button, bool active)
         {
             if (button.Content is FontIcon icon) icon.Glyph = active ? "" : "";
-            string label = active ? "Stop reading" : "Read aloud";
+            string label = active ? UiText.Pick("Stop reading", "Interrompi la lettura") : UiText.Pick("Read aloud", "Leggi ad alta voce");
             ToolTipService.SetToolTip(button, label);
             AutomationProperties.SetName(button, label);
         }
