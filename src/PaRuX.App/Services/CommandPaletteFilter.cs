@@ -21,6 +21,6 @@ namespace PaRuX.Services
         }
 
         private static string[] Tokens(string text) =>
-            text.Split(new[] { ' ', '\t', '-', '/', '&', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            text.Split(new[] { ' ', '\t', '-', '/', '&', ',', '.', '(', ')', '[', ']', ':' }, StringSplitOptions.RemoveEmptyEntries);
     }
 }

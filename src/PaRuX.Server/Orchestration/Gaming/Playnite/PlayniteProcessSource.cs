@@ -82,7 +82,7 @@ internal sealed class WindowsProcessSnapshotSource : IProcessSnapshotSource
     private bool WindowSweep(HashSet<string> baseNames, long now)
     {
         _windowPids.Clear();
-        if (!EnumWindows(_collect, IntPtr.Zero)) return true;   // cannot tell: let the caller do a full sample
+        if (!EnumWindows(_collect, IntPtr.Zero)) return FullSweep(baseNames);   // headless/inaccessible desktop: fall back to full sweep
         foreach (uint stale in _nameCache.Where(kv => now - kv.Value.AtMs > (long)NameCacheLifetime.TotalMilliseconds).Select(kv => kv.Key).ToList())
             _nameCache.Remove(stale);
         foreach (uint pid in _windowPids)
