@@ -21,6 +21,7 @@ public sealed partial class MainWindow
     /// <summary>Start sequence: the Console/TV start preference first (unless a game shortcut started us), then the sign-in list.</summary>
     internal async Task RunStartupSequenceAsync(bool hasPlayRequest)
     {
+        if (CorporateMode.IsActive) return;
         // An explicit launcher request (argument, shortcut, held Ctrl/Shift) replaces the automatic Console/TV and Playnite starts for this launch.
         // Started by the optional sign-in entry (--logon): one decision, timed, then the after-sign-in list. A game shortcut always wins.
         if (!hasPlayRequest && App.StartupLogonRequest.Logon)
@@ -37,6 +38,7 @@ public sealed partial class MainWindow
 
     internal async Task RunSignInAppListAfterStartupAsync()
     {
+        if (CorporateMode.IsActive) return;
         try
         {
             if (App.IsShuttingDown) return;

@@ -52,7 +52,13 @@ internal sealed class KnowledgeWebPanel : StackPanel
         AutomationProperties.SetAutomationId(_searchStatus, "Settings_KnowledgeSearch_Status");
         AutomationProperties.SetLiveSetting(_searchStatus, AutomationLiveSetting.Polite);
         _method.Header = T("Search method", "Metodo di ricerca");
-        _method.Items.Add(new ComboBoxItem { Content = T("Automatic (keyword + meaning when the search model is installed)", "Automatico (parole chiave + significato se il modello di ricerca è installato)"), Tag = "auto" });
+        _method.Items.Add(new ComboBoxItem
+        {
+            Content = CorporateMode.IsActive
+                ? T("Automatic (keyword + meaning when semantic files are present)", "Automatico (parole chiave + significato se i file semantici sono presenti)")
+                : T("Automatic (keyword + meaning when the search model is installed)", "Automatico (parole chiave + significato se il modello di ricerca è installato)"),
+            Tag = "auto"
+        });
         _method.Items.Add(new ComboBoxItem { Content = T("Keyword only", "Solo parole chiave"), Tag = "keyword" });
         _method.SelectionChanged += async (_, _) => await ChangeMethodAsync();
         AutomationProperties.SetAutomationId(_method, "Settings_KnowledgeSearch_Method");
@@ -121,22 +127,25 @@ internal sealed class KnowledgeWebPanel : StackPanel
         Children.Add(_searchStatus);
         Children.Add(_method);
         Children.Add(_installModel);
-        Children.Add(Heading(T("Add a source", "Aggiungi una fonte")));
-        Children.Add(webIntro);
-        Children.Add(_kind);
-        Children.Add(_kindHelp);
-        Children.Add(_url);
-        Children.Add(_mode);
-        Children.Add(_ref);
-        Children.Add(_path);
-        Children.Add(_language);
-        Children.Add(_email);
-        Children.Add(_token);
-        Children.Add(_children);
-        UpdateKindFields();
-        Children.Add(_add);
-        Children.Add(_webStatus);
-        Children.Add(_webList);
+        if (!CorporateMode.IsActive)
+        {
+            Children.Add(Heading(T("Add a source", "Aggiungi una fonte")));
+            Children.Add(webIntro);
+            Children.Add(_kind);
+            Children.Add(_kindHelp);
+            Children.Add(_url);
+            Children.Add(_mode);
+            Children.Add(_ref);
+            Children.Add(_path);
+            Children.Add(_language);
+            Children.Add(_email);
+            Children.Add(_token);
+            Children.Add(_children);
+            UpdateKindFields();
+            Children.Add(_add);
+            Children.Add(_webStatus);
+            Children.Add(_webList);
+        }
         Children.Add(Heading(T("Folders kept up to date", "Cartelle mantenute aggiornate")));
         Children.Add(watchIntro);
         Children.Add(_watchStatus);
@@ -195,7 +204,7 @@ internal sealed class KnowledgeWebPanel : StackPanel
             {
                 _searchStatus.Text = DescribeSearch(r);
                 _method.SelectedIndex = r.Method == "keyword" ? 1 : 0;
-                _installModel.Visibility = r.CanInstallEmbedder ? Visibility.Visible : Visibility.Collapsed;
+                _installModel.Visibility = !CorporateMode.IsActive && r.CanInstallEmbedder ? Visibility.Visible : Visibility.Collapsed;
             }
         }
         catch (Exception ex)
@@ -205,23 +214,15 @@ internal sealed class KnowledgeWebPanel : StackPanel
         }
         finally { _loading = false; }
 
-        await RefreshWebAsync();
+        if (!CorporateMode.IsActive) await RefreshWebAsync();
         await RefreshWatchAsync();
     }
 
     // The Core's reasons are English; these cover each state in the person's language.
     private static string DescribeSearch(RetrievalView r) =>
-        r.Mode == "hybrid"
-            ? T($"Hybrid search is on: keyword matching plus meaning-based matching ({r.EmbedderModel}). An exact code or identifier still wins.",
-                $"La ricerca ibrida è attiva: parole chiave più corrispondenza per significato ({r.EmbedderModel}). Un codice o identificatore esatto ha sempre la precedenza.")
-            : r.Method == "keyword"
-                ? T("Keyword search only, as you chose. A question must share words with the passage.",
-                    "Solo ricerca per parole chiave, come hai scelto. Una domanda deve condividere parole con il passaggio.")
-                : r.OfflineBlocked
-                    ? T("Keyword search only: the search model is not installed and strict offline mode blocks installing it.",
-                        "Solo ricerca per parole chiave: il modello di ricerca non è installato e la modalità offline rigorosa ne blocca l'installazione.")
-                    : T("Keyword search only: the search model is not installed yet. Install it to add meaning-based matching.",
-                        "Solo ricerca per parole chiave: il modello di ricerca non è ancora installato. Installalo per aggiungere la corrispondenza per significato.");
+        KnowledgeRetrievalText.DescribeWebRetrieval(
+            r.Method, r.Mode, r.EmbedderModel, r.OfflineBlocked, CorporateMode.IsActive,
+            System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it");
 
     private async Task ChangeMethodAsync()
     {
@@ -240,7 +241,7 @@ internal sealed class KnowledgeWebPanel : StackPanel
 
     private async Task InstallModelAsync()
     {
-        if (_busy) return;
+        if (_busy || CorporateMode.IsActive) return;
         _busy = true;
         _installModel.IsEnabled = false;
         _searchStatus.Text = T("Downloading the search model (about 90 MB, checked against a pinned hash)…", "Download del modello di ricerca (circa 90 MB, verificato con un hash fissato)…");
