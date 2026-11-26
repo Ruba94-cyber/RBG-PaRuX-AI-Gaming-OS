@@ -58,12 +58,14 @@ public static class SkillPermissionPolicy
     }
 
     /// <summary>Tool names that need no skill permission: the PaRuX knowledge/desktop readers, the owner-confirmed
-    /// document writers and the generic capability labels "git" and "memory".</summary>
+    /// document writers and the generic capability labels "git" and "memory". "run_python" belongs here too: every run is
+    /// approved by the desktop owner in the chat, and the sandbox has no network, no access to the user's files and no
+    /// child processes, so a skill needs none of the privileged permissions to offer it.</summary>
     private static readonly string[] NoPermissionTools =
     {
         "git", "memory", "parux_desktop_search", "parux_desktop_read", "parux_kb_search", "parux_kb_exec",
         "parux_write_word_document", "parux_write_excel_workbook", "parux_edit_excel_workbook",
-        "parux_sql_query", "parux_make_chart", "parux_write_presentation"
+        "parux_sql_query", "parux_make_chart", "parux_write_presentation", "run_python"
     };
 
     private static readonly string[] PrivilegedPrefixes =

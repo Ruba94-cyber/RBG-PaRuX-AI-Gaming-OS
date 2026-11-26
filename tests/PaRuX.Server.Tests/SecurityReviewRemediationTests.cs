@@ -68,6 +68,7 @@ public sealed class SkillUnknownToolPolicyTests
     [InlineData("parux_write_word_document")]
     [InlineData("parux_write_excel_workbook")]
     [InlineData("parux_edit_excel_workbook")]
+    [InlineData("run_python")]
     public void Known_no_permission_tools_still_validate_without_permissions(string tool)
     {
         SkillPermissionPolicy.Validate(Manifest(null, tool));

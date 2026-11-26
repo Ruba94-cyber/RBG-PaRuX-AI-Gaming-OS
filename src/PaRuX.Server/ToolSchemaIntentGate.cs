@@ -24,6 +24,8 @@ internal static partial class ToolSchemaIntentGate
         // Imperative verbs that ask for an action on something (English and Italian): the object may be a file the user never named.
         @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
         @"|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
+        // Asking for code to be executed: the run_python tool must be offered even for a short one-line request.
+        @"|\b(python|run_python|script|sandbox|execute|esegui\w*)\b" +
         @"|[a-z]:\\|\\\\|/[a-z0-9_.-]+/|\.[a-z0-9]{2,5}\b|https?://|```)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ToolIntent();

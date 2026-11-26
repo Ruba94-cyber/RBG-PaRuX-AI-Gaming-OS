@@ -47,6 +47,11 @@ public sealed class ToolSchemaIntentGateTests : IDisposable
     [InlineData("Generate a report")]
     [InlineData("Show the latest invoice")]
     [InlineData("List the invoices")]
+    // Live finding: a one-line request to run code reached the model without the run_python schema.
+    [InlineData("Run print(12345*6789) in the Python sandbox with run_python and report the output.")]
+    [InlineData("Use the run_python tool to compute 12345*6789")]
+    [InlineData("Esegui questo calcolo in Python: 2**64")]
+    [InlineData("Execute this script and tell me what it prints")]
     public void Anything_that_can_touch_files_documents_or_the_users_data_keeps_the_tools(string query) =>
         Assert.False(ToolSchemaIntentGate.CanOmitToolSchemas(query, "general"));
 

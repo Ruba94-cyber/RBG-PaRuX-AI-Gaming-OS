@@ -281,6 +281,25 @@ public sealed class ChatCodeToolTests : IDisposable
     }
 
     [Fact]
+    public void The_general_chat_skill_offers_run_python_and_still_needs_no_privileged_permission()
+    {
+        // Live finding (FlaUI, real Qwen3-4B, 2026-11-26): no built-in skill listed run_python, so with "Skill: Auto" or
+        // "General" the model was never offered the tool and the approval card could not appear from the chat.
+        string repo = AppContext.BaseDirectory;
+        DirectoryInfo? dir = new(repo);
+        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "skills", "built-in"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<PaRuX.Contracts.SkillManifest>(
+            File.ReadAllText(Path.Combine(dir!.FullName, "skills", "built-in", "general.json")),
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+        SkillPermissionPolicy.Validate(manifest);
+        Assert.False(SkillPermissionPolicy.IsQuarantined(manifest));
+        Assert.Contains(ChatCodeTools.RunPythonTool, manifest.AllowedTools);
+        Assert.Single(Tools().GetToolSchemas(manifest.AllowedTools));
+    }
+
+    [Fact]
     public async Task Nothing_runs_until_the_user_approves_and_approval_is_single_use()
     {
         ChatCodeTools t = Tools();
