@@ -131,11 +131,11 @@ namespace PaRuX.Views
                 {
                     StorageQuotaService.EnsureCapacity(decision.Item.SizeBytes);
                     string ext = Path.GetExtension(file.Name).ToLowerInvariant();
-                    StorageFile stored = await file.CopyAsync(destination, Guid.NewGuid().ToString("N") + ext, NameCollisionOption.FailIfExists);
+                    string storedPath = await CopyIntoAttachmentsAsync(file, destination, Guid.NewGuid().ToString("N") + ext);
                     var attachment = new ChatAttachment
                     {
                         FileName = file.Name,
-                        LocalPath = stored.Path,
+                        LocalPath = storedPath,
                         MediaType = decision.Kind == DroppedKind.Audio ? ChatAudioAttachmentPolicy.MediaTypeFor(ext)! : MediaTypeFor(ext),
                         SizeBytes = decision.Item.SizeBytes
                     };
@@ -144,7 +144,7 @@ namespace PaRuX.Views
                         TimeSpan? duration = null;
                         if (ext == ".wav")
                         {
-                            try { using var fs = new FileStream(stored.Path, FileMode.Open, FileAccess.Read, FileShare.Read); duration = ChatAudioAttachmentPolicy.TryReadWavDuration(fs); }
+                            try { using var fs = new FileStream(storedPath, FileMode.Open, FileAccess.Read, FileShare.Read); duration = ChatAudioAttachmentPolicy.TryReadWavDuration(fs); }
                             catch (IOException) { }
                         }
                         _audioDurations[attachment.Id] = duration;
@@ -162,6 +162,24 @@ namespace PaRuX.Views
             // Honest result: what was attached, what was refused and why, what failed to copy.
             string summary = AttachedSummary(attached, plan, failed);
             if (!string.IsNullOrWhiteSpace(summary)) ShowTransientStatus(summary);
+        }
+
+        /// <summary>
+        /// Copies one dropped/pasted file into the attachments folder. A file dragged from Explorer into this unpackaged app
+        /// is a brokered StorageFile whose CopyAsync fails with InvalidOperationException ("not valid due to the current
+        /// state of the object"), so a file with a real local path is copied with System.IO (never moved, never overwritten);
+        /// only items without a path (virtual/shell items) still use CopyAsync.
+        /// </summary>
+        private static async Task<string> CopyIntoAttachmentsAsync(StorageFile file, StorageFolder destination, string storedName)
+        {
+            string target = Path.Combine(destination.Path, storedName);
+            if (!string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path))
+            {
+                await Task.Run(() => File.Copy(file.Path, target, overwrite: false)).ConfigureAwait(true);
+                return target;
+            }
+            StorageFile stored = await file.CopyAsync(destination, storedName, NameCollisionOption.FailIfExists);
+            return stored.Path;
         }
 
         private static string AttachedSummary(int attached, DropPlan plan, IReadOnlyList<string> failed)
