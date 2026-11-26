@@ -4,6 +4,8 @@ namespace PaRuX.Server;
 
 public sealed record TrainingExportVerifyRequest(string Path);
 
+public sealed record TrainingExportGgufRequest(string ModelDirectory, string? Outtype);
+
 /// <summary>
 /// Desktop-owner routes added by the training parity slice: export verification, importance-matrix generation,
 /// document-to-dataset recipes and the local provider presets. All are DENY for browser sessions: they read or
@@ -17,6 +19,28 @@ public static class TrainingToolsEndpoints
             request is null || string.IsNullOrWhiteSpace(request.Path)
                 ? Results.BadRequest(new { error = "A path is required." })
                 : Results.Ok(TrainingExportVerifier.Verify(request.Path))).RequireDesktopOwner();
+
+        // A full 16-bit fine-tune ends as a complete HF model folder, not an adapter, so the adapter
+        // convert/merge routes cannot reach it. This turns such a folder (or any merged HF model) into one
+        // standalone GGUF next to it, through the same managed conversion venv and vendored llama.cpp script.
+        app.MapPost("/api/v1/training/export/gguf", async (
+            TrainingExportGgufRequest request, LoraGgufConversionService conversion, CancellationToken ct) =>
+        {
+            if (request is null || string.IsNullOrWhiteSpace(request.ModelDirectory)
+                || !Path.IsPathFullyQualified(request.ModelDirectory) || request.ModelDirectory.StartsWith(@"\\", StringComparison.Ordinal))
+                return Results.BadRequest(new { error = "An absolute local model folder is required." });
+            string outtype = string.IsNullOrWhiteSpace(request.Outtype) ? "f16" : request.Outtype.Trim().ToLowerInvariant();
+            string folder = Path.GetFullPath(request.ModelDirectory);
+            string output = Path.Combine(folder, LoraGgufConversionService.MergedGgufFileName(folder, outtype));
+            try
+            {
+                string log = await conversion.ConvertModelAsync(folder, output, outtype, ct);
+                return Results.Ok(new { ggufPath = output, verification = TrainingExportVerifier.Verify(output), log = log.Length <= 4_000 ? log : log[^4_000..] });
+            }
+            catch (UnavailableDuringGamingException gaming) { return GamingHardOff.Conflict(gaming); }
+            catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status409Conflict); }
+        }).RequireDesktopOwner();
 
         app.MapPost("/api/v1/lifecycle/imatrix", async (
             GgufImatrixRequest request, GgufQuantizeService service, LocalRuntimeService runtime, CancellationToken ct) =>

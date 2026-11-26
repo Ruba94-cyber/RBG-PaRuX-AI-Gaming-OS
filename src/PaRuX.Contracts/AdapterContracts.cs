@@ -92,4 +92,17 @@ public sealed class MergeAdapterRequest
     /// no Hugging Face Hub access at all. Omit to resolve the adapter's own recorded base model id
     /// from the local HF cache or a live Hub call.</summary>
     public string? BaseModelDir { get; set; }
+
+    /// <summary>Optional: after a successful merge, also convert the merged HF model into one
+    /// standalone GGUF (f32, f16, bf16, q8_0 or auto) with the vendored convert_hf_to_gguf.py, so
+    /// the trained model can be loaded by llama-server or quantized further. Omit to keep the
+    /// merge-only behaviour.</summary>
+    public string? GgufOuttype { get; set; }
+}
+
+public sealed class MergeAdapterResult
+{
+    public string OutputDirectory { get; set; } = string.Empty;
+    /// <summary>Full path of the merged-model GGUF, or null when no GGUF conversion was requested.</summary>
+    public string? GgufPath { get; set; }
 }

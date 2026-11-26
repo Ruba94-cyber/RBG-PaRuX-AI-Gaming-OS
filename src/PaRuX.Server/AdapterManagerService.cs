@@ -62,9 +62,14 @@ public sealed class AdapterManagerService
                 ? "LoRA-16bit" : "QLoRA";
         if (request.UseDora && request.Method != TrainingMethod.TtsSft)
             baseType = baseType.Replace("LoRA", "DoRA", StringComparison.Ordinal);
-        return request.Method == TrainingMethod.Sft
-            ? baseType
-            : baseType + "-" + TrainingMethod.Normalize(request.Method).ToUpperInvariant();
+        if (request.Method == TrainingMethod.Sft) return baseType;
+        string method = TrainingMethod.Normalize(request.Method);
+        // GSPO runs through the GRPO trainer with sequence-level importance sampling; the registry must say so
+        // instead of recording a GSPO adapter as plain GRPO.
+        if (method == TrainingMethod.Grpo
+            && GrpoImportanceSampling.Normalize(request.GrpoImportanceSampling) == GrpoImportanceSampling.Sequence)
+            return baseType + "-GSPO";
+        return baseType + "-" + method.ToUpperInvariant();
     }
 
     /// <summary>Removes only the registry row - the adapter's files are left on disk. Deleting
@@ -153,5 +158,23 @@ public sealed class AdapterManagerService
 
         await _conversion.MergeAsync(adapter.AdapterPath, adapter.BaseModel, outputDirectory, ct, baseModelDir).ConfigureAwait(false);
         return Path.GetFullPath(outputDirectory);
+    }
+
+    /// <summary>Merge, then optionally turn the merged HF model into a standalone GGUF in the same output
+    /// directory. The outtype is validated before the (slow) merge so a typo never costs a merge.</summary>
+    public async Task<MergeAdapterResult> MergeToBaseModelAsync(MergeAdapterRequest request, string id, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        string? outtype = string.IsNullOrWhiteSpace(request.GgufOuttype) ? null : request.GgufOuttype.Trim().ToLowerInvariant();
+        if (outtype != null && !LoraGgufConversionService.KnownOutputTypes.Contains(outtype))
+            throw new InvalidDataException("Unknown output type \"" + outtype + "\". Known types: "
+                + string.Join(", ", LoraGgufConversionService.KnownOutputTypes) + ".");
+
+        string merged = await MergeToBaseModelAsync(id, request.OutputDirectory, ct, request.BaseModelDir).ConfigureAwait(false);
+        if (outtype == null) return new MergeAdapterResult { OutputDirectory = merged };
+
+        string ggufPath = Path.Combine(merged, LoraGgufConversionService.MergedGgufFileName(merged, outtype));
+        await _conversion.ConvertModelAsync(merged, ggufPath, outtype, ct).ConfigureAwait(false);
+        return new MergeAdapterResult { OutputDirectory = merged, GgufPath = ggufPath };
     }
 }

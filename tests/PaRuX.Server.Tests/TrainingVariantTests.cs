@@ -121,6 +121,17 @@ public sealed class TrainingVariantTests
         Assert.Equal(expected, AdapterManagerService.TrainingAdapterMethodLabel(request));
     }
 
+    [Theory]
+    [InlineData(GrpoImportanceSampling.Token, "LoRA-16bit-GRPO")]
+    [InlineData(GrpoImportanceSampling.Sequence, "LoRA-16bit-GSPO")]
+    public void Grpo_adapter_registry_distinguishes_gspo_runs(string importanceSampling, string expected)
+    {
+        TrainingJobRequest request = Request(TrainingMethod.Grpo);
+        request.Precision = TrainingPrecision.Lora16Bit;
+        request.GrpoImportanceSampling = importanceSampling;
+        Assert.Equal(expected, AdapterManagerService.TrainingAdapterMethodLabel(request));
+    }
+
     [Fact]
     public void Sequence_packing_cannot_silently_affect_preference_training()
     {

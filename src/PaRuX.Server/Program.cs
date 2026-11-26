@@ -2825,7 +2825,7 @@ app.MapPost("/api/v1/adapters/{id}/convert", async (string id, ConvertAdapterReq
 
 app.MapPost("/api/v1/adapters/{id}/merge", async (string id, MergeAdapterRequest request, AdapterManagerService adapters, CancellationToken ct) =>
 {
-    try { return Results.Ok(new { outputDirectory = await adapters.MergeToBaseModelAsync(id, request.OutputDirectory, ct, request.BaseModelDir) }); }
+    try { return Results.Ok(await adapters.MergeToBaseModelAsync(request, id, ct)); }
     catch (UnavailableDuringGamingException gaming) { return GamingHardOff.Conflict(gaming); }
     catch (InvalidDataException exception) { return Results.BadRequest(new { error = exception.Message }); }
     catch (InvalidOperationException exception) { return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status409Conflict); }
