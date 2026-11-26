@@ -107,10 +107,11 @@ public sealed class InstallProgressPresentationCoverageTests
             var textValues = allTextElements.Select(e => e.Properties.Name.ValueOrDefault ?? string.Empty).ToList();
 
             bool hasPlainOwnership = textValues.Any(t =>
-                t.Contains("managed by PaRuX", StringComparison.Ordinal)
-                || t.Contains("managed by you", StringComparison.Ordinal)
-                || t.Contains("detected on this PC", StringComparison.Ordinal)
-                || t.Contains("not configured", StringComparison.Ordinal));
+                t.Contains("Installed by PaRuX", StringComparison.Ordinal)
+                || t.Contains("Chosen by you", StringComparison.Ordinal)
+                || t.Contains("Found on this PC", StringComparison.Ordinal)
+                || t.Contains("Installed", StringComparison.Ordinal)
+                || t.Contains("Not installed", StringComparison.Ordinal));
             Assert.True(hasPlainOwnership, "Component ownership and state must be presented in plain language");
 
             foreach (string t in textValues)

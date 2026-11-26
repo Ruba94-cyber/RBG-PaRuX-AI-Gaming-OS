@@ -26,6 +26,7 @@ public sealed class ManualGameLibraryUiTests
             File.WriteAllText(marker, "fixture, not executable");
             var item = UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem);
             new InstallProgressPage(app).Invoke(item);
+            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "GamesToolsPage_InstallStage_Button", ControlType.Button));
             var name = UiWait.ById(app.MainWindow, "GameLibrary_Name_TextBox", ControlType.Edit).AsTextBox();
             var path = UiWait.ById(app.MainWindow, "GameLibrary_Path_TextBox", ControlType.Edit).AsTextBox();
             UiWait.For(() => File.Exists(Path.Combine(app.DataRoot, "server", "bootstrap.json")), "isolated core bootstrap");
@@ -86,12 +87,9 @@ public sealed class ManualGameLibraryUiTests
         {
             var navigation = UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem);
             new InstallProgressPage(app).Invoke(navigation);
-            var collectionFilter = UiWait.ById(app.MainWindow, "GameTitles_Collection_Filter", ControlType.Edit);
-            var collectionApply = UiWait.ById(app.MainWindow, "GameTitles_Collection_Apply", ControlType.Button);
-            Assert.False(string.IsNullOrWhiteSpace(collectionFilter.Name));
-            Assert.False(string.IsNullOrWhiteSpace(collectionApply.Name));
-            // A fixture with no games must still expose and permit the read-only filter.
-            // No real store discovery, game execution or collection mutation is required.
+            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "GamesToolsPage_InstallStage_Button", ControlType.Button));
+            var backToTools = UiWait.ById(app.MainWindow, "GameLibrary_OpenToolsPage_Button", ControlType.Button);
+            Assert.False(string.IsNullOrWhiteSpace(backToTools.Name));
             var refreshGaming = UiWait.ById(app.MainWindow, "GameLibrary_Gaming_Refresh_Button", ControlType.Button);
             var returnToAi = UiWait.ById(app.MainWindow, "GameLibrary_ReturnToAi_Button", ControlType.Button);
             UiWait.For(() => refreshGaming.Properties.IsEnabled.ValueOrDefault,
@@ -183,6 +181,7 @@ public sealed class ManualGameLibraryUiTests
         {
             var navigation = UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem);
             new InstallProgressPage(app).Invoke(navigation);
+            UiWait.ExpandById(app.MainWindow, "GamesToolsPage_Downloads_Expander");
 
             var refresh = UiWait.ById(app.MainWindow, "GameDownloads_Refresh", ControlType.Button);
             var start = UiWait.ById(app.MainWindow, "GameDownloads_Start", ControlType.Button);
@@ -228,9 +227,10 @@ public sealed class ManualGameLibraryUiTests
         try
         {
             const string stripButton = "GameLibrary_Strip_ReturnToAi_Button";
-            string[] sections = ["Library", "Downloads", "Add", "Devices"];
+            string[] sections = ["Downloads", "Add", "Devices"];
             var navigation = UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem);
             new InstallProgressPage(app).Invoke(navigation);
+            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "GamesToolsPage_InstallStage_Button", ControlType.Button));
             UiWait.ById(app.MainWindow, "GameLibrary_Sections");
 
             // Presses "Refresh Gaming status" and waits for the Devices status text that proves the Core answer was applied

@@ -93,7 +93,7 @@ public sealed class RealDownloadsUiTests
     private static void OpenDownloads(UiTestApplication app)
     {
         new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item"));
-        GamingSectionsPage.SelectSection(app.MainWindow, "Downloads");
+        UiWait.ExpandById(app.MainWindow, "GamesToolsPage_Downloads_Expander");
     }
 
     private static void StartJob(UiTestApplication app, int port, string folder, string? sha)

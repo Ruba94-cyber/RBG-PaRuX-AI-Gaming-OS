@@ -52,9 +52,9 @@ public sealed class ConsoleAndLanguageUiTests
             UiWait.For(() => ToggleOf(routeAfter) == ToggleState.Off,
                 "Route-to-TV toggle restored to off after restart");
 
-            // The opt-in auto-return switch is independent and stays at its default.
-            var autoReturn = UiWait.ById(restarted.MainWindow, "Settings_ConsoleDisplays_AutoReturn_Toggle", ControlType.Button);
-            Assert.Equal(ToggleState.Off, ToggleOf(autoReturn));
+            // The opt-in start-on-TV switch is independent and stays at its default.
+            var startOnTv = UiWait.ById(restarted.MainWindow, "Settings_ConsoleDisplays_StartOnTv_Toggle", ControlType.Button);
+            Assert.Equal(ToggleState.Off, ToggleOf(startOnTv));
 
             routeAfter.Patterns.Toggle.Pattern.Toggle();
             UiWait.For(() => ReadBool(restarted.SettingsPath, "RouteVerifiedWindowedGamesToTv") == true,
@@ -82,7 +82,7 @@ public sealed class ConsoleAndLanguageUiTests
             "ConsoleStartOnTvWhenPresent=true persisted");
 
         var fallback = UiWait.ById(initial.MainWindow, "Settings_ConsoleDisplays_StartWithoutTv_Combo", ControlType.ComboBox);
-        Assert.Contains("Normal window", fallback.AsComboBox().SelectedItem?.Name ?? string.Empty, StringComparison.Ordinal);   // the default
+        Assert.Contains("Opens normally, in front", fallback.AsComboBox().SelectedItem?.Name ?? string.Empty, StringComparison.Ordinal);   // the default
         fallback.AsComboBox().Select(1);   // Minimized
         UiWait.For(() => ReadString(initial.SettingsPath, "StartupWithoutTv") == "minimized", "StartupWithoutTv=minimized persisted");
 

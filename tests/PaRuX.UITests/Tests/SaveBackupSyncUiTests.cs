@@ -42,7 +42,10 @@ public sealed class SaveBackupSyncUiTests
             (await http.PostAsJsonAsync(endpoint + "/api/v1/gaming/save-backups", new { SourceFolder = saves, Label = "Slot 1" })).EnsureSuccessStatusCode();
             (await http.PutAsJsonAsync(endpoint + "/api/v1/gaming/save-backups/sync", new { Folder = mirror })).EnsureSuccessStatusCode();
 
-            new InstallProgressPage(app).Invoke(UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem));
+            var page = new InstallProgressPage(app);
+            page.EnableAdvancedMode();
+            page.Invoke(UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem));
+            UiWait.ExpandById(app.MainWindow, "GamesToolsPage_SaveBackups_Expander");
 
             var status = UiWait.ById(app.MainWindow, "GameSaves_Sync_Status", ControlType.Text);
             UiWait.For(() => Text(status).Contains(mirror, StringComparison.OrdinalIgnoreCase), "the chosen folder is shown", TimeSpan.FromSeconds(30));
