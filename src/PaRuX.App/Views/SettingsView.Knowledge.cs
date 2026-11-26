@@ -306,18 +306,25 @@ namespace PaRuX.Views
 
             void Apply(KnowledgeRetrievalPlanView plan)
             {
+                bool corporate = PaRuX.Contracts.CorporateMode.IsActive;
+                bool italian = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it";
                 loading = true;
                 embedder.Items.Clear();
                 foreach (KnowledgeEmbedderView o in plan.Embedders)
-                    embedder.Items.Add(new ComboBoxItem { Tag = o.Id, Content = o.Label + " (" + o.Dimensions + ")" + (o.Installed ? string.Empty : KT(" - not installed", " - non installato")) });
+                    embedder.Items.Add(new ComboBoxItem
+                    {
+                        Tag = o.Id,
+                        Content = PaRuX.Contracts.KnowledgeRetrievalText.FormatEmbedderOption(o.Label, o.Dimensions, o.Installed, corporate, italian)
+                    });
                 embedder.SelectedIndex = Math.Max(0, plan.Embedders.ToList().FindIndex(o => o.Selected));
                 embedder.IsEnabled = plan.Embedders.Count > 0 && plan.ReembedState != "running";
                 mode.SelectedIndex = Math.Max(0, new[] { "hybrid", "embedding", "keyword" }.ToList().IndexOf(plan.RequestedMode));
                 mode.IsEnabled = plan.ReembedState != "running";
                 string text = KT("Search now: ", "Ricerca attuale: ") + ModeLabel(plan.EffectiveMode)
-                    + (plan.RerankerInstalled ? KT(" · local reranker on", " · riordino locale attivo") : KT(" · local reranker not installed", " · riordino locale non installato"));
+                    + PaRuX.Contracts.KnowledgeRetrievalText.FormatRerankerNote(plan.RerankerInstalled, corporate, italian);
                 if (plan.DegradedReason != null)
-                    text += "\n" + KT("Not as chosen: ", "Non come scelto: ") + plan.DegradedReason;
+                    text += "\n" + KT("Not as chosen: ", "Non come scelto: ")
+                        + PaRuX.Contracts.KnowledgeRetrievalText.LocalizeDegradedReason(plan.DegradedReason, corporate, italian);
                 KnowledgeEmbedderView? active = plan.Embedders.FirstOrDefault(o => o.Selected);
                 if (active != null && active.Key.Length > 0)
                     text += "\n" + KT("Vector identity: ", "Identità dei vettori: ") + active.Key

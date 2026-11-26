@@ -7,27 +7,44 @@ namespace PaRuX.Contracts;
 /// </summary>
 public sealed record CorporateOfflineReadiness(
     bool CpuRuntimePresent, bool ChatModelPresent, bool EmbeddingPresent,
-    bool RerankerPresent, string? StarterModelName)
+    bool RerankerPresent, string? StarterModelName,
+    bool MultilingualEmbeddingPresent = false,
+    bool MultilingualRerankerPresent = false)
 {
     public bool HasChatAssets => CpuRuntimePresent && ChatModelPresent;
-    public bool HasDocumentAssets => HasChatAssets && EmbeddingPresent;
+    public bool HasDocumentAssets => HasChatAssets && (EmbeddingPresent || MultilingualEmbeddingPresent);
 
     public string ToStatusText(bool italian)
     {
         static string Mark(bool found, bool italian) => found
             ? (italian ? "presente" : "present")
             : (italian ? "MANCANTE" : "MISSING");
+
+        string embeddingState = MultilingualEmbeddingPresent
+            ? (italian
+                ? "presente (multilingue E5" + (EmbeddingPresent ? " + MiniLM)" : ")")
+                : "present (multilingual E5" + (EmbeddingPresent ? " + MiniLM)" : ")"))
+            : EmbeddingPresent
+                ? (italian ? "presente (MiniLM)" : "present (MiniLM)")
+                : (italian ? "MANCANTE" : "MISSING");
+
+        string rerankerState = MultilingualRerankerPresent
+            ? (italian
+                ? "presente (multilingue mmarco" + (RerankerPresent ? " + fallback)" : ")")
+                : "present (multilingual mmarco" + (RerankerPresent ? " + fallback)" : ")"))
+            : Mark(RerankerPresent, italian);
+
         if (italian)
             return "Verifica locale (solo file, non prova di funzionamento): motore CPU "
                 + Mark(CpuRuntimePresent, true) + " · modello Chat " + Mark(ChatModelPresent, true)
-                + " · ricerca semantica " + Mark(EmbeddingPresent, true)
-                + " · reranker " + Mark(RerankerPresent, true)
+                + " · ricerca semantica documenti " + embeddingState
+                + " · reranker " + rerankerState
                 + (HasDocumentAssets ? ". Pronto per il test reale di Chat e documenti."
                     : ". Importa o ripristina i componenti mancanti prima di usare Chat e documenti.");
         return "Offline file check (not a functional test): CPU engine "
             + Mark(CpuRuntimePresent, false) + " · Chat model " + Mark(ChatModelPresent, false)
-            + " · semantic search " + Mark(EmbeddingPresent, false)
-            + " · reranker " + Mark(RerankerPresent, false)
+            + " · document semantic search " + embeddingState
+            + " · reranker " + rerankerState
             + (HasDocumentAssets ? ". Ready for a real chat-and-document test."
                 : ". Restore or import missing components before using Chat and documents.");
     }
@@ -73,7 +90,13 @@ public sealed record CorporateOfflineReadiness(
             string rerank = Path.Combine(dataRoot, "ai-runtimes", "reranker");
             bool reranker = Nonempty(Path.Combine(rerank, "model.onnx"), 100_000)
                 && Nonempty(Path.Combine(rerank, "vocab.txt"), 1_000);
-            return new(cpu, selected != null, embeddings, reranker, selected);
+            string e5 = Path.Combine(dataRoot, "ai-runtimes", "embeddings-e5");
+            bool e5Present = Nonempty(Path.Combine(e5, "model.onnx"), 100_000)
+                && Nonempty(Path.Combine(e5, "tokenizer.json"), 1_000);
+            string mmarco = Path.Combine(dataRoot, "ai-runtimes", "rerank-mmarco");
+            bool mmarcoPresent = Nonempty(Path.Combine(mmarco, "model.onnx"), 100_000)
+                && Nonempty(Path.Combine(mmarco, "tokenizer.json"), 1_000);
+            return new(cpu, selected != null, embeddings, reranker, selected, e5Present, mmarcoPresent);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException)

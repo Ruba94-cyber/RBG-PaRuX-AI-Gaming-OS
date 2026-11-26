@@ -25,6 +25,8 @@ namespace PaRuX.Views
             }
 
             bool it = SetupProfileItalian;
+            if (KnowledgeWebSectionTitle != null)
+                KnowledgeWebSectionTitle.Text = it ? "CONOSCENZA: CARTELLE MONITORATE, RICERCA" : "KNOWLEDGE: WATCHED FOLDERS, SEARCH";
             var panel = new StackPanel { Tag = "Models", Spacing = 14, MaxWidth = 720 };
             AutomationProperties.SetAutomationId(panel, "Settings_CorporateModels_Panel");
             var heading = new TextBlock

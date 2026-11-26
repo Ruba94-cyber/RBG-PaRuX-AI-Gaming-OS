@@ -814,21 +814,20 @@ namespace PaRuX.Views
             try
             {
                 EmbeddingEngineStatus status = await EmbeddingClient.Current.GetStatusAsync(CancellationToken.None);
-                if (status.Loaded)
+                bool italian = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it";
+                EmbeddingEngineStatusPresentation presentation = EmbeddingEngineStatusPresenter.Present(
+                    status,
+                    CorporateMode.IsActive,
+                    StoreEditionPolicy.AllowsExecutableDownloads,
+                    italian,
+                    _embeddingInstallFailure);
+                EmbeddingEngineStatusText.Text = presentation.Text;
+                if (InstallEmbeddingEngineButton != null)
                 {
-                    EmbeddingEngineStatusText.Text = T("Installed and active (", "Installato e attivo (") + status.Dimensions + T("-dim) - Memory and RAG now rank by real semantic similarity, not just keyword overlap.", "-dim) - Memoria e RAG ora ordinano per reale somiglianza semantica, non solo per parole chiave.");
-                    if (InstallEmbeddingEngineButton != null) InstallEmbeddingEngineButton.Visibility = Visibility.Collapsed;
-                }
-                else if (status.Installed)
-                {
-                    EmbeddingEngineStatusText.Text = T("Installed but failed to load", "Installato ma caricamento non riuscito") + (string.IsNullOrEmpty(status.LastError) ? "." : ": " + status.LastError);
-                    if (InstallEmbeddingEngineButton != null) InstallEmbeddingEngineButton.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    EmbeddingEngineStatusText.Text = T("Not installed - Memory and RAG currently rank by keyword overlap only. Installing adds real semantic search for both, entirely local (sentence-transformers/all-MiniLM-L6-v2, ~90 MB, one-time download, verified against a pinned SHA-256).", "Non installato - Memoria e RAG attualmente ordinano solo per sovrapposizione di parole chiave. L'installazione aggiunge la vera ricerca semantica per entrambi, interamente locale (sentence-transformers/all-MiniLM-L6-v2, ~90 MB, download singolo, verificato tramite SHA-256 bloccato).")
-                        + (_embeddingInstallFailure == null ? string.Empty : (T(" Last install attempt failed: ", " Ultimo tentativo di installazione non riuscito: ") + _embeddingInstallFailure));
-                    if (InstallEmbeddingEngineButton != null) InstallEmbeddingEngineButton.Visibility = Visibility.Visible;
+                    InstallEmbeddingEngineButton.Visibility = presentation.ShowInstallButton
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                    InstallEmbeddingEngineButton.IsEnabled = presentation.ShowInstallButton;
                 }
             }
             catch (Exception ex)
@@ -840,10 +839,15 @@ namespace PaRuX.Views
 
         private string? _embeddingInstallFailure;
 
-        /// <summary>Microsoft Store edition: PaRuX does not download or install programs, so the engine installers and the
-        /// runtime updater are hidden (the Core refuses them too). Locating software the user installed stays available.</summary>
+        /// <summary>Microsoft Store edition (and Corporate offline): PaRuX does not download or install programs, so the engine
+        /// installers and the runtime updater are hidden (the Core refuses them too). Locating software the user installed stays available.</summary>
         private void ApplyStoreEditionRestrictions()
         {
+            if (CorporateMode.IsActive && InstallEmbeddingEngineButton != null)
+            {
+                InstallEmbeddingEngineButton.Visibility = Visibility.Collapsed;
+                InstallEmbeddingEngineButton.IsEnabled = false;
+            }
             if (PaRuX.Contracts.StoreEditionPolicy.AllowsExecutableDownloads) return;
             foreach (Button b in new[] { InstallEmbeddingEngineButton, AvatarInstallButton, ThreedInstallButton, Settings_AutoCheck_RuntimeUpdate_Button })
             {
@@ -855,6 +859,7 @@ namespace PaRuX.Views
 
         private async void InstallEmbeddingEngine_Click(object sender, RoutedEventArgs e)
         {
+            if (CorporateMode.IsActive || !StoreEditionPolicy.AllowsExecutableDownloads) return;
             _embeddingInstallFailure = null;
             if (InstallEmbeddingEngineButton != null) InstallEmbeddingEngineButton.IsEnabled = false;
             if (EmbeddingEngineStatusText != null) EmbeddingEngineStatusText.Text = T("Downloading (~90 MB)…", "Download in corso (~90 MB)…");

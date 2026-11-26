@@ -1620,7 +1620,7 @@
 
             <!-- ==================== Websites, watched folders and search method ==================== -->
             <StackPanel Spacing="{StaticResource PaRuXSpaceS}" Tag="Chat Behavior">
-                <TextBlock Text="KNOWLEDGE: WEBSITES, WATCHED FOLDERS, SEARCH" loc:Loc.ItText="CONOSCENZA: SITI WEB, CARTELLE MONITORATE, RICERCA" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
+                <TextBlock x:Name="KnowledgeWebSectionTitle" Text="KNOWLEDGE: WEBSITES, WATCHED FOLDERS, SEARCH" loc:Loc.ItText="CONOSCENZA: SITI WEB, CARTELLE MONITORATE, RICERCA" Style="{StaticResource PaRuXSectionHeaderTextStyle}" Margin="4,0,0,0" />
                 <Border Style="{StaticResource PaRuXCardStyle}">
                     <loc:KnowledgeWebPanel />
                 </Border>
