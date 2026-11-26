@@ -99,8 +99,9 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
                 // selection available for a conscious retry.
                 onAccepted()
             } catch (e: Exception) {
+                // describe() keeps the Core's own (sanitized) reason for an HTTP refusal instead of "HTTP 503".
                 _state.value = _state.value.copy(submissionError =
-                    e.message ?: "Couldn't start the job. Your draft was kept.")
+                    com.parux.android.ui.chat.ChatErrors.describe(e) + " Your draft was kept.")
             } finally {
                 _state.value = _state.value.copy(isSubmitting = false)
             }

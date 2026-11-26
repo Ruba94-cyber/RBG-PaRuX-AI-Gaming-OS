@@ -224,7 +224,9 @@ private fun JobRow(job: MediaJobStatus, onCancel: () -> Unit) {
                         style = MaterialTheme.typography.labelSmall)
                 }
             }
-            job.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            // The Core's job error can quote absolute PC paths (e.g. a missing model file); show the cause on the phone
+            // without the local directory layout.
+            job.error?.let { Text(com.parux.android.ui.chat.ChatErrors.sanitize(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             if (job.status == "queued" || job.status == "running") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onCancel) { Text("Cancel") }

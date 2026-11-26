@@ -102,6 +102,16 @@ class ChatErrorsTest {
     }
 
     @Test
+    fun mediaJobErrorsKeepTheirGuidanceButLoseTheLocalDirectoryLayout() {
+        val s = ChatErrors.sanitize(
+            "Generation did not start: the local media-assistant runtime is missing or failed to start (File not found: " +
+                "D:\\Work Space\\My App\\.data\\LocalAI\\models\\Qwen3.5-4B-Q4_K_M.gguf). Open Runtime Manager to repair it.")
+        assertEquals(
+            "Generation did not start: the local media-assistant runtime is missing or failed to start (File not found: " +
+                "Qwen3.5-4B-Q4_K_M.gguf). Open Runtime Manager to repair it.", s)
+    }
+
+    @Test
     fun longDetailsAreBoundedAndControlCharactersRemoved() {
         val s = ChatErrors.sanitize("line one\r\nline\u0007two " + "word ".repeat(200))
         assertTrue(s.length <= ChatErrors.MAX_DETAIL_LENGTH)
