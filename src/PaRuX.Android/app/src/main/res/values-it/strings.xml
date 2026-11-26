@@ -40,4 +40,15 @@
     <string name="settings_profile_active">✓ Attivo</string>
     <string name="settings_profile_select">Seleziona</string>
     <string name="settings_auto">Auto</string>
+
+    <!-- Chat: il PC ha rifiutato un turno (errore HTTP con la causa del Core, sanificata) -->
+    <string name="chat_error_server_detail">Il PC PaRuX non ha potuto rispondere (HTTP %1$d): %2$s</string>
+    <string name="chat_error_server_no_detail">Il PC PaRuX non ha potuto rispondere (HTTP %1$d) senza indicare il motivo. Apri PaRuX sul PC, controlla Runtime Manager e riprova.</string>
+    <string name="chat_error_details">Dettagli dal PC (HTTP %1$d): %2$s</string>
+    <string name="chat_error_missing_runtime">Sul PC manca il motore IA locale (llama-server). Sul PC apri PaRuX → Runtime Manager per individuare o installare il runtime, poi riprova.</string>
+    <string name="chat_error_missing_model">Sul PC manca il file del modello selezionato. Apri Model Hub in PaRuX sul PC e scegli un modello installato.</string>
+    <string name="chat_error_out_of_memory">Il PC non ha memoria libera sufficiente per questo modello. Scegli un modello più piccolo in Model Hub sul PC, oppure libera memoria e riprova.</string>
+    <string name="chat_error_gaming_active">Sul PC è attivo il Gaming: PaRuX lascia libera la GPU per il gioco. Chiudi il gioco e riprova.</string>
+    <string name="chat_error_ai_off">L\'IA locale sul PC è disattivata. Dal menu PaRuX nella barra delle applicazioni scegli AI Auto o AI On, poi riprova.</string>
+    <string name="chat_error_timed_out">Il modello sul PC non è diventato pronto in tempo. Potrebbe essere ancora in caricamento: attendi un momento e riprova.</string>
 </resources>
