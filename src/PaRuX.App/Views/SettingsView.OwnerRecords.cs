@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using PaRuX.Contracts;
 using PaRuX.Services;
@@ -135,14 +136,22 @@ namespace PaRuX.Views
             catch (Exception ex) { _rolesStatus.Text = T("Could not read device access: ", "Impossibile leggere l'accesso dei dispositivi: ") + ex.Message; }
         }
 
+        private sealed class AccessibleStackPanel : StackPanel
+        {
+            protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+        }
+
         private StackPanel OwnerSection(string category, string title, string description, out StackPanel list, out TextBlock status,
             string idPrefix, params (string Label, Action Run)[] buttons)
         {
-            var section = new StackPanel
+            var section = new AccessibleStackPanel
             {
                 Tag = category, Spacing = 8,
                 Visibility = string.Equals(_selectedSettingsCategory, category, StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed,
             };
+            AutomationProperties.SetAccessibilityView(section, AccessibilityView.Control);
+            AutomationProperties.SetName(section, title);
+            AutomationProperties.SetAutomationId(section, idPrefix + "_Section");
             section.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(4, 0, 0, 0) });
             var card = new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1) };
             if (Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out object? stroke) && stroke is Microsoft.UI.Xaml.Media.Brush brush)

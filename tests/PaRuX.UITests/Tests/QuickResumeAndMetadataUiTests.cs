@@ -47,13 +47,12 @@ public sealed class QuickResumeAndMetadataUiTests
         UiTestApplication.WaitForCorePortReleased();
     }
 
-    private static void OpenGamingHome(UiTestApplication app)
+    private static void OpenGamesToolsQuickResume(UiTestApplication app)
     {
         var page = new InstallProgressPage(app);
         page.Invoke(ById(app, GamingTab));
-        ById(app, "GameHome_Sort");
-        var add = ById(app, "GameLibrary_Add_Button");
-        UiWait.For(() => add.Properties.IsEnabled.ValueOrDefault, "library finished loading");
+        ById(app, "GamesToolsPage_Heading");
+        UiWait.ExpandById(app.MainWindow, "GamesToolsPage_QuickResume_Expander");
     }
 
     private static bool IsInView(AutomationElement element, int minHeight = 1)
@@ -196,16 +195,15 @@ public sealed class QuickResumeAndMetadataUiTests
         using var app = new UiTestApplication(nameof(QuickResume_panel_is_below_the_library_and_refresh_keeps_it_safe));
         try
         {
-            OpenGamingHome(app);
-            var sort = ById(app, "GameHome_Sort");
+            OpenGamesToolsQuickResume(app);
+            var playniteStatus = ById(app, "GamesToolsPage_Playnite_Status");
             var heading = OpenQuickResume(app);
             Assert.Equal("Quick Resume", heading.Name);
-            Assert.True(heading.BoundingRectangle.Top > sort.BoundingRectangle.Top ||
-                        sort.BoundingRectangle.IsEmpty ||
-                        // A heading virtualised below the viewport reports an empty rectangle while the toolbar is visible.
-                        (heading.BoundingRectangle.IsEmpty && !sort.BoundingRectangle.IsEmpty) ||
-                        sort.Properties.IsOffscreen.ValueOrDefault,
-                "the Quick Resume panel sits below the library toolbar: heading=" + heading.BoundingRectangle + " sort=" + sort.BoundingRectangle + " offscreen=" + sort.Properties.IsOffscreen.ValueOrDefault);
+            Assert.True(heading.BoundingRectangle.Top > playniteStatus.BoundingRectangle.Top ||
+                        playniteStatus.BoundingRectangle.IsEmpty ||
+                        (heading.BoundingRectangle.IsEmpty && !playniteStatus.BoundingRectangle.IsEmpty) ||
+                        playniteStatus.Properties.IsOffscreen.ValueOrDefault,
+                "Quick Resume sits below the Playnite card on the Games tools page: heading=" + heading.BoundingRectangle + " playnite=" + playniteStatus.BoundingRectangle + " offscreen=" + playniteStatus.Properties.IsOffscreen.ValueOrDefault);
 
             var refresh = ById(app, "QuickResume_Refresh_Button");
             var reviewMods = ById(app, "QuickResume_Mods_ReviewButton");
@@ -259,7 +257,7 @@ public sealed class QuickResumeAndMetadataUiTests
         int pid = fixture.Process.Id;
         try
         {
-            OpenGamingHome(app);
+            OpenGamesToolsQuickResume(app);
             OpenQuickResume(app);
 
             // The fixture is a normal windowed app: it must be listed with a Pause action.
@@ -327,26 +325,30 @@ public sealed class QuickResumeAndMetadataUiTests
         using var app = new UiTestApplication(nameof(Covers_and_info_consent_cancel_leaves_it_off_and_contacts_nothing));
         try
         {
-            OpenGamingHome(app);
-            var toggle = ById(app, "GameHome_Metadata_Toggle");
-            Assert.False(string.IsNullOrWhiteSpace(toggle.Name), "toggle has an accessible name");
-            ScrollTo(toggle);
-            UiWait.For(() => toggle.BoundingRectangle.Height >= 44, "toggle is at least 44px tall");
-            Assert.Equal(ToggleState.Off, toggle.Patterns.Toggle.Pattern.ToggleState.Value);
+            var page = new InstallProgressPage(app);
+            page.Invoke(ById(app, GamingTab));
+            ById(app, "GamesToolsPage_Heading");
+
+            // Native Covers & Info metadata fetching was retired in favor of Playnite: no metadata toggle is exposed and
+            // opening Games tools / AI proposals dialog never enables metadata or creates a metadata cache.
+            Assert.Null(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("GameHome_Metadata_Toggle")));
             Assert.False(MetadataEnabled(app), "off by default");
+            Assert.False(File.Exists(Path.Combine(app.DataRoot, "server", "game-metadata.json")), "no metadata cache on Games tools open");
 
-            new InstallProgressPage(app).Invoke(toggle);
-            var cancel = Find(() => app.MainWindow.FindFirstDescendant(
-                cf => cf.ByAutomationId("CloseButton").And(cf.ByControlType(ControlType.Button))), "consent dialog");
-            Assert.NotNull(app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("PrimaryButton")));
-            Assert.False(MetadataEnabled(app), "not enabled while the dialog is open");
-            cancel.Patterns.Invoke.Pattern.Invoke();
+            var proposals = ById(app, "GamesToolsPage_AiProposals_Button");
+            ScrollTo(proposals);
+            page.Invoke(proposals);
+            var close = Find(() => UiWait.DialogButton(app.MainWindow, "CloseButton")
+                ?? app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton").And(cf.ByControlType(ControlType.Button))),
+                "AI proposals dialog");
+            Assert.False(MetadataEnabled(app), "not enabled while dialog is open");
+            close.Patterns.Invoke.Pattern.Invoke();
 
-            UiWait.For(() => TryById(app, "CloseButton") == null, "consent dialog closed");
-            UiWait.For(() => ById(app, "GameHome_Metadata_Toggle").Patterns.Toggle.Pattern.ToggleState.Value == ToggleState.Off,
-                "toggle back off after Cancel");
-            Assert.False(MetadataEnabled(app), "Cancel must not persist the option");
-            Assert.False(File.Exists(Path.Combine(app.DataRoot, "server", "game-metadata.json")), "no metadata cache after Cancel");
+            UiWait.For(() => (UiWait.DialogButton(app.MainWindow, "CloseButton")
+                ?? app.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("CloseButton").And(cf.ByControlType(ControlType.Button)))) == null,
+                "AI proposals dialog closed");
+            Assert.False(MetadataEnabled(app), "closing dialog must not enable metadata");
+            Assert.False(File.Exists(Path.Combine(app.DataRoot, "server", "game-metadata.json")), "no metadata cache after dialog close");
         }
         catch (Exception ex) { app.CaptureFailure(nameof(Covers_and_info_consent_cancel_leaves_it_off_and_contacts_nothing), ex); throw; }
     }

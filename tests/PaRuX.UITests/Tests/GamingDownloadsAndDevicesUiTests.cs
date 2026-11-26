@@ -24,7 +24,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenDownloads(app);
             var sourceKind = UiWait.ById(app.MainWindow, "GameDownloads_Kind", ControlType.ComboBox);
             var torrentStatus = UiWait.ById(app.MainWindow, "GameDownloads_TorrentEngine_Status", ControlType.Text);
             var portableInstall = UiWait.ById(app.MainWindow, "GameDownloads_AutoPortable", ControlType.CheckBox);
@@ -99,7 +99,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenSaveBackups(app);
             var source = UiWait.ById(app.MainWindow, "GameSaves_Source", ControlType.Edit);
             var browse = UiWait.ById(app.MainWindow, "GameSaves_Browse", ControlType.Button);
             var label = UiWait.ById(app.MainWindow, "GameSaves_Label", ControlType.Edit);
@@ -135,7 +135,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenSaveBackups(app);
             var suggest = UiWait.ById(app.MainWindow, "GameSaves_Suggest", ControlType.Button);
             var label = UiWait.ById(app.MainWindow, "GameSaves_Label", ControlType.Edit);
             var source = UiWait.ById(app.MainWindow, "GameSaves_Source", ControlType.Edit);
@@ -163,7 +163,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenControllerTools(app);
             var toggle = UiWait.ById(app.MainWindow, "GameDevices_RawLive_Toggle");
             toggle.Patterns.Toggle.Pattern.Toggle();
             // Nothing is selected, so the switch returns to off and the status says what to do; no reading is started.
@@ -182,7 +182,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenControllerTools(app);
             var modes = UiWait.ById(app.MainWindow, "GameDevices_DisplayModes_ComboBox", ControlType.ComboBox);
             var loadModes = UiWait.ById(app.MainWindow, "GameDevices_DisplayModes_Load_Button", ControlType.Button);
             var apply = UiWait.ById(app.MainWindow, "GameDevices_Display_Apply_Button", ControlType.Button);
@@ -239,7 +239,7 @@ public sealed class GamingDownloadsAndDevicesUiTests
         using var app = new UiTestApplication(name);
         try
         {
-            OpenGames(app);
+            OpenControllerTools(app);
             var setup = UiWait.ById(app.MainWindow, "GameDevices_Guided_Setup_Button", ControlType.Button);
             UiWait.AssertEnabled(setup);
             var detect = UiWait.ById(app.MainWindow, "GameDevices_Guided_Detect_Button", ControlType.Button);
@@ -259,9 +259,29 @@ public sealed class GamingDownloadsAndDevicesUiTests
     private static void WaitForPort() =>
         UiTestApplication.WaitForCorePortReleased();
 
-    private static void OpenGames(UiTestApplication app)
+    private static void OpenGames(UiTestApplication app, bool advanced = false)
     {
+        var page = new InstallProgressPage(app);
+        if (advanced) page.EnableAdvancedMode();
         var navigation = UiWait.ById(app.MainWindow, "Navigation_GameLibrary_Item", ControlType.ListItem);
-        new InstallProgressPage(app).Invoke(navigation);
+        page.Invoke(navigation);
+    }
+
+    private static void OpenDownloads(UiTestApplication app)
+    {
+        OpenGames(app);
+        UiWait.ExpandById(app.MainWindow, "GamesToolsPage_Downloads_Expander");
+    }
+
+    private static void OpenSaveBackups(UiTestApplication app)
+    {
+        OpenGames(app, advanced: true);
+        UiWait.ExpandById(app.MainWindow, "GamesToolsPage_SaveBackups_Expander");
+    }
+
+    private static void OpenControllerTools(UiTestApplication app)
+    {
+        OpenGames(app, advanced: true);
+        UiWait.ExpandById(app.MainWindow, "GamesToolsPage_ControllerTools_Expander");
     }
 }

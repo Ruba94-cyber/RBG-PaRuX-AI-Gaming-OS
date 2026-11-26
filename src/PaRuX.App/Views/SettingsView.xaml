@@ -530,6 +530,7 @@
 
                         <ToggleSwitch
                             x:Name="CloudFallbackToggle"
+                            AutomationProperties.AutomationId="CloudFallbackToggle"
                             Header="Allow a cloud fallback when local inference fails" loc:Loc.ItHeader="Consenti un fallback nel cloud quando l&#x27;inferenza locale fallisce"
                             OnContent="On"
                             OffContent="Off" loc:Loc.ItOffContent="Disattivato"
@@ -552,6 +553,7 @@
                                 PlaceholderText="openai/gpt-oss-120b" />
                             <PasswordBox
                                 x:Name="CloudFallbackApiKeyBox"
+                                AutomationProperties.AutomationId="CloudFallbackApiKeyBox"
                                 Header="API key" loc:Loc.ItHeader="Chiave API"
                                 PlaceholderText="Leave blank to keep the saved key" loc:Loc.ItPlaceholder="Lascia vuoto per mantenere la chiave salvata" />
                             <TextBlock
@@ -559,8 +561,8 @@
                                 TextWrapping="Wrap"
                                 Style="{StaticResource PaRuXSubtleCaptionStyle}" />
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource PaRuXSpaceS}">
-                                <Button x:Name="SaveCloudFallbackButton" Content="Save" loc:Loc.ItContent="Salva" Click="SaveCloudFallback_Click" Style="{StaticResource AccentButtonStyle}" />
-                                <Button x:Name="TestCloudFallbackButton" Content="Test connection" loc:Loc.ItContent="Prova la connessione" Click="TestCloudFallback_Click" />
+                                <Button x:Name="SaveCloudFallbackButton" AutomationProperties.AutomationId="SaveCloudFallbackButton" Content="Save" loc:Loc.ItContent="Salva" Click="SaveCloudFallback_Click" Style="{StaticResource AccentButtonStyle}" />
+                                <Button x:Name="TestCloudFallbackButton" AutomationProperties.AutomationId="TestCloudFallbackButton" Content="Test connection" loc:Loc.ItContent="Prova la connessione" Click="TestCloudFallback_Click" />
                             </StackPanel>
                         </StackPanel>
 

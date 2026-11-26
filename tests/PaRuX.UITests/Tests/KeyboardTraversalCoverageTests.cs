@@ -29,6 +29,7 @@ public sealed class KeyboardTraversalCoverageTests
             {
                 "Navigation_Create_Item",
                 "Navigation_Projects_Item",
+                "Navigation_GameLibrary_Item",
                 "Navigation_ModelHub_Item",
                 "Navigation_Settings_Item",
                 "Navigation_Help_Item"

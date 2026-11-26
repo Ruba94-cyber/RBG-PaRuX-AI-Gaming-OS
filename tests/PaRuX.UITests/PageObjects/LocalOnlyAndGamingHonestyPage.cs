@@ -127,15 +127,13 @@ internal sealed class LocalOnlyAndGamingHonestyPage
     internal AutomationElement? GetSaveCloudFallbackButton()
     {
         return _window.FindFirstDescendant(cf =>
-            cf.ByAutomationId("SaveCloudFallbackButton").And(cf.ByControlType(ControlType.Button)))
-            ?? FindControlByName("Save", ControlType.Button);
+            cf.ByAutomationId("SaveCloudFallbackButton").And(cf.ByControlType(ControlType.Button)));
     }
 
     internal AutomationElement? GetTestCloudFallbackButton()
     {
         return _window.FindFirstDescendant(cf =>
-            cf.ByAutomationId("TestCloudFallbackButton").And(cf.ByControlType(ControlType.Button)))
-            ?? FindControlByName("Test connection", ControlType.Button);
+            cf.ByAutomationId("TestCloudFallbackButton").And(cf.ByControlType(ControlType.Button)));
     }
 
     internal AutomationElement? GetCloudFallbackApiKeyBox()

@@ -37,7 +37,7 @@ public sealed class CreateWorkspaceModesCoverageTests
 
             (string Tab, string Heading)[] expectedSections =
             {
-                ("Image", "IMAGE"), ("Video", "VIDEO"), ("Edit", "IMAGE EDIT"), ("3D", "IMAGE → 3D"),
+                ("Image", "IMAGE"), ("Video", "VIDEO"), ("Edit", "IMAGE EDIT"), ("3D", "3D STUDIO"),
                 ("Speech", "TEXT TO SPEECH"), ("Speech", "SPEECH TO TEXT")
             };
             foreach ((string tab, string section) in expectedSections)
@@ -113,7 +113,7 @@ public sealed class CreateWorkspaceModesCoverageTests
             page.SelectMode("3D");
             var engineGuidance = page.FindTextElement("Uses the managed local 3D engine.");
             Assert.NotNull(engineGuidance);
-            Assert.Contains("Runtime/Settings can install it before generation.", engineGuidance.Name, StringComparison.Ordinal);
+            Assert.Contains("Text → 3D runs a two-stage local pipeline (reference image → 3D GLB mesh) and respects Gaming hard-off and model consent.", engineGuidance.Name, StringComparison.Ordinal);
 
             page.ClickButtonByName("Generate 3D model");
 

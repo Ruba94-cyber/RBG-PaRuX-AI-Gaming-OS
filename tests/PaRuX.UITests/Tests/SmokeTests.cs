@@ -716,7 +716,7 @@ public sealed class SmokeTests
 
             foreach (string workspaceId in new[]
             {
-                "Navigation_Create_Item", "Navigation_Projects_Item", "Navigation_ModelHub_Item",
+                "Navigation_Create_Item", "Navigation_Projects_Item", "Navigation_GameLibrary_Item", "Navigation_ModelHub_Item",
                 "Navigation_ModelRouting_Item", "Navigation_Lifecycle_Item", "Navigation_Workflows_Item",
                 "Navigation_Tools_Item", "Navigation_Observability_Item", "Navigation_Updates_Item",
                 "Navigation_Runtime_Item", "Navigation_Settings_Item"
@@ -736,7 +736,7 @@ public sealed class SmokeTests
 
             string[] workspaceIds =
             {
-                "Navigation_Projects_Item", "Navigation_ModelHub_Item",
+                "Navigation_Projects_Item", "Navigation_GameLibrary_Item", "Navigation_ModelHub_Item",
                 "Navigation_ModelRouting_Item", "Navigation_Lifecycle_Item", "Navigation_Workflows_Item",
                 "Navigation_Tools_Item", "Navigation_Observability_Item", "Navigation_Updates_Item",
                 "Navigation_Runtime_Item", "Navigation_Settings_Item"
