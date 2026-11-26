@@ -1092,6 +1092,34 @@ namespace PaRuX.Views
                     };
                     actions.Children.Add(convert);
                 }
+                if (TrainedModelNaming.CanExportChatGguf(adapter))
+                {
+                    // A LoRA GGUF still needs its base model at load time. This bakes the adapter into the base, writes a
+                    // standalone f16 GGUF and publishes it into the managed model library, so Chat can select it directly.
+                    var mergeExport = new Button { Content = T("Merge and add to models (GGUF)", "Unisci e aggiungi ai modelli (GGUF)") };
+                    Id(mergeExport, "LifecycleLab_MergeExportGguf_Button");
+                    mergeExport.Click += async (_, _) =>
+                    {
+                        SetBusy(true, T("Merging adapter into its base model and exporting GGUF…", "Unione dell'adapter nel modello base ed esportazione GGUF…"));
+                        try
+                        {
+                            string runFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(adapter.AdapterPath)) ?? adapter.AdapterPath;
+                            MergeAdapterResult merged = await AdapterManagerClient.Current.MergeAsync(
+                                adapter.Id, System.IO.Path.Combine(runFolder, "merged"), "f16", CancellationToken.None);
+                            if (string.IsNullOrWhiteSpace(merged.GgufPath))
+                                throw new InvalidOperationException(T("the merge produced no GGUF file.", "l'unione non ha prodotto alcun file GGUF."));
+                            ManagedModelInfo model = await ModelDownloadClient.Current.ImportManagedModelAsync(new ImportManagedModelRequest
+                            {
+                                SourcePath = merged.GgufPath,
+                                FileName = TrainedModelNaming.LibraryFileName(adapter, "f16")
+                            }, CancellationToken.None);
+                            _status.Text = T("Merged model added to your models: ", "Modello unito aggiunto ai tuoi modelli: ") + model.FileName;
+                        }
+                        catch (Exception ex) { _status.Text = T("Merge and GGUF export failed: ", "Unione ed esportazione GGUF non riuscite: ") + ex.Message; }
+                        finally { SetBusy(false); }
+                    };
+                    actions.Children.Add(mergeExport);
+                }
                 card.Children.Add(actions);
                 _adapters.Children.Add(card);
             }

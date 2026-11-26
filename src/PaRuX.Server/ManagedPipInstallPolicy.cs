@@ -161,4 +161,28 @@ internal static class ManagedPipInstallPolicy
         throw new ManagedPipRefusalException(UnlockedCode,
             "PaRuX will not install an unpinned Python requirement set in a managed environment (" + string.Join(' ', args.Take(4)) + "...).");
     }
+
+    /// <summary>
+    /// uv parses <c>--build-constraints</c> as a SPACE-delimited list of files (also in the <c>--flag=value</c> form), so an
+    /// absolute lock path under a folder with a space - <c>C:\Program Files\PaRuX\...</c> for every MSI install - is split
+    /// and the install fails with "File not found". The lock is then passed by file name and uv runs from the lock folder.
+    /// Returns the (possibly rewritten) arguments and the working directory uv must use, or null to keep the default.
+    /// </summary>
+    internal static (IReadOnlyList<string> Arguments, string? WorkingDirectory) WithSpaceSafeBuildConstraints(IReadOnlyList<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        List<string> args = arguments.ToList();
+        int index = args.IndexOf("--build-constraints");
+        if (index < 0 || index + 1 >= args.Count || !args[index + 1].Any(char.IsWhiteSpace))
+            return (args, null);
+
+        string path = args[index + 1];
+        string? folder = Path.GetDirectoryName(path);
+        string name = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(folder) || name.Length == 0 || name.Any(char.IsWhiteSpace))
+            throw new ManagedPipRefusalException(ManagedRequirementLocks.InvalidCode,
+                "The build-constraints lock file name cannot contain spaces: " + name);
+        args[index + 1] = name;
+        return (args, folder);
+    }
 }

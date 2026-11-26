@@ -202,6 +202,81 @@ public sealed class LoraGgufConversionServiceTests : IDisposable
     /// that had it.
     /// </summary>
     [Fact]
+    public void BuildModelConvertArguments_produces_the_exact_flags_convert_hf_to_gguf_expects()
+    {
+        List<string> args = LoraGgufConversionService.BuildModelConvertArguments(
+            "/scripts/convert_hf_to_gguf.py", "/out/merged model", "/out/merged model/m-f16.partial.gguf", "f16");
+        Assert.Equal(new[]
+        {
+            "/scripts/convert_hf_to_gguf.py",
+            "--outfile", "/out/merged model/m-f16.partial.gguf",
+            "--outtype", "f16",
+            "/out/merged model",
+        }, args);
+    }
+
+    [Theory]
+    [InlineData("merged", "f16", "merged-f16.gguf")]
+    [InlineData("merged-dpo", "q8_0", "merged-dpo-q8_0.gguf")]
+    public void MergedGgufFileName_uses_the_merged_folder_name_and_outtype(string folder, string outtype, string expected)
+    {
+        string directory = Path.Combine(_root, folder) + Path.DirectorySeparatorChar;
+        Assert.Equal(expected, LoraGgufConversionService.MergedGgufFileName(directory, outtype));
+    }
+
+    [Fact]
+    public async Task ConvertModelAsync_rejects_a_directory_without_config_json()
+    {
+        CreateFakeVenvPython();
+        string model = Path.Combine(_root, "not-a-model");
+        Directory.CreateDirectory(model);
+        var service = new LoraGgufConversionService(RuntimeDir, ScriptsDir);
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => service.ConvertModelAsync(model, Path.Combine(_root, "out.gguf"), "f16", CancellationToken.None));
+        Assert.Contains("config.json", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConvertModelAsync_refuses_when_the_engine_is_not_installed()
+    {
+        string model = Path.Combine(_root, "model");
+        Directory.CreateDirectory(model);
+        File.WriteAllText(Path.Combine(model, "config.json"), "{}");
+        Directory.CreateDirectory(ScriptsDir);
+        File.WriteAllText(Path.Combine(ScriptsDir, "convert_hf_to_gguf.py"), "# stand-in");
+        var service = new LoraGgufConversionService(RuntimeDir, ScriptsDir); // no venv created
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ConvertModelAsync(model, Path.Combine(_root, "out.gguf"), "f16", CancellationToken.None));
+        Assert.Contains("not installed", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(Path.Combine(_root, "out.gguf")));
+    }
+
+    [Fact]
+    public void Trained_model_library_name_is_a_simple_unique_gguf_file_name()
+    {
+        var adapter = new AdapterDto { Id = "6c8c34c74ae4435bb8c547a5c0b1fd1d", BaseModel = "HuggingFaceTB/SmolLM2-135M-Instruct", Method = "LoRA-16bit-DPO" };
+        string name = TrainedModelNaming.LibraryFileName(adapter, "f16");
+        Assert.Equal("SmolLM2-135M-Instruct-LoRA-16bit-DPO-6c8c34c7-f16.gguf", name);
+        Assert.True(PaRuXPathSafety.IsSimpleFileName(name));
+
+        var odd = new AdapterDto { Id = "x y/z", BaseModel = "C:\\models\\My Model:v2", Method = "QLoRA" };
+        string oddName = TrainedModelNaming.LibraryFileName(odd, "f16");
+        Assert.True(PaRuXPathSafety.IsSimpleFileName(oddName));
+        Assert.EndsWith(".gguf", oddName, StringComparison.Ordinal);
+        Assert.DoesNotContain(' ', oddName);
+    }
+
+    [Theory]
+    [InlineData("LoRA-16bit-DPO", true)]
+    [InlineData("QLoRA", true)]
+    [InlineData("LoRA-16bit-GSPO", true)]
+    [InlineData("LoRA-16bit-EMBEDDING-FT", false)]
+    [InlineData("LoRA-TTS-SFT", false)]
+    [InlineData("QLoRA-VISION-SFT", false)]
+    public void Only_causal_text_adapters_offer_a_chat_gguf_export(string method, bool expected) =>
+        Assert.Equal(expected, TrainedModelNaming.CanExportChatGguf(new AdapterDto { Method = method }));
+
+    [Fact]
     public async Task MergeAsync_refuses_when_the_engine_is_not_installed()
     {
         string adapter = Path.Combine(_root, "adapter");
@@ -309,6 +384,19 @@ public sealed class AdapterManagerConversionTests : IDisposable
         AdapterDto created = adapters.Register(new RegisterAdapterRequest { Name = "x", BaseModel = "m", AdapterPath = _filesDirectory });
 
         await Assert.ThrowsAsync<InvalidDataException>(() => adapters.MergeToBaseModelAsync(created.Id, "  ", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task MergeToBaseModelAsync_rejects_an_unknown_gguf_outtype_before_merging()
+    {
+        AdapterManagerService adapters = NewService();
+        AdapterDto created = adapters.Register(new RegisterAdapterRequest { Name = "x", BaseModel = "m", AdapterPath = _filesDirectory });
+        string output = Path.Combine(_filesDirectory, "merged-never-created");
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => adapters.MergeToBaseModelAsync(
+            new MergeAdapterRequest { OutputDirectory = output, GgufOuttype = "q4_k_m" }, created.Id, CancellationToken.None));
+        Assert.Contains("q4_k_m", error.Message, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(output));
     }
 
     [Fact]

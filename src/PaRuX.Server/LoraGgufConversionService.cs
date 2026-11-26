@@ -157,6 +157,60 @@ public sealed class LoraGgufConversionService
         }
     }
 
+    /// <summary>
+    /// Converts a complete HF-format model directory (a merged adapter, or a full 16-bit fine-tune) into one
+    /// standalone GGUF with the vendored convert_hf_to_gguf.py. Same staging rule as <see cref="ConvertAsync"/>:
+    /// the GGUF is written to a ".partial.gguf" sibling and moved into place only after a clean exit.
+    /// </summary>
+    public async Task<string> ConvertModelAsync(string modelDirectory, string outputGgufPath, string outtype, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(modelDirectory) || !Directory.Exists(modelDirectory))
+            throw new InvalidDataException("The model directory does not exist: " + modelDirectory);
+        if (!File.Exists(Path.Combine(modelDirectory, "config.json")))
+            throw new InvalidDataException("The model directory has no config.json, so it is not an HF-format model: " + modelDirectory);
+        if (!KnownOutputTypes.Contains(outtype))
+            throw new InvalidDataException("Unknown output type \"" + outtype + "\". Known types: " + string.Join(", ", KnownOutputTypes) + ".");
+        if (!File.Exists(ModelConvertScriptPath))
+            throw new InvalidOperationException("The bundled HF-to-GGUF conversion script was not found next to the server. Reinstall PaRuX.");
+        if (!File.Exists(VenvPython))
+            throw new InvalidOperationException("The LoRA-to-GGUF conversion engine is not installed on this machine yet.");
+
+        string outputFull = Path.GetFullPath(outputGgufPath);
+        string outputFolder = Path.GetDirectoryName(outputFull)!;
+        Directory.CreateDirectory(outputFolder);
+        string partialPath = Path.Combine(outputFolder, Path.GetFileNameWithoutExtension(outputFull) + ".partial.gguf");
+        try { File.Delete(partialPath); } catch { }
+        List<string> args = BuildModelConvertArguments(ModelConvertScriptPath, modelDirectory, partialPath, outtype);
+        try
+        {
+            (int exitCode, string stdout, string stderr) = await RunCapturedAsync(
+                VenvPython, args, ct, TimeSpan.FromMinutes(30));
+            string log = stdout + stderr;
+            if (exitCode != 0 || !File.Exists(partialPath))
+                throw new InvalidOperationException("HF-to-GGUF conversion failed:\n" + log);
+            File.Move(partialPath, outputFull, overwrite: true);
+            return log;
+        }
+        finally
+        {
+            try { File.Delete(partialPath); } catch { }
+        }
+    }
+
+    private string ModelConvertScriptPath => Path.Combine(_scriptsDirectory, "convert_hf_to_gguf.py");
+
+    internal static List<string> BuildModelConvertArguments(
+        string convertScriptPath, string modelDirectory, string outputGgufPath, string outtype) =>
+        new() { convertScriptPath, "--outfile", outputGgufPath, "--outtype", outtype, modelDirectory };
+
+    /// <summary>File name of a merged-model GGUF: the merged folder's own name plus the outtype.</summary>
+    internal static string MergedGgufFileName(string mergedDirectory, string outtype)
+    {
+        string name = Path.GetFileName(Path.GetFullPath(mergedDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(name)) name = "merged";
+        return name + "-" + outtype + ".gguf";
+    }
+
     internal static List<string> BuildConvertArguments(
         string convertScriptPath,
         string adapterPath,

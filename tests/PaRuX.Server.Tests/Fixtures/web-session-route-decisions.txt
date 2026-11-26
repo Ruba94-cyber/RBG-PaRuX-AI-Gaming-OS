@@ -784,6 +784,7 @@ DENY POST /api/v1/gaming/game-bar/restore
 DENY GET /api/v1/ai/openai-compatible/presets
 DENY POST /api/v1/datasets/document-recipe
 DENY POST /api/v1/lifecycle/imatrix
+DENY POST /api/v1/training/export/gguf
 DENY POST /api/v1/training/export/verify
 DENY GET /api/v1/chat/code/status
 DENY PUT /api/v1/chat/code/settings
