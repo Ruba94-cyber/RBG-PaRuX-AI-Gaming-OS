@@ -589,9 +589,9 @@ public static class LocalAiPaths
     /// a model PaRuX didn't pick. Only the built-in default pairing is vision-capable for now.</summary>
     public static string? StandardVision => GetRoleOverride("standard") != null ||
         (PaRuXDataRoot.FindPortableDataRoot(AppContext.BaseDirectory) != null && FindBundledPortableModel() != null)
-        ? null : GetBundledVisionProjectorForModel("standard", DefaultStandardModel);
+        ? null : GetBundledVisionProjectorForModel("standard", StandardModel);
     public static string? UncensoredVision => GetRoleOverride("uncensored") != null
-        ? null : GetBundledVisionProjectorForModel("uncensored", DefaultUncensoredModel);
+        ? null : GetBundledVisionProjectorForModel("uncensored", UncensoredModel);
 
     public static string SmallModel => ResolveAssistantModel("Qwen3.5-4B-Q4_K_M.gguf");
     public static string SmallUncensoredModel => ResolveAssistantModel("Qwen3.5-4B-Uncensored-Q4_K_M.gguf");
