@@ -70,7 +70,22 @@ namespace PaRuX.Views
             // A fixed width keeps the flyout content inside the presenter: unconstrained, the wrapping hint and the stretched
             // search box were measured wider than the flyout and were cut off on its right edge.
             var panel = new StackPanel { Spacing = 8, Padding = new Thickness(4), Width = 360 };
-            panel.Children.Add(_documentsSwitch);
+            var headerRow = new Grid();
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(_documentsSwitch, 0);
+            var closeFlyoutButton = new Button
+            {
+                Content = DT("Close", "Chiudi"),
+                MinHeight = 32,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            AutomationProperties.SetAutomationId(closeFlyoutButton, "Chat_Documents_Close_Button");
+            closeFlyoutButton.Click += (_, _) => DocumentsButton?.Flyout?.Hide();
+            Grid.SetColumn(closeFlyoutButton, 1);
+            headerRow.Children.Add(_documentsSwitch);
+            headerRow.Children.Add(closeFlyoutButton);
+            panel.Children.Add(headerRow);
             panel.Children.Add(new TextBlock
             {
                 Text = DT("Select folders to restrict the answer. Turning Documents on with no selection uses all enabled folders.",
@@ -142,6 +157,11 @@ namespace PaRuX.Views
                 DocumentsButton?.Flyout?.Hide();
             };
             return button;
+        }
+
+        internal void DismissOpenFlyouts()
+        {
+            DocumentsButton?.Flyout?.Hide();
         }
 
         private void UpdateDocumentsButtonVisual()

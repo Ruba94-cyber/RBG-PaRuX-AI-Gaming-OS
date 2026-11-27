@@ -30,6 +30,24 @@ internal static partial class ToolSchemaIntentGate
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ToolIntent();
 
+    // Strong structural markers that remain meaningful even inside long pasted text.
+    [GeneratedRegex(
+        @"([a-z]:\\|\\\\|https?://|```|\brun_python\b|\.(docx|xlsx|xls|csv|pdf|pptx)\b)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StructuralToolSignal();
+
+    // Action verbs, possessives, or execution intents at the instruction edges of a long prompt.
+    // Generic nouns alone ("file", "disk", "document") inside pasted prose do not trigger tools.
+    [GeneratedRegex(
+        @"(\b(my|mine|mio|mia|miei|mie)\b" +
+        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
+        @"|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
+        @"|\b(python|run_python|script|sandbox|execute|esegui\w*)\b)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EdgeActionIntent();
+
+    private const int EdgeIntentWindowCharacters = 180;
+
     /// <summary>True when this turn certainly needs no tool, so the schemas can be omitted from the prompt.</summary>
     internal static bool CanOmitToolSchemas(string? query, string? skillId)
     {
@@ -37,6 +55,10 @@ internal static partial class ToolSchemaIntentGate
         if (string.IsNullOrWhiteSpace(query)) return false;
         string text = query.Trim();
         if (text.Length > MaximumSimpleTurnCharacters) return false;
-        return !ToolIntent().IsMatch(text);
+        if (text.Length <= 300) return !ToolIntent().IsMatch(text);
+        if (StructuralToolSignal().IsMatch(text)) return false;
+        string head = text[..EdgeIntentWindowCharacters];
+        string tail = text[^EdgeIntentWindowCharacters..];
+        return !EdgeActionIntent().IsMatch(head) && !EdgeActionIntent().IsMatch(tail);
     }
 }

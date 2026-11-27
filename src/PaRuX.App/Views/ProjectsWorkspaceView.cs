@@ -97,7 +97,7 @@ namespace PaRuX.Views
             var repoPanel = new StackPanel { Spacing = 6 };
             repoPanel.Children.Add(_repository);
             repoPanel.Children.Add(repoActions);
-            body.Children.Add(Section("PROJECT REPOSITORY · DESKTOP ONLY", repoPanel));
+            body.Children.Add(Section(T("PROJECT REPOSITORY · DESKTOP ONLY", "REPOSITORY DEL PROGETTO · SOLO DESKTOP"), repoPanel));
 
             body.Children.Add(_status);
 
@@ -115,7 +115,7 @@ namespace PaRuX.Views
             newProjectRepositoryActions.Children.Add(_clearNewProjectRepository);
             createPanel.Children.Add(_newProjectRepository);
             createPanel.Children.Add(newProjectRepositoryActions);
-            body.Children.Add(Section("PROJECTS", createPanel));
+            body.Children.Add(Section(T("PROJECTS", "PROGETTI"), createPanel));
             body.Children.Add(_projects);
 
             _mediaGallery.ItemReusedAsEditSource += (_, item) =>
