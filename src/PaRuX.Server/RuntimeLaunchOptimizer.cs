@@ -193,16 +193,27 @@ public static class RuntimeLaunchOptimizer
     /// almost nothing is drafted), while editing a pasted file or quoting a pasted document runs 7-8x faster (about 1,600
     /// against 200 tok/s). Only measured shapes get it: CUDA, one device, one slot, every layer on the GPU, no CPU-only or
     /// Vulkan/partial-offload launch. Applies to the unmeasured default only; a calibrated profile keeps its measured choice.
-    /// PARUX_CHAT_SPECULATIVE=0 turns it off.
+    /// The same default applies to the coding workload. PARUX_CHAT_SPECULATIVE=0 / PARUX_CODING_SPECULATIVE=0 turn it off.
     /// </summary>
-    internal static bool ShouldDefaultChatSpeculation(string workload, LlamaPerformanceProfileDto profile, bool alreadyApplied = false) =>
-        RuntimePerformanceTuner.NormalizeWorkload(workload) == "chat"
-        && !string.Equals(Environment.GetEnvironmentVariable("PARUX_CHAT_SPECULATIVE"), "0", StringComparison.Ordinal)
-        && string.Equals(profile.SplitMode, "none", StringComparison.OrdinalIgnoreCase)
-        && profile.ParallelSlots == 1
-        && profile.GpuLayers < 0
-        && string.IsNullOrWhiteSpace(profile.SpeculativeDraftModelPath)
-        && (alreadyApplied || profile.SpeculativeType == "none");
+    internal static bool ShouldDefaultChatSpeculation(string workload, LlamaPerformanceProfileDto profile, bool alreadyApplied = false)
+    {
+        string normalized = RuntimePerformanceTuner.NormalizeWorkload(workload);
+        // Coding output is copy-heavy (a pasted file returned with an edit, quoted evidence), the shape n-gram drafting
+        // accelerates most. PARUX_CODING_SPECULATIVE=0 opts coding out; PARUX_CHAT_SPECULATIVE=0 opts chat out.
+        string? optOut = normalized switch
+        {
+            "chat" => "PARUX_CHAT_SPECULATIVE",
+            "coding" => "PARUX_CODING_SPECULATIVE",
+            _ => null,
+        };
+        return optOut != null
+            && !string.Equals(Environment.GetEnvironmentVariable(optOut), "0", StringComparison.Ordinal)
+            && string.Equals(profile.SplitMode, "none", StringComparison.OrdinalIgnoreCase)
+            && profile.ParallelSlots == 1
+            && profile.GpuLayers < 0
+            && string.IsNullOrWhiteSpace(profile.SpeculativeDraftModelPath)
+            && (alreadyApplied || profile.SpeculativeType == "none");
+    }
 
     private static void StripDefaultSpeculation(LlamaPerformanceProfileDto profile)
     {

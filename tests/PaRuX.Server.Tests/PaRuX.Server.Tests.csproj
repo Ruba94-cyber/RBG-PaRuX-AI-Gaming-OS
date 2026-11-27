@@ -180,6 +180,7 @@
     <Compile Include="..\..\src\PaRuX.App\Services\CodingVerificationPresentation.cs" Link="CodingAgent\CodingVerificationPresentation.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\CodingAgentObservationPolicy.cs" Link="CodingAgent\CodingAgentObservationPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\StructuredChatRoleRoute.cs" Link="CodingAgent\StructuredChatRoleRoute.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\StructuredChatCacheHints.cs" Link="CodingAgent\StructuredChatCacheHints.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\StructuredChatStreamPolicy.cs" Link="CodingAgent\StructuredChatStreamPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\WorktreeService.cs" Link="CodingAgent\WorktreeService.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\BubblePlacementPolicy.cs" Link="Bubble\BubblePlacementPolicy.cs" />

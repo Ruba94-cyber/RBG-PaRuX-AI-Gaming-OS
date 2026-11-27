@@ -41,7 +41,8 @@ namespace PaRuX.Services
             Action<string>? onDelta,
             CancellationToken ct,
             string? modelSelection = null,
-            string? traceLabel = null)
+            string? traceLabel = null,
+            string? cacheScope = null)
         {
             if (string.IsNullOrWhiteSpace(schemaName)) throw new ArgumentException("Schema name is required.", nameof(schemaName));
             if (string.IsNullOrWhiteSpace(jsonSchema)) throw new ArgumentException("JSON Schema is required.", nameof(jsonSchema));
@@ -78,7 +79,10 @@ namespace PaRuX.Services
                 Messages = wire,
                 Stream = true,
                 PreferLowLatency = true,
-                IncludeConversationHistory = false
+                IncludeConversationHistory = false,
+                // Stable per-run id: ChatProxyService scopes KV reuse by ConversationId, and without one it falls back to a
+                // hash of the FIRST user message, which for a replayed evidence log changes on every turn (no reuse).
+                ConversationId = string.IsNullOrWhiteSpace(cacheScope) ? null : cacheScope.Trim()
             };
             payload.SkillParameters[StructuredOutputTransportKeys.Name] = schemaName.Trim();
             payload.SkillParameters[StructuredOutputTransportKeys.JsonSchema] = jsonSchema.Trim();
@@ -107,6 +111,7 @@ namespace PaRuX.Services
                         }
                     }
                 };
+                StructuredChatCacheHints.Apply(directPayload);
                 requestBody = directPayload.ToJsonString(JsonOptions);
                 endpointPath = "/v1/chat/completions";
             }

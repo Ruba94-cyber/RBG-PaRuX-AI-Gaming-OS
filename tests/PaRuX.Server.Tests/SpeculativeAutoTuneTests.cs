@@ -158,7 +158,11 @@ public sealed class SpeculativeAutoTuneTests : IDisposable
     {
         var full = new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = -1 };
         Assert.True(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", full));
-        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", full));
+        Assert.True(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", full));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("long-context", full));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 4, GpuLayers = -1 }));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = 20 }));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", new LlamaPerformanceProfileDto { SplitMode = "layer", ParallelSlots = 1, GpuLayers = -1 }));
         Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = 20 }));
         Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "layer", ParallelSlots = 1, GpuLayers = -1 }));
         Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 4, GpuLayers = -1 }));
@@ -169,6 +173,30 @@ public sealed class SpeculativeAutoTuneTests : IDisposable
         Assert.True(i >= 0);
         Assert.Equal("ngram-mod", args[i + 1]);
         Assert.DoesNotContain("--spec-draft-n-max", args);
+    }
+
+    [Fact]
+    public void Coding_default_speculation_has_its_own_opt_out_and_does_not_disable_chat()
+    {
+        var full = new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = -1 };
+        string? previous = Environment.GetEnvironmentVariable("PARUX_CODING_SPECULATIVE");
+        try
+        {
+            Environment.SetEnvironmentVariable("PARUX_CODING_SPECULATIVE", "0");
+            Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", full));
+            Assert.True(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", full));
+        }
+        finally { Environment.SetEnvironmentVariable("PARUX_CODING_SPECULATIVE", previous); }
+    }
+
+    [Fact]
+    public void Coding_still_races_speculation_so_calibration_can_veto_the_default()
+    {
+        Assert.True(RuntimeOptimizationService.ShouldRaceSpeculative("coding", hasEmbeddedMtp: false));
+        var baseline = Result("none", 100);
+        var ngram = Result("ngram-mod", 90); // slower than plain: the measured winner stays the baseline
+        Score(baseline, ngram);
+        Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
     }
 
     private static void Score(params RuntimeOptimizationServerResult[] results) =>
