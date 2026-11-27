@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace PaRuX.Models
 {
@@ -8,7 +9,18 @@ namespace PaRuX.Models
         /// <summary>"user" | "assistant" | "system"</summary>
         public string Role { get; set; } = "user";
 
-        public string Content { get; set; } = string.Empty;
+        private readonly StreamingText _content = new StreamingText();
+        private readonly StreamingText _reasoning = new StreamingText();
+
+        /// <summary>Reply text. While streaming, fragments go through <see cref="AppendContent"/> and the
+        /// string is only materialised when something reads it (once per UI flush, not once per token).</summary>
+        public string Content { get => _content.Value; set => _content.Value = value ?? string.Empty; }
+
+        /// <summary>Appends a streamed fragment without copying the whole reply (amortised O(1)).</summary>
+        public void AppendContent(string fragment) => _content.Append(fragment);
+
+        /// <summary>Appends a streamed reasoning fragment (see <see cref="AppendContent"/>).</summary>
+        public void AppendReasoning(string fragment) => _reasoning.Append(fragment);
 
         /// <summary>Stable id assigned lazily (ConversationBranching.EnsureMessageId) so a branch can reference its fork point.
         /// Null in documents saved before branching existed.</summary>
@@ -17,7 +29,7 @@ namespace PaRuX.Models
         /// <summary>Chain-of-thought text from a reasoning model's reasoning_content stream
         /// (DeepReasoning route, --reasoning auto on the server). Empty for routes/models that
         /// don't emit it. Rendered separately from Content, in a collapsible panel.</summary>
-        public string Reasoning { get; set; } = string.Empty;
+        public string Reasoning { get => _reasoning.Value; set => _reasoning.Value = value ?? string.Empty; }
 
         public List<ChatAttachment> Attachments { get; set; } = new List<ChatAttachment>();
 
@@ -116,5 +128,41 @@ namespace PaRuX.Models
 
         /// <summary>True while an image-then-video chat request still owes its video step.</summary>
         public bool MediaChainVideoPending { get; set; }
+    }
+
+    /// <summary>Thread-safe text holder: appends go to a StringBuilder, the string is built lazily and cached.</summary>
+    internal sealed class StreamingText
+    {
+        private readonly object _gate = new object();
+        private string _value = string.Empty;
+        private StringBuilder? _builder;
+        private bool _stale;
+
+        public string Value
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_stale) { _value = _builder!.ToString(); _stale = false; }
+                    return _value;
+                }
+            }
+            set
+            {
+                lock (_gate) { _value = value; _builder = null; _stale = false; }
+            }
+        }
+
+        public void Append(string fragment)
+        {
+            if (string.IsNullOrEmpty(fragment)) return;
+            lock (_gate)
+            {
+                _builder ??= new StringBuilder(_value);
+                _builder.Append(fragment);
+                _stale = true;
+            }
+        }
     }
 }
