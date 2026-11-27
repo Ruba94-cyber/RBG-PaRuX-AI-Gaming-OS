@@ -21,8 +21,19 @@ public sealed class ToolSchemaIntentGateTests : IDisposable
     [InlineData("Spiegami la differenza tra TCP e UDP")]
     [InlineData("Translate good morning into French")]
     [InlineData("What is 17 times 23?")]
+    [InlineData("The scheduler flushes pending jobs before the next tick.\n\nSummarize the notes above in two sentences.")]
+    [InlineData("Primo paragrafo tecnico sulla latenza GPU.\nSecondo paragrafo sulla cache KV.\n\nRiassumi in una frase.")]
     public void Short_plain_questions_under_the_general_skill_omit_the_tool_schemas(string query) =>
         Assert.True(ToolSchemaIntentGate.CanOmitToolSchemas(query, "general"));
+
+    [Fact]
+    public void Long_multiline_plain_summary_prompt_omits_tool_schemas()
+    {
+        string longPrompt = string.Join(" ", Enumerable.Repeat("The allocator compacts dirty pages without blocking readers.", 60))
+            + "\n\nSummarize the notes above in exactly two sentences.";
+        Assert.True(longPrompt.Length > 1000);
+        Assert.True(ToolSchemaIntentGate.CanOmitToolSchemas(longPrompt, "general"));
+    }
 
     [Theory]
     [InlineData("Create a Word document with the meeting minutes")]

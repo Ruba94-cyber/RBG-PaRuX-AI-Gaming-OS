@@ -294,10 +294,12 @@ public sealed class ChatProxyService
         request.Model = ResolveProviderModel(modelRoute);
 
         bool manualModelLock = routingPreference.Mode == RouteMode.Manual || scopedForce;
-        bool considerFallback = profile.AutoUncensoredFallback
-            && profile.TextProfile == "STANDARD"
-            && !profile.GamingMode
-            && !manualModelLock;
+        bool considerFallback = CanConsiderUncensoredFallback(
+            profile,
+            manualModelLock,
+            _runtime.UsesExternalProvider,
+            modelRoute?.ModelPath,
+            LocalAiPaths.UncensoredModel);
 
         bool useLowLatencyPath = ShouldUseLowLatencyPath(request, routed, hasVisualInput);
         if (useLowLatencyPath) considerFallback = false;
@@ -1051,6 +1053,48 @@ public sealed class ChatProxyService
         && !hasVisualInput
         && string.IsNullOrWhiteSpace(request.SkillId)
         && (routed.Skill == null || string.Equals(routed.Skill.Id, "general", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Enables the adaptive refusal buffer only when an actual distinct local uncensored model file
+    /// exists on disk; otherwise tokens stream immediately without the ~45-55 ms hold overhead.
+    /// </summary>
+    internal static bool CanConsiderUncensoredFallback(
+        AiProfileStatus profile,
+        bool manualModelLock,
+        bool usesExternalProvider,
+        string? activeModelPath,
+        string? uncensoredModelPath,
+        Func<string, bool>? fileExists = null)
+    {
+        if (!profile.AutoUncensoredFallback
+            || !string.Equals(profile.TextProfile, "STANDARD", StringComparison.Ordinal)
+            || profile.GamingMode
+            || manualModelLock
+            || usesExternalProvider)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(uncensoredModelPath))
+            return false;
+
+        Func<string, bool> exists = fileExists ?? File.Exists;
+        if (!exists(uncensoredModelPath))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(activeModelPath))
+        {
+            try
+            {
+                if (string.Equals(
+                    Path.GetFullPath(activeModelPath),
+                    Path.GetFullPath(uncensoredModelPath),
+                    StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+            catch { }
+        }
+
+        return true;
+    }
 
     private async Task<StreamingMcpToolLoop> CreateMcpToolLoopAsync(
         ChatCompletionRequest request,

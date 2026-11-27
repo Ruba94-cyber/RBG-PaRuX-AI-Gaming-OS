@@ -14,12 +14,12 @@ namespace PaRuX.Server;
 /// </summary>
 internal static partial class ToolSchemaIntentGate
 {
-    /// <summary>Longest query still treated as a simple short turn.</summary>
-    internal const int MaximumSimpleTurnCharacters = 240;
+    /// <summary>Longest query still treated as a simple plain-chat turn.</summary>
+    internal const int MaximumSimpleTurnCharacters = 24_000;
 
     // Object words (English and Italian), file extensions, paths and possessives that point at the user's data, plus write verbs.
     [GeneratedRegex(
-        @"(file|files|folder|cartella|document|documento|docs?\b|docx|word\b|excel|xlsx|xls\b|csv|spreadsheet|workbook|foglio|pdf|pptx|slide|note\b|notes\b|appunti|desktop|disk\b|disco|drive|path\b|percorso" +
+        @"(file|files|folder|cartella|document|documento|docs?\b|docx|word\b|excel|xlsx|xls\b|csv|spreadsheet|workbook|foglio|pdf|pptx|slide|appunti|desktop|disk\b|disco|drive|path\b|percorso" +
         @"|\b(my|mine|mio|mia|miei|mie)\b" +
         // Imperative verbs that ask for an action on something (English and Italian): the object may be a file the user never named.
         @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
@@ -37,7 +37,6 @@ internal static partial class ToolSchemaIntentGate
         if (string.IsNullOrWhiteSpace(query)) return false;
         string text = query.Trim();
         if (text.Length > MaximumSimpleTurnCharacters) return false;
-        if (text.Contains('\n') || text.Contains('\r')) return false;
         return !ToolIntent().IsMatch(text);
     }
 }
