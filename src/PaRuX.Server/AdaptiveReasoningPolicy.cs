@@ -9,10 +9,12 @@ namespace PaRuX.Server;
 /// </summary>
 public static class AdaptiveReasoningPolicy
 {
-    public sealed record Decision(string Effort, int Budget, double Demand);
+    public sealed record Decision(string Effort, int Budget, double Demand, bool Explicit = false);
 
     public static Decision Decide(ChatCompletionRequest request)
     {
+        if (TryReadExplicit(request, out Decision? explicitDecision))
+            return explicitDecision!;
         string prompt = request.Messages.LastOrDefault(message =>
             string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
         string role = InferRole(prompt);
@@ -36,6 +38,47 @@ public static class AdaptiveReasoningPolicy
         Decision adaptive = Decide(demand, role);
         ModelExecutionProfile profile = ExecutionProfileStore.Current.Get(request.Model).Effective;
         return ApplyExecutionProfile(adaptive, profile);
+    }
+
+    /// <summary>
+    /// An explicit per-request client setting (chat_template_kwargs.enable_thinking, chat_template_kwargs.reasoning_effort or
+    /// the OpenAI-style top-level reasoning_effort) always outranks the adaptive guess and the durable quality profile:
+    /// the caller knows whether it wants hidden reasoning, and silently re-enabling it multiplies time-to-first-token.
+    /// </summary>
+    internal static bool TryReadExplicit(ChatCompletionRequest request, out Decision? decision)
+    {
+        decision = null;
+        bool? enableThinking = null;
+        string? effort = string.IsNullOrWhiteSpace(request.ReasoningEffort) ? null : request.ReasoningEffort.Trim().ToLowerInvariant();
+        if (request.ChatTemplateKwargs is { ValueKind: System.Text.Json.JsonValueKind.Object } kwargs)
+        {
+            if (kwargs.TryGetProperty("enable_thinking", out System.Text.Json.JsonElement thinking))
+            {
+                if (thinking.ValueKind == System.Text.Json.JsonValueKind.True) enableThinking = true;
+                else if (thinking.ValueKind == System.Text.Json.JsonValueKind.False) enableThinking = false;
+            }
+            if (effort == null && kwargs.TryGetProperty("reasoning_effort", out System.Text.Json.JsonElement kwEffort)
+                && kwEffort.ValueKind == System.Text.Json.JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(kwEffort.GetString()))
+                effort = kwEffort.GetString()!.Trim().ToLowerInvariant();
+        }
+        if (enableThinking == null && effort == null) return false;
+
+        bool effortOff = effort is "none" or "off" or "minimal" or "disabled";
+        bool thinks = enableThinking ?? !effortOff;
+        if (effortOff && enableThinking != true) thinks = false;
+        if (!thinks)
+        {
+            decision = new Decision("minimal", 0, 0, Explicit: true);
+            return true;
+        }
+        string resolved = effort switch
+        {
+            "low" => "low", "high" => "high", "xhigh" => "xhigh", _ => "medium"
+        };
+        int budget = resolved switch { "low" => 1_024, "high" => 4_096, "xhigh" => 8_192, _ => 2_048 };
+        decision = new Decision(resolved, budget, 0, Explicit: true);
+        return true;
     }
 
     /// <summary>

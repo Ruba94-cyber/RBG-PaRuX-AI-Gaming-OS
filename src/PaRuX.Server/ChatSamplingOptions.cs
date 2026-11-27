@@ -25,6 +25,11 @@ internal static class ChatSamplingOptions
             return "\"temperature\" must be between 0 and 2.";
         if (request.TopP is { } p && (double.IsNaN(p) || p < 0 || p > 1))
             return "\"top_p\" must be between 0 and 1.";
+        if (request.TopK is < 0) return "\"top_k\" must be zero or a positive integer.";
+        if (request.MinP is { } minP && (double.IsNaN(minP) || minP < 0 || minP > 1))
+            return "\"min_p\" must be between 0 and 1.";
+        if (request.ChatTemplateKwargs is { ValueKind: not (JsonValueKind.Object or JsonValueKind.Null or JsonValueKind.Undefined) })
+            return "\"chat_template_kwargs\" must be an object.";
         if (request.Stop is { } stop)
         {
             switch (stop.ValueKind)
@@ -53,6 +58,8 @@ internal static class ChatSamplingOptions
         if (EffectiveMaxTokens(request) is { } max) payload["max_tokens"] = max;
         if (request.Temperature is { } temperature) payload["temperature"] = temperature;
         if (request.TopP is { } topP) payload["top_p"] = topP;
+        if (request.TopK is { } topK) payload["top_k"] = topK;
+        if (request.MinP is { } minP) payload["min_p"] = minP;
         if (request.Seed is { } seed) payload["seed"] = seed;
         if (request.Stop is { ValueKind: JsonValueKind.String or JsonValueKind.Array } stop)
             payload["stop"] = JsonNode.Parse(stop.GetRawText());
