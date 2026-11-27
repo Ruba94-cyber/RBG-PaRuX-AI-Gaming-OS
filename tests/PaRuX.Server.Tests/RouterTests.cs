@@ -52,6 +52,8 @@ public sealed class RouterTests
     [InlineData("Come posso correggere questo bug nel mio snippet?", RouteKind.ChatNormal)]
     [InlineData("Qual è il bug in questa funzione?", RouteKind.ChatNormal)]
     [InlineData("/code crea una classe Helper", RouteKind.CodeHandoff)]
+    [InlineData("Esegui in Python con run_python il calcolo print(12345 * 6789) e dimmi il risultato.", RouteKind.ChatNormal)]
+    [InlineData("Run print(2+2) in Python sandbox", RouteKind.ChatFast)]
     public void Canonical_intents_are_routed_without_a_model_call(string input, RouteKind expected) =>
         Assert.Equal(expected, RouterService.Classify(input));
 
