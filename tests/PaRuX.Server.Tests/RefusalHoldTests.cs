@@ -132,4 +132,46 @@ public sealed class RefusalHoldTests
         Assert.Equal(RefusalHold.Verdict.Escalate, Stream(late, adaptive: false).Verdict);
         Assert.Equal(RefusalHold.Verdict.Release, Stream(late, adaptive: true).Verdict);
     }
+
+    [Fact]
+    public void Skipping_evaluation_on_lines_without_new_text_never_changes_the_verdict_or_when_it_is_reached()
+    {
+        // Each text chunk is followed by a blank SSE separator line, as on the wire. The gated loop (what ChatProxyService runs)
+        // must reach the same verdict after the same number of text chunks as the loop that evaluates on every line.
+        foreach (bool adaptive in new[] { false, true })
+        foreach (string reply in Refusals.Concat(Normal))
+        {
+            Assert.Equal(Run(reply, adaptive, gated: false), Run(reply, adaptive, gated: true));
+        }
+
+        static (RefusalHold.Verdict, int) Run(string reply, bool adaptive, bool gated)
+        {
+            var text = new StringBuilder();
+            int elapsed = 0, chunks = 0;
+            for (int i = 0; i < reply.Length; i += 4)
+            {
+                text.Append(reply, i, Math.Min(4, reply.Length - i));
+                chunks++;
+                elapsed += 5;
+                bool done = i + 4 >= reply.Length;
+                for (int line = 0; line < 2; line++) // data line, then blank separator
+                {
+                    bool changed = line == 0;
+                    if (gated && !RefusalHold.ShouldEvaluate(changed, elapsed >= 100, done && line == 1)) continue;
+                    RefusalHold.Verdict v = RefusalHold.Evaluate(text.ToString(), elapsed >= 100, done && line == 1, adaptive);
+                    if (v != RefusalHold.Verdict.Hold) return (v, chunks);
+                }
+            }
+            return (RefusalHold.Evaluate(text.ToString(), true, true, adaptive), chunks);
+        }
+    }
+
+    [Fact]
+    public void ShouldEvaluate_is_false_only_for_a_line_that_cannot_change_a_previous_hold()
+    {
+        Assert.False(RefusalHold.ShouldEvaluate(textChanged: false, windowElapsed: false, done: false));
+        Assert.True(RefusalHold.ShouldEvaluate(true, false, false));
+        Assert.True(RefusalHold.ShouldEvaluate(false, true, false));
+        Assert.True(RefusalHold.ShouldEvaluate(false, false, true));
+    }
 }

@@ -1154,6 +1154,7 @@ public sealed class ChatProxyService
         {
             cancellationToken.ThrowIfCancellationRequested();
             bool done = false;
+            bool textChanged = false;
             if (line.StartsWith("data:", StringComparison.Ordinal))
             {
                 string data = line[5..].Trim();
@@ -1179,6 +1180,7 @@ public sealed class ChatProxyService
                     {
                         if (firstDeltaTimestamp == 0) firstDeltaTimestamp = Stopwatch.GetTimestamp();
                         plainText.Append(fragment);
+                        textChanged = true;
                     }
                 }
                 else pending.Add(line);
@@ -1188,6 +1190,9 @@ public sealed class ChatProxyService
             bool windowElapsed = firstDeltaTimestamp != 0
                 && Stopwatch.GetElapsedTime(firstDeltaTimestamp) >= FallbackDecisionWindow;
 
+            // The verdict is a pure function of (text, windowElapsed, done) and the previous evaluation returned Hold, so a
+            // blank/keep-alive/non-text SSE line with no new text, no elapsed window and no [DONE] cannot change it.
+            if (!RefusalHold.ShouldEvaluate(textChanged, windowElapsed, done)) continue;
             RefusalHold.Verdict verdict = RefusalHold.Evaluate(plainText.ToString(), windowElapsed, done, AdaptiveFallbackHold);
             if (verdict != RefusalHold.Verdict.Hold)
             {

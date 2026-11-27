@@ -170,7 +170,45 @@ public static class RuntimeLaunchOptimizer
         LaunchPlanContext? cudaPlan = planLaunch
             ? planContext ?? await BuildPlanContextAsync(modelPath, hasCuda, inventory, freeDedicatedBytes, runtimeTag, ct).ConfigureAwait(false)
             : null;
-        return Finalize(modelPath, profile, "adaptive-default", workload, backend, runtimeTag, hardwareKey, cudaPlan);
+        if (ShouldDefaultChatSpeculation(workload, profile))
+        {
+            profile.SpeculativeType = DefaultChatSpeculativeType;
+            profile.SpeculativeDraftMax = 0; // llama.cpp's own ngram-mod window; shrunken windows regressed prose in measurement
+        }
+        RuntimeLaunchOptimization resolved = Finalize(modelPath, profile, "adaptive-default", workload, backend, runtimeTag, hardwareKey, cudaPlan);
+        // The launch planner may have moved to partial offload / another device: speculation is then unmeasured, so drop it.
+        if (!ShouldDefaultChatSpeculation(workload, resolved.Profile, alreadyApplied: true))
+        {
+            StripDefaultSpeculation(resolved.Profile);
+            if (resolved.BaselineProfile != null) StripDefaultSpeculation(resolved.BaselineProfile);
+        }
+        return resolved;
+    }
+
+    internal const string DefaultChatSpeculativeType = "ngram-mod";
+
+    /// <summary>
+    /// Out-of-the-box chat on a single full-offload CUDA GPU launches with n-gram self-speculation (no draft model).
+    /// Measured on an RTX 5080 (Qwen3-4B Q4_K_M, greedy): free-form prose and new code are neutral (~200 tok/s either way,
+    /// almost nothing is drafted), while editing a pasted file or quoting a pasted document runs 7-8x faster (about 1,600
+    /// against 200 tok/s). Only measured shapes get it: CUDA, one device, one slot, every layer on the GPU, no CPU-only or
+    /// Vulkan/partial-offload launch. Applies to the unmeasured default only; a calibrated profile keeps its measured choice.
+    /// PARUX_CHAT_SPECULATIVE=0 turns it off.
+    /// </summary>
+    internal static bool ShouldDefaultChatSpeculation(string workload, LlamaPerformanceProfileDto profile, bool alreadyApplied = false) =>
+        RuntimePerformanceTuner.NormalizeWorkload(workload) == "chat"
+        && !string.Equals(Environment.GetEnvironmentVariable("PARUX_CHAT_SPECULATIVE"), "0", StringComparison.Ordinal)
+        && string.Equals(profile.SplitMode, "none", StringComparison.OrdinalIgnoreCase)
+        && profile.ParallelSlots == 1
+        && profile.GpuLayers < 0
+        && string.IsNullOrWhiteSpace(profile.SpeculativeDraftModelPath)
+        && (alreadyApplied || profile.SpeculativeType == "none");
+
+    private static void StripDefaultSpeculation(LlamaPerformanceProfileDto profile)
+    {
+        if (profile.SpeculativeType != DefaultChatSpeculativeType) return;
+        profile.SpeculativeType = "none";
+        profile.SpeculativeDraftMax = 0;
     }
 
     /// <summary>
