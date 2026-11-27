@@ -154,6 +154,20 @@ namespace PaRuX.Services
             return older;
         }
 
+        /// <summary>
+        /// Appends the replayed evidence so that a turn's text only ever EXTENDS the previous turn's text: the header is
+        /// constant and the changing observation count goes AFTER the evidence. With the count in the header (as before),
+        /// every evidence entry sat behind a token that differed on each turn, so llama.cpp's KV prefix reuse could not
+        /// cover any of the log. The model still sees the same information (header, entries, total count).
+        /// </summary>
+        public static void AppendEvidenceSection(
+            System.Text.StringBuilder sb, int totalObservations, System.Collections.Generic.IReadOnlyList<string> recent)
+        {
+            sb.Append("Recent execution evidence:\n");
+            sb.Append(totalObservations == 0 ? "(none yet)" : string.Join("\n---\n", recent));
+            sb.Append("\n\n(").Append(totalObservations).Append(" total observation(s) so far.)");
+        }
+
         public static (System.Collections.Generic.IReadOnlyList<string> Recent, string DurableMemory) SelectEvidence(
             System.Collections.Generic.IReadOnlyList<string> log,
             int maxEntries,

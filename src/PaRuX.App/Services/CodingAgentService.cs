@@ -321,6 +321,9 @@ namespace PaRuX.Services
 
             try
             {
+                // Fixed for the whole run: checkpoint.StepsTaken advances after step 1, which flipped the "may have resumed" banner
+                // near the top of the prompt on turn 2 and invalidated the KV prefix for every later turn.
+                bool resumedRun = checkpoint.StepsTaken > 0;
                 int firstStep = Math.Max(1, checkpoint.StepsTaken + 1);
                 for (int step = firstStep; step <= MaxSteps; step++)
                 {
@@ -405,7 +408,7 @@ namespace PaRuX.Services
                     string userPrompt = BuildPrompt(
                         task, log, compiledContext, restoreHint,
                         checkpoint.Plan, verificationRequired, verificationSatisfied,
-                        checkpoint.StepsTaken > 0,
+                        resumedRun,
                         recentEvidenceCharacters - durableMemory.Length, durableMemory,
                         permissionMode: effectivePermissionMode);
                     // The real managed llama tokenizer counts the exact structured chat
@@ -486,7 +489,7 @@ namespace PaRuX.Services
                         userPrompt = BuildPrompt(
                             task, log, compiledContext, restoreHint,
                             checkpoint.Plan, verificationRequired, verificationSatisfied,
-                            checkpoint.StepsTaken > 0,
+                            resumedRun,
                             recentEvidenceCharacters - durableMemory.Length, durableMemory,
                             permissionMode: effectivePermissionMode);
                         originalFits = await FitsPreparedPromptAsync(userPrompt).ConfigureAwait(false);
@@ -503,7 +506,7 @@ namespace PaRuX.Services
                         string proposed = BuildPrompt(
                             task, log, compiledContext, restoreHint,
                             checkpoint.Plan, verificationRequired, verificationSatisfied,
-                            checkpoint.StepsTaken > 0,
+                            resumedRun,
                             compactReplay - compactMemoryLength,
                             durableMemory[..compactMemoryLength],
                             CodingAgentRecoveryDigest.Build(checkpoint, log, 900),
@@ -546,7 +549,7 @@ namespace PaRuX.Services
                             userPrompt = BuildPrompt(
                                 task, log, compiledContext, restoreHint,
                                 checkpoint.Plan, verificationRequired, verificationSatisfied,
-                                checkpoint.StepsTaken > 0,
+                                resumedRun,
                                 reduced.RecentCharacters - memoryCharacters, compactMemory,
                                 CodingAgentRecoveryDigest.Build(
                                     checkpoint, log, pass <= 1 ? 900 : pass == 2 ? 600 : 350),
@@ -623,7 +626,8 @@ namespace PaRuX.Services
                             },
                             ct,
                             modelSelection: "parux-role:coding",
-                            traceLabel: "step-" + step).ConfigureAwait(false);
+                            traceLabel: "step-" + step,
+                            cacheScope: resolvedSessionId).ConfigureAwait(false);
                     }
                     catch (LocalAiException ex) when (
                         CodingAgentPromptBudgetPolicy.IsProviderContextOverflow(ex.Message))
@@ -648,7 +652,7 @@ namespace PaRuX.Services
                         userPrompt = BuildPrompt(
                             task, log, compiledContext, restoreHint,
                             checkpoint.Plan, verificationRequired, verificationSatisfied,
-                            checkpoint.StepsTaken > 0, 0, string.Empty,
+                            resumedRun, 0, string.Empty,
                             CodingAgentRecoveryDigest.Build(checkpoint, log, 500),
                             permissionMode: effectivePermissionMode);
                         // Even on the provider-overflow retry, use the same
@@ -682,7 +686,8 @@ namespace PaRuX.Services
                                 retryHistory, systemPrompt, "parux_coding_action", actionSchema,
                                 fragment => buffer.Append(fragment), ct,
                                 modelSelection: "parux-role:coding",
-                                traceLabel: "step-" + step + "-retry").ConfigureAwait(false);
+                                traceLabel: "step-" + step + "-retry",
+                                cacheScope: resolvedSessionId).ConfigureAwait(false);
                         }
                         catch (LocalAiException retryException) when (
                             CodingAgentPromptBudgetPolicy.IsProviderContextOverflow(retryException.Message))
@@ -1512,8 +1517,7 @@ namespace PaRuX.Services
             int omitted = log.Count - recent.Count;
             if (omitted > 0)
                 sb.Append('(').Append(omitted).Append(" earlier observation(s) are retained in the durable checkpoint; only the newest are expanded here.)\n\n");
-            sb.Append("Recent execution evidence (").Append(log.Count).Append(" total observation(s)):\n");
-            sb.Append(log.Count == 0 ? "(none yet)" : string.Join("\n---\n", recent));
+            CodingAgentPromptBuilder.AppendEvidenceSection(sb, log.Count, recent);
             if (verificationRequired && !verificationSatisfied)
                 sb.Append("\n\nCompletion gate: testable code changed and no successful discovered verification command has been observed since that change.");
             sb.Append(CodingAgentPromptBuilder.EvidenceClosing(recent, verificationRequired && verificationSatisfied));
