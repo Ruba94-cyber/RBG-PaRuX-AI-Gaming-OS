@@ -8,19 +8,19 @@
 
 | Target & Runtime | Short TTFT | Short Decode | 1k TTFT | 1k Decode | 4k TTFT | 4k Decode | VRAM |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **PaRuX `main` (CUDA `b12233`, `--parallel 1`, `f16` KV)** | **40.4 ms** | 222.5 tok/s | **149.5 ms** | 200.9 tok/s | **450.6 ms** | 181.0 tok/s | 5,131 MiB |
-| **Locally Uncensored CUDA (`b12233`, `-ngl 99 -c 16384 -np 1 --jinja`)** | 55.0 ms | **224.8 tok/s** | 196.5 ms | **211.9 tok/s** | 682.3 ms | **187.6 tok/s** | 5,043 MiB |
+| **PaRuX `v4.7.0` (CUDA `b12233`, `--parallel 1`, `f16` KV, `--poll 100`)** | **31.3 ms** | 218.7 tok/s (srv 214.4) | **124.5 ms** | 207.9 tok/s (srv 204.8) | **404.9 ms** | 184.5 tok/s (srv 182.0) | 5,131 MiB |
+| **Locally Uncensored CUDA (`b12233`, `-ngl 99 -c 16384 -np 1 --jinja`)** | 55.0 ms | **224.8 tok/s** (srv 218.6) | 196.5 ms | **211.9 tok/s** (srv 205.8) | 682.3 ms | **187.6 tok/s** (srv 182.7) | 5,043 MiB |
 | **Locally Uncensored Default Vulkan (`lu-llama-server.exe`)** | 68.9 ms | 215.9 tok/s | 236.7 ms | 200.9 tok/s | 776.2 ms | 178.5 tok/s | 7,525 MiB |
 | **LU CUDA baseline esterna (`b12621`, `2026-11-25`)** | 53.5 ms | 227.4 tok/s | 203.1 ms | 208.7 tok/s | 696.6 ms | 184.8 tok/s | 5,043 MiB |
 | **AnythingLLM Desktop CUDA (`b11425`)** | — | 226.5 tok/s | 227.9 ms | 212.7 tok/s | 680.7 ms | 189.9 tok/s | — |
 
-### Osservazioni oggettive
-1. **Reattività (TTFT) best-in-class:** PaRuX batte sia Locally Uncensored CUDA (stesso motore `b12233`), sia Locally Uncensored Vulkan di serie, sia AnythingLLM CUDA su **tutte e tre le lunghezze**:
-   - `short`: **40.4 ms** (-26.5% vs LU CUDA `55.0 ms`, -41.4% vs LU Vulkan `68.9 ms`).
-   - `1k`: **149.5 ms** (-23.9% vs LU CUDA `196.5 ms`, -36.8% vs LU Vulkan `236.7 ms`, -34.4% vs AnythingLLM `227.9 ms`).
-   - `4k`: **450.6 ms** (-34.0% vs LU CUDA `682.3 ms`, -41.9% vs LU Vulkan `776.2 ms`, -33.8% vs AnythingLLM `680.7 ms`).
-2. **Efficienza VRAM vs LU di serie (Vulkan):** PaRuX CUDA usa **5,131 MiB** contro **7,525 MiB** di `lu-llama-server.exe` (-31.8% VRAM) ed è più veloce in decode su `short` (222.5 vs 215.9 tok/s) e `4k` (181.0 vs 178.5 tok/s).
-3. **Nota onesta sul decode `1k`/`4k` vs LU CUDA:** nei prompt sintetici `bench.py` compare la parola `"file"` (`"the file watcher"`), per cui `ToolSchemaIntentGate` mantiene i ~917 token di tool schema (`cache_n=917`) invece di ometterli; sui prompt reali senza intent di file/tool (es. chat normale multi-riga verificata da UI), i 917 token vengono omessi.
+### Osservazioni oggettive (`v4.7.0`)
+1. **Reattività (TTFT) e Prefill (`pp`) best-in-class:** PaRuX `v4.7.0` batte sia Locally Uncensored CUDA (stesso motore `b12233`), sia Locally Uncensored Vulkan di serie, sia AnythingLLM CUDA su **tutte e tre le lunghezze**:
+   - `short`: TTFT **31.3 ms** (-43.1% vs LU CUDA `55.0 ms`, -54.6% vs LU Vulkan `68.9 ms`), prefill **3,126.1 tok/s** vs `945.5 tok/s` (+230.6%).
+   - `1k`: TTFT **124.5 ms** (-36.6% vs LU CUDA `196.5 ms`, -47.4% vs LU Vulkan `236.7 ms`, -45.4% vs AnythingLLM `227.9 ms`), prefill **13,045.1 tok/s** vs `11,841.7 tok/s` (+10.2%).
+   - `4k`: TTFT **404.9 ms** (-40.7% vs LU CUDA `682.3 ms`, -47.8% vs LU Vulkan `776.2 ms`, -40.5% vs AnythingLLM `680.7 ms`), prefill **12,473.3 tok/s** vs `11,579.0 tok/s` (+7.7%).
+2. **Decode allineato & tempo di completamento totale inferiore:** grazie al fix di `ToolSchemaIntentGate` (niente più +917 token di tool schema sui prompt `1k`/`4k` con nomi generici nel corpo incollato: `prompt_n` `1,213`/`4,641` vs LU `1,193`/`4,637`) e a `--poll 100` con KV `f16`, la velocità pura del motore (`dec_srv`) è entro lo **0.4%–1.9%** di LU CUDA (`214.4 / 204.8 / 182.0` vs `218.6 / 205.8 / 182.7 tok/s`) e il tempo totale dall'invio al completamento di 128 token è **inferiore su PaRuX su tutti i tagli** (su 4k: `1.099 s` vs `1.364 s`, **-265 ms**).
+3. **Efficienza VRAM vs LU di serie (Vulkan):** PaRuX CUDA usa **5,131 MiB** contro **7,525 MiB** di `lu-llama-server.exe` (-31.8% VRAM) ed è più veloce su tutte le metriche TTFT e decode (`218.7 / 207.9 / 184.5` vs `215.9 / 200.9 / 178.5 tok/s`).
 
 ## 2. RAG & Conoscenza locale (PaRuX Core CUDA)
 - **Corpo sintetico (`parux_rag.py`, 31 file / 210 chunk):** indicizzazione completata in **1.57 s**, **`hit@5 = 10/10`**, **`30/30` risposte corrette e citate**, TTFT ~95–101 ms.
