@@ -932,9 +932,9 @@ namespace PaRuX.Views
             });
 
             var controlsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            controlsRow.Children.Add(new TextBlock { Text = CapabilityOverridePresenter.OverrideComboBoxLabel, VerticalAlignment = VerticalAlignment.Center });
+            controlsRow.Children.Add(new TextBlock { Text = T(CapabilityOverridePresenter.OverrideComboBoxLabel, "Override avanzato"), VerticalAlignment = VerticalAlignment.Center });
             controlsRow.Children.Add(_overrideMode);
-            controlsRow.Children.Add(new TextBlock { Text = CapabilityOverridePresenter.OverrideModelComboBoxLabel, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) });
+            controlsRow.Children.Add(new TextBlock { Text = T(CapabilityOverridePresenter.OverrideModelComboBoxLabel, "Modello override"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) });
             controlsRow.Children.Add(_overrideModel);
             controlsRow.Children.Add(_saveOverride);
             panel.Children.Add(controlsRow);

@@ -69,9 +69,14 @@ namespace PaRuX.Services
             + @"scrivi|digita|inserisci|incolla|cerca|clicca|premi|salva|rinomina|elimina|chiudi)\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+        private static readonly Regex CodeExecutionIntent = new Regex(
+            @"\b(python|run_python|sandbox|script)\b|```",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
         public static ComputerActionPlan? TryPlan(string? request)
         {
             if (string.IsNullOrWhiteSpace(request) || !OpenIntent.IsMatch(request)) return null;
+            if (CodeExecutionIntent.IsMatch(request)) return null;
             if (FollowUpAction.IsMatch(request)) return null;
 
             if (BrowserNavigationPlanner.TryFind(request, out BrowserNavigationTarget? browserTarget))
@@ -280,8 +285,14 @@ namespace PaRuX.Services
             }
         }
 
-        private static bool ContainsPhrase(string text, string phrase) =>
-            text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0;
+        private static bool ContainsPhrase(string text, string phrase)
+        {
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(phrase)) return false;
+            return Regex.IsMatch(
+                text,
+                @"(?<![\p{L}\p{N}_])" + Regex.Escape(phrase.Trim()) + @"(?![\p{L}\p{N}_])",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
 
         /// <summary>Reads the Internet toggle that PaRuX's browser tools also obey. A setting that cannot be read
         /// counts as off, so an unreachable Core never turns into an unrestricted web launch.</summary>

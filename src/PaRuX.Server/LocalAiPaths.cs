@@ -497,7 +497,44 @@ public static class LocalAiPaths
         : PaRuXDataRoot.FindPortableDataRoot(AppContext.BaseDirectory) != null
             ? GetPortableOwnedRoleModel("standard") ?? FindBundledPortableModel()
                 ?? Path.Combine(ModelDownloadService.ModelsDirectory, "missing-portable-starter.gguf")
-            : GetRoleOverride("standard") ?? DefaultStandardModel;
+            : GetRoleOverride("standard")
+                ?? (File.Exists(DefaultStandardModel) ? DefaultStandardModel : FindInstalledDesktopFallbackModel() ?? DefaultStandardModel);
+
+    internal static string? FindInstalledDesktopFallbackModel()
+    {
+        string[] dirs = new[] { ModelsPath, ModelDownloadService.ModelsDirectory }
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        string? bestPath = null;
+        long bestSize = -1;
+        foreach (string dir in dirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(dir, "*.gguf", SearchOption.TopDirectoryOnly))
+                {
+                    string name = Path.GetFileName(file);
+                    if (name.Contains("embed", StringComparison.OrdinalIgnoreCase)
+                        || name.Contains("rerank", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    long len = new FileInfo(file).Length;
+                    if (!CorporateModelImportPolicy.IsAcceptableModel(name, len)
+                        || !CorporateModelImportPolicy.HasGgufHeader(file))
+                        continue;
+                    if (len > bestSize)
+                    {
+                        bestSize = len;
+                        bestPath = file;
+                    }
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return bestPath;
+    }
 
     /// <summary>On a moved USB Portable, absolute paths recorded on the old
     /// machine are not allowed to reconnect to unrelated host models. If the

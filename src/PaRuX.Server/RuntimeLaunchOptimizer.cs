@@ -107,7 +107,7 @@ public static class RuntimeLaunchOptimizer
             ThreadsBatch = threadsBatch,
             CpuStrict = cpuStrict,
             ProcessPriority = workload == "coding" ? 1 : 0,
-            PollPercent = workload == "coding" ? 65 : 45
+            PollPercent = workload == "coding" ? 65 : 100
         };
 
         if (!hasCuda)

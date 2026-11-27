@@ -35,6 +35,16 @@ public sealed class ToolSchemaIntentGateTests : IDisposable
         Assert.True(ToolSchemaIntentGate.CanOmitToolSchemas(longPrompt, "general"));
     }
 
+    [Fact]
+    public void Long_plain_prompt_mentioning_generic_file_noun_in_body_omits_tool_schemas()
+    {
+        string body = string.Join(" ", Enumerable.Repeat(
+            "The scheduler runs cleanly and the file watcher flushes pending telemetry without touching disk.", 45));
+        string longPrompt = "Summarize the engineering note below in two sentences:\n\n" + body + "\n\nKeep the summary concise.";
+        Assert.True(longPrompt.Length > 1000);
+        Assert.True(ToolSchemaIntentGate.CanOmitToolSchemas(longPrompt, "general"));
+    }
+
     [Theory]
     [InlineData("Create a Word document with the meeting minutes")]
     [InlineData("Scrivi un file excel con le spese")]

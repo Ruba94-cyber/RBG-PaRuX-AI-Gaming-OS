@@ -361,7 +361,11 @@ namespace PaRuX
 
             SyncModeTabToWorkspace(gaming: workspace is StudioWorkspace.Games or StudioWorkspace.GamesTools);
             SetNavPaneVisible(true);
-            if (ChatPageIfCreated is { } chatPage) chatPage.Visibility = Visibility.Collapsed;
+            if (ChatPageIfCreated is { } chatPage)
+            {
+                chatPage.DismissOpenFlyouts();
+                chatPage.Visibility = Visibility.Collapsed;
+            }
             if (SettingsPageIfCreated is { } settingsPage) settingsPage.Visibility = Visibility.Collapsed;
             if (OnboardingPageIfCreated is { } onboardingPage) onboardingPage.Visibility = Visibility.Collapsed;
             HideAllWorkspacePages();

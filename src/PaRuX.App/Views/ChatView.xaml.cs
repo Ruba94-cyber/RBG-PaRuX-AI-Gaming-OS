@@ -2913,6 +2913,7 @@ namespace PaRuX.Views
             InputBox.Text = string.Empty;
             RefreshAttachmentPanel();
             SetRoutePreview(null);
+            DismissOpenFlyouts();
 
             (string? skillId, string stripped) slash = ParseSlashCommand(text.TrimStart());
             if (slash.skillId != null)
