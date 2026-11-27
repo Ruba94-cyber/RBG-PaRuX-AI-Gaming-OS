@@ -96,6 +96,13 @@ internal static class RefusalHold
         return !RefusalHeuristic.IsLikelyRefusal(text) && !CueWords.IsMatch(text);
     }
 
+    /// <summary>
+    /// False only when re-evaluating cannot differ from the previous (Hold) evaluation: no new text, the decision window has
+    /// not elapsed and the stream is not done. The hold never grows past <see cref="DecisionCharacterThreshold"/> characters
+    /// (it always decides at that length), so evaluation cost is bounded; this removes the redundant passes.
+    /// </summary>
+    internal static bool ShouldEvaluate(bool textChanged, bool windowElapsed, bool done) => textChanged || windowElapsed || done;
+
     internal static Verdict Evaluate(string text, bool windowElapsed, bool done, bool adaptive)
     {
         if (done || text.Length >= DecisionCharacterThreshold || windowElapsed)

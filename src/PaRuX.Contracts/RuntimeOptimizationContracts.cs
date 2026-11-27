@@ -38,6 +38,13 @@ public sealed class RuntimeOptimizationServerResult
     public string? OutputDigest { get; set; }
     /// <summary>First characters of the same greedy calibration output; lets a KV-cache precision change be judged by how far its text diverges from the reference instead of only equal/not equal.</summary>
     public string? OutputSample { get; set; }
+    /// <summary>Diagnostic: this candidate's greedy digest differed from the plain baseline's. A veto for draft-model/MTP modes; for pure n-gram modes it is recorded only.</summary>
+    public bool OutputDigestDiverged { get; set; }
+    /// <summary>Chat only: decode tok/s on the grounded probe (pasted document / code rewrite), where n-gram drafting helps. Null when not measured.</summary>
+    public double? GroundedDecodeTokensPerSecond { get; set; }
+    /// <summary>Chat only: draft tokens / accepted on the grounded probe, kept apart so free-form acceptance is not diluted.</summary>
+    public int GroundedDraftTokens { get; set; }
+    public int GroundedDraftTokensAccepted { get; set; }
     public double? PromptCacheColdTtftMilliseconds { get; set; }
     public double? PromptCacheWarmTtftMilliseconds { get; set; }
     public double? PromptCacheImprovementPercent { get; set; }

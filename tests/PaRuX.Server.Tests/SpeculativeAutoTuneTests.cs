@@ -76,6 +76,104 @@ public sealed class SpeculativeAutoTuneTests : IDisposable
         Assert.DoesNotContain(without, c => c.SpeculativeType == "draft-mtp");
     }
 
+    [Theory]
+    [InlineData("chat", false, true)]
+    [InlineData("coding", false, true)]
+    [InlineData("long-context", false, true)]
+    public void Chat_joins_the_speculative_race_without_a_draft_model(string workload, bool mtp, bool expected) =>
+        Assert.Equal(expected, RuntimeOptimizationService.ShouldRaceSpeculative(workload, mtp));
+
+    [Fact]
+    public void Chat_candidates_are_ngram_only_when_there_is_no_mtp_head()
+    {
+        var baseline = new LlamaPerformanceProfileDto { Id = "base" };
+        var list = RuntimeOptimizationService.BuildSpeculativeCandidates(
+            baseline, Path.Combine(_directory, "missing.gguf"), "chat", hasEmbeddedMtpHead: false);
+        Assert.Equal(new[] { "ngram-mod" }, list.Select(c => c.SpeculativeType).ToArray());
+        Assert.All(list, c => Assert.Equal(0, c.SpeculativeDraftMax)); // llama.cpp default window, never a small one
+        Assert.All(list, c => Assert.True(string.IsNullOrEmpty(c.SpeculativeDraftModelPath)));
+    }
+
+    private static RuntimeOptimizationServerResult Chat(string spec, double free, double grounded, int draft = 0, int accepted = 0, int gDraft = 0, int gAccepted = 0)
+    {
+        RuntimeOptimizationServerResult r = Result(spec, free);
+        r.GroundedDecodeTokensPerSecond = grounded;
+        r.DraftTokens = draft; r.DraftTokensAccepted = accepted;
+        r.GroundedDraftTokens = gDraft; r.GroundedDraftTokensAccepted = gAccepted;
+        r.DraftAcceptancePercent = draft > 0 ? 100.0 * accepted / draft : null;
+        return r;
+    }
+
+    [Fact]
+    public void Chat_ngram_wins_when_grounded_gain_lifts_the_blend_and_free_form_holds()
+    {
+        var baseline = Chat("none", 100, 100);
+        var ngram = Chat("ngram-mod", 99, 200, draft: 20, accepted: 4, gDraft: 100, gAccepted: 90);
+        Score(baseline, ngram);
+        Assert.Same(ngram, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
+    }
+
+    [Fact]
+    public void Chat_ngram_is_rejected_when_free_form_regresses_even_if_grounded_is_fast()
+    {
+        var baseline = Chat("none", 100, 100);
+        var ngram = Chat("ngram-mod", 90, 400, draft: 20, accepted: 4, gDraft: 100, gAccepted: 95);
+        Score(baseline, ngram);
+        Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
+    }
+
+    [Fact]
+    public void Chat_ngram_is_rejected_when_the_blended_gain_is_under_five_percent()
+    {
+        var baseline = Chat("none", 100, 100);
+        var ngram = Chat("ngram-simple", 100, 108, draft: 20, accepted: 10, gDraft: 50, gAccepted: 40);
+        Score(baseline, ngram);
+        Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
+    }
+
+    [Fact]
+    public void Chat_ngram_is_rejected_on_low_combined_acceptance()
+    {
+        var baseline = Chat("none", 100, 100);
+        var ngram = Chat("ngram-mod", 100, 300, draft: 100, accepted: 10, gDraft: 100, gAccepted: 40);
+        Score(baseline, ngram);
+        Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
+    }
+
+    [Fact]
+    public void Ngram_digest_divergence_is_recorded_not_vetoed_but_draft_modes_stay_strict()
+    {
+        var baseline = Chat("none", 100, 100); baseline.OutputDigest = "aaaa";
+        var ngram = Chat("ngram-mod", 100, 300, draft: 20, accepted: 15, gDraft: 100, gAccepted: 90); ngram.OutputDigest = "bbbb";
+        var mtp = Chat("draft-mtp", 100, 300, draft: 20, accepted: 15, gDraft: 100, gAccepted: 90); mtp.OutputDigest = "bbbb";
+        Score(baseline, ngram, mtp);
+        Assert.Same(ngram, RuntimeOptimizationService.ChooseWinner(new() { baseline, ngram }, baseline));
+        Assert.True(ngram.OutputDigestDiverged);
+        Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(new() { baseline, mtp }, baseline));
+        Assert.True(mtp.OutputDigestDiverged);
+    }
+
+    [Fact]
+    public void Default_chat_speculation_is_ngram_mod_with_llama_cpp_default_window_only_on_full_offload_single_slot()
+    {
+        var full = new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = -1 };
+        Assert.True(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", full));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("coding", full));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 1, GpuLayers = 20 }));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "layer", ParallelSlots = 1, GpuLayers = -1 }));
+        Assert.False(RuntimeLaunchOptimizer.ShouldDefaultChatSpeculation("chat", new LlamaPerformanceProfileDto { SplitMode = "none", ParallelSlots = 4, GpuLayers = -1 }));
+
+        full.SpeculativeType = RuntimeLaunchOptimizer.DefaultChatSpeculativeType;
+        List<string> args = RuntimeLaunchOptimizer.BuildRuntimeArguments(full, hasCuda: true);
+        int i = args.IndexOf("--spec-type");
+        Assert.True(i >= 0);
+        Assert.Equal("ngram-mod", args[i + 1]);
+        Assert.DoesNotContain("--spec-draft-n-max", args);
+    }
+
+    private static void Score(params RuntimeOptimizationServerResult[] results) =>
+        RuntimeOptimizationService.Score(results, "balanced");
+
     private static RuntimeOptimizationServerResult Result(string spec, double decode, double ttft = 300, double? accept = null) => new()
     {
         Status = "completed",
@@ -108,7 +206,8 @@ public sealed class SpeculativeAutoTuneTests : IDisposable
     {
         RuntimeOptimizationServerResult baseline = Result("none", 50);
         baseline.OutputDigest = "aaaa";
-        RuntimeOptimizationServerResult changed = Result("ngram-mod", 150, accept: 90);
+        // Draft-model / MTP modes stay strict; pure n-gram divergence is only recorded (see Ngram_digest_divergence_...).
+        RuntimeOptimizationServerResult changed = Result("draft-simple", 150, accept: 90);
         changed.OutputDigest = "bbbb";
         RuntimeOptimizationService.Score(new[] { baseline, changed }, "turbo");
         Assert.Same(baseline, RuntimeOptimizationService.ChooseWinner(

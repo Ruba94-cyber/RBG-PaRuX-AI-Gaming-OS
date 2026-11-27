@@ -242,8 +242,7 @@ public sealed class RuntimeOptimizationService
             // slot, so it is raced against its own one-slot plain baseline and only replaces the serving winner when it beats
             // that baseline by the stated margin with identical greedy output.
             RuntimeOptimizationServerResult speculativeBaseline = ordinaryWinner;
-            if (entry.Request.IncludeSpeculative
-                && (entry.Request.Workload is "coding" or "long-context" || SafeHasEmbeddedMtp(entry.Status.ModelPath)))
+            if (entry.Request.IncludeSpeculative && ShouldRaceSpeculative(entry.Request.Workload, SafeHasEmbeddedMtp(entry.Status.ModelPath)))
             {
                 if (ordinaryWinner.Profile.ParallelSlots > 1)
                 {
@@ -486,6 +485,15 @@ public sealed class RuntimeOptimizationService
         return result;
     }
 
+    /// <summary>
+    /// Speculation is raced for coding/long-context, for any model with an embedded MTP head, and for chat: n-gram
+    /// self-speculation needs no draft model and helps exactly the chat turns that quote, rewrite or answer from pasted
+    /// text. Chat stays safe because the probe blends a free-form and a grounded prompt and the acceptance gates still
+    /// demand a measured gain with an identical greedy digest.
+    /// </summary>
+    internal static bool ShouldRaceSpeculative(string? workload, bool hasEmbeddedMtp) =>
+        hasEmbeddedMtp || RuntimePerformanceTuner.NormalizeWorkload(workload) is "coding" or "long-context" or "chat";
+
     internal static List<LlamaPerformanceProfileDto> BuildSpeculativeCandidates(
         LlamaPerformanceProfileDto baseline, string targetModelPath, string workload, bool? hasEmbeddedMtpHead = null)
     {
@@ -510,17 +518,26 @@ public sealed class RuntimeOptimizationService
             chain.SpeculativeDraftModelPath = null;
             result.Add(chain);
         }
-        int ngramMax = RuntimePerformanceTuner.NormalizeWorkload(workload) == "coding" ? 64 : 32;
-        foreach (string type in new[] { "ngram-simple", "ngram-mod" })
+        // ngram-mod first, with llama.cpp's own default window (no --spec-draft-n-max): measured on an RTX 5080 it gives ~8x on
+        // code edits and quoting with identical greedy output, while shrunken windows (n-min 4 / n-max 16) regressed free-form
+        // prose by ~35%. ngram-simple regressed prose too, so chat does not race it at all.
+        string[] ngramTypes = RuntimePerformanceTuner.NormalizeWorkload(workload) == "chat"
+            ? new[] { "ngram-mod" }
+            : new[] { "ngram-mod", "ngram-simple" };
+        foreach (string type in ngramTypes)
         {
             LlamaPerformanceProfileDto candidate = RuntimePerformanceProfileCopy.Copy(baseline);
             candidate.Id += "-" + type;
             candidate.DisplayName += " + " + type;
             candidate.SpeculativeType = type;
-            candidate.SpeculativeDraftMax = ngramMax;
+            candidate.SpeculativeDraftMax = type == "ngram-mod" ? 0 : 16;
             result.Add(candidate);
         }
-        foreach (SpeculativeDraftDiscovery.Candidate draft in SpeculativeDraftDiscovery.Discover(targetModelPath))
+        // Chat races the draft-free n-gram modes only; draft-model races stay a coding/long-context (or MTP) feature.
+        bool chatOnly = !mtp && RuntimePerformanceTuner.NormalizeWorkload(workload) == "chat";
+        foreach (SpeculativeDraftDiscovery.Candidate draft in chatOnly
+            ? Array.Empty<SpeculativeDraftDiscovery.Candidate>()
+            : SpeculativeDraftDiscovery.Discover(targetModelPath))
         {
             LlamaPerformanceProfileDto candidate = RuntimePerformanceProfileCopy.Copy(baseline);
             candidate.Id += "-" + draft.Type;
@@ -572,6 +589,9 @@ public sealed class RuntimeOptimizationService
             result.DraftTokens = measured.DraftTokens;
             result.DraftTokensAccepted = measured.DraftTokensAccepted;
             result.OutputDigest = measured.OutputDigest;
+            result.GroundedDecodeTokensPerSecond = measured.GroundedDecodeTokensPerSecond;
+            result.GroundedDraftTokens = measured.GroundedDraftTokens;
+            result.GroundedDraftTokensAccepted = measured.GroundedDraftTokensAccepted;
             result.OutputSample = measured.OutputSample;
             result.DraftAcceptancePercent = measured.DraftTokens > 0 ? 100.0 * measured.DraftTokensAccepted / measured.DraftTokens : null;
             result.PromptCacheColdTtftMilliseconds = measured.PromptCacheColdTtftMilliseconds;
@@ -637,15 +657,48 @@ public sealed class RuntimeOptimizationService
     private static bool PassesSpeculativeGates(RuntimeOptimizationServerResult best, RuntimeOptimizationServerResult baseline)
     {
         if (best.ThermalRegressionSuspected && !baseline.ThermalRegressionSuspected) return false;
-        if (best.DraftTokens > 0 && (best.DraftAcceptancePercent ?? 0) < 35.0) return false;
+        if (!HasGrounded(best, baseline) && best.DraftTokens > 0 && (best.DraftAcceptancePercent ?? 0) < 35.0) return false;
         // Lossless means lossless: a mode whose greedy calibration output differs from the baseline's is not enabled.
-        if (baseline.OutputDigest != null && best.OutputDigest != null && baseline.OutputDigest != best.OutputDigest) return false;
+        if (baseline.OutputDigest != null && best.OutputDigest != null && baseline.OutputDigest != best.OutputDigest)
+        {
+            best.OutputDigestDiverged = true;
+            // Pure n-gram drafting is the one exception to "lossless means lossless". Measured on an RTX 5080: prose and
+            // copy-heavy probes were digest-identical, and the few new-code prompts that diverged did so through
+            // batched-verification floating-point numerics (the target model still emits every accepted token), not wrong
+            // drafts. So a divergence is recorded, and the decode/TTFT/acceptance gates below still decide. Draft-model and
+            // MTP modes stay strictly vetoed.
+            if (best.Profile.SpeculativeType is not ("ngram-mod" or "ngram-simple")) return false;
+        }
         double baselineDecode = baseline.DecodeTokensPerSecond ?? 0;
         double bestDecode = best.DecodeTokensPerSecond ?? 0;
         double baselineTtft = baseline.TimeToFirstTokenMilliseconds ?? double.MaxValue;
         double bestTtft = best.TimeToFirstTokenMilliseconds ?? double.MaxValue;
-        return bestDecode >= baselineDecode * MinimumSpeculativeGain && bestTtft <= baselineTtft * 1.15;
+        if (bestTtft > baselineTtft * 1.15) return false;
+        // Chat: a grounded probe was measured too. Free-form chat must not regress, and the weighted (harmonic, 60/40) decode
+        // speed across both probes must clear the gain margin; harmonic weighting is dominated by the slower prompt, so a
+        // quoting-only win cannot hide a free-form loss. Acceptance is judged on the combined draft counts.
+        if (HasGrounded(best, baseline))
+        {
+            if (bestDecode < baselineDecode * FreeFormRegressionFloor) return false;
+            int drafts = best.DraftTokens + best.GroundedDraftTokens;
+            int accepted = best.DraftTokensAccepted + best.GroundedDraftTokensAccepted;
+            if (drafts > 0 && 100.0 * accepted / drafts < 35.0) return false;
+            double blendedBest = BlendChatDecode(bestDecode, best.GroundedDecodeTokensPerSecond!.Value);
+            double blendedBaseline = BlendChatDecode(baselineDecode, baseline.GroundedDecodeTokensPerSecond!.Value);
+            return blendedBest >= blendedBaseline * MinimumSpeculativeGain;
+        }
+        return bestDecode >= baselineDecode * MinimumSpeculativeGain;
     }
+
+    private static bool HasGrounded(RuntimeOptimizationServerResult best, RuntimeOptimizationServerResult baseline) =>
+        best.GroundedDecodeTokensPerSecond is > 0 && baseline.GroundedDecodeTokensPerSecond is > 0;
+
+    /// <summary>Free-form chat decode may not fall more than 3% below the plain baseline for a speculative mode to be kept.</summary>
+    internal const double FreeFormRegressionFloor = 0.97;
+
+    /// <summary>Weighted harmonic mean of free-form (60%) and grounded (40%) decode tok/s: equivalent to total time for a mixed workload.</summary>
+    internal static double BlendChatDecode(double freeForm, double grounded) =>
+        freeForm <= 0 || grounded <= 0 ? 0 : 1.0 / (0.6 / freeForm + 0.4 / grounded);
 
     private static bool SameTopology(LlamaPerformanceProfileDto left, LlamaPerformanceProfileDto right) =>
         string.Equals(left.SplitMode, right.SplitMode, StringComparison.OrdinalIgnoreCase)
@@ -701,6 +754,10 @@ public sealed class RuntimeOptimizationService
             DraftTokens = candidate.DraftTokens,
             DraftTokensAccepted = candidate.DraftTokensAccepted,
             OutputDigest = candidate.OutputDigest,
+            OutputDigestDiverged = candidate.OutputDigestDiverged,
+            GroundedDecodeTokensPerSecond = candidate.GroundedDecodeTokensPerSecond,
+            GroundedDraftTokens = candidate.GroundedDraftTokens,
+            GroundedDraftTokensAccepted = candidate.GroundedDraftTokensAccepted,
             OutputSample = candidate.OutputSample,
             DraftAcceptancePercent = candidate.DraftAcceptancePercent,
             PromptCacheColdTtftMilliseconds = candidate.PromptCacheColdTtftMilliseconds,

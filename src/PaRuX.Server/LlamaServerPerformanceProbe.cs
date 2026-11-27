@@ -29,7 +29,10 @@ public sealed record LlamaServerPerformanceMeasurement(
     string Backend,
     string HardwareKey,
     string? OutputDigest = null,
-    string? OutputSample = null);
+    string? OutputSample = null,
+    double? GroundedDecodeTokensPerSecond = null,
+    int GroundedDraftTokens = 0,
+    int GroundedDraftTokensAccepted = 0);
 
 public interface ILlamaServerPerformanceProbe
 {
@@ -169,6 +172,16 @@ public sealed class LlamaServerPerformanceProbe : ILlamaServerPerformanceProbe
             workload = RuntimePerformanceTuner.NormalizeWorkload(workload);
             WorkloadPrompt prompt = BuildPrompt(workload, 0);
             CompletionMetrics primary = await RunCompletionAsync(http, baseUrl, prompt, cancellationToken).ConfigureAwait(false);
+            // Chat only: a second, grounded probe (answer from a pasted document / rewrite pasted code) where n-gram drafting
+            // helps. Kept as separate fields so the free-form decode figure and its acceptance stay undiluted; the speculative
+            // gate weighs both, so a mode that only wins on quoting cannot regress ordinary free-form chat.
+            CompletionMetrics? grounded = null;
+            if (workload == "chat")
+            {
+                try { grounded = await RunCompletionAsync(http, baseUrl, BuildGroundedChatPrompt(), cancellationToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) { throw; }
+                catch { grounded = null; }
+            }
             double ttft = await MeasureTtftAsync(
                 http, baseUrl, BuildPrompt(workload, 1), cancellationToken).ConfigureAwait(false);
 
@@ -284,8 +297,11 @@ public sealed class LlamaServerPerformanceProbe : ILlamaServerPerformanceProbe
                 cacheRace?.Recommended,
                 backendKey,
                 hardware + " | runtime=" + runtimeTag,
-                primary.OutputDigest,
-                primary.OutputSample);
+                grounded == null ? primary.OutputDigest : DigestOutput(primary.OutputDigest, grounded.OutputDigest),
+                primary.OutputSample,
+                grounded?.DecodeTokensPerSecond,
+                grounded?.DraftTokens ?? 0,
+                grounded?.DraftTokensAccepted ?? 0);
         }
         finally
         {
@@ -562,6 +578,21 @@ public sealed class LlamaServerPerformanceProbe : ILlamaServerPerformanceProbe
         string.Join(' ', Enumerable.Repeat(
             "PaRuX keeps models, projects, artifacts, routing evidence and runtime measurements local to the workstation.", 120))
         + " Reply with the single word OK.");
+
+    /// <summary>
+    /// Realistic chat turn where n-gram self-speculation applies: the answer quotes a pasted document and rewrites a pasted
+    /// code block, so most output tokens already appear in the prompt.
+    /// </summary>
+    private static WorkloadPrompt BuildGroundedChatPrompt() => new(
+        "You are a deterministic local chat benchmark. Answer precisely, quoting the supplied text verbatim where asked.",
+        "Document:\n"
+        + "\"PaRuX keeps every model, project and conversation on the user's own computer. Inference runs through a local "
+        + "llama.cpp server bound to the loopback interface. Nothing leaves the machine unless the user explicitly enables a "
+        + "connector. Measurements of speed are stored next to the model so the same settings are reused on the next launch.\"\n\n"
+        + "Code:\n"
+        + "int Sum(int[] values) {\n    int total = 0;\n    for (int i = 0; i < values.Length; i++) {\n        total += values[i];\n    }\n    return total;\n}\n\n"
+        + "Task 1: quote verbatim the sentence that says where inference runs. "
+        + "Task 2: rewrite the code with a foreach loop and add a null check, returning the complete function.");
 
     private static WorkloadPrompt BuildPrompt(string workload, int variant)
     {
