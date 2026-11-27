@@ -52,19 +52,35 @@ internal static class ReasoningEffortCompatibility
         return ranked.OrderBy(s => s.Rank).First().Value;
     }
 
-    /// <summary>Reads the served chat template (llama-server /props); null when unavailable.</summary>
+    private static readonly TimeSpan SupportedTtl = TimeSpan.FromSeconds(30);
+    private static readonly ConcurrentDictionary<string, (DateTime AtUtc, IReadOnlyCollection<string>? Supported)> SupportedCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Drops cached template vocabularies (a model swap serves a different template).</summary>
+    internal static void Invalidate() => SupportedCache.Clear();
+
+    /// <summary>
+    /// Reads the served chat template (llama-server /props); null when unavailable. The template is
+    /// large and constant for a loaded model, so a successful read is cached briefly: fetching it on
+    /// every chat turn put an extra HTTP round trip and JSON parse in front of the first token.
+    /// </summary>
     internal static async Task<IReadOnlyCollection<string>?> GetSupportedAsync(HttpClient http, string endpoint, CancellationToken ct)
     {
+        string key = endpoint.TrimEnd('/');
+        if (SupportedCache.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.AtUtc < SupportedTtl)
+            return hit.Supported;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            using HttpResponseMessage response = await http.GetAsync(endpoint.TrimEnd('/') + "/props", timeout.Token).ConfigureAwait(false);
+            using HttpResponseMessage response = await http.GetAsync(key + "/props", timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
             using JsonDocument props = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
-            return props.RootElement.TryGetProperty("chat_template", out JsonElement template) && template.ValueKind == JsonValueKind.String
-                ? ParseSupported(template.GetString())
-                : null;
+            IReadOnlyCollection<string>? supported =
+                props.RootElement.TryGetProperty("chat_template", out JsonElement template) && template.ValueKind == JsonValueKind.String
+                    ? ParseSupported(template.GetString())
+                    : null;
+            SupportedCache[key] = (DateTime.UtcNow, supported);
+            return supported;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException) { return null; }
