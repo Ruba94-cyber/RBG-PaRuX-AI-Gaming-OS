@@ -194,6 +194,10 @@ namespace PaRuX.Services
           + @"|" + PoliteLead + @"configura(?:mi|la|lo)?\b"
           + @"|\b(?:clicca\b|click\s+(?:on\s+)?the\b|take\s+a\s+screenshot|control\s+my\s+(?:pc|computer)\b)", Opts);
 
+        private static readonly Regex PythonToolRx = new Regex(
+            @"\b(run_python|python\s+sandbox|sandbox\s+python|in\s+python|con\s+python|usando\s+python|using\s+python|with\s+python)\b",
+            Opts);
+
         private static readonly Regex DeepRx = new Regex(
             @"(analizza\s+in\s+profondit|analisi\s+approfondita|approfondisci|in\s+profondit"
           + @"|ragiona\s+(bene|attentamente)|passo\s+per\s+passo|valuta\s+i\s+pro\s+e\s+i\s+contro"
@@ -270,7 +274,7 @@ namespace PaRuX.Services
             if (CodeDiscussionRx.IsMatch(text)) return RouteKind.ChatNormal;
             if (IsRepositoryChangeRequest(text)) return RouteKind.CodeHandoff;
             if (CodeHandoffRx.IsMatch(text)) return RouteKind.CodeHandoff;
-            if (ComputerUseRx.IsMatch(text)) return RouteKind.ComputerUse;
+            if (ComputerUseRx.IsMatch(text) && !PythonToolRx.IsMatch(text)) return RouteKind.ComputerUse;
             if (DeepRx.IsMatch(text)) return RouteKind.DeepReasoning;
 
             int words = CountWords(text);
