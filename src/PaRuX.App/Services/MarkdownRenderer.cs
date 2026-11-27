@@ -23,112 +23,144 @@ namespace PaRuX.Services
         private static readonly SolidColorBrush InlineCodeBrush =
             new SolidColorBrush(Color.FromArgb(255, 0x9B, 0x6D, 0xF3));
 
-        private static readonly Regex OrderedItemRx = new Regex(@"^(\s*)(\d+)[\.\)]\s+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex BulletItemRx = new Regex(@"^(\s*)[-*+]\s+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex HeadingRx = new Regex(@"^(#{1,6})\s+(.*)$", RegexOptions.Compiled);
+        private sealed class StreamState
+        {
+            public readonly MarkdownIncrementalSplitter Splitter = new MarkdownIncrementalSplitter();
+            public int Lead;
+            public int StableElements;
+            public readonly List<UIElement> Owned = new List<UIElement>();
+            public TextBlock? TailCodeText;
+            public int TailCodeStart = -1;
+            public string TailCodeLanguage = string.Empty;
+        }
+
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Panel, StreamState> StreamStates = new();
+
+        /// <summary>True while <paramref name="target"/> is being maintained by <see cref="RenderStreaming"/>.</summary>
+        public static bool HasStreamingState(Panel target) => StreamStates.TryGetValue(target, out _);
 
         /// <summary>Replaces the contents of <paramref name="target"/> with rendered Markdown.</summary>
         public static void Render(string markdown, Panel target)
         {
             if (target == null) return;
+            StreamStates.Remove(target);
             target.Children.Clear();
             if (string.IsNullOrEmpty(markdown)) return;
-
-            string[] lines = markdown.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-
-            var paragraph = new List<string>();
-            int i = 0;
-
-            while (i < lines.Length)
-            {
-                string line = lines[i];
-
-                // ---- fenced code block ----
-                if (line.TrimStart().StartsWith("```", StringComparison.Ordinal))
-                {
-                    FlushParagraph(paragraph, target);
-
-                    string fenceLine = line.TrimStart();
-                    string language = fenceLine.Substring(3).Trim();
-                    var code = new List<string>();
-                    i++;
-                    while (i < lines.Length && !lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal))
-                    {
-                        code.Add(lines[i]);
-                        i++;
-                    }
-                    if (i < lines.Length) i++;   // consume the closing fence (absent while streaming)
-
-                    target.Children.Add(BuildCodeBlock(string.Join(Environment.NewLine, code), language));
-                    continue;
-                }
-
-                // ---- table (header row + separator row; otherwise the pipes stay plain text) ----
-                MarkdownTableParser.Table? table = MarkdownTableParser.TryParse(lines, i);
-                if (table != null)
-                {
-                    FlushParagraph(paragraph, target);
-                    target.Children.Add(BuildTable(table));
-                    i += table.LinesConsumed;
-                    continue;
-                }
-
-                // ---- heading ----
-                Match h = HeadingRx.Match(line);
-                if (h.Success)
-                {
-                    FlushParagraph(paragraph, target);
-                    target.Children.Add(BuildHeading(h.Groups[2].Value, h.Groups[1].Value.Length));
-                    i++;
-                    continue;
-                }
-
-                // ---- list block ----
-                if (BulletItemRx.IsMatch(line) || OrderedItemRx.IsMatch(line))
-                {
-                    FlushParagraph(paragraph, target);
-
-                    while (i < lines.Length)
-                    {
-                        Match bullet = BulletItemRx.Match(lines[i]);
-                        Match ordered = OrderedItemRx.Match(lines[i]);
-                        if (bullet.Success)
-                        {
-                            target.Children.Add(BuildListItem("•", bullet.Groups[2].Value, bullet.Groups[1].Value.Length));
-                        }
-                        else if (ordered.Success)
-                        {
-                            target.Children.Add(BuildListItem(ordered.Groups[2].Value + ".", ordered.Groups[3].Value, ordered.Groups[1].Value.Length));
-                        }
-                        else
-                        {
-                            break;
-                        }
-                        i++;
-                    }
-                    continue;
-                }
-
-                // ---- blank line ends a paragraph ----
-                if (line.Trim().Length == 0)
-                {
-                    FlushParagraph(paragraph, target);
-                    i++;
-                    continue;
-                }
-
-                paragraph.Add(line);
-                i++;
-            }
-
-            FlushParagraph(paragraph, target);
+            foreach (MarkdownBlock block in MarkdownBlockSplitter.Split(markdown))
+                BuildBlock(block, target.Children, out _);
         }
 
-        private static void FlushParagraph(List<string> buffer, Panel target)
+        /// <summary>
+        /// Streaming render: children before index <paramref name="lead"/> belong to the caller and are left alone.
+        /// Completed blocks keep their elements between calls; only the open last block is rebuilt (an open code
+        /// fence is updated in place). Call <see cref="Render"/> once at the end for a guaranteed-correct final pass.
+        /// </summary>
+        public static void RenderStreaming(string markdown, Panel target, int lead)
         {
-            if (buffer.Count == 0) return;
-            string text = string.Join(" ", buffer).Trim();
-            buffer.Clear();
+            if (target == null) return;
+            UIElementCollection children = target.Children;
+            StreamStates.TryGetValue(target, out StreamState? state);
+
+            bool intact = state != null && state.Lead == lead
+                && children.Count == lead + state.Owned.Count
+                && (state.Owned.Count == 0
+                    || (ReferenceEquals(children[lead], state.Owned[0])
+                        && ReferenceEquals(children[children.Count - 1], state.Owned[state.Owned.Count - 1])));
+            if (!intact)
+            {
+                while (children.Count > lead) children.RemoveAt(children.Count - 1);
+                state = new StreamState { Lead = lead };
+                StreamStates.Remove(target);
+                StreamStates.Add(target, state);
+            }
+            state = state!;
+
+            MarkdownIncrementalSplitter.Update update = state.Splitter.Apply(markdown);
+            if (update.Reset)
+            {
+                while (children.Count > lead) children.RemoveAt(children.Count - 1);
+                state.Owned.Clear();
+                state.StableElements = 0;
+                state.TailCodeText = null;
+            }
+
+            IReadOnlyList<MarkdownBlock> blocks = update.Blocks;
+
+            // Open code fence that merely grew: update its text in place.
+            if (!update.Reset && blocks.Count == 1 && state.TailCodeText != null
+                && blocks[0].Kind == MarkdownBlockKind.Code
+                && blocks[0].StartOffset == state.TailCodeStart
+                && blocks[0].Language == state.TailCodeLanguage)
+            {
+                string code = string.Join(Environment.NewLine, blocks[0].Lines);
+                if (!string.Equals(state.TailCodeText.Text, code, StringComparison.Ordinal))
+                    state.TailCodeText.Text = code;
+                return;
+            }
+
+            // Drop the previous open tail, keep everything stable.
+            while (state.Owned.Count > state.StableElements)
+            {
+                children.RemoveAt(children.Count - 1);
+                state.Owned.RemoveAt(state.Owned.Count - 1);
+            }
+            state.TailCodeText = null;
+
+            for (int b = 0; b < blocks.Count; b++)
+            {
+                int before = children.Count;
+                BuildBlock(blocks[b], children, out TextBlock? codeText);
+                for (int c = before; c < children.Count; c++) state.Owned.Add(children[c]);
+                if (b < update.NewlyStableBlocks) state.StableElements = state.Owned.Count;
+                else if (codeText != null && b == blocks.Count - 1)
+                {
+                    state.TailCodeText = codeText;
+                    state.TailCodeStart = blocks[b].StartOffset;
+                    state.TailCodeLanguage = blocks[b].Language;
+                }
+            }
+        }
+
+        private static void BuildBlock(MarkdownBlock block, UIElementCollection target, out TextBlock? codeText)
+        {
+            codeText = null;
+            switch (block.Kind)
+            {
+                case MarkdownBlockKind.Code:
+                    target.Add(BuildCodeBlock(string.Join(Environment.NewLine, block.Lines), block.Language, out codeText));
+                    break;
+                case MarkdownBlockKind.Table:
+                    target.Add(BuildTable(block.Table!));
+                    break;
+                case MarkdownBlockKind.Heading:
+                {
+                    Match h = MarkdownBlockSplitter.HeadingRx.Match(block.Lines[0]);
+                    target.Add(BuildHeading(h.Groups[2].Value, h.Groups[1].Value.Length));
+                    break;
+                }
+                case MarkdownBlockKind.List:
+                    foreach (string item in block.Lines)
+                    {
+                        Match bullet = MarkdownBlockSplitter.BulletItemRx.Match(item);
+                        if (bullet.Success)
+                        {
+                            target.Add(BuildListItem("\u2022", bullet.Groups[2].Value, bullet.Groups[1].Value.Length));
+                            continue;
+                        }
+                        Match ordered = MarkdownBlockSplitter.OrderedItemRx.Match(item);
+                        if (ordered.Success)
+                            target.Add(BuildListItem(ordered.Groups[2].Value + ".", ordered.Groups[3].Value, ordered.Groups[1].Value.Length));
+                    }
+                    break;
+                default:
+                    AddParagraph(block.Lines, target);
+                    break;
+            }
+        }
+
+        private static void AddParagraph(IReadOnlyList<string> lines, UIElementCollection target)
+        {
+            string text = string.Join(" ", lines).Trim();
             if (text.Length == 0) return;
 
             var rtb = new RichTextBlock
@@ -141,7 +173,7 @@ namespace PaRuX.Services
             var p = new Paragraph();
             AddInlines(p.Inlines, text);
             rtb.Blocks.Add(p);
-            target.Children.Add(rtb);
+            target.Add(rtb);
         }
 
         private static UIElement BuildTable(MarkdownTableParser.Table table)
@@ -247,9 +279,18 @@ namespace PaRuX.Services
         /// <summary>Set by the chat view: opens the sandboxed Canvas preview for (language, code). Null in hosts without Canvas.</summary>
         public static Action<string, string>? CodePreviewHandler { get; set; }
 
-        private static UIElement BuildCodeBlock(string code, string language)
+        private static UIElement BuildCodeBlock(string code, string language, out TextBlock codeText)
         {
             var stack = new StackPanel();
+            var text = new TextBlock
+            {
+                Text = code,
+                FontFamily = Mono,
+                FontSize = 13,
+                TextWrapping = TextWrapping.NoWrap,
+                IsTextSelectionEnabled = true
+            };
+            codeText = text;
 
             bool previewable = CodePreviewHandler != null
                 && PaRuX.Intelligence.CanvasPreviewPolicy.Classify(language) != PaRuX.Intelligence.CanvasPreviewKind.None;
@@ -278,21 +319,12 @@ namespace PaRuX.Services
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(preview,
                         italian ? "Anteprima isolata del blocco di codice" : "Sandboxed preview of this code block");
                     string lang = language ?? string.Empty;
-                    preview.Click += (_, _) => CodePreviewHandler?.Invoke(lang, code);
+                    preview.Click += (_, _) => CodePreviewHandler?.Invoke(lang, text.Text);
                     Grid.SetColumn(preview, 1);
                     header.Children.Add(preview);
                 }
                 stack.Children.Add(header);
             }
-
-            var text = new TextBlock
-            {
-                Text = code,
-                FontFamily = Mono,
-                FontSize = 13,
-                TextWrapping = TextWrapping.NoWrap,
-                IsTextSelectionEnabled = true
-            };
 
             var scroller = new ScrollViewer
             {

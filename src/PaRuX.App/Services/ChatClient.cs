@@ -305,7 +305,10 @@ namespace PaRuX.Services
                     break;
                 }
 
-                ChatModelRouteInfo? modelRoute = TryExtractModelRouted(data);
+                // Ordinary token frames carry no parux_event marker; skip the five control-event JSON parses for them.
+                bool isControlEvent = data.Contains("\"parux_event\"", StringComparison.Ordinal);
+
+                ChatModelRouteInfo? modelRoute = isControlEvent ? TryExtractModelRouted(data) : null;
                 if (modelRoute != null)
                 {
                     Action<ChatModelRouteInfo>? routed = ModelRouted;
@@ -331,27 +334,27 @@ namespace PaRuX.Services
                     continue;
                 }
 
-                if (IsSwitchedToUncensoredEvent(data))
+                if (isControlEvent && IsSwitchedToUncensoredEvent(data))
                 {
                     if (onSwitchedToUncensored != null) onSwitchedToUncensored();
                     continue;
                 }
 
-                List<string>? ragSources = TryExtractRagSources(data);
+                List<string>? ragSources = isControlEvent ? TryExtractRagSources(data) : null;
                 if (ragSources != null)
                 {
                     if (onRagSources != null) onRagSources(ragSources);
                     continue;
                 }
 
-                string? compacted = TryExtractContextCompacted(data);
+                string? compacted = isControlEvent ? TryExtractContextCompacted(data) : null;
                 if (compacted != null)
                 {
                     if (onContextCompacted != null) onContextCompacted(compacted);
                     continue;
                 }
 
-                (string? displayName, string? mode) skillSelected = TryExtractSkillSelected(data);
+                (string? displayName, string? mode) skillSelected = isControlEvent ? TryExtractSkillSelected(data) : (null, null);
                 if (skillSelected.displayName != null)
                 {
                     if (onSkillSelected != null) onSkillSelected(skillSelected.displayName ?? "General", skillSelected.mode ?? "auto");

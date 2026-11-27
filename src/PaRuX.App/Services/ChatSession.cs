@@ -591,14 +591,12 @@ namespace PaRuX.Services
                 RaiseState();
 
                 List<ChatMessage> historyThroughTarget = Conversation.Messages.Take(index + 1).ToList();
-                var buffer = new System.Text.StringBuilder(targetAssistant.Content);
                 await ChatClient.Current.ContinueAsync(
                     historyThroughTarget,
                     RouterService.SystemPrompt(route) ?? string.Empty,
                     fragment =>
                     {
-                        buffer.Append(fragment);
-                        targetAssistant.Content = buffer.ToString();
+                        targetAssistant.AppendContent(fragment);
                         Action<ChatMessage>? upd = MessageUpdated;
                         if (upd != null) upd(targetAssistant);
                     },
@@ -1199,8 +1197,10 @@ namespace PaRuX.Services
                     }
                     var history = Conversation.Messages.Where(m => !ReferenceEquals(m, reply)).ToList();
                     string? forcedSkillId = oneShotSkillId ?? ForcedSkillId;
-                    var buffer = new System.Text.StringBuilder();
-                    var reasoningBuffer = new System.Text.StringBuilder();
+                    // Streamed text is appended to the message's own lazy builder (no per-token full-string copy);
+                    // "fresh" means the next fragment starts the reply over (first attempt, or after a consent retry).
+                    bool replyContentFresh = true;
+                    bool reasoningFresh = true;
                     bool computerUseConsent = false;
                     bool computerUseDeclined = false;
                     string? modalityTask = Conversation.Messages.LastOrDefault(m => m.Role == "user")?.Content;
@@ -1228,8 +1228,8 @@ namespace PaRuX.Services
                         RouterService.SystemPrompt(route) ?? string.Empty,
                         fragment =>
                         {
-                            buffer.Append(fragment);
-                            reply.Content = buffer.ToString();
+                            if (replyContentFresh) { reply.Content = string.Empty; replyContentFresh = false; }
+                            reply.AppendContent(fragment);
                             Action<ChatMessage>? upd = MessageUpdated;
                             if (upd != null) upd(reply);
                         },
@@ -1255,8 +1255,8 @@ namespace PaRuX.Services
                         forcedSkillId,
                         reasoningFragment =>
                         {
-                            reasoningBuffer.Append(reasoningFragment);
-                            reply.Reasoning = reasoningBuffer.ToString();
+                            if (reasoningFresh) { reply.Reasoning = string.Empty; reasoningFresh = false; }
+                            reply.AppendReasoning(reasoningFragment);
                             Action<ChatMessage>? upd = MessageUpdated;
                             if (upd != null) upd(reply);
                         },
@@ -1294,8 +1294,8 @@ namespace PaRuX.Services
                             reply.Content = T("Computer Use was not started because you did not approve it.", "Computer Use non avviato: autorizzazione non concessa.");
                             break;
                         }
-                        buffer.Clear();
-                        reasoningBuffer.Clear();
+                        replyContentFresh = true;
+                        reasoningFresh = true;
                     }
                     }
                 }

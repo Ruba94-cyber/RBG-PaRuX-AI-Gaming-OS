@@ -85,6 +85,8 @@ namespace PaRuX.Views
         /// cancelled, or the streaming re-render pipeline would wipe out the user's in-progress edit.</summary>
         private readonly HashSet<ChatMessage> _editingMessages = new HashSet<ChatMessage>();
         private readonly object _dirtyGate = new object();
+        // True once a render-timer start has been queued for the current streaming burst; guarded by _dirtyGate.
+        private bool _flushScheduled;
         private readonly List<ChatAttachment> _pendingAttachments = new List<ChatAttachment>();
 
         private DispatcherQueueTimer _renderTimer;
@@ -111,7 +113,7 @@ namespace PaRuX.Views
             ChatSession.Current.ComputerUseConsentPrompt = ShowComputerUseConsentAsync;
 
             _renderTimer = _dispatcher.CreateTimer();
-            _renderTimer.Interval = TimeSpan.FromMilliseconds(80);
+            _renderTimer.Interval = TimeSpan.FromMilliseconds(RenderMinIntervalMs);
             _renderTimer.Tick += OnRenderTick;
 
             _statusTimer = _dispatcher.CreateTimer();
@@ -450,7 +452,14 @@ namespace PaRuX.Views
 
         private void OnMessageUpdated(ChatMessage message)
         {
-            lock (_dirtyGate) _dirty.Add(message);
+            // Token-rate producer: mark dirty and let the render timer flush. Only the first update of a burst
+            // posts a dispatcher item, instead of one per token.
+            lock (_dirtyGate)
+            {
+                _dirty.Add(message);
+                if (_flushScheduled) return;
+                _flushScheduled = true;
+            }
 
             _dispatcher.TryEnqueue(() =>
             {
@@ -476,7 +485,7 @@ namespace PaRuX.Views
                 {
                     // Final flush so the last tokens always land.
                     FlushDirty();
-                    _renderTimer.Stop();
+                    StopRenderTimerIfIdle();
                     SyncAllStreamingChrome();
                     RefreshSimpleModeAnsweringModel();
                 }
@@ -494,8 +503,26 @@ namespace PaRuX.Views
 
         private void OnRenderTick(DispatcherQueueTimer sender, object args)
         {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
             FlushDirty();
-            if (!ChatSession.Current.IsBusy) _renderTimer.Stop();
+            double renderMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            // Adaptive cadence: ~33 ms while a flush is cheap, backing off so rendering never exceeds ~1/3 of the UI thread.
+            int interval = (int)Math.Clamp(renderMs * 3, RenderMinIntervalMs, RenderMaxIntervalMs);
+            _renderTimer.Interval = TimeSpan.FromMilliseconds(interval);
+            if (!ChatSession.Current.IsBusy) StopRenderTimerIfIdle();
+        }
+
+        private const int RenderMinIntervalMs = 33;
+        private const int RenderMaxIntervalMs = 100;
+
+        private void StopRenderTimerIfIdle()
+        {
+            lock (_dirtyGate)
+            {
+                if (_dirty.Count > 0) return;   // a late update arrived; the next tick flushes it, then stops
+                _flushScheduled = false;
+            }
+            _renderTimer.Stop();
         }
 
         private void FlushDirty()
@@ -764,6 +791,38 @@ namespace PaRuX.Views
             // MarkdownRenderer.Render clears the panel itself before rendering, so the
             // reasoning panel has to be inserted AFTER it, not before - adding it first would
             // just get wiped out by Render's own Children.Clear().
+            // While streaming (and no attachment previews to keep stable) only the open tail block is rebuilt;
+            // the final non-streaming pass below is a full render, so the finished reply is always exact.
+            if (message.IsStreaming && (message.Attachments == null || message.Attachments.Count == 0))
+            {
+                bool owned = MarkdownRenderer.HasStreamingState(panel);
+                if (!owned) panel.Children.Clear();
+                int lead = 0;
+                if (!string.IsNullOrEmpty(message.Reasoning))
+                {
+                    string reasoning = message.Reasoning;
+                    FrameworkElement? existing = owned && panel.Children.Count > 0 ? panel.Children[0] as FrameworkElement : null;
+                    if (existing?.Tag is ReasoningTag tag && string.Equals(tag.Text, reasoning, StringComparison.Ordinal))
+                    {
+                        lead = 1;
+                    }
+                    else
+                    {
+                        if (existing?.Tag is ReasoningTag) panel.Children.RemoveAt(0);
+                        FrameworkElement header = BuildReasoningPanel(reasoning, visuals, defaultExpanded: false);
+                        header.Tag = new ReasoningTag(reasoning);
+                        panel.Children.Insert(0, header);
+                        lead = 1;
+                    }
+                }
+                else if (owned && panel.Children.Count > 0 && panel.Children[0] is FrameworkElement { Tag: ReasoningTag })
+                {
+                    panel.Children.RemoveAt(0);
+                }
+                MarkdownRenderer.RenderStreaming(message.Content, panel, lead);
+                return;
+            }
+
             MarkdownRenderer.Render(message.Content, panel);
             if (!string.IsNullOrEmpty(message.Reasoning))
                 panel.Children.Insert(0, BuildReasoningPanel(message.Reasoning, visuals, defaultExpanded: false));
@@ -805,6 +864,8 @@ namespace PaRuX.Views
             }
             return expander;
         }
+
+        private sealed record ReasoningTag(string Text);
 
         private void AppendAttachmentPreviews(
             Panel panel, ChatMessage message, HorizontalAlignment alignment)
