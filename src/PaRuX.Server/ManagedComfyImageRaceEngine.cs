@@ -138,7 +138,7 @@ public sealed class ManagedComfyImageRaceEngine
         foreach (string argument in new[]
         {
             "-s", LocalAiPaths.ComfyMain, "--windows-standalone-build", "--listen", "127.0.0.1",
-            "--port", "8188", "--disable-auto-launch", "--preview-method", "auto",
+            "--port", "8188", "--disable-auto-launch", "--preview-method", "none",
             "--enable-dynamic-vram", "--reserve-vram", "1.0"
         }) info.ArgumentList.Add(argument);
 

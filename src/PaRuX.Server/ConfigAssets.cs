@@ -44,6 +44,7 @@ internal static class ConfigAssets
         "chroma-api.json",
         "flux2-klein-edit-api.json",
         "wan-video-smoke-api.json",
+        "wan-video-fast-api.json",
         "ltxv-t2v-api.json",
         "ltxv-i2v-api.json",
         "upscale-api.json"
