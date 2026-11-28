@@ -23,6 +23,21 @@ public interface IAsyncRetrievalRerankerProvider
 internal enum LlamaRetrievalMode { Embedding, Reranking }
 
 /// <summary>
+/// The local embedding / reranking engine could not be reached even after the bounded wait-and-restart attempts. The text is
+/// plain language in Italian and English (never a raw connection error); callers keep their work and resume later.
+/// </summary>
+public sealed class RetrievalEngineUnavailableException : IOException
+{
+    public const string FriendlyEnglish =
+        "The document search engine did not answer in time (your PC is busy). Your files are safe: what is already indexed is kept and PaRuX will continue from where it stopped.";
+    public const string FriendlyItalian =
+        "Il motore di ricerca dei documenti non ha risposto in tempo (il PC è occupato). I tuoi file sono al sicuro: quanto già indicizzato resta salvato e PaRuX riprenderà da dove si è fermato.";
+    public const string Friendly = FriendlyItalian + " / " + FriendlyEnglish;
+
+    public RetrievalEngineUnavailableException(Exception? inner) : base(Friendly, inner) { }
+}
+
+/// <summary>
 /// Dedicated llama-server lifecycle for retrieval models. It is deliberately separate from Chat's
 /// interactive llama-server process: loading an embedding/reranker must not mutate Chat state,
 /// prompt cache, model lock or conversation slots. The future VRAM scheduler decides whether this
@@ -39,6 +54,21 @@ internal sealed class LlamaRetrievalServer : IAsyncDisposable, IGamingHardOffPar
     private HttpClient? _http;
     private string? _baseUrl;
     private string? _apiKey;
+    private int _leases;
+
+    /// <summary>
+    /// How long one /health probe may take before the server is "not answering yet". A llama-server on a busy corporate CPU
+    /// (80% RAM in use, paging, antivirus scanning the model) routinely needs several seconds; the former 500 ms limit
+    /// declared a live server dead and killed it in the middle of an indexing batch.
+    /// </summary>
+    internal TimeSpan HealthProbeTimeout { get; set; } = TimeSpan.FromSeconds(5);
+    /// <summary>How long a live process that does not answer /health is waited for before it is restarted.</summary>
+    internal TimeSpan LiveServerGrace { get; set; } = TimeSpan.FromSeconds(45);
+    /// <summary>Waits between the bounded recovery attempts of one request (its length is the attempt count).</summary>
+    internal TimeSpan[] RecoveryDelays { get; set; } = { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(15) };
+
+    /// <summary>Requests currently using the server. While it is above zero no other caller may stop or restart the process.</summary>
+    internal int ActiveLeases => Volatile.Read(ref _leases);
 
     /// <summary>Test seam: replaces the llama-server launch (port) so a fake child can stand in. Production never sets it.</summary>
     internal Func<int, ProcessStartInfo>? LaunchOverrideForTests { get; set; }
@@ -76,9 +106,42 @@ internal sealed class LlamaRetrievalServer : IAsyncDisposable, IGamingHardOffPar
     internal Task<T> RunAsync<T>(CancellationToken ct, Func<HttpClient, CancellationToken, Task<T>> body) =>
         _scope.RunAsync(ct, async (linked, ticket) =>
         {
-            HttpClient http = await EnsureReadyAsync(linked, ticket).ConfigureAwait(false);
-            return await body(http, linked).ConfigureAwait(false);
+            // The lease covers readiness AND the request: a concurrent caller readiness check can no longer
+            // mistake a busy server for a dead one and kill it under this request.
+            Interlocked.Increment(ref _leases);
+            try
+            {
+                HttpClient http = await EnsureReadyAsync(linked, ticket).ConfigureAwait(false);
+                return await body(http, linked).ConfigureAwait(false);
+            }
+            finally { Interlocked.Decrement(ref _leases); }
         });
+
+    /// <summary>
+    /// <see cref="RunAsync{T}"/> with bounded recovery: a refused/closed connection, a timeout or a server that died
+    /// mid-request is waited out and the server restarted (at most <see cref="RecoveryDelays"/>.Length times), then the
+    /// same request is repeated. Gaming and caller cancellation are never retried. After the last attempt the caller gets
+    /// <see cref="RetrievalEngineUnavailableException"/> with a friendly, bilingual message.
+    /// </summary>
+    internal async Task<T> RunResilientAsync<T>(CancellationToken ct, Func<HttpClient, CancellationToken, Task<T>> body)
+    {
+        Exception? last = null;
+        for (int attempt = 0; attempt <= RecoveryDelays.Length; attempt++)
+        {
+            if (attempt > 0) await Task.Delay(RecoveryDelays[attempt - 1], ct).ConfigureAwait(false);
+            try { return await RunAsync(ct, body).ConfigureAwait(false); }
+            catch (Exception ex) when (IsTransientEngineFailure(ex, ct)) { last = ex; }
+        }
+        throw new RetrievalEngineUnavailableException(last);
+    }
+
+    internal static bool IsTransientEngineFailure(Exception ex, CancellationToken callerToken)
+    {
+        if (callerToken.IsCancellationRequested || ex is UnavailableDuringGamingException) return false;
+        return ex is HttpRequestException or IOException or SocketException or TimeoutException
+            or TaskCanceledException or OperationCanceledException
+            || (ex is InvalidOperationException && ex.Message.Contains("retrieval process", StringComparison.Ordinal));
+    }
 
     public Task<HttpClient> EnsureReadyAsync(CancellationToken cancellationToken) =>
         RunAsync(cancellationToken, (http, _) => Task.FromResult(http));
@@ -91,8 +154,15 @@ internal sealed class LlamaRetrievalServer : IAsyncDisposable, IGamingHardOffPar
         {
             _scope.Check(ticket);
             // The admission disposes a child it confirmed dead when Gaming reopens, so a stale handle can throw here.
-            if (IsRunning(_process) && _http != null && await IsHealthyAsync(_http, cancellationToken).ConfigureAwait(false))
-                return _http;
+            if (IsRunning(_process) && _http != null)
+            {
+                if (await IsHealthyAsync(_http, cancellationToken).ConfigureAwait(false)) return _http;
+                // Not answering is not the same as dead. Another request is using this very process: leave it alone.
+                if (Volatile.Read(ref _leases) > 1) return _http;
+                // Alive but slow (busy PC, paging): wait a bounded time before giving up on a process that may be
+                // mid-load; a restart would only make the machine busier.
+                if (await WaitForLiveServerAsync(_process!, _http, cancellationToken).ConfigureAwait(false)) return _http;
+            }
 
             StopUnsafe();
             bool cuda = LaunchOverrideForTests != null || await _hasCuda(cancellationToken).ConfigureAwait(false);
@@ -200,13 +270,25 @@ internal sealed class LlamaRetrievalServer : IAsyncDisposable, IGamingHardOffPar
         throw new TimeoutException("llama-server retrieval process did not become healthy within 5 minutes.");
     }
 
+    private async Task<bool> WaitForLiveServerAsync(Process process, HttpClient http, CancellationToken cancellationToken)
+    {
+        DateTime deadline = DateTime.UtcNow + LiveServerGrace;
+        while (IsRunning(process) && DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await IsHealthyAsync(http, cancellationToken).ConfigureAwait(false)) return true;
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+        }
+        return false;
+    }
+
     private async Task<bool> IsHealthyAsync(HttpClient http, CancellationToken cancellationToken)
     {
         if (_baseUrl == null) return false;
         try
         {
             using var probe = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            probe.CancelAfter(TimeSpan.FromMilliseconds(500));
+            probe.CancelAfter(HealthProbeTimeout);
             using HttpResponseMessage response = await http.GetAsync(_baseUrl + "/health", probe.Token).ConfigureAwait(false);
             return response.IsSuccessStatusCode;
         }
@@ -324,7 +406,7 @@ public sealed class LlamaCppEmbeddingProvider : IAsyncRetrievalEmbeddingProvider
             throw new InvalidDataException("Embedding batch contains an empty input.");
 
         // The whole exchange runs under the server's Gaming token: a Gaming start cancels it and yields the typed error.
-        return await _server.RunAsync(cancellationToken, async (http, ct) =>
+        return await _server.RunResilientAsync(cancellationToken, async (http, ct) =>
         {
         using HttpResponseMessage response = await http.PostAsJsonAsync(
             _server.BaseUrl + "/v1/embeddings",
@@ -407,7 +489,7 @@ public sealed class LlamaCppRerankerProvider : IAsyncRetrievalRerankerProvider, 
         if (documents.Count > 128) throw new InvalidDataException("A single reranker batch is limited to 128 documents.");
         if (documents.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("Reranker batch contains an empty document.");
 
-        return await _server.RunAsync(cancellationToken, async (http, ct) =>
+        return await _server.RunResilientAsync(cancellationToken, async (http, ct) =>
         {
         using HttpResponseMessage response = await http.PostAsJsonAsync(
             _server.BaseUrl + "/v1/rerank",

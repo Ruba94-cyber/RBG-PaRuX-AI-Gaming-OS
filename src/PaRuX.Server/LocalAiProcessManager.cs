@@ -2117,6 +2117,7 @@ public sealed class LocalAiProcessManager
             ? " Corporate memory-aware mode used a " + memory.ContextTokens
                 + "-token context (instead of 4096) to keep the selected model within the configured RAM limit."
             : string.Empty;
+        if (result.Success && memory.Busy) contextNotice += " " + CorporateMemoryMessages.Busy;
         if (result.Success && idleUnloadSeconds < CorporateIdleUnloadSeconds)
             contextNotice += " The CPU engine was configured to release its idle model after "
                 + idleUnloadSeconds + " seconds to reduce PaRuX RAM use between requests.";

@@ -20,10 +20,17 @@ public sealed class ModelDestinationSpaceProvider : IModelDestinationSpaceProvid
             string? volumeRoot = Path.GetPathRoot(fullPath);
             if (string.IsNullOrWhiteSpace(volumeRoot)) return null;
 
-            var volume = new DriveInfo(volumeRoot);
-            if (!volume.IsReady) return null;
-            long available = volume.AvailableFreeSpace;
-            return available >= 0 ? available : null;
+            try
+            {
+                var volume = new DriveInfo(volumeRoot);
+                if (volume.IsReady)
+                {
+                    long available = volume.AvailableFreeSpace;
+                    if (available >= 0) return available;
+                }
+            }
+            catch (ArgumentException) { /* UNC / redirected folder: DriveInfo only accepts drive letters */ }
+            return TryGetFreeBytesByPath(volumeRoot);
         }
         catch
         {
@@ -31,4 +38,23 @@ public sealed class ModelDestinationSpaceProvider : IModelDestinationSpaceProvid
             return null;
         }
     }
+
+    /// <summary>
+    /// Corporate PCs often keep user folders on a network share or redirected path (\server\share), which
+    /// <see cref="DriveInfo"/> rejects; that used to surface as "free space unavailable". The per-user free space of
+    /// any path is available from GetDiskFreeSpaceEx.
+    /// </summary>
+    private static long? TryGetFreeBytesByPath(string root)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            return GetDiskFreeSpaceExW(root, out ulong free, out _, out _) && free <= long.MaxValue ? (long)free : null;
+        }
+        catch { return null; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceExW(string directory, out ulong freeToCaller, out ulong total, out ulong totalFree);
 }

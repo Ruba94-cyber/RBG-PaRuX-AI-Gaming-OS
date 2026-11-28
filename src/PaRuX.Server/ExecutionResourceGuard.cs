@@ -172,9 +172,12 @@ internal static class ExecutionResourceGuard
             if (OperatingSystem.IsWindows())
             {
                 var status = new MemoryStatusEx();
-                if (GlobalMemoryStatusEx(status))
-                    return SystemRamSnapshot.TryCreate(status.TotalPhys, status.AvailPhys);
-                return null;
+                if (!GlobalMemoryStatusEx(status)) return null;
+                (ulong? commitAvailable, ulong? kernel) = TryGetWindowsCommitInfo();
+                // GlobalMemoryStatusEx reports the page-file figure the CURRENT process may still commit, which is never
+                // above the system-wide headroom; use it only when GetPerformanceInfo is unavailable.
+                return SystemRamSnapshot.TryCreate(status.TotalPhys, status.AvailPhys,
+                    commitAvailable ?? status.AvailPageFile, kernel);
             }
 
             if (OperatingSystem.IsLinux() && File.Exists("/proc/meminfo"))
@@ -197,6 +200,20 @@ internal static class ExecutionResourceGuard
         return null;
     }
 
+    private static (ulong? CommitAvailable, ulong? Kernel) TryGetWindowsCommitInfo()
+    {
+        try
+        {
+            var info = new PerformanceInformation();
+            info.Size = (uint)Marshal.SizeOf<PerformanceInformation>();
+            if (!GetPerformanceInfo(out info, info.Size) || info.PageSize == 0) return (null, null);
+            ulong page = (ulong)info.PageSize;
+            ulong commitFree = info.CommitLimit > info.CommitTotal ? (ulong)(info.CommitLimit - info.CommitTotal) : 0UL;
+            return (commitFree * page, (ulong)(info.KernelPaged + info.KernelNonpaged) * page);
+        }
+        catch { return (null, null); }
+    }
+
     private static long? ParseMemInfoKib(string line)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -216,6 +233,29 @@ internal static class ExecutionResourceGuard
         public ulong AvailVirtual;
         public ulong AvailExtendedVirtual;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PerformanceInformation
+    {
+        public uint Size;
+        public nuint CommitTotal;
+        public nuint CommitLimit;
+        public nuint CommitPeak;
+        public nuint PhysicalTotal;
+        public nuint PhysicalAvailable;
+        public nuint SystemCache;
+        public nuint KernelTotal;
+        public nuint KernelPaged;
+        public nuint KernelNonpaged;
+        public nuint PageSize;
+        public uint HandleCount;
+        public uint ProcessCount;
+        public uint ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetPerformanceInfo(out PerformanceInformation info, uint size);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
