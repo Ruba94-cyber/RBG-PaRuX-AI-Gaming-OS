@@ -113,16 +113,19 @@ public sealed class ProfileSurfaceUiContractTests
     {
         string screen = Read("src", "PaRuX.Android", "app", "src", "main", "java", "com", "parux", "android", "ui", "chat", "ChatScreen.kt");
         string model = Read("src", "PaRuX.Android", "app", "src", "main", "java", "com", "parux", "android", "ui", "chat", "ChatViewModel.kt");
+        // Visible copy moved to string resources in the Android localization pass.
+        string copy = screen + Read("src", "PaRuX.Android", "app", "src", "main", "res", "values", "strings.xml");
         Assert.Contains("if (accepted)", screen, StringComparison.Ordinal);
         Assert.Contains("rememberSaveable { mutableStateOf(\"\") }", screen, StringComparison.Ordinal);
         Assert.Contains("localCore == null", screen, StringComparison.Ordinal);
-        Assert.Contains("your unsent text stays here", screen, StringComparison.Ordinal);
+        Assert.Contains("R.string.chat_not_connected", screen + model, StringComparison.Ordinal);
+        Assert.Contains("your unsent text stays here", Read("src", "PaRuX.Android", "app", "src", "main", "res", "values", "strings.xml"), StringComparison.Ordinal);
         Assert.Contains("val localCoreConnection = container.client", model, StringComparison.Ordinal);
         Assert.Contains("enabled = text.isNotBlank() || hasAttachment", screen, StringComparison.Ordinal);
         Assert.Contains("MAX_CHAT_IMAGE_BYTES = 8 * 1024 * 1024", screen, StringComparison.Ordinal);
-        Assert.Contains("Search installed models", screen, StringComparison.Ordinal);
+        Assert.Contains("Search installed models", copy, StringComparison.Ordinal);
         Assert.Contains("MobileModelBrowsePolicy.browse(", screen, StringComparison.Ordinal);
-        Assert.Contains("refine search", screen, StringComparison.Ordinal);
+        Assert.Contains("refine search", copy, StringComparison.Ordinal);
         Assert.Contains("preference.manualModelFileName.takeIf", screen, StringComparison.Ordinal);
         Assert.Contains("ByteArrayOutputStream()", screen, StringComparison.Ordinal);
         Assert.Contains("fun sendMessage(text: String, image: PendingImage? = null, oneShotSkillId: String? = null): Boolean", model, StringComparison.Ordinal);

@@ -816,3 +816,10 @@ DENY POST /api/v1/gaming/support-apps/start
 DENY POST /api/v1/gaming/support-apps/stop
 DENY PUT /api/v1/gaming/support-apps
 DENY GET /api/v1/gaming/support-apps/redist
+DENY GET /api/v2/mobile/runtime
+DENY POST /api/v2/mobile/runtime/load
+DENY POST /api/v2/mobile/runtime/unload
+DENY GET /api/v2/mobile/documents/{sourceId}/status
+DENY POST /api/v2/mobile/documents
+DENY GET /api/v1/chat/setting-proposals
+DENY DELETE /api/v1/chat/setting-proposals/{id}

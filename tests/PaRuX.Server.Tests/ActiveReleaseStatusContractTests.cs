@@ -126,7 +126,9 @@ public sealed class ActiveReleaseStatusContractTests
     public void Android_computer_use_is_windows_owned_and_universal_stop_copy_is_reconciled()
     {
         string root = FindRepositoryRoot();
-        string androidUi = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Android", "app", "src", "main", "java", "com", "parux", "android", "ui", "tools", "ToolsScreen.kt"));
+        string androidUi = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Android", "app", "src", "main", "java", "com", "parux", "android", "ui", "tools", "ToolsScreen.kt"))
+            // Visible copy lives in string resources since the Android localization pass.
+            + File.ReadAllText(Path.Combine(root, "src", "PaRuX.Android", "app", "src", "main", "res", "values", "strings.xml"));
         string androidReadme = File.ReadAllText(Path.Combine(root, "docs", "PARUX_ANDROID_README.md"));
         string stopAll = File.ReadAllText(Path.Combine(root, "src", "PaRuX.Server", "Control", "StopAllService.cs"));
         string copyReconciliation = File.ReadAllText(Path.Combine(root, "src", "PaRuX.App", "Views", "SettingsView.CopyReconciliation.cs"));
