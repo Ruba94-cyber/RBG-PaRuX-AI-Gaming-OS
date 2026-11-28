@@ -23,6 +23,7 @@ namespace PaRuX.Services
         public static string GeneratedAudioDir => Path.Combine(PaRuXRoot, "generated", "audio");
         public static string GeneratedThreedDir => Path.Combine(PaRuXRoot, "generated", "3d");
         public static string GeneratedPresentationsDir => Path.Combine(PaRuXRoot, "generated", "presentations");
+        public static string ChatBackgroundsDir => Path.Combine(PaRuXRoot, "chat-backgrounds");
         public static string BackupsDir => Path.Combine(PaRuXRoot, "backups");
         /// <summary>
         /// Durable local state for coding-agent sessions. This intentionally lives outside every

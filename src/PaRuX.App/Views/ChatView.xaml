@@ -267,6 +267,9 @@
         </Border>
 
         <!-- ==================== Messages ==================== -->
+        <Image x:Name="ChatBackgroundImage" Grid.Row="1" Stretch="UniformToFill" Visibility="Collapsed" IsHitTestVisible="False"
+               AutomationProperties.AccessibilityView="Raw" />
+        <Border x:Name="ChatBackgroundScrim" Grid.Row="1" Visibility="Collapsed" IsHitTestVisible="False" />
         <ScrollViewer
             x:Name="MessagesScroll"
             Grid.Row="1"

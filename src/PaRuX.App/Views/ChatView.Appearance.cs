@@ -56,7 +56,8 @@ namespace PaRuX.Views
                 }
 
                 ResolvedChatAppearance? a = _appearance;
-                SetOrClear(MessagesScroll, Control.BackgroundProperty, BrushOf(a?.Background));
+                bool hasImage = ApplyChatBackgroundImage();
+                SetOrClear(MessagesScroll, Control.BackgroundProperty, hasImage ? null : BrushOf(a?.Background));
                 SetOrClear(MessagesScroll, Control.ForegroundProperty, BrushOf(a?.AssistantText));
                 SetOrClear(MessagesScroll, Control.FontFamilyProperty, a?.FontFamily == null ? null : new FontFamily(a.FontFamily));
                 SetOrClear(MessagesScroll, Control.FontSizeProperty, a?.FontSize is { } size ? size : null);
@@ -68,6 +69,68 @@ namespace PaRuX.Views
             {
                 Log.Write("ApplyChatAppearance failed (non-fatal): " + ex.Message);
             }
+        }
+
+        private void HideChatBackgroundImage()
+        {
+            ChatBackgroundImage.Source = null;
+            ChatBackgroundImage.Visibility = Visibility.Collapsed;
+            ChatBackgroundScrim.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>Paints this chat's background image under a theme-aware scrim. Not shown under Windows High Contrast.</summary>
+        private bool ApplyChatBackgroundImage()
+        {
+            string? name = ChatSession.Current.Conversation?.BackgroundImage;
+            try
+            {
+                if (HighContrastActive() || !ChatBackgroundImagePolicy.IsValidStoredName(name)) { HideChatBackgroundImage(); return false; }
+                string path = System.IO.Path.Combine(AppPaths.ChatBackgroundsDir, name!);
+                if (!System.IO.File.Exists(path)) { HideChatBackgroundImage(); return false; }
+                ChatBackgroundImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(path)) { DecodePixelWidth = 1920 };
+                (string color, double opacity) = ChatBackgroundImagePolicy.Scrim(ActualTheme == ElementTheme.Dark);
+                ChatBackgroundScrim.Background = BrushOf(color);
+                ChatBackgroundScrim.Opacity = opacity;
+                ChatBackgroundImage.Visibility = Visibility.Visible;
+                ChatBackgroundScrim.Visibility = Visibility.Visible;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("ApplyChatBackgroundImage failed (non-fatal): " + ex.Message);
+                HideChatBackgroundImage();
+                return false;
+            }
+        }
+
+        /// <summary>Copies the picked image into PaRuX's own folder under a generated name and stores that name on the chat. Returns an error text, or null on success.</summary>
+        private async Task<string?> SetChatBackgroundImageAsync(StorageFile file)
+        {
+            if (ChatSession.Current.Conversation is not { } conversation) return T("Open a chat first.", "Apri prima una chat.");
+            byte[] bytes;
+            try { bytes = System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.ToArray(await FileIO.ReadBufferAsync(file)); }
+            catch (Exception ex) { return T("Could not read the image: ", "Impossibile leggere l'immagine: ") + ex.Message; }
+            string? reason = ChatBackgroundImagePolicy.ValidateSource(file.Name, bytes.Length, bytes.AsSpan(0, Math.Min(bytes.Length, 16)));
+            if (reason != null)
+                return reason switch
+                {
+                    "too-large" => T("Not applied: the image is larger than 8 MB.", "Non applicato: l'immagine supera 8 MB."),
+                    "not-an-image" => T("Not applied: the file is not a valid image of that type.", "Non applicato: il file non è un'immagine valida di quel tipo."),
+                    "empty" => T("Not applied: the file is empty.", "Non applicato: il file è vuoto."),
+                    _ => T("Not applied: use a PNG, JPG, WebP or BMP image.", "Non applicato: usa un'immagine PNG, JPG, WebP o BMP.")
+                };
+            string name = ChatBackgroundImagePolicy.StoredFileName(bytes, ChatBackgroundImagePolicy.NormalizedExtension(file.Name)!);
+            try
+            {
+                System.IO.Directory.CreateDirectory(AppPaths.ChatBackgroundsDir);
+                string target = System.IO.Path.Combine(AppPaths.ChatBackgroundsDir, name);
+                if (!System.IO.File.Exists(target)) await System.IO.File.WriteAllBytesAsync(target, bytes);
+            }
+            catch (Exception ex) { return T("Could not save the image: ", "Impossibile salvare l'immagine: ") + ex.Message; }
+            conversation.BackgroundImage = name;
+            ChatSession.Current.Persist();
+            ApplyChatAppearance();
+            return null;
         }
 
         private static void SetOrClear(DependencyObject target, DependencyProperty property, object? value)
@@ -175,14 +238,43 @@ namespace PaRuX.Views
                     ? T("Saved. It will show when Windows High Contrast is off.", "Salvato. Si vedrà quando il contrasto elevato di Windows sarà disattivato.")
                     : T("Applied.", "Applicato.");
             };
+            var pickImage = new Button { Content = T("Image for this chat…", "Immagine per questa chat…") };
+            AutomationProperties.SetAutomationId(pickImage, "Chat_Appearance_ChatImage_Button");
+            pickImage.Click += async (_, _) =>
+            {
+                try
+                {
+                    var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
+                    foreach (string ext in new[] { ".png", ".jpg", ".jpeg", ".webp", ".bmp" }) picker.FileTypeFilter.Add(ext);
+                    WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
+                    StorageFile? file = await picker.PickSingleFileAsync();
+                    if (file == null) return;
+                    string? error = await SetChatBackgroundImageAsync(file);
+                    status.Text = error ?? T("Image applied to this chat. A dimming layer keeps the text readable.", "Immagine applicata a questa chat. Un velo scuro mantiene il testo leggibile.");
+                }
+                catch (Exception ex) { status.Text = T("Could not set the image: ", "Impossibile impostare l'immagine: ") + ex.Message; }
+            };
+            var removeImage = new Button { Content = T("Remove chat image", "Rimuovi immagine della chat") };
+            AutomationProperties.SetAutomationId(removeImage, "Chat_Appearance_ChatImage_Remove_Button");
+            removeImage.Click += (_, _) =>
+            {
+                if (ChatSession.Current.Conversation is { BackgroundImage: not null } conversation)
+                {
+                    conversation.BackgroundImage = null;
+                    ChatSession.Current.Persist();
+                    ApplyChatAppearance();
+                }
+                status.Text = T("Chat image removed.", "Immagine della chat rimossa.");
+            };
             var reset = new Button { Content = T("Reset to PaRuX look", "Ripristina l'aspetto di PaRuX") };
             AutomationProperties.SetAutomationId(reset, "Chat_Appearance_Reset_Button");
             reset.Click += (_, _) =>
             {
                 ChatAppearanceState.Save(null);
-                if (ChatSession.Current.Conversation is { BackgroundColor: not null } conversation)
+                if (ChatSession.Current.Conversation is { } resetConversation && (resetConversation.BackgroundColor != null || resetConversation.BackgroundImage != null))
                 {
-                    conversation.BackgroundColor = null;
+                    resetConversation.BackgroundColor = null;
+                    resetConversation.BackgroundImage = null;
                     ChatSession.Current.Persist();
                 }
                 foreach (TextBox b in new[] { userBubble, userText, assistantBubble, assistantText, background, chatBackground }) b.Text = string.Empty;
@@ -245,6 +337,7 @@ namespace PaRuX.Views
                     "I colori sono #RRGGBB. Il testo poco leggibile viene sostituito da un colore leggibile. Non sono accettati CSS né link."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7, FontSize = 12 },
                 userBubble, userText, assistantBubble, assistantText, background, chatBackground, font, size,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { apply, reset } },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { pickImage, removeImage } },
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { export, import } },
                 status
             })

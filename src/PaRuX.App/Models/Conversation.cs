@@ -20,6 +20,9 @@ namespace PaRuX.Models
         /// <summary>Optional per-chat background, #RRGGBB only (validated by ChatAppearancePolicy before use). Additive: absent in older documents.</summary>
         public string? BackgroundColor { get; set; }
 
+        /// <summary>Optional per-chat background image: only a generated stored name (ChatBackgroundImagePolicy), never a path. Additive: absent in older documents.</summary>
+        public string? BackgroundImage { get; set; }
+
         /// <summary>Permission preset for coding tasks started from this conversation. A NEW conversation
         /// defaults to ask; a stored document that lacks the field was created under the old contract and
         /// resolves to bypass (see the JSON constructor).</summary>
