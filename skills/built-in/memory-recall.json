@@ -15,7 +15,7 @@
   "preferredModelRole": "MAIN_LLM",
   "allowedModelRoles": ["MAIN_LLM", "FAST_LLM"],
   "requiredCapabilities": [],
-  "allowedTools": ["parux_desktop_search", "parux_desktop_read", "parux_write_word_document", "parux_write_excel_workbook", "parux_edit_excel_workbook"],
+  "allowedTools": ["parux_desktop_search", "parux_desktop_read", "parux_write_word_document", "parux_write_excel_workbook", "parux_edit_excel_workbook", "parux_search_chats"],
   "internetPolicy": "off",
   "memoryPolicy": "required",
   "ragPolicy": "off",

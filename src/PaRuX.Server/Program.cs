@@ -353,7 +353,8 @@ builder.Services.AddSingleton<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>(
 builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AgentSkillTools>(sp => new PaRuX.Server.AgentSkills.AgentSkillTools(
     sp.GetRequiredService<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>(),
     sp.GetRequiredService<PaRuX.Server.DesktopIntegration.DocumentWriteService>(),
-    sp.GetRequiredService<ArtifactStore>()));
+    sp.GetRequiredService<ArtifactStore>(),
+    sp.GetRequiredService<ConversationStore>()));
 builder.Services.AddSingleton<MobileArtifactService>();
 builder.Services.AddSingleton<UnifiedRegistryService>();
 builder.Services.AddSingleton<ProjectManagerService>();

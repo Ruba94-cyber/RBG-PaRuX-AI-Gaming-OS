@@ -257,6 +257,8 @@ namespace PaRuX.Services
             if (c == null) return;
             if (c.IsIncognito) return;
             if (c.Messages.Count == 0) return;
+            if (string.IsNullOrWhiteSpace(c.ProjectId) && !string.IsNullOrWhiteSpace(ProjectWorkspaceSession.Current.ProjectId))
+                c.ProjectId = ProjectWorkspaceSession.Current.ProjectId;
             c.Title = c.Title == "New chat" || string.IsNullOrWhiteSpace(c.Title)
                 ? HistoryStore.DeriveTitle(c)
                 : c.Title;
