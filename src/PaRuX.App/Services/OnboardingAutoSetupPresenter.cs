@@ -26,8 +26,8 @@ namespace PaRuX.Services
             {
                 AutoSetupPhase.NotStarted => new AutoSetupViewModel(
                     "Set up PaRuX in one step",
-                    "PaRuX will check this PC, keep your text runtime, pick a model that fits, ask you to review its licence, "
-                    + "download it, assign roles and verify a local chat answer. Nothing downloads before the licence review.",
+                    "PaRuX checks your PC, picks an AI model that fits it and tries a first chat to make sure everything works. "
+                    + "Nothing is downloaded until you have reviewed the model's licence.",
                     "Set up automatically", true, false, false, false, false),
                 AutoSetupPhase.CheckingHardware or AutoSetupPhase.CheckingRuntime or AutoSetupPhase.SelectingModel
                     or AutoSetupPhase.AssigningRoles or AutoSetupPhase.VerifyingChat => new AutoSetupViewModel(
@@ -40,11 +40,11 @@ namespace PaRuX.Services
                 AutoSetupPhase.NoModelFits => new AutoSetupViewModel(
                     "No recommended model fits this PC", message, "Try again", true, false, false, true, false),
                 AutoSetupPhase.Failed => new AutoSetupViewModel(
-                    "Automatic setup stopped", message, "Set up automatically", false, false, true, true, false),
+                    "Setup stopped", message + " You can try again, or skip this and choose a model yourself below.", "Set up automatically", false, false, true, true, false),
                 AutoSetupPhase.Cancelled => new AutoSetupViewModel(
-                    "Automatic setup cancelled", message, "Set up automatically", true, false, false, true, false),
+                    "Setup cancelled", message, "Set up automatically", true, false, false, true, false),
                 AutoSetupPhase.Skipped => new AutoSetupViewModel(
-                    "Automatic setup skipped", message, "Set up automatically", true, false, false, false, false),
+                    "Setup skipped", message, "Set up automatically", true, false, false, false, false),
                 _ => new AutoSetupViewModel("Set up PaRuX", message, "Set up automatically", true, false, false, false, false)
             };
         }
@@ -62,8 +62,8 @@ namespace PaRuX.Services
             {
                 AutoSetupPhase.NotStarted => new AutoSetupViewModel(
                     "Configura PaRuX in un passaggio",
-                    "PaRuX controllerà il PC e i runtime esistenti, proporrà un modello adatto "
-                    + "e verificherà la chat locale. Prima di ogni download potrai controllare e accettare la licenza.",
+                    "PaRuX controlla il tuo PC, sceglie un modello IA adatto e prova una prima chat per assicurarsi che tutto funzioni. "
+                    + "Non scarica nulla finché non hai controllato la licenza del modello.",
                     "Configura automaticamente", true, false, false, false, false),
                 AutoSetupPhase.CheckingHardware or AutoSetupPhase.CheckingRuntime or AutoSetupPhase.SelectingModel
                     or AutoSetupPhase.AssigningRoles or AutoSetupPhase.VerifyingChat => new AutoSetupViewModel(
@@ -83,14 +83,14 @@ namespace PaRuX.Services
                     + "Apri le opzioni manuali, valuta un modello più piccolo o verifica RAM, GPU e runtime.",
                     "Riprova", true, false, false, true, false),
                 AutoSetupPhase.Failed => new AutoSetupViewModel(
-                    "Configurazione automatica interrotta",
+                    "Configurazione interrotta",
                     failure, "Configura automaticamente", false, false, true, true, false),
                 AutoSetupPhase.Cancelled => new AutoSetupViewModel(
-                    "Configurazione automatica annullata",
+                    "Configurazione annullata",
                     "La verifica non è completa. Puoi riprendere manualmente oppure ricominciare.",
                     "Configura automaticamente", true, false, false, true, false),
                 AutoSetupPhase.Skipped => new AutoSetupViewModel(
-                    "Configurazione automatica saltata",
+                    "Configurazione saltata",
                     "I controlli manuali restano disponibili. La chat non è ancora stata verificata.",
                     "Configura automaticamente", true, false, false, false, false),
                 _ => new AutoSetupViewModel(
@@ -101,11 +101,11 @@ namespace PaRuX.Services
 
         private static string StepTitleItalian(AutoSetupPhase phase) => phase switch
         {
-            AutoSetupPhase.CheckingHardware => "Passaggio 1 di 5: analisi del PC",
-            AutoSetupPhase.CheckingRuntime => "Passaggio 2 di 5: runtime di testo",
-            AutoSetupPhase.SelectingModel => "Passaggio 3 di 5: scelta del modello",
-            AutoSetupPhase.AssigningRoles => "Passaggio 4 di 5: assegnazione dei ruoli",
-            AutoSetupPhase.VerifyingChat => "Passaggio 5 di 5: verifica della chat locale",
+            AutoSetupPhase.CheckingHardware => "Passaggio 1 di 5: controllo del tuo PC",
+            AutoSetupPhase.CheckingRuntime => "Passaggio 2 di 5: preparazione del motore IA",
+            AutoSetupPhase.SelectingModel => "Passaggio 3 di 5: scelta di un modello adatto al tuo PC",
+            AutoSetupPhase.AssigningRoles => "Passaggio 4 di 5: preparazione del modello",
+            AutoSetupPhase.VerifyingChat => "Passaggio 5 di 5: prima chat di prova",
             _ => "Configurazione in corso"
         };
 
@@ -115,17 +115,17 @@ namespace PaRuX.Services
             AutoSetupPhase.CheckingRuntime => "Controllo dei runtime locali, senza modificare quelli gestiti dall'utente.",
             AutoSetupPhase.SelectingModel => "Ricerca di un modello compatibile con questo PC.",
             AutoSetupPhase.AssigningRoles => "Impostazione dei ruoli dei modelli installati.",
-            AutoSetupPhase.VerifyingChat => "Verifica che il Core locale risponda correttamente.",
+            AutoSetupPhase.VerifyingChat => "Controllo che l'assistente locale risponda correttamente.",
             _ => "Operazione in corso."
         };
 
         private static string StepTitle(AutoSetupPhase phase) => phase switch
         {
-            AutoSetupPhase.CheckingHardware => "Step 1 of 5: reading this PC",
-            AutoSetupPhase.CheckingRuntime => "Step 2 of 5: text runtime",
-            AutoSetupPhase.SelectingModel => "Step 3 of 5: choosing a model",
-            AutoSetupPhase.AssigningRoles => "Step 4 of 5: assigning roles",
-            AutoSetupPhase.VerifyingChat => "Step 5 of 5: verifying local chat",
+            AutoSetupPhase.CheckingHardware => "Step 1 of 5: checking your PC",
+            AutoSetupPhase.CheckingRuntime => "Step 2 of 5: preparing the AI engine",
+            AutoSetupPhase.SelectingModel => "Step 3 of 5: choosing a model that fits your PC",
+            AutoSetupPhase.AssigningRoles => "Step 4 of 5: getting the model ready",
+            AutoSetupPhase.VerifyingChat => "Step 5 of 5: trying a first chat",
             _ => "Setting up"
         };
     }

@@ -284,6 +284,8 @@ namespace PaRuX
             // must not swallow it (it used to, so clicking a saved chat silently did nothing).
             if (!tag.StartsWith("__", StringComparison.Ordinal)) return false;
             if (!IsWorkspaceAllowedForSetup(tag)) return true;
+            // First-run setup is the only door until it is completed (shortcuts, palette and tray must not bypass it).
+            if (FirstRunSetupScreenOpen) return true;
             switch (tag)
             {
                 // "__games__" (sidebar, Ctrl+2, mode tab, old deep links) and "__gamestools__" open the same slim Games tools page.

@@ -30,7 +30,7 @@ namespace PaRuX.Views
         public async Task RefreshRuntimeComponentsAsync()
         {
             if (_componentsSettingsBusy || ComponentsSettingsList == null) return;
-            SetComponentsSettingsBusy(true, "Detecting installed components…");
+            SetComponentsSettingsBusy(true, T("Detecting installed components…", "Rilevamento dei componenti installati…"));
             try
             {
                 List<ComponentStatus> components = await RuntimeManagerClient.Current.GetComponentsAsync(CancellationToken.None);
@@ -157,7 +157,7 @@ namespace PaRuX.Views
                 throw new InvalidOperationException("This component has no PaRuX-managed installer.");
             }
 
-            SetComponentsSettingsBusy(true, "Checking available builds for " + component.DisplayName + "…");
+            SetComponentsSettingsBusy(true, T("Checking available builds for ", "Controllo delle versioni disponibili per ") + component.DisplayName + "…");
             _componentsSettingsCts?.Cancel();
             _componentsSettingsCts?.Dispose();
             _componentsSettingsCts = new CancellationTokenSource();

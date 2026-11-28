@@ -492,7 +492,9 @@ namespace PaRuX.Shell
 
         private static bool AiBubbleAllowedForSetup =>
             !PaRuX.Contracts.CorporateMode.IsActive
-            && SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId) != SetupProfile.GamingOnly;
+            && SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId) != SetupProfile.GamingOnly
+            // First run: the floating Quick Chat pill must not sit over the guided setup (no model is installed yet).
+            && SettingsStore.Current.Data.OnboardingCompleted;
 
         public void ApplyVisibilityMode()
         {

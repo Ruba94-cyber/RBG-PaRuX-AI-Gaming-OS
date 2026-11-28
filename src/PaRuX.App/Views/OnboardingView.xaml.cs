@@ -386,7 +386,7 @@ namespace PaRuX.Views
         private async Task RefreshComponentsAsync()
         {
             if (_componentsBusy || ComponentsList == null) return;
-            SetComponentsBusy(true, "Detecting installed components…");
+            SetComponentsBusy(true, T("Detecting installed components…", "Rilevamento dei componenti installati…"));
             _componentsDetectionOnly = true;
             try
             {
@@ -487,7 +487,7 @@ namespace PaRuX.Views
             string? backend = BackendForComponent(component.Id);
             if (backend == null) throw new InvalidOperationException("This component has no PaRuX-managed installer.");
 
-            SetComponentsBusy(true, "Checking available builds for " + component.DisplayName + "…");
+            SetComponentsBusy(true, T("Checking available builds for ", "Controllo delle versioni disponibili per ") + component.DisplayName + "…");
             _operationCts?.Cancel();
             _operationCts?.Dispose();
             _operationCts = new CancellationTokenSource();
@@ -712,8 +712,8 @@ namespace PaRuX.Views
             return failure;
         }
 
-        private const string ModelChangedDuringVerification =
-            "Your model or runtime changed during verification. Check the current setup and retry.";
+        private static string ModelChangedDuringVerification =>
+            T("Your model or runtime changed during verification. Check the current setup and retry.", "Il modello o il motore è cambiato durante la verifica. Controlla la configurazione attuale e riprova.");
 
         private async Task<string?> VerifyChatOnceAsync(CancellationToken token, Action<string> report)
         {
@@ -737,7 +737,7 @@ namespace PaRuX.Views
             var answer = new StringBuilder();
             bool localSeen = false;
             bool remoteSeen = false;
-            report("Waiting for the local model to repeat a one-time code…");
+            report(T("Waiting for the local model to repeat a one-time code…", "In attesa che il modello locale ripeta un codice monouso…"));
 
             await ChatClient.Current.StreamAsync(
                 history: new[] { new PaRuX.Models.ChatMessage
@@ -911,7 +911,7 @@ namespace PaRuX.Views
 
                     var textStack = new StackPanel { Spacing = 2 };
                     string reqPrefix = item.Id == BundledRuntimeOverviewPresenter.DownloadableModelId
-                        ? "Choose for chat: " : item.IsRequired ? "Required for chat: " : "Optional: ";
+                        ? T("Choose for chat: ", "Scegli per la chat: ") : item.IsRequired ? T("Required for chat: ", "Necessario per la chat: ") : T("Optional: ", "Facoltativo: ");
                     var titleBlock = new TextBlock
                     {
                         Text = reqPrefix + item.DisplayName,

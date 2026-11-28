@@ -228,7 +228,7 @@ internal static class CorporateSmallModelFallback
         tried.Count == 0
             ? defaultRefusal
             : defaultRefusal + " The smaller bundled model(s) were checked as well ("
-                + string.Join(", ", tried.Select(DisplayName)) + ") and none fits either. Nessun modello piu' piccolo del pacchetto entra nella memoria libera: chiudi applicazioni pesanti e riprova.";
+                + string.Join(", ", tried.Select(DisplayName)) + ") and none fits either. Close heavy applications to free memory, then try again.";
 
     // ---- published state (what Runtime Manager and chat read) --------------------------------------------------------
 
