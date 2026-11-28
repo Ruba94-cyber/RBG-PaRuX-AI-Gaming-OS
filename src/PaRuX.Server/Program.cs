@@ -353,7 +353,10 @@ builder.Services.AddSingleton<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>(
 builder.Services.AddSingleton<PaRuX.Server.AgentSkills.AgentSkillTools>(sp => new PaRuX.Server.AgentSkills.AgentSkillTools(
     sp.GetRequiredService<PaRuX.Server.AgentSkills.ReadOnlySqlQueryService>(),
     sp.GetRequiredService<PaRuX.Server.DesktopIntegration.DocumentWriteService>(),
-    sp.GetRequiredService<ArtifactStore>()));
+    sp.GetRequiredService<ArtifactStore>(),
+    sp.GetRequiredService<ConversationStore>(),
+    sp.GetRequiredService<PaRuX.Server.AgentSkills.ChatSettingProposalService>()));
+builder.Services.AddSingleton<PaRuX.Server.AgentSkills.ChatSettingProposalService>();
 builder.Services.AddSingleton<MobileArtifactService>();
 builder.Services.AddSingleton<UnifiedRegistryService>();
 builder.Services.AddSingleton<ProjectManagerService>();
@@ -1791,6 +1794,12 @@ app.MapPost("/api/v1/desktop/documents/output", (
     }
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+
+// Pending "change a setting from chat" proposals. Reading and cancelling are desktop-owner only; applying happens in the app after the owner confirms.
+app.MapGet("/api/v1/chat/setting-proposals", (string conversationId, PaRuX.Server.AgentSkills.ChatSettingProposalService proposals) =>
+    Results.Ok(proposals.List(conversationId))).RequireDesktopOwner();
+app.MapDelete("/api/v1/chat/setting-proposals/{id}", (string id, string conversationId, PaRuX.Server.AgentSkills.ChatSettingProposalService proposals) =>
+    proposals.Delete(conversationId, id) ? Results.NoContent() : Results.NotFound()).RequireDesktopOwner();
 
 app.MapGet("/api/v1/desktop/workbook-edits", (string conversationId, PaRuX.Server.DesktopIntegration.WorkbookEditProposalService proposals) =>
     Results.Ok(proposals.List(conversationId))).RequireDesktopOwner();

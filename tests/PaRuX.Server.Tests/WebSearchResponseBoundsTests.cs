@@ -72,7 +72,7 @@ public sealed class WebSearchResponseBoundsTests : IDisposable
         List<WebSearchResult> results = await web.SearchAsync("history of rome", 5, CancellationToken.None);
 
         Assert.Empty(results);
-        Assert.Equal(3, bodies.Count); // DuckDuckGo html + lite, then Wikipedia
+        Assert.Equal(4, bodies.Count); // DuckDuckGo html + lite, then Marginalia, then Wikipedia
         foreach (EndlessBody body in bodies)
             Assert.True(body.Produced <= WebSearchService.MaxResponseBytes);
     }

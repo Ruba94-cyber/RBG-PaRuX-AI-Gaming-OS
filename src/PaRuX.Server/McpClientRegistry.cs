@@ -682,7 +682,8 @@ public sealed class McpClientRegistry : IAsyncDisposable
     /// results are never retained.</summary>
     public async Task<string> CallToolAsync(
         string toolName, string argumentsJson, CancellationToken ct,
-        IReadOnlyCollection<string>? allowedTools = null, string? workbookConversationId = null, string? workbookTurnId = null)
+        IReadOnlyCollection<string>? allowedTools = null, string? workbookConversationId = null, string? workbookTurnId = null,
+        PaRuX.Server.AgentSkills.ChatHistoryScope? historyScope = null)
     {
         long started = Stopwatch.GetTimestamp();
         bool success = false;
@@ -708,7 +709,7 @@ public sealed class McpClientRegistry : IAsyncDisposable
 
             if (_agentSkills != null && PaRuX.Server.AgentSkills.AgentSkillTools.IsBuiltInTool(toolName))
             {
-                string skillResult = await _agentSkills.CallAsync(toolName, argumentsJson, ct).ConfigureAwait(false);
+                string skillResult = await _agentSkills.CallAsync(toolName, argumentsJson, ct, historyScope).ConfigureAwait(false);
                 success = !skillResult.StartsWith(PaRuX.Server.AgentSkills.AgentSkillTools.FailurePrefix, StringComparison.OrdinalIgnoreCase);
                 outcome = success ? "success" : "tool-error";
                 return skillResult;

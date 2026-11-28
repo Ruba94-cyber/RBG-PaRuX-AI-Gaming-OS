@@ -1138,7 +1138,12 @@ public sealed class ChatProxyService
                 return await Http.SendAsync(upstreamRequest, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             },
             invokeTool: (name, args, ct) => _mcp.CallToolAsync(name, args, ct, advertisedToolNames,
-                DesktopOwnerRouteExtensions.IsDesktopOwner(downstream.HttpContext) && !_runtime.UsesExternalProvider ? request.ConversationId : null, downstream.HttpContext.Items["WorkbookTurnId"] as string),
+                DesktopOwnerRouteExtensions.IsDesktopOwner(downstream.HttpContext) && !_runtime.UsesExternalProvider ? request.ConversationId : null, downstream.HttpContext.Items["WorkbookTurnId"] as string,
+                // Earlier-chat search reads the owner's own history: only for the desktop owner on a local engine, never LAN or cloud.
+                DesktopOwnerRouteExtensions.IsDesktopOwner(downstream.HttpContext) && !_runtime.UsesExternalProvider
+                    ? new PaRuX.Server.AgentSkills.ChatHistoryScope(request.ConversationId,
+                        request.SkillParameters.TryGetValue(PromptCacheScopePolicy.ProjectScopeParameter, out string? historyProject) ? historyProject : null)
+                    : null),
             writeFrame: async (frame, ct) =>
             {
                 if (ChatPhaseTrace.Enabled) (downstream.HttpContext.Items[nameof(ChatPhaseTrace)] as ChatPhaseTrace)?.MarkOnce("first_frame");

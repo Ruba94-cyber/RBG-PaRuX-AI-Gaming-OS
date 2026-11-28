@@ -63,6 +63,51 @@ internal static partial class ToolSchemaIntentGate
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AuthoredCode();
 
+    // Asking about what was said in the user's own earlier chats (English and Italian).
+    [GeneratedRegex(
+        @"\b(earlier|previous|past|old|prior|last|other)\s+(chats?|conversations?|threads?)\b" +
+        @"|\b(search|look(?:\s+(?:through|in|up))?|find|check)\b[^.\n]{0,40}\b(my\s+)?(chats?|conversations?|chat\s+history)\b" +
+        @"|\b(did|do)\s+(i|we)\s+(ever\s+)?(talk|discuss|speak|mention|ask|say|decide)\b" +
+        @"|\b(we|i)\s+(talked|discussed|spoke|mentioned|decided)\s+(about|before|earlier|last)\b" +
+        @"|\b(remember|recall)\s+(when|what)\s+(we|i)\b" +
+        @"|\b(chat|conversazion\w+)\s+(precedent\w+|passat\w+|vecchi\w+|di\s+ieri)\b" +
+        @"|\b(cerca|trova|controlla)\w*\b[^.\n]{0,40}\b(nelle|nella|tra le)\s+(mie\s+)?(chat|conversazioni)\b" +
+        @"|\b(abbiamo|ho)\s+(parlato|discusso|detto|deciso)\b|\bti\s+(avevo|ho)\s+(detto|chiesto)\b|\bcosa\s+(ci\s+siamo|ci\s+eravamo)\s+detti\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EarlierChatsIntent();
+
+    // Asking to change an app setting (English and Italian). Deliberately narrow: a verb plus a settings noun.
+    [GeneratedRegex(
+        @"\b(change|set|switch|turn|enable|disable|activate|deactivate|use|make)\b[^.\n]{0,40}\b(theme|dark\s+mode|light\s+mode|dark|light|language|italian|english|simple|advanced|web\s+search|internet\s+search|voice|uncensored\s+profile|model\s+profile)\b" +
+        @"|\b(cambia|imposta|metti|passa|attiva|disattiva|abilita|disabilita|usa)\w*\b[^.\n]{0,40}\b(tema|modalit\w+\s+(scura|chiara)|scuro|chiaro|lingua|italiano|inglese|semplice|avanzat\w+|ricerca\s+(web|su\s+internet)|voce|profilo)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ChangeSettingsIntent();
+
+    /// <summary>True when the prompt asks to change an app setting; only then is the propose-setting tool schema offered.</summary>
+    internal static bool AsksToChangeSettings(string? query) =>
+        !string.IsNullOrWhiteSpace(query) && ChangeSettingsIntent().IsMatch(query.Length > MaximumSimpleTurnCharacters ? query[..MaximumSimpleTurnCharacters] : query);
+
+    /// <summary>True when the prompt asks about the user's own earlier chats; only then is the chat-search tool schema offered.</summary>
+    internal static bool AsksAboutEarlierChats(string? query) =>
+        !string.IsNullOrWhiteSpace(query) && EarlierChatsIntent().IsMatch(query.Length > MaximumSimpleTurnCharacters ? query[..MaximumSimpleTurnCharacters] : query);
+
+    /// <summary>Returns the schemas without the chat-search tool unless the prompt asks about earlier chats.</summary>
+    internal static System.Text.Json.Nodes.JsonArray KeepChatSearchSchema(System.Text.Json.Nodes.JsonArray schemas, string? query)
+    {
+        bool chats = AsksAboutEarlierChats(query), settings = AsksToChangeSettings(query);
+        if (chats && settings) return schemas;
+        var kept = new System.Text.Json.Nodes.JsonArray();
+        foreach (System.Text.Json.Nodes.JsonNode? schema in schemas)
+        {
+            if (schema == null) continue;
+            string? name = schema["function"]?["name"]?.GetValue<string>();
+            if (!chats && name == PaRuX.Server.AgentSkills.AgentSkillTools.ChatSearchToolName) continue;
+            if (!settings && name == PaRuX.Server.AgentSkills.AgentSkillTools.ProposeSettingToolName) continue;
+            kept.Add(schema.DeepClone());
+        }
+        return kept;
+    }
+
     /// <summary>True when this turn certainly needs no tool, so the schemas can be omitted from the prompt.</summary>
     internal static bool CanOmitToolSchemas(string? query, string? skillId)
     {
@@ -70,6 +115,7 @@ internal static partial class ToolSchemaIntentGate
         if (string.IsNullOrWhiteSpace(query)) return false;
         string text = query.Trim();
         if (text.Length > MaximumSimpleTurnCharacters) return false;
+        if (AsksAboutEarlierChats(text) || AsksToChangeSettings(text)) return false;
         // Asking for code to be written in a language is authoring, not a request to run it in the sandbox.
         text = AuthoredCode().Replace(text, " ");
         if (text.Length <= 300) return !ToolIntent().IsMatch(text);

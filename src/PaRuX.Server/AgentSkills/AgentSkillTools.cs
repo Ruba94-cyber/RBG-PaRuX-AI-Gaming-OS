@@ -17,6 +17,8 @@ public sealed class AgentSkillTools
     public const string SqlToolName = "parux_sql_query";
     public const string ChartToolName = "parux_make_chart";
     public const string PresentationToolName = "parux_write_presentation";
+    public const string ChatSearchToolName = "parux_search_chats";
+    public const string ProposeSettingToolName = "parux_propose_setting";
     public const string FailurePrefix = "Agent skill tool failed:";
     public const int MaxSlides = 50;
     public const int MaxBulletsPerSlide = 12;
@@ -25,16 +27,21 @@ public sealed class AgentSkillTools
     private readonly ReadOnlySqlQueryService _sql;
     private readonly DocumentWriteService _documents;
     private readonly ArtifactStore? _artifacts;
+    private readonly ConversationStore? _conversations;
+    private readonly ChatSettingProposalService? _settingProposals;
 
-    public AgentSkillTools(ReadOnlySqlQueryService sql, DocumentWriteService documents, ArtifactStore? artifacts = null)
+    public AgentSkillTools(ReadOnlySqlQueryService sql, DocumentWriteService documents, ArtifactStore? artifacts = null, ConversationStore? conversations = null,
+        ChatSettingProposalService? settingProposals = null)
     {
+        _settingProposals = settingProposals;
+        _conversations = conversations;
         _sql = sql;
         _documents = documents;
         _artifacts = artifacts;
     }
 
     public static bool IsBuiltInTool(string? name) =>
-        name is SqlToolName or ChartToolName or PresentationToolName;
+        name is SqlToolName or ChartToolName or PresentationToolName or ChatSearchToolName or ProposeSettingToolName;
 
     public JsonArray GetToolSchemas(IReadOnlyCollection<string>? allowedTools = null)
     {
@@ -94,10 +101,30 @@ public sealed class AgentSkillTools
                         }
                     }
                 }, "fileName", "slides"));
+        // Offered only when the prompt asks about earlier chats (ToolSchemaIntentGate.KeepChatSearchSchema), so ordinary turns carry no extra schema.
+        if (_conversations != null && ContextEngineService.ToolNameAllowed(ChatSearchToolName, allowedTools))
+            schemas.Add(Function(ChatSearchToolName,
+                "Search the user's OWN saved earlier chats on this PC for what was said before. Read-only. Searches the current project by default; set allProjects to true only when the user asks for every project. Returns short snippets with chat title, date and id.",
+                new JsonObject
+                {
+                    ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Words to look for in earlier chats" },
+                    ["allProjects"] = new JsonObject { ["type"] = "boolean", ["description"] = "Search every project instead of only the current one (default false)" },
+                    ["limit"] = new JsonObject { ["type"] = "integer", ["description"] = "Maximum chats to return, at most " + ChatHistorySearch.MaxLimit }
+                }, "query"));
+        // Offered only when the prompt asks to change a setting. It can only PROPOSE: the owner confirms on a card before anything changes.
+        if (_settingProposals != null && ContextEngineService.ToolNameAllowed(ProposeSettingToolName, allowedTools))
+            schemas.Add(Function(ProposeSettingToolName,
+                "Propose ONE change to a PaRuX setting. Nothing changes until the user presses Apply on a confirmation card, so tell them to confirm. Allowed settings: "
+                + string.Join("; ", ChatSettingsAllowList.All.Select(d => d.Key + " = " + string.Join("|", d.Values))) + ". Any other setting is refused.",
+                new JsonObject
+                {
+                    ["setting"] = new JsonObject { ["type"] = "string", ["description"] = "One of: " + string.Join(", ", ChatSettingsAllowList.All.Select(d => d.Key)) },
+                    ["value"] = new JsonObject { ["type"] = "string", ["description"] = "The new value" }
+                }, "setting", "value"));
         return schemas;
     }
 
-    public Task<string> CallAsync(string toolName, string argumentsJson, CancellationToken ct)
+    public Task<string> CallAsync(string toolName, string argumentsJson, CancellationToken ct, ChatHistoryScope? historyScope = null)
     {
         if (!IsBuiltInTool(toolName)) throw new InvalidOperationException("Unknown PaRuX agent skill tool.");
         ct.ThrowIfCancellationRequested();
@@ -112,6 +139,8 @@ public sealed class AgentSkillTools
             {
                 SqlToolName => RunSql(root, ct),
                 ChartToolName => RunChart(root),
+                ChatSearchToolName => RunChatSearch(root, historyScope),
+                ProposeSettingToolName => RunProposeSetting(root, historyScope),
                 _ => RunPresentation(root)
             });
         }
@@ -131,6 +160,30 @@ public sealed class AgentSkillTools
         if (string.IsNullOrWhiteSpace(sql)) return _sql.DescribeSchema(source, ct);
         int maxRows = args["maxRows"] is JsonValue v && v.TryGetValue(out int n) ? n : 0;
         return ReadOnlySqlQueryService.ToJson(_sql.Query(source, sql, maxRows, null, ct));
+    }
+
+    private string RunProposeSetting(JsonObject args, ChatHistoryScope? scope)
+    {
+        if (_settingProposals == null || scope == null || string.IsNullOrWhiteSpace(scope.ConversationId))
+            throw new InvalidOperationException("Changing settings from chat is not available for this request.");
+        if (!ChatSettingsAllowList.TryValidate(Str(args, "setting"), Str(args, "value"), PaRuX.Contracts.CorporateMode.IsActive, out ChatSettingChange? change, out string error))
+            throw new InvalidOperationException(error);
+        _settingProposals.Propose(scope.ConversationId!, change!);
+        return "Proposed: " + change!.Description + " -> " + change.Value + ". NOTHING has changed yet: a confirmation card with Apply and Cancel is now shown to the user. Tell them to press Apply to confirm.";
+    }
+
+    private string RunChatSearch(JsonObject args, ChatHistoryScope? scope)
+    {
+        // Without a scope the caller is not the desktop owner on a local engine (LAN client, cloud provider): history stays private.
+        if (_conversations == null || scope == null) throw new InvalidOperationException("Searching earlier chats is not available for this request.");
+        bool all = args["allProjects"] is JsonValue a && a.TryGetValue(out bool allValue) && allValue;
+        int limit = args["limit"] is JsonValue v && v.TryGetValue(out int n) ? n : ChatHistorySearch.DefaultLimit;
+        var documents = _conversations.List()
+            .OrderByDescending(c => c.UpdatedUtc).Take(ChatHistorySearch.MaxScannedConversations)
+            .Select(c => _conversations.Get(c.Id)).OfType<ConversationDocument>();
+        IReadOnlyList<ChatHistoryHit> hits = ChatHistorySearch.Search(documents,
+            new ChatHistorySearchRequest(Str(args, "query"), scope, all, limit, PaRuX.Contracts.CorporateMode.IsActive));
+        return ChatHistorySearch.Format(hits, all);
     }
 
     private string RunChart(JsonObject args)

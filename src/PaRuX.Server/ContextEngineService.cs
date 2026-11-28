@@ -197,7 +197,8 @@ public sealed class ContextEngineService
             System.Diagnostics.Trace.TraceInformation("Tool schemas omitted for a short plain turn (general skill, no tool intent).");
             return new ChatContextResult(pack, new JsonArray());
         }
-        JsonArray toolSchemas = await _mcp.GetToolSchemasAsync(cancellationToken, allowedTools).ConfigureAwait(false);
+        JsonArray toolSchemas = ToolSchemaIntentGate.KeepChatSearchSchema(
+            await _mcp.GetToolSchemasAsync(cancellationToken, allowedTools).ConfigureAwait(false), query);
         McpToolSchemaRouter.Decision toolRouting = McpToolSchemaRouter.Route(query, toolSchemas);
         return new ChatContextResult(pack, toolRouting.Schemas);
     }

@@ -82,6 +82,62 @@ internal sealed class WikipediaSearchProvider : IWebSearchProvider
 }
 
 /// <summary>
+/// Marginalia Search public JSON API (https, one fixed host, the published shared "public" key, no account). Small-web
+/// index that complements DuckDuckGo and Wikipedia when those fail or return nothing. Only the query text leaves the
+/// PC. Result URLs come from the response but must be http(s); they are neutralised later like every web result.
+/// </summary>
+internal sealed class MarginaliaSearchProvider : IWebSearchProvider
+{
+    private const string Endpoint = "https://api.marginalia.nu/public/search/";
+    private const int MaxQueryCharacters = 300;
+    private readonly HttpClient _http;
+
+    public MarginaliaSearchProvider(HttpClient http) => _http = http;
+
+    public string Id => WebSearchSettingsService.MarginaliaId;
+    public string DisplayName => "Marginalia";
+
+    public async Task<List<WebSearchResult>> SearchAsync(string query, int maxResults, CancellationToken ct)
+    {
+        string text = (query ?? string.Empty).Trim();
+        if (text.Length == 0 || maxResults <= 0) return new List<WebSearchResult>();
+        if (text.Length > MaxQueryCharacters) text = text[..MaxQueryCharacters];
+        int limit = Math.Clamp(maxResults, 1, 10);
+        using var request = new HttpRequestMessage(HttpMethod.Get, Endpoint + Uri.EscapeDataString(text) + "?count=" + limit);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.UserAgent.ParseAdd("PaRuXLocalAI/1.0");
+        using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.StatusCode == (HttpStatusCode)429)
+            throw new HttpRequestException("Marginalia rate limit reached (HTTP 429).");
+        response.EnsureSuccessStatusCode();
+        string json = await WebSearchService.ReadBoundedTextAsync(response.Content, ct).ConfigureAwait(false);
+        return ParseResults(json, limit);
+    }
+
+    internal static List<WebSearchResult> ParseResults(string json, int maxResults)
+    {
+        var results = new List<WebSearchResult>();
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("results", out JsonElement entries) || entries.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Marginalia returned an unexpected response shape.");
+        foreach (JsonElement entry in entries.EnumerateArray())
+        {
+            if (results.Count >= maxResults) break;
+            if (entry.ValueKind != JsonValueKind.Object) continue;
+            string url = entry.TryGetProperty("url", out JsonElement u) && u.ValueKind == JsonValueKind.String ? u.GetString() ?? string.Empty : string.Empty;
+            if (url.Length > 2048 || !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+                || uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) continue;
+            string title = entry.TryGetProperty("title", out JsonElement t) && t.ValueKind == JsonValueKind.String ? WebSearchService.CleanHtml(t.GetString() ?? string.Empty) : string.Empty;
+            string snippet = entry.TryGetProperty("description", out JsonElement d) && d.ValueKind == JsonValueKind.String ? WebSearchService.CleanHtml(d.GetString() ?? string.Empty) : string.Empty;
+            if (title.Length == 0) title = uri.Host;
+            results.Add(new WebSearchResult { Title = title.Length > 180 ? title[..180] : title, Url = uri.AbsoluteUri, Snippet = snippet.Length > 500 ? snippet[..500] : snippet });
+        }
+        return results;
+    }
+}
+
+/// <summary>
 /// Brave Search API (https, one fixed host, user-supplied key sent only in the X-Subscription-Token header to that host).
 /// Opt-in: it joins the chain only while a key is stored. Result URLs are taken from the response but must be http(s) and
 /// are neutralised later like every web result; the key never appears in a URL, a message or a log.

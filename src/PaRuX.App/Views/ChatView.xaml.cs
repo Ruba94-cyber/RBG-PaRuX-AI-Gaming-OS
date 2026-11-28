@@ -473,6 +473,7 @@ namespace PaRuX.Views
             {
                 bool busy = ChatSession.Current.IsBusy;
                 UpdateWorkbookTurnState(busy);
+                UpdateSettingProposalTurnState(busy);
                 SendButton.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
                 StopButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
                 InputBox.IsEnabled = !_isSwitchingProfile;

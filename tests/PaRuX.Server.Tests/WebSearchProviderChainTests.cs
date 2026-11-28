@@ -121,6 +121,57 @@ public sealed class WebSearchProviderChainTests : IDisposable
         Assert.Contains("Wikipedia", ex.Message);
     }
 
+    private const string MarginaliaJson = """
+        {"license":"x","results":[{"url":"https://small.example/page","title":"Small <b>web</b> page","description":"An &amp; indie page"},{"url":"javascript:alert(1)","title":"bad"}]}
+        """;
+
+    [Fact]
+    public async Task Marginalia_answers_when_duckduckgo_fails_and_is_tried_before_wikipedia()
+    {
+        var web = new Fake(r => r.RequestUri!.Host switch
+        {
+            "api.marginalia.nu" => Ok(MarginaliaJson, "application/json"),
+            "en.wikipedia.org" => Ok(WikiJson, "application/json"),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        var svc = new WebSearchService(Internet(true), web, Settings());
+
+        WebSearchResult hit = Assert.Single(await svc.SearchAsync("a b&c", 5, CancellationToken.None));
+
+        Assert.Equal("marginalia", hit.Provider);
+        Assert.Equal("https://small.example/page", hit.Url);
+        Assert.Equal("Small web page", hit.Title);
+        Assert.Equal("An & indie page", hit.Snippet);
+        Uri request = web.Requests.Single(u => u.Host == "api.marginalia.nu");
+        Assert.Equal("https", request.Scheme);
+        Assert.Contains("a%20b%26c", request.AbsoluteUri);
+        Assert.DoesNotContain(web.Requests, u => u.Host == "en.wikipedia.org");
+        Assert.Equal("ok", svc.GetProvidersStatus().Providers.Single(p => p.Id == "marginalia").State);
+    }
+
+    [Fact]
+    public async Task Marginalia_can_be_turned_off_and_a_malformed_answer_is_a_failure_that_falls_through()
+    {
+        WebSearchSettingsService settings = Settings();
+        settings.Set(null, new[] { "marginalia" });
+        Fake web = Web(ddgWorks: false, wikiWorks: true);
+        var svc = new WebSearchService(Internet(true), web, settings);
+        Assert.Equal("wikipedia", (await svc.SearchAsync("x", 5, CancellationToken.None)).Single().Provider);
+        Assert.DoesNotContain(web.Requests, u => u.Host == "api.marginalia.nu");
+        Assert.Equal("disabled", svc.GetProvidersStatus().Providers.Single(p => p.Id == "marginalia").State);
+
+        settings.Set(null, Array.Empty<string>());
+        var bad = new Fake(r => r.RequestUri!.Host switch
+        {
+            "api.marginalia.nu" => Ok("[1,2]", "application/json"),
+            "en.wikipedia.org" => Ok(WikiJson, "application/json"),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        var svc2 = new WebSearchService(Internet(true), bad, settings);
+        Assert.Equal("wikipedia", (await svc2.SearchAsync("x", 5, CancellationToken.None)).Single().Provider);
+        Assert.Equal("failed", svc2.GetProvidersStatus().Providers.Single(p => p.Id == "marginalia").State);
+    }
+
     [Fact]
     public async Task A_provider_that_answers_with_no_results_is_an_honest_empty_list_not_an_error()
     {
@@ -145,7 +196,7 @@ public sealed class WebSearchProviderChainTests : IDisposable
         Assert.DoesNotContain(web.Requests, u => u.Host.EndsWith("duckduckgo.com"));
         Assert.Equal("disabled", svc.GetProvidersStatus().Providers.Single(p => p.Id == "duckduckgo").State);
 
-        settings.Set(null, new[] { "duckduckgo", "wikipedia" });
+        settings.Set(null, new[] { "duckduckgo", "wikipedia", "marginalia" });
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.SearchAsync("x", 5, CancellationToken.None));
     }
 
