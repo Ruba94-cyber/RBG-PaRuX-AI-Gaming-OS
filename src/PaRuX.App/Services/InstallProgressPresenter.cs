@@ -161,6 +161,8 @@ namespace PaRuX.Services
         /// Maps internal stage identifiers to human-readable plain language.
         /// Replaces internal engine terms (e.g. "swapping" -> "Activating", "performance-check" -> "Checking performance").
         /// </summary>
+        private static string T(string en, string it) => UiText.Pick(en, it);
+
         public static string GetStageName(string? stage)
         {
             if (string.IsNullOrWhiteSpace(stage)) return string.Empty;
@@ -168,21 +170,21 @@ namespace PaRuX.Services
             string normalized = stage.Trim().ToLowerInvariant().Replace('_', '-');
             return normalized switch
             {
-                "queued" => "Queued",
-                "downloading" => "Downloading",
-                "verifying" => "Verifying",
-                "extracting" => "Extracting",
-                "swapping" => "Activating",
-                "performance-check" or "performancecheck" => "Checking performance",
-                "interrupted" => "Interrupted",
-                "completed" => "Completed",
-                "failed" => "Failed",
-                "cancelled" or "canceled" => "Cancelled",
-                "retrying" => "Retrying",
-                "paused" => "Paused",
-                "installing" => "Installing",
-                "active" => "Active",
-                "idle" => "Idle",
+                "queued" => T("Queued", "In coda"),
+                "downloading" => T("Downloading", "Download in corso"),
+                "verifying" => T("Verifying", "Verifica"),
+                "extracting" => T("Extracting", "Estrazione"),
+                "swapping" => T("Activating", "Attivazione"),
+                "performance-check" or "performancecheck" => T("Checking performance", "Controllo prestazioni"),
+                "interrupted" => T("Interrupted", "Interrotto"),
+                "completed" => T("Completed", "Completato"),
+                "failed" => T("Failed", "Non riuscito"),
+                "cancelled" or "canceled" => T("Cancelled", "Annullato"),
+                "retrying" => T("Retrying", "Nuovo tentativo"),
+                "paused" => T("Paused", "In pausa"),
+                "installing" => T("Installing", "Installazione"),
+                "active" => T("Active", "Attivo"),
+                "idle" => T("Idle", "Inattivo"),
                 _ => FormatFallbackStageName(stage)
             };
         }
@@ -196,9 +198,9 @@ namespace PaRuX.Services
         public static string DescribeOwnership(ComponentOwnership ownership) =>
             ownership switch
             {
-                ComponentOwnership.PARUX_MANAGED => "PaRuX-managed",
-                ComponentOwnership.USER_MANAGED => "User-managed",
-                ComponentOwnership.SYSTEM_DETECTED => "System-detected",
+                ComponentOwnership.PARUX_MANAGED => T("PaRuX-managed", "Gestito da PaRuX"),
+                ComponentOwnership.USER_MANAGED => T("User-managed", "Gestito da te"),
+                ComponentOwnership.SYSTEM_DETECTED => T("System-detected", "Rilevato nel sistema"),
                 _ => "Unknown"
             };
 
@@ -207,13 +209,13 @@ namespace PaRuX.Services
         /// </summary>
         public static string DescribeOwnership(string? ownership)
         {
-            if (string.IsNullOrWhiteSpace(ownership)) return "Unknown";
+            if (string.IsNullOrWhiteSpace(ownership)) return T("Unknown", "Sconosciuto");
             string normalized = ownership.Trim().ToUpperInvariant();
             return normalized switch
             {
-                "PARUX_MANAGED" or "PARUXMANAGED" => "PaRuX-managed",
-                "USER_MANAGED" or "USERMANAGED" => "User-managed",
-                "SYSTEM_DETECTED" or "SYSTEMDETECTED" => "System-detected",
+                "PARUX_MANAGED" or "PARUXMANAGED" => T("PaRuX-managed", "Gestito da PaRuX"),
+                "USER_MANAGED" or "USERMANAGED" => T("User-managed", "Gestito da te"),
+                "SYSTEM_DETECTED" or "SYSTEMDETECTED" => T("System-detected", "Rilevato nel sistema"),
                 _ => FormatFallbackStageName(ownership)
             };
         }
@@ -223,14 +225,14 @@ namespace PaRuX.Services
         /// </summary>
         public static string DescribeHealth(string? health)
         {
-            if (string.IsNullOrWhiteSpace(health)) return "Unknown";
+            if (string.IsNullOrWhiteSpace(health)) return T("Unknown", "Sconosciuto");
             return health.Trim().ToLowerInvariant() switch
             {
-                "healthy" => "Healthy",
-                "installed" => "Installed",
-                "detected" => "Detected",
-                "missing" => "Missing",
-                "unknown" => "Unknown",
+                "healthy" => T("Healthy", "Funzionante"),
+                "installed" => T("Installed", "Installato"),
+                "detected" => T("Detected", "Rilevato"),
+                "missing" => T("Missing", "Mancante"),
+                "unknown" => T("Unknown", "Sconosciuto"),
                 _ => FormatFallbackStageName(health)
             };
         }
@@ -240,13 +242,13 @@ namespace PaRuX.Services
         /// </summary>
         public static string DescribeValidation(string? validation)
         {
-            if (string.IsNullOrWhiteSpace(validation)) return "Unverified";
+            if (string.IsNullOrWhiteSpace(validation)) return T("Unverified", "Non verificato");
             return validation.Trim().ToLowerInvariant() switch
             {
-                "validated" => "Validated",
-                "unverified" => "Unverified",
-                "unhealthy" => "Unhealthy",
-                "missing" => "Missing",
+                "validated" => T("Validated", "Verificato"),
+                "unverified" => T("Unverified", "Non verificato"),
+                "unhealthy" => T("Unhealthy", "Non funzionante"),
+                "missing" => T("Missing", "Mancante"),
                 _ => FormatFallbackStageName(validation)
             };
         }
@@ -301,16 +303,16 @@ namespace PaRuX.Services
                 || seconds.Value > TimeSpan.MaxValue.TotalSeconds)
                 return null;
 
-            if (seconds.Value < 1) return "ETA <1s";
+            if (seconds.Value < 1) return T("ETA <1s", "Mancano meno di 1s");
 
             TimeSpan eta = TimeSpan.FromSeconds(seconds.Value);
             if (eta.TotalDays >= 1)
-                return "ETA " + ((int)eta.TotalDays).ToString(CultureInfo.InvariantCulture) + "d " + eta.Hours.ToString(CultureInfo.InvariantCulture) + "h";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalDays).ToString(CultureInfo.InvariantCulture) + T("d", "g") + " " + eta.Hours.ToString(CultureInfo.InvariantCulture) + "h";
             if (eta.TotalHours >= 1)
-                return "ETA " + ((int)eta.TotalHours).ToString(CultureInfo.InvariantCulture) + "h " + eta.Minutes.ToString(CultureInfo.InvariantCulture) + "m";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalHours).ToString(CultureInfo.InvariantCulture) + "h " + eta.Minutes.ToString(CultureInfo.InvariantCulture) + "m";
             if (eta.TotalMinutes >= 1)
-                return "ETA " + ((int)eta.TotalMinutes).ToString(CultureInfo.InvariantCulture) + "m " + eta.Seconds.ToString(CultureInfo.InvariantCulture) + "s";
-            return "ETA " + Math.Max(1, eta.Seconds).ToString(CultureInfo.InvariantCulture) + "s";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalMinutes).ToString(CultureInfo.InvariantCulture) + "m " + eta.Seconds.ToString(CultureInfo.InvariantCulture) + "s";
+            return T("ETA ", "Mancano ") + Math.Max(1, eta.Seconds).ToString(CultureInfo.InvariantCulture) + "s";
         }
 
         private static string BuildLabel(string stageName, long bytesDownloaded, long totalBytes, string? prefix, string? error)
@@ -322,7 +324,7 @@ namespace PaRuX.Services
             }
             else if (bytesDownloaded > 0)
             {
-                bytesPart = FormatBytes(bytesDownloaded) + " downloaded";
+                bytesPart = FormatBytes(bytesDownloaded) + T(" downloaded", " scaricati");
             }
             else
             {
@@ -330,7 +332,7 @@ namespace PaRuX.Services
             }
 
             string content;
-            if (!string.IsNullOrWhiteSpace(error) && (stageName is "Failed" or "Interrupted"))
+            if (!string.IsNullOrWhiteSpace(error) && (stageName == GetStageName("failed") || stageName == GetStageName("interrupted")))
             {
                 content = stageName + ": " + error.Trim();
             }
@@ -348,7 +350,7 @@ namespace PaRuX.Services
             }
             else
             {
-                content = "Ready";
+                content = T("Ready", "Pronto");
             }
 
             if (!string.IsNullOrWhiteSpace(prefix))

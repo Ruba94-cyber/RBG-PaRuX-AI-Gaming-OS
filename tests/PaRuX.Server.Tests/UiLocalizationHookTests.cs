@@ -155,6 +155,26 @@ public sealed class UiLocalizationHookTests
         Assert.True(missing.Count == 0, "English-only XAML text:\n" + string.Join("\n", missing.Take(40)));
     }
 
+    // XAML files that carry no user-visible text of their own (resource dictionaries and the application shell).
+    private static readonly HashSet<string> NoVisibleText = new(StringComparer.Ordinal) { "App.xaml", "Styles/Theme.xaml" };
+
+    [Fact]
+    public void Every_XAML_file_with_visible_text_is_covered_by_the_localization_guards()
+    {
+        string appRoot = Path.Combine(FindRepositoryRoot(), "src", "PaRuX.App");
+        var uncovered = new List<string>();
+        foreach (string file in Directory.EnumerateFiles(appRoot, "*.xaml", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(appRoot, file).Replace('\\', '/');
+            if (relative.StartsWith("obj/", StringComparison.Ordinal) || relative.StartsWith("bin/", StringComparison.Ordinal)) continue;
+            if (NoVisibleText.Contains(relative) || LocalizedXaml.Contains(relative)) continue;
+            uncovered.Add(relative);
+        }
+        Assert.True(uncovered.Count == 0,
+            "New XAML must use English attributes plus loc:Loc.It* and be listed in LocalizedXaml (or NoVisibleText if it has no text): "
+            + string.Join(", ", uncovered));
+    }
+
     [Fact]
     public void The_hook_never_targets_automation_ids()
     {

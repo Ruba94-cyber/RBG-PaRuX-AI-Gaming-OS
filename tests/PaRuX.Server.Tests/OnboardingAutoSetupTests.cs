@@ -677,6 +677,34 @@ namespace PaRuX.Server.Tests
         }
 
         [Fact]
+        public void Every_auto_setup_phase_has_an_Italian_headline_that_differs_from_English_and_no_jargon_leaks_in_step_titles()
+        {
+            foreach (AutoSetupPhase phase in Enum.GetValues<AutoSetupPhase>())
+            {
+                var state = new AutoSetupState { Phase = phase, Message = "x" };
+                AutoSetupViewModel en = OnboardingAutoSetupPresenter.Present(state, italian: false);
+                AutoSetupViewModel it = OnboardingAutoSetupPresenter.Present(state, italian: true);
+                Assert.False(string.IsNullOrWhiteSpace(it.Headline), phase.ToString());
+                Assert.NotEqual(en.Headline, it.Headline);
+                // Plain language for a first-time user: no engine/role/runtime vocabulary in the step title or the start text.
+                Assert.DoesNotContain("runtime", en.Headline, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("roles", en.Headline, StringComparison.OrdinalIgnoreCase);
+            }
+            string start = OnboardingAutoSetupPresenter.Present(new AutoSetupState { Phase = AutoSetupPhase.NotStarted }, italian: false).Detail;
+            Assert.DoesNotContain("runtime", start, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("licence", start, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void Failed_setup_always_offers_a_next_action_in_plain_words()
+        {
+            AutoSetupViewModel failed = OnboardingAutoSetupPresenter.Present(
+                new AutoSetupState { Phase = AutoSetupPhase.Failed, Message = "Reading hardware failed: boom" }, italian: false);
+            Assert.Contains("try again", failed.Detail, StringComparison.OrdinalIgnoreCase);
+            Assert.True(failed.ShowRetry && failed.ShowSkip);
+        }
+
+        [Fact]
         public void Italian_auto_setup_failure_uses_localized_runtime_recovery_without_private_model_path()
         {
             var state = new AutoSetupState

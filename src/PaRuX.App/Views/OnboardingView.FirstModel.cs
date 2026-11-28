@@ -243,12 +243,12 @@ namespace PaRuX.Views
             }
 
             string quota = budget.QuotaHeadroomBytes is long headroom
-                ? "PaRuX AI quota headroom: " + StorageGigabytes(headroom) + " of " + StorageGigabytes(budget.LimitBytes)
-                + " (shared across managed AI storage)."
-                : "PaRuX AI quota headroom: unavailable.";
+                ? T("PaRuX AI quota headroom: ", "Margine di quota IA di PaRuX: ") + StorageGigabytes(headroom) + T(" of ", " su ") + StorageGigabytes(budget.LimitBytes)
+                + T(" (shared across managed AI storage).", " (condiviso da tutto lo spazio IA gestito).")
+                : T("PaRuX AI quota headroom: unavailable.", "Margine di quota IA di PaRuX: non disponibile.");
             string destination = budget.DestinationFreeBytes is long freeBytes
-                ? "Free space on the model destination volume: " + StorageGigabytes(freeBytes) + "."
-                : "Free space on the model destination volume: unavailable.";
+                ? T("Free space on the model destination volume: ", "Spazio libero sul disco dei modelli: ") + StorageGigabytes(freeBytes) + "."
+                : T("Free space on the model destination volume: unavailable.", "Spazio libero sul disco dei modelli: non disponibile.");
             FirstModelStorageText.Text = quota + "\n" + destination
                 + T("\nThese are current snapshots, not reservations; the exact model file may differ from the estimate.", "\nSono istantanee attuali, non prenotazioni; il file esatto del modello può differire dalla stima.");
 
@@ -257,7 +257,7 @@ namespace PaRuX.Views
             if (selected != null && budget.DestinationFreeBytes is long available
                 && selected.Model.EstimatedSizeBytes > 0 && available < selected.Model.EstimatedSizeBytes)
             {
-                FirstModelStorageText.Text += " Available volume space is below the approximate selected download size.";
+                FirstModelStorageText.Text += T(" Available volume space is below the approximate selected download size.", " Lo spazio libero sul disco è inferiore alla dimensione approssimativa del download scelto.");
             }
         }
 
@@ -536,7 +536,7 @@ namespace PaRuX.Views
 
         private static string Gigabytes(long bytes) =>
             bytes <= 0
-                ? "unknown size"
+                ? T("unknown size", "dimensione sconosciuta")
                 : (bytes / 1024d / 1024d / 1024d).ToString("0.#",
                     System.Globalization.CultureInfo.InvariantCulture) + " GB";
 

@@ -4359,10 +4359,10 @@ namespace PaRuX.Views
             {
                 _lastSearch.Clear();
                 RenderSearch(Array.Empty<ModelSearchResult>());
-                if (!_refreshBusy) SetBusy(false, "Enter a repository ID or search term to look for GGUF models.");
+                if (!_refreshBusy) SetBusy(false, T("Enter a repository ID or search term to look for GGUF models.", "Inserisci un ID di repository o un termine di ricerca per cercare modelli GGUF."));
                 return;
             }
-            SetBusy(true, "Searching Hugging Face…");
+            SetBusy(true, T("Searching Hugging Face…", "Ricerca su Hugging Face…"));
             try
             {
                 List<ModelSearchResult> results = await ModelDownloadClient.Current.SearchAsync(query, 30, ct);
@@ -4434,12 +4434,12 @@ namespace PaRuX.Views
                 details.Click += async (_, _) => await ShowModelDetailsAsync(model.Title,
                     new (string Label, string? Value)[]
                     {
-                        ("Description", model.Description),
-                        ("Category", model.Category),
-                        ("Parameters", model.ApproxParams),
-                        ("Suggested quantization", model.QuantHint),
-                        ("Estimated download size", FormatBytes(model.EstimatedSizeBytes)),
-                        ("Hardware fit estimate", ModelHubRowPresentation.HardwareFit(fit.Verdict, fit.Summary)),
+                        (T("Description", "Descrizione"), model.Description),
+                        (T("Category", "Categoria"), model.Category),
+                        (T("Parameters", "Parametri"), model.ApproxParams),
+                        (T("Suggested quantization", "Quantizzazione suggerita"), model.QuantHint),
+                        (T("Estimated download size", "Dimensione stimata del download"), FormatBytes(model.EstimatedSizeBytes)),
+                        (T("Hardware fit estimate", "Stima di compatibilità hardware"), ModelHubRowPresentation.HardwareFit(fit.Verdict, fit.Summary)),
                         ("Repository", model.HuggingFaceRepoId)
                     });
                 actions.Children.Add(details);
@@ -4819,7 +4819,7 @@ namespace PaRuX.Views
 
         private async Task ChooseRecommendedFileAsync(RecommendedModel recommendation)
         {
-            SetBusy(true, "Resolving a complete GGUF set for " + recommendation.Title + "…");
+            SetBusy(true, T("Resolving a complete GGUF set for ", "Ricerca di un set GGUF completo per ") + recommendation.Title + "…");
             try
             {
                 List<ModelSearchResult> matches = await ModelDownloadClient.Current.SearchAsync(
@@ -4828,12 +4828,12 @@ namespace PaRuX.Views
                     ModelHubSplitSetPresentation.PickRecommendedSet(
                         matches, recommendation.HuggingFaceRepoId, recommendation.QuantHint)
                     ?? throw new InvalidOperationException(
-                        "The exact recommended repository has no complete GGUF set available. "
-                        + "Search Model Hub to inspect other models or refresh the recommendations.");
+                        T("The exact recommended repository has no complete GGUF set available. ", "Il repository consigliato non ha un set GGUF completo disponibile. ")
+                        + T("Search Model Hub to inspect other models or refresh the recommendations.", "Cerca nel Model Hub per vedere altri modelli o aggiorna i consigli."));
 
                 // Use the same revision-pinned multipart download planner and license review
                 // as a manually selected GGUF set, including projector and storage checks.
-                SetBusy(false, "Review the recommended quantization and complete download plan.");
+                SetBusy(false, T("Review the recommended quantization and complete download plan.", "Controlla la quantizzazione consigliata e il piano di download completo."));
                 await ChooseQuantChoiceAsync(selected.RepoId, selected.Choice);
             }
             catch (Exception ex) { _status.Text = T("Could not resolve recommendation: ", "Impossibile risolvere il consiglio: ") + ex.Message; }
@@ -5071,15 +5071,15 @@ namespace PaRuX.Views
 
         private static string VariantGuidance(string name, string quant, string? hint)
         {
-            if (FilePreference(name, hint) >= 80) return "Recommended match";
+            if (FilePreference(name, hint) >= 80) return T("Recommended match", "Consigliato");
             string q = (quant ?? string.Empty).ToUpperInvariant();
-            if (q.Contains("Q8") || q.Contains("Q6")) return "Higher precision · larger";
-            if (q.Contains("Q5")) return "Quality-biased balance";
-            if (q.Contains("Q4") || q.Contains("IQ4")) return "Balanced local default";
-            if (q.Contains("Q3") || q.Contains("IQ3")) return "Lower memory";
-            if (q.Contains("Q2") || q.Contains("IQ2")) return "Minimum memory · more loss";
-            if (q.Contains("F16") || q.Contains("BF16")) return "Full precision · very large";
-            return "Check model card / benchmark";
+            if (q.Contains("Q8") || q.Contains("Q6")) return T("Higher precision · larger", "Precisione più alta · più grande");
+            if (q.Contains("Q5")) return T("Quality-biased balance", "Equilibrio orientato alla qualità");
+            if (q.Contains("Q4") || q.Contains("IQ4")) return T("Balanced local default", "Scelta equilibrata per uso locale");
+            if (q.Contains("Q3") || q.Contains("IQ3")) return T("Lower memory", "Meno memoria");
+            if (q.Contains("Q2") || q.Contains("IQ2")) return T("Minimum memory · more loss", "Memoria minima · più perdita di qualità");
+            if (q.Contains("F16") || q.Contains("BF16")) return T("Full precision · very large", "Precisione piena · molto grande");
+            return T("Check model card / benchmark", "Controlla la scheda del modello / benchmark");
         }
 
         private void RenderDownloads(IReadOnlyList<ModelDownloadStatus> jobs)
@@ -5309,14 +5309,14 @@ namespace PaRuX.Views
                     await ShowModelDetailsAsync(displayName,
                         new (string Label, string? Value)[]
                         {
-                            ("File name", model.FileName),
-                            ("Quantization", model.Quantization),
-                            ("Size", FormatBytes(model.SizeBytes)),
-                            ("Hardware fit estimate", ModelHubRowPresentation.HardwareFit(fit.Verdict, fit.Summary)),
-                            ("Measured speed", model.LastBenchmarkTokensPerSecond.HasValue
-                                ? model.LastBenchmarkTokensPerSecond.Value.ToString("0.0") + " tok/s" : "Not measured"),
+                            (T("File name", "Nome del file"), model.FileName),
+                            (T("Quantization", "Quantizzazione"), model.Quantization),
+                            (T("Size", "Dimensione"), FormatBytes(model.SizeBytes)),
+                            (T("Hardware fit estimate", "Stima di compatibilità hardware"), ModelHubRowPresentation.HardwareFit(fit.Verdict, fit.Summary)),
+                            (T("Measured speed", "Velocità misurata"), model.LastBenchmarkTokensPerSecond.HasValue
+                                ? model.LastBenchmarkTokensPerSecond.Value.ToString("0.0") + " tok/s" : T("Not measured", "Non misurata")),
                             ("Repository", model.RepoId),
-                            ("Provenance and verification", FormatModelProvenance(model.Provenance))
+                            (T("Provenance and verification", "Provenienza e verifica"), FormatModelProvenance(model.Provenance))
                         }, modelCardUri);
                 };
                 actions.Children.Add(detailButton);

@@ -148,7 +148,7 @@ namespace PaRuX.Views
                     try { completion.SetResult(await work()); }
                     catch (Exception ex) { completion.SetException(ex); }
                 }))
-                completion.SetException(new InvalidOperationException("The setup window is no longer available."));
+                completion.SetException(new InvalidOperationException(UiText.Pick("The setup window is no longer available.", "La finestra di configurazione non è più disponibile.")));
             return completion.Task;
         }
 
@@ -223,8 +223,8 @@ namespace PaRuX.Views
                     {
                         ComponentId = "llama-server-cuda",
                         Title = cuda.DisplayName,
-                        Reason = "An NVIDIA GPU was found. The CUDA build is usually faster than the bundled Vulkan one. "
-                            + "Your current runtime keeps working if you decline."
+                        Reason = UiText.Pick("An NVIDIA GPU was found. The CUDA build is usually faster than the bundled Vulkan one. ", "È stata trovata una GPU NVIDIA. La versione CUDA di solito è più veloce di quella Vulkan inclusa. ")
+                            + UiText.Pick("Your current runtime keeps working if you decline.", "Se rifiuti, il motore attuale continua a funzionare.")
                     };
                 }
 
@@ -378,7 +378,7 @@ namespace PaRuX.Views
                     }
                     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                     {
-                        return "Verification timed out. Check the runtime and retry.";
+                        return UiText.Pick("Verification timed out. Check the runtime and retry.", "La verifica è scaduta. Controlla il motore e riprova.");
                     }
                     finally
                     {

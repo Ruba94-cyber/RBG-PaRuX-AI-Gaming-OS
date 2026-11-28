@@ -1,12 +1,32 @@
-using System;
+﻿using System;
+using System.Globalization;
 using PaRuX.Contracts;
 using PaRuX.Services;
 using Xunit;
 
 namespace PaRuX.Server.Tests
 {
-    public class InstallProgressPresenterTests
+    public class InstallProgressPresenterTests : IDisposable
     {
+        // The presenter follows the UI language; the English assertions below must not depend on the machine running them.
+        private readonly CultureInfo _previousUiCulture = CultureInfo.CurrentUICulture;
+
+        public InstallProgressPresenterTests() => CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+
+        public void Dispose() => CultureInfo.CurrentUICulture = _previousUiCulture;
+
+        [Fact]
+        public void Stage_eta_and_ownership_labels_have_an_Italian_version()
+        {
+            Assert.Equal("Downloading", InstallProgressPresenter.GetStageName("downloading"));
+            Assert.Equal("ETA 1m 30s", InstallProgressPresenter.FormatEta(90));
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("it-IT");
+            Assert.Equal("Download in corso", InstallProgressPresenter.GetStageName("downloading"));
+            Assert.Equal("Mancano 1m 30s", InstallProgressPresenter.FormatEta(90));
+            Assert.Equal("Gestito da te", InstallProgressPresenter.DescribeOwnership(ComponentOwnership.USER_MANAGED));
+            Assert.StartsWith("Download in corso", InstallProgressPresenter.Present(50, 100, "downloading").Label, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void TotalBytes_zero_gives_indeterminate_progress()
         {
