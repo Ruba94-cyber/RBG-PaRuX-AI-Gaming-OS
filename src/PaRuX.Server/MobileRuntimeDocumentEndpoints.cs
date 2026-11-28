@@ -45,6 +45,36 @@ public static class MobileRuntimeDocumentEndpoints
             return Results.Ok(ProjectRuntime(await runtimeManager.GetStatusAsync(ct)));
         });
 
+        // Frees GPU/RAM on the PC; the next chat turn reloads on demand. Same Gaming refusal as load.
+        app.MapPost("/api/v2/mobile/runtime/unload", async (
+            LocalRuntimeService runtime, RuntimeManagerService runtimeManager, CancellationToken ct) =>
+        {
+            if (runtime.GamingMode)
+                return Results.Json(new { error = "gaming_active" }, statusCode: StatusCodes.Status409Conflict);
+            LocalRuntimeService.RuntimeResult result;
+            try { result = await runtime.UnloadTextExclusivelyAsync(ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceWarning("Mobile model unload failed: " + ex.Message);
+                return Results.Json(new { error = "unload_failed" }, statusCode: StatusCodes.Status409Conflict);
+            }
+            if (!result.Success)
+                return Results.Json(new { error = runtime.GamingMode ? "gaming_active" : "unload_failed" }, statusCode: StatusCodes.Status409Conflict);
+            return Results.Ok(ProjectRuntime(await runtimeManager.GetStatusAsync(ct)));
+        });
+
+        // Indexing progress for the phone inbox only: any other source id is "not found" so this cannot probe desktop folders.
+        app.MapGet("/api/v2/mobile/documents/{sourceId}/status", (string sourceId, RagStore rag, KnowledgeJobService knowledge) =>
+        {
+            string inboxFull = Path.GetFullPath(Path.Combine(PaRuXDataRoot.Path, InboxFolderName)).TrimEnd('\\', '/');
+            bool isInbox = rag.ListSources().Any(s => s.Id == sourceId
+                && string.Equals(Path.GetFullPath(s.FolderPath).TrimEnd('\\', '/'), inboxFull, StringComparison.OrdinalIgnoreCase));
+            if (!isInbox) return Results.NotFound(new { error = "not_found" });
+            (int files, int chunks) = knowledge.Index.Stats(sourceId);
+            return Results.Ok(ProjectIndexStatus(knowledge.Status(sourceId), files, chunks));
+        });
+
         app.MapPost("/api/v2/mobile/documents", async (
             MobileDocumentUploadRequest request, RagStore rag, KnowledgeJobService knowledge, CancellationToken ct) =>
         {
@@ -63,6 +93,27 @@ public static class MobileRuntimeDocumentEndpoints
             bool started = knowledge.Start(source.Id);
             return Results.Ok(new { fileName = Path.GetFileName(target), sourceId = source.Id, indexingStarted = started });
         });
+    }
+
+    /// <summary>Phone-safe indexing progress: counts and a bare file name, never a path or exception text.</summary>
+    internal static MobileIndexStatus ProjectIndexStatus(KnowledgeJobStatus? job, int files, int chunks)
+    {
+        IndexProgress? p = job?.Progress;
+        string? current = string.IsNullOrWhiteSpace(p?.Current) ? null : p!.Current!.Replace('\\', '/').Split('/').Last();
+        return new MobileIndexStatus
+        {
+            State = job?.State ?? "idle",
+            FilesSeen = p?.FilesSeen ?? 0,
+            Indexed = p?.Indexed ?? 0,
+            Failed = p?.Failed ?? 0,
+            Skipped = p?.Skipped ?? 0,
+            CurrentFile = current,
+            CurrentPage = p?.CurrentPage,
+            TotalPages = p?.TotalPages,
+            Error = job?.Error is { Length: > 0 } ? "index_failed" : null,
+            Files = files,
+            Chunks = chunks
+        };
     }
 
     internal static bool TryValidateUpload(
@@ -127,6 +178,21 @@ public static class MobileRuntimeDocumentEndpoints
             RamTotalBytes = status.RamTotalBytes,
             RamAvailableBytes = status.RamAvailableBytes
         };
+    }
+
+    public sealed class MobileIndexStatus
+    {
+        public string State { get; set; } = "idle";
+        public int FilesSeen { get; set; }
+        public int Indexed { get; set; }
+        public int Failed { get; set; }
+        public int Skipped { get; set; }
+        public string? CurrentFile { get; set; }
+        public int? CurrentPage { get; set; }
+        public int? TotalPages { get; set; }
+        public string? Error { get; set; }
+        public int Files { get; set; }
+        public int Chunks { get; set; }
     }
 
     public sealed class MobileDocumentUploadRequest

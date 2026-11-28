@@ -16,6 +16,11 @@ public sealed class MobileRuntimeDocumentEndpointTests : IClassFixture<ApiSecuri
     [InlineData("GET", "/api/v2/mobile/runtime", true)]
     [InlineData("POST", "/api/v2/mobile/runtime/load", true)]
     [InlineData("POST", "/api/v2/mobile/documents", true)]
+    [InlineData("POST", "/api/v2/mobile/runtime/unload", true)]
+    [InlineData("GET", "/api/v2/mobile/documents/abc123/status", true)]
+    [InlineData("GET", "/api/v2/mobile/documents/a/b/status", false)]
+    [InlineData("POST", "/api/v2/mobile/documents/abc123/status", false)]
+    [InlineData("GET", "/api/v2/mobile/runtime/unload", false)]
     [InlineData("POST", "/api/v2/mobile/runtime", false)]
     [InlineData("GET", "/api/v2/mobile/runtime/load", false)]
     [InlineData("PUT", "/api/v2/mobile/documents", false)]
@@ -28,6 +33,8 @@ public sealed class MobileRuntimeDocumentEndpointTests : IClassFixture<ApiSecuri
     [Theory]
     [InlineData("GET", "/api/v2/mobile/runtime")]
     [InlineData("POST", "/api/v2/mobile/runtime/load")]
+    [InlineData("POST", "/api/v2/mobile/runtime/unload")]
+    [InlineData("GET", "/api/v2/mobile/documents/abc123/status")]
     [InlineData("POST", "/api/v2/mobile/documents")]
     public async Task Routes_refuse_requests_without_a_token(string method, string path)
     {
@@ -70,6 +77,33 @@ public sealed class MobileRuntimeDocumentEndpointTests : IClassFixture<ApiSecuri
         var projected = MobileRuntimeDocumentEndpoints.ProjectRuntime(status);
         Assert.False(projected.TextLoaded);
         Assert.Null(projected.ActiveModelName);
+    }
+
+    [Fact]
+    public void Index_status_projection_keeps_counts_and_a_bare_file_name_only()
+    {
+        var progress = new PaRuX.Server.Knowledge.IndexProgress("running", 3, 2, 0, 0, 1, 0, 0, 0, 0, @"D:\store\inbox\Report.pdf")
+        { CurrentPage = 4, TotalPages = 20 };
+        var job = new PaRuX.Server.Knowledge.KnowledgeJobStatus("src", "running", progress, null, DateTime.UtcNow);
+
+        var projected = MobileRuntimeDocumentEndpoints.ProjectIndexStatus(job, 2, 17);
+        string json = System.Text.Json.JsonSerializer.Serialize(projected);
+
+        Assert.Equal("running", projected.State);
+        Assert.Equal("Report.pdf", projected.CurrentFile);
+        Assert.Equal(4, projected.CurrentPage);
+        Assert.Equal(17, projected.Chunks);
+        Assert.DoesNotContain("store", json);
+    }
+
+    [Fact]
+    public void Index_status_projection_hides_exception_text_and_defaults_to_idle()
+    {
+        var failed = new PaRuX.Server.Knowledge.KnowledgeJobStatus("src", "failed", null, "IOException at D:\\secret", DateTime.UtcNow);
+        var projected = MobileRuntimeDocumentEndpoints.ProjectIndexStatus(failed, 0, 0);
+        Assert.Equal("index_failed", projected.Error);
+        Assert.DoesNotContain("secret", System.Text.Json.JsonSerializer.Serialize(projected));
+        Assert.Equal("idle", MobileRuntimeDocumentEndpoints.ProjectIndexStatus(null, 0, 0).State);
     }
 
     private static MobileRuntimeDocumentEndpoints.MobileDocumentUploadRequest Upload(string name, byte[] data) =>

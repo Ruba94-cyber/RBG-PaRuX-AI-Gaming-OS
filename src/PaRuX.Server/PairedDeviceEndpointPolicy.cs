@@ -88,7 +88,8 @@ internal static class PairedDeviceEndpointPolicy
             || MatchesOneId(path, "/api/v2/mobile/goals")
             || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals", "/versions")
             || MatchesOneId(path, "/api/v2/mobile/goals/tasks")
-            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals/tasks", "/verification-records");
+            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals/tasks", "/verification-records")
+            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/documents", "/status");
     }
 
     // /api/v1/media/{id} is a job id; these literal segments are desktop-owner resources and are never job ids.
@@ -126,6 +127,7 @@ internal static class PairedDeviceEndpointPolicy
             "/api/v2/mobile/goals",
             "/api/v2/mobile/goals/tasks",
             "/api/v2/mobile/runtime/load",
+            "/api/v2/mobile/runtime/unload",
             "/api/v2/mobile/documents")) return true;
 
         return MatchesSuffixAfterOneId(path, "/api/v1/jobs", "/cancel")
