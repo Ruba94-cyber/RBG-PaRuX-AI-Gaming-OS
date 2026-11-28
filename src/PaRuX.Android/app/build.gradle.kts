@@ -26,8 +26,8 @@ android {
         applicationId = "com.parux.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "4.7.0"
+        versionCode = 31
+        versionName = "4.8.0"
         buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
