@@ -45,6 +45,10 @@ namespace PaRuX.Views
                 Minimum = 0, Maximum = int.MaxValue, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
                 Value = saved.Seed ?? double.NaN,
             };
+            GuidanceUi.Help(temperature, ControlHelpIds.ChatTemperature);
+            GuidanceUi.Help(topP, ControlHelpIds.ChatTopP);
+            GuidanceUi.Help(maxTokens, ControlHelpIds.ChatMaxTokens);
+            GuidanceUi.Help(seed, ControlHelpIds.ChatSeed);
             AutomationProperties.SetAutomationId(temperature, "Chat_Generation_Temperature_Slider");
             AutomationProperties.SetAutomationId(topP, "Chat_Generation_TopP_Slider");
             AutomationProperties.SetAutomationId(maxTokens, "Chat_Generation_MaxTokens_Box");

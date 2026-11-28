@@ -66,10 +66,12 @@ namespace PaRuX.Views
                 Opacity = 0.78
             });
 
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Observability));
             var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             controls.Children.Add(_category);
             controls.Children.Add(new TextBlock { Text = T("Recent events", "Eventi recenti"), VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 });
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_limit, T("Recent events limit", "Limite degli eventi recenti"));
+            GuidanceUi.Help(_limit, ControlHelpIds.ObservabilityLimit);
             controls.Children.Add(_limit);
             var refresh = new Button { Content = T("Refresh", "Aggiorna") };
             refresh.Click += async (_, _) => await RefreshAsync();

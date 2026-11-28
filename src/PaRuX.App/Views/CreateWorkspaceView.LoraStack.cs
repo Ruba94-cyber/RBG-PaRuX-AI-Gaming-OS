@@ -47,6 +47,7 @@ namespace PaRuX.Views
                     Minimum = CreateLoraStackPresenter.MinStrength, Maximum = CreateLoraStackPresenter.MaxStrength,
                     StepFrequency = 0.05, Value = CreateLoraStackPresenter.DefaultStrength, Width = 200
                 };
+                GuidanceUi.Help(slider, ControlHelpIds.MediaLoraWeight);
                 var text = new TextBlock { FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
                 var remove = new Button { Content = T("Remove", "Rimuovi") };
                 AutomationProperties.SetAutomationId(combo, CreateLoraStackPresenter.SlotCombo(index));

@@ -83,6 +83,8 @@ namespace PaRuX.Views
                 TextWrapping = TextWrapping.Wrap, Opacity = 0.82
             });
 
+            root.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Knowledge));
+            root.Children.Add(GuidanceUi.TemplateRow("DocSearch_Template", WorkspaceTemplateCatalog.For(TemplateWorkspaces.Knowledge), t => { _query.Text = t.Prompt.Pick(); _query.Focus(FocusState.Programmatic); }));
             root.Children.Add(new TextBlock { Text = T("FOLDERS", "CARTELLE"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = 0.72 });
             // 1,000 registered folders must not create 1,000 focusable
             // controls or fire a status HTTP call for each on every open.

@@ -87,6 +87,7 @@ namespace PaRuX.Views
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.78
             });
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Projects));
             body.Children.Add(_active);
 
             var repoActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };

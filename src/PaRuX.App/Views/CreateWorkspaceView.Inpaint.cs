@@ -64,6 +64,7 @@ namespace PaRuX.Views
             _inpaintCanvas.PointerCanceled += OnInpaintPointerEnd;
             _inpaintCanvas.PointerCaptureLost += OnInpaintPointerEnd;
 
+            GuidanceUi.Help(_inpaintBrush, ControlHelpIds.MediaBrush);
             _inpaintBrush.ValueChanged += (_, _) => _inpaintBrushLabel.Text = CreateInpaintPresenter.BrushLabel(_inpaintBrush.Value);
             _inpaintBrushLabel.Text = CreateInpaintPresenter.BrushLabel(_inpaintBrush.Value);
 
@@ -86,7 +87,7 @@ namespace PaRuX.Views
             _inpaintPanel.Children.Add(_inpaintCanvas);
             _inpaintPanel.Children.Add(tools);
             _inpaintPanel.Children.Add(brushRow);
-            _inpaintPanel.Children.Add(Labeled("Edge blend (pixels)", _inpaintGrow));
+            _inpaintPanel.Children.Add(Labeled("Edge blend (pixels)", _inpaintGrow, ControlHelpIds.MediaMaskBlend));
             _inpaintPanel.Children.Add(_inpaintCoverage);
 
             _inpaintResultStrip.Children.Add(new TextBlock { Text = T("Result", "Risultato"), FontSize = 12, Opacity = 0.68 });

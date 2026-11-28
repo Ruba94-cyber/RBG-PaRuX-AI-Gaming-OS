@@ -294,6 +294,12 @@
     <Compile Include="..\..\src\PaRuX.App\Services\OnboardingAutoSetup.cs" Link="Onboarding\OnboardingAutoSetup.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\OnboardingAutoSetupPresenter.cs" Link="Onboarding\OnboardingAutoSetupPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\SetupErrorExplainer.cs" Link="Onboarding\SetupErrorExplainer.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\Bilingual.cs" Link="Guidance\Bilingual.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ControlHelpCatalog.cs" Link="Guidance\ControlHelpCatalog.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\WorkspaceGuideCatalog.cs" Link="Guidance\WorkspaceGuideCatalog.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\WorkspaceTemplateCatalog.cs" Link="Guidance\WorkspaceTemplateCatalog.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\WorkspaceErrorExplainer.cs" Link="Guidance\WorkspaceErrorExplainer.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\LongJobProgressPresenter.cs" Link="Guidance\LongJobProgressPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\FirstModelRecommendationPresenter.cs" Link="Onboarding\FirstModelRecommendationPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\ModelBadgePresenter.cs" Link="ModelHub\ModelBadgePresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaSetupPresenter.cs" Link="Media\MediaSetupPresenter.cs" />

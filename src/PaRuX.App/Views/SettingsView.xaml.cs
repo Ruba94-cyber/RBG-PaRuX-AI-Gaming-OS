@@ -47,6 +47,7 @@ namespace PaRuX.Views
             InitializeCorporateSettingsLayout();
             ApplyProfileSettingsSections();
             LocalizeVideoPresets();
+            ApplyAdvancedGuidance();
 
             _dispatcher = DispatcherQueue.GetForCurrentThread();
 

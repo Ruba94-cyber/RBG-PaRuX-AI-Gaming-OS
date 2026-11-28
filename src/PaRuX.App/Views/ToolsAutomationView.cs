@@ -40,6 +40,9 @@ namespace PaRuX.Views
         private readonly TextBox _automationGoal = new TextBox { PlaceholderText = T("Agent goal template; trigger placeholders allowed", "Modello di obiettivo dell'agente; i segnaposto del trigger sono consentiti") };
         private readonly TextBox _automationRole = new TextBox { PlaceholderText = T("Optional agent role", "Ruolo dell'agente (facoltativo)") };
 
+        private Expander? _automationEditor;
+        private Expander? _mcpEditor;
+
         private readonly TextBox _workflowName = new TextBox { PlaceholderText = T("Workflow name", "Nome del workflow"), MinWidth = 220 };
         private readonly TextBox _workflowDescription = new TextBox { PlaceholderText = T("Optional description", "Descrizione (facoltativa)") };
         private readonly TextBox _workflowStepsJson = new TextBox
@@ -104,6 +107,7 @@ namespace PaRuX.Views
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.78
             });
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Automations));
             body.Children.Add(_busy);
             body.Children.Add(_status);
             body.Children.Add(Section("SKILLS & PERMISSIONS", BuildSkillsSection()));
@@ -147,7 +151,11 @@ namespace PaRuX.Views
             add.Click += async (_, _) => await AddMcpAsync();
             fields.Children.Add(add);
             form.Children.Add(fields);
+            GuidanceUi.Help(_mcpCommand, ControlHelpIds.McpCommand);
+            GuidanceUi.Help(_mcpArgs, ControlHelpIds.McpArguments);
+            panel.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Mcp));
             var editor = new Expander { Header = T("Add an MCP server", "Aggiungi un server MCP"), Content = form, IsExpanded = false };
+            _mcpEditor = editor;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(editor, "Tools_Mcp_Create_Expander");
             panel.Children.Add(editor);
             panel.Children.Add(_mcp);
@@ -180,7 +188,13 @@ namespace PaRuX.Views
                 Text = T("Triggers are validated by Core before saving. Expand JSON to customize the selected trigger.", "I trigger vengono convalidati da Core prima del salvataggio. Espandi il JSON per personalizzare il trigger selezionato."),
                 TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.72
             });
+            GuidanceUi.Help(_triggerType, ControlHelpIds.AutomationTrigger);
+            GuidanceUi.Help(_triggerJson, ControlHelpIds.AutomationTriggerJson);
+            GuidanceUi.Help(_automationGoal, ControlHelpIds.AutomationGoal);
+            GuidanceUi.Help(_automationRole, ControlHelpIds.AutomationRole);
+            panel.Children.Add(GuidanceUi.TemplateRow("Tools_Automation_Template", WorkspaceTemplateCatalog.For(TemplateWorkspaces.Automations), t => _ = ApplyAutomationTemplateAsync(t)));
             var editor = new Expander { Header = T("New automation", "Nuova automazione"), Content = form, IsExpanded = false };
+            _automationEditor = editor;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(editor, "Tools_Automation_Create_Expander");
             panel.Children.Add(editor);
             panel.Children.Add(_automations);
@@ -392,7 +406,11 @@ namespace PaRuX.Views
                 Grid.SetColumn(remove, 2); row.Children.Add(remove);
                 _mcp.Children.Add(row);
             }
-            if (servers.Count == 0) _mcp.Children.Add(new TextBlock { Text = T("No outbound MCP servers configured.", "Nessun server MCP in uscita configurato.") });
+            if (servers.Count == 0)
+            {
+                _mcp.Children.Add(new TextBlock { Text = T("No outbound MCP servers configured.", "Nessun server MCP in uscita configurato.") });
+                _mcp.Children.Add(GuidanceUi.EmptyState(WorkspaceGuideIds.Mcp, () => { if (_mcpEditor != null) _mcpEditor.IsExpanded = true; _mcpPreset.Focus(FocusState.Programmatic); }, showMessage: false));
+            }
         }
 
         private async Task AddMcpAsync()
@@ -408,7 +426,7 @@ namespace PaRuX.Views
                 await RefreshMcpAsync();
                 _status.Text = T("MCP server added; connection status refreshed.", "Server MCP aggiunto; stato della connessione aggiornato.");
             }
-            catch (Exception ex) { _status.Text = T("MCP add failed: ", "Aggiunta MCP non riuscita: ") + ex.Message; }
+            catch (Exception ex) { _status.Text = WorkspaceErrorExplainer.StatusLine(T("MCP add failed: ", "Aggiunta MCP non riuscita: "), ex.Message, UiText.IsItalian); }
         }
 
         private async Task RefreshAutomationsAsync()
@@ -460,7 +478,11 @@ namespace PaRuX.Views
                 Grid.SetColumn(delete, 2); row.Children.Add(delete);
                 _automations.Children.Add(row);
             }
-            if (response.Automations.Count == 0) _automations.Children.Add(new TextBlock { Text = T("No automations yet.", "Nessuna automazione per ora.") });
+            if (response.Automations.Count == 0)
+            {
+                _automations.Children.Add(new TextBlock { Text = T("No automations yet.", "Nessuna automazione per ora.") });
+                _automations.Children.Add(GuidanceUi.EmptyState(WorkspaceGuideIds.Automations, () => { if (_automationEditor != null) _automationEditor.IsExpanded = true; }, showMessage: false));
+            }
         }
 
         private async Task CreateAutomationAsync()
@@ -491,7 +513,7 @@ namespace PaRuX.Views
                 await RefreshAutomationsAsync();
                 _status.Text = T("Automation created after Core validation.", "Automazione creata dopo la validazione di Core.");
             }
-            catch (Exception ex) { _status.Text = T("Automation create failed: ", "Creazione dell'automazione non riuscita: ") + ex.Message; }
+            catch (Exception ex) { _status.Text = WorkspaceErrorExplainer.StatusLine(T("Automation create failed: ", "Creazione dell'automazione non riuscita: "), ex.Message, UiText.IsItalian); }
         }
 
         private async Task RefreshWorkflowsAsync()
@@ -620,7 +642,43 @@ namespace PaRuX.Views
             };
         }
 
-        private static string TriggerLabel(string trigger) => trigger.Replace('_', ' ');
+        private static string TriggerLabel(string trigger) => trigger switch
+        {
+            AutomationTriggerType.Schedule => T("On a timer", "A intervalli regolari"),
+            AutomationTriggerType.FileCreated => T("When a new file appears in a folder", "Quando compare un nuovo file in una cartella"),
+            AutomationTriggerType.GitCommit => T("When code is committed", "Quando viene salvato un commit"),
+            AutomationTriggerType.ModelDownloadCompleted => T("When a model finishes downloading", "Quando finisce il download di un modello"),
+            AutomationTriggerType.ComponentHealthChanged => T("When a component's health changes", "Quando cambia lo stato di un componente"),
+            AutomationTriggerType.TaskCompleted => T("When a task finishes", "Quando finisce un'attivit\u00e0"),
+            _ => trigger.Replace('_', ' ')
+        };
+
+        private async Task ApplyAutomationTemplateAsync(WorkspaceTemplate template)
+        {
+            try
+            {
+                string? folder = null;
+                if (template.NeedsFolder)
+                {
+                    var picker = new Windows.Storage.Pickers.FolderPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary };
+                    picker.FileTypeFilter.Add("*");
+                    WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWin));
+                    Windows.Storage.StorageFolder? chosen = await picker.PickSingleFolderAsync();
+                    if (chosen == null) { _status.Text = T("No folder chosen, so nothing was filled in.", "Nessuna cartella scelta, quindi non \u00e8 stato compilato nulla."); return; }
+                    folder = chosen.Path;
+                }
+                AutomationDraft draft = AutomationTemplateBuilder.Build(template, folder, UiText.IsItalian);
+                foreach (object item in _triggerType.Items)
+                    if (item is ComboBoxItem { Tag: string tag } && tag == draft.Trigger) _triggerType.SelectedItem = item;
+                _automationName.Text = draft.Name;
+                _triggerJson.Text = draft.TriggerJson;
+                _automationGoal.Text = draft.Goal;
+                _automationRole.Text = draft.Role;
+                if (_automationEditor != null) _automationEditor.IsExpanded = true;
+                _status.Text = T("Template filled in. Check it, then press Create automation.", "Modello compilato. Controllalo, poi premi Crea automazione.");
+            }
+            catch (Exception ex) { _status.Text = WorkspaceErrorExplainer.StatusLine(T("Could not use the template: ", "Impossibile usare il modello: "), ex.Message, UiText.IsItalian); }
+        }
 
         private static ToggleSwitch PermissionToggle(string label, bool value, Panel panel)
         {
