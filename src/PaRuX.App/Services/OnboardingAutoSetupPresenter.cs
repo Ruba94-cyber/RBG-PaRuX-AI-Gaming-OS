@@ -11,7 +11,8 @@ namespace PaRuX.Services
         bool ShowCancel,
         bool ShowRetry,
         bool ShowSkip,
-        bool ShowProgress);
+        bool ShowProgress,
+        string? TechnicalDetails = null);
 
     public static class OnboardingAutoSetupPresenter
     {
@@ -40,7 +41,8 @@ namespace PaRuX.Services
                 AutoSetupPhase.NoModelFits => new AutoSetupViewModel(
                     "No recommended model fits this PC", message, "Try again", true, false, false, true, false),
                 AutoSetupPhase.Failed => new AutoSetupViewModel(
-                    "Setup stopped", message + " You can try again, or skip this and choose a model yourself below.", "Set up automatically", false, false, true, true, false),
+                    "Setup stopped", FailedDetail(message), "Set up automatically", false, false, true, true, false,
+                    SetupErrorExplainer.RedactForDetails(state.Message)),
                 AutoSetupPhase.Cancelled => new AutoSetupViewModel(
                     "Setup cancelled", message, "Set up automatically", true, false, false, true, false),
                 AutoSetupPhase.Skipped => new AutoSetupViewModel(
@@ -49,14 +51,23 @@ namespace PaRuX.Services
             };
         }
 
+        private static string FailedDetail(string message)
+        {
+            FriendlyError? friendly = SetupErrorExplainer.Explain(message, italian: false);
+            return (friendly?.Line ?? message) + " You can try again, or skip this and choose a model yourself below.";
+        }
+
         private static AutoSetupViewModel PresentItalian(AutoSetupState state)
         {
             string message = state.Message?.Trim() ?? string.Empty;
-            string failure = RuntimeRecoveryGuidance.Classify(message) is not RuntimeRecoveryGuidance.Reason.Unknown
-                ? RuntimeRecoveryGuidance.Describe(message, italian: true)
-                : string.IsNullOrWhiteSpace(message)
-                    ? "Consulta i controlli manuali qui sotto per verificare componenti, modello e chat."
-                    : "Dettaglio: " + message + " Controlla i passaggi manuali qui sotto prima di riprovare.";
+            FriendlyError? friendly = SetupErrorExplainer.Explain(message, italian: true);
+            string failure = friendly != null
+                ? friendly.Line + " Puoi riprovare, oppure saltare e scegliere tu un modello qui sotto."
+                : RuntimeRecoveryGuidance.Classify(message) is not RuntimeRecoveryGuidance.Reason.Unknown
+                    ? RuntimeRecoveryGuidance.Describe(message, italian: true)
+                    : string.IsNullOrWhiteSpace(message)
+                        ? "Consulta i controlli manuali qui sotto per verificare componenti, modello e chat."
+                        : "Qualcosa non ha funzionato durante la configurazione. Puoi riprovare, oppure saltare e scegliere tu un modello qui sotto. I dettagli tecnici sono qui sotto.";
 
             return state.Phase switch
             {
@@ -84,7 +95,8 @@ namespace PaRuX.Services
                     "Riprova", true, false, false, true, false),
                 AutoSetupPhase.Failed => new AutoSetupViewModel(
                     "Configurazione interrotta",
-                    failure, "Configura automaticamente", false, false, true, true, false),
+                    failure, "Configura automaticamente", false, false, true, true, false,
+                    SetupErrorExplainer.RedactForDetails(state.Message)),
                 AutoSetupPhase.Cancelled => new AutoSetupViewModel(
                     "Configurazione annullata",
                     "La verifica non è completa. Puoi riprendere manualmente oppure ricominciare.",

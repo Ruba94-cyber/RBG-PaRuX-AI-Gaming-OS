@@ -47,6 +47,9 @@ namespace PaRuX.Views
                 System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it");
             AutoSetupHeadlineText.Text = vm.Headline;
             AutoSetupDetailText.Text = vm.Detail;
+            // Raw error text stays out of the main message; it is one click away for support or curious users.
+            AutoSetupTechnicalDetailsText.Text = vm.TechnicalDetails ?? string.Empty;
+            AutoSetupDetailsExpander.Visibility = string.IsNullOrWhiteSpace(vm.TechnicalDetails) ? Visibility.Collapsed : Visibility.Visible;
             AutoSetupStartButton.Content = vm.PrimaryLabel;
             AutoSetupStartButton.IsEnabled = vm.PrimaryEnabled && !_setupProfileSwitchBusy;
             AutoSetupStartButton.Visibility = vm.ShowRetry ? Visibility.Collapsed : Visibility.Visible;
