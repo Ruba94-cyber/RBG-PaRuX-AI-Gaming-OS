@@ -46,6 +46,8 @@ public sealed class ExplicitReasoningAndSamplingTests
 
     [Theory]
     [InlineData("Write a detailed 400-word explanation of how a hash table works, with an example.")]
+    [InlineData("Write a detailed 400-word explanation of how a skip list works, with an example.")]
+    [InlineData("Write a complete, well-commented Python module implementing a bloom filter with a small demo in main().")]
     [InlineData("Scrivi una spiegazione dettagliata di 300 parole in italiano su come funziona un B-tree.")]
     public void Plain_authoring_prompts_do_not_carry_tool_schemas(string query) =>
         Assert.True(ToolSchemaIntentGate.CanOmitToolSchemas(query, "general"));
