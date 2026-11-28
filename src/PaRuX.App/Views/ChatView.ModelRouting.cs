@@ -475,7 +475,8 @@ namespace PaRuX.Views
                 }
                 catch (Exception ex) { Log.Write("Chat routing preference could not be read from Core: " + ex.Message); }
 
-                try { models = await ModelDownloadClient.Current.ListManagedModelsAsync(CancellationToken.None); }
+                bool modelListRead = false;
+                try { models = await ModelDownloadClient.Current.ListManagedModelsAsync(CancellationToken.None); modelListRead = true; }
                 catch (Exception ex)
                 {
                     Log.Write("Chat model selector could not load managed models: " + ex.Message);
@@ -483,6 +484,8 @@ namespace PaRuX.Views
                 }
 
                 _chatModelCatalog = models;
+                // Only a successful, empty listing means "no model yet"; a failed read must not invent a call to action.
+                _ = RefreshHomeNoModelCallToActionAsync(modelListRead && models.Count == 0);
                 ModelSelector.Items.Clear();
                 AddModelChoice("Auto · Balanced", "parux-auto:balanced");
                 AddModelChoice("Auto · Max intelligence", "parux-auto:max_intelligence");

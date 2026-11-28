@@ -293,6 +293,9 @@
     <Compile Include="..\..\src\PaRuX.App\Services\OnboardingChatVerificationPolicy.cs" Link="Onboarding\OnboardingChatVerificationPolicy.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\OnboardingAutoSetup.cs" Link="Onboarding\OnboardingAutoSetup.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\OnboardingAutoSetupPresenter.cs" Link="Onboarding\OnboardingAutoSetupPresenter.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\SetupErrorExplainer.cs" Link="Onboarding\SetupErrorExplainer.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\FirstModelRecommendationPresenter.cs" Link="Onboarding\FirstModelRecommendationPresenter.cs" />
+    <Compile Include="..\..\src\PaRuX.App\Services\ModelBadgePresenter.cs" Link="ModelHub\ModelBadgePresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\MediaSetupPresenter.cs" Link="Media\MediaSetupPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\DiffusersEngineStatusPresenter.cs" Link="Media\DiffusersEngineStatusPresenter.cs" />
     <Compile Include="..\..\src\PaRuX.App\Services\DiscoveredListWindow.cs" Link="Media\DiscoveredListWindow.cs" />

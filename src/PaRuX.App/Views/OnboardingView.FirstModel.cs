@@ -199,10 +199,17 @@ namespace PaRuX.Views
                 && !advice.Candidates.Any(candidate => candidate.Model.Id == _selectedFirstModelId))
                 _selectedFirstModelId = null;
 
+            // One-click default: start from the Core's hardware-fit pick so a first-time user never faces an empty choice.
+            FirstModelCandidate? recommended = FirstModelRecommendationPresenter.PickRecommended(advice);
+            if (_selectedFirstModelId == null && recommended != null) _selectedFirstModelId = recommended.Model.Id;
+
             FirstModelCandidate? selected = advice.Candidates
                 .FirstOrDefault(candidate => candidate.Model.Id == _selectedFirstModelId);
+            bool selectedIsRecommended = selected != null && recommended != null && selected.Model.Id == recommended.Model.Id;
             FirstModelHeadlineText.Text = selected == null
                 ? T("Choose a compatible chat model in Model Hub.", "Scegli un modello di chat compatibile nel Model Hub.")
+                : selectedIsRecommended
+                ? FirstModelRecommendationPresenter.Headline(selected, advice, UiText.IsItalian)
                 : T("Selected model: ", "Modello selezionato: ") + selected.Model.Title + ". " + selected.Reason
                   + T(" This is a fit estimate, not a task-quality winner; coding, vision, image and video tasks may use different models.", " È una stima di compatibilità, non il vincitore per qualità; programmazione, visione, immagini e video possono usare modelli diversi.");
             FirstModelHeadlineText.Visibility = Visibility.Visible;
@@ -217,7 +224,9 @@ namespace PaRuX.Views
                 }.Where(part => !string.IsNullOrWhiteSpace(part)));
                 FirstModelDetailText.Visibility = Visibility.Visible;
                 if (FirstModelInstallButton != null)
-                    FirstModelInstallButton.Content = T("Open selected model in Model Hub", "Apri il modello selezionato nel Model Hub");
+                    FirstModelInstallButton.Content = selectedIsRecommended
+                        ? T("Get the recommended model", "Scarica il modello consigliato")
+                        : T("Open selected model in Model Hub", "Apri il modello selezionato nel Model Hub");
             }
             else
             {
