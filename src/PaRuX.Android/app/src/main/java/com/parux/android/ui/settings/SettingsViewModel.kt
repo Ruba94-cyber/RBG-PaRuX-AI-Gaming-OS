@@ -14,6 +14,9 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val endpoint: String = "",
+    /** Which of the PC's addresses is in use: LAN (home network) or the Internet tunnel; null when unknown. */
+    val route: com.parux.android.core.network.EndpointRouter.Route? = null,
+    val hasTunnel: Boolean = false,
     val deviceName: String = "",
     val serverReachable: Boolean? = null,
     val gamingMode: Boolean = false,
@@ -36,8 +39,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val credential = container.credentialStore.load()
         _state.value = _state.value.copy(
             endpoint = credential?.endpoint ?: "",
-            deviceName = credential?.deviceName ?: ""
+            deviceName = credential?.deviceName ?: "",
+            hasTunnel = credential?.tunnelEndpoint?.isNotBlank() == true
         )
+        container.client.value?.router?.let { router ->
+            viewModelScope.launch {
+                router.route.collect { r -> _state.value = _state.value.copy(route = r) }
+            }
+        }
         refreshStatus()
     }
 

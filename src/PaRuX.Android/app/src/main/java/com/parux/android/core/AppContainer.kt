@@ -4,6 +4,10 @@ import android.content.Context
 import com.parux.android.core.network.PaRuXHttpClient
 import com.parux.android.core.pairing.DeviceCredentialStore
 import com.parux.android.core.pairing.PairingRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +25,16 @@ class AppContainer(context: Context) {
     val pairingRepository = PairingRepository(credentialStore)
     val activeProjectStore = ActiveProjectStore(appContext)
 
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _client = MutableStateFlow(PaRuXHttpClient.buildAuthenticated(credentialStore))
+
+    init { probeRoute() }
+
+    /** Prefer the LAN when the PC answers there, else the Internet tunnel (see EndpointRouter). */
+    private fun probeRoute() {
+        val router = _client.value?.router ?: return
+        if (router.hasBoth) ioScope.launch { router.refresh() }
+    }
 
     /** Null when not paired. Screens observe this instead of the credential store directly,
      * so a re-pair or forget-device is reflected everywhere at once. */
@@ -29,6 +42,7 @@ class AppContainer(context: Context) {
 
     fun refreshClient() {
         _client.value = PaRuXHttpClient.buildAuthenticated(credentialStore)
+        probeRoute()
     }
 
     fun forgetDevice() {

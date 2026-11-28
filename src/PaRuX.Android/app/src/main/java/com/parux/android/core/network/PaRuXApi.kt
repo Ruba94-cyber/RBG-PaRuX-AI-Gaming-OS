@@ -18,6 +18,9 @@ import retrofit2.http.Streaming
 interface PaRuXApi {
     @GET("api/v1/health") suspend fun health(): ServerHealth
     @POST("api/v1/remote/pair/complete") suspend fun completePairing(@Body request: PairingCompleteRequest): PairingCompleteResponse
+    /** Tunnel pairing answers 202 {requestId, pollSecret} (owner approval pending), so the status code matters. */
+    @POST("api/v1/remote/pair/complete") suspend fun completePairingRaw(@Body request: PairingCompleteRequest): retrofit2.Response<okhttp3.ResponseBody>
+    @POST("api/v1/remote/pair/poll") suspend fun pollPairing(@Body request: PairingPollRequest): retrofit2.Response<okhttp3.ResponseBody>
 
     @GET("api/v1/ai/profile") suspend fun getAiProfile(): AiProfileStatus
     @POST("api/v1/ai/profile") suspend fun setAiProfile(@Body request: AiProfileRequest): AiProfileStatus

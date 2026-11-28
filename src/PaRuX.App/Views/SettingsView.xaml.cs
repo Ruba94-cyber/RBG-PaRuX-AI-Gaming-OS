@@ -3332,7 +3332,11 @@ namespace PaRuX.Views
                 PairingStartResponse pairing = await RemoteAccessClient.Current.StartPairingAsync(CancellationToken.None);
                 PairingCodeText.Text = T("Code ", "Codice ") + pairing.Code + T("  ·  expires ", "  ·  scade ")
                     + pairing.ExpiresUtc.ToLocalTime().ToString("t") + "\n"
-                    + pairing.Endpoint + T("\nCertificate SHA-256: ", "\nSHA-256 del certificato: ") + FormatFingerprint(pairing.CertificateFingerprint);
+                    + (string.IsNullOrEmpty(pairing.Endpoint) ? string.Empty
+                        : pairing.Endpoint + T("\nCertificate SHA-256: ", "\nSHA-256 del certificato: ") + FormatFingerprint(pairing.CertificateFingerprint))
+                    + (string.IsNullOrEmpty(pairing.TunnelEndpoint) ? string.Empty
+                        : (string.IsNullOrEmpty(pairing.Endpoint) ? string.Empty : "\n") + T("Internet: ", "Internet: ") + pairing.TunnelEndpoint
+                          + T("\nA new device must be approved on this PC.", "\nUn nuovo dispositivo deve essere approvato su questo PC."));
                 PairingCodeText.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
 
                 PairingQrImage.Source = await BuildPairingQrImageAsync(pairing);
@@ -3345,7 +3349,7 @@ namespace PaRuX.Views
                 PairingCodeText.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
                 PairingQrBorder.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
             }
-            finally { PairDeviceButton.IsEnabled = LanEnabledSwitch.IsOn; }
+            finally { PairDeviceButton.IsEnabled = LanEnabledSwitch.IsOn || _tunnelOnline; }
         }
 
         /// <summary>
@@ -3361,7 +3365,9 @@ namespace PaRuX.Views
                 v = 1,
                 endpoint = pairing.Endpoint,
                 code = pairing.Code,
-                fp = pairing.CertificateFingerprint
+                fp = pairing.CertificateFingerprint,
+                // Public tunnel address while the Internet tunnel is online ("" otherwise): lets the phone connect off-LAN.
+                tunnel = pairing.TunnelEndpoint
             });
 
             using var generator = new QRCodeGenerator();
@@ -3394,7 +3400,7 @@ namespace PaRuX.Views
                 LanPortBox.Value = status.Port;
                 PopulateLanAddresses(status.Address);
                 _loading = false;
-                PairDeviceButton.IsEnabled = status.Enabled;
+                PairDeviceButton.IsEnabled = status.Enabled || _tunnelOnline;
                 if (!status.Enabled)
                 {
                     PairingCodeText.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;

@@ -31,7 +31,9 @@ class DeviceCredentialStore(context: Context) {
         val endpoint: String,
         val deviceToken: String,
         val certificateFingerprint: String,
-        val deviceName: String
+        val deviceName: String,
+        /** Public https address of the optional Internet tunnel, empty when the PC never offered one. */
+        val tunnelEndpoint: String = ""
     )
 
     fun save(credential: Credential) {
@@ -40,6 +42,7 @@ class DeviceCredentialStore(context: Context) {
             .put(KEY_TOKEN, credential.deviceToken)
             .put(KEY_FINGERPRINT, credential.certificateFingerprint)
             .put(KEY_DEVICE_NAME, credential.deviceName)
+            .put(KEY_TUNNEL, credential.tunnelEndpoint)
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
 
@@ -73,18 +76,21 @@ class DeviceCredentialStore(context: Context) {
             cipher.updateAAD(AAD)
             val json = JSONObject(String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8))
 
-            val endpoint = json.optString(KEY_ENDPOINT).takeIf { it.isNotBlank() }
-                ?: return clearCorruptBlob()
+            val endpoint = json.optString(KEY_ENDPOINT)
+            val tunnel = json.optString(KEY_TUNNEL)
             val token = json.optString(KEY_TOKEN).takeIf { it.isNotBlank() }
                 ?: return clearCorruptBlob()
-            val fingerprint = json.optString(KEY_FINGERPRINT).takeIf { it.isNotBlank() }
-                ?: return clearCorruptBlob()
+            val fingerprint = json.optString(KEY_FINGERPRINT)
+            // A credential needs at least one route; a LAN route needs its pinned fingerprint.
+            if (endpoint.isBlank() && tunnel.isBlank()) return clearCorruptBlob()
+            if (endpoint.isNotBlank() && fingerprint.isBlank()) return clearCorruptBlob()
 
             Credential(
                 endpoint = endpoint,
                 deviceToken = token,
                 certificateFingerprint = fingerprint,
-                deviceName = json.optString(KEY_DEVICE_NAME, "")
+                deviceName = json.optString(KEY_DEVICE_NAME, ""),
+                tunnelEndpoint = tunnel
             )
         } catch (_: GeneralSecurityException) {
             clearCorruptBlob()
@@ -161,6 +167,7 @@ class DeviceCredentialStore(context: Context) {
         const val KEY_TOKEN = "device_token"
         const val KEY_FINGERPRINT = "certificate_fingerprint"
         const val KEY_DEVICE_NAME = "device_name"
+        const val KEY_TUNNEL = "tunnel_endpoint"
         val AAD: ByteArray = "PaRuX.Android.DeviceCredential.v1".toByteArray(StandardCharsets.UTF_8)
     }
 }

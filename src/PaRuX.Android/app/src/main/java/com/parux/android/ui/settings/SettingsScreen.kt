@@ -53,6 +53,16 @@ fun SettingsScreen(viewModel: SettingsViewModel, onForgetDevice: () -> Unit) {
                         )
                     }
                     Text(state.endpoint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    state.route?.let { route ->
+                        Text(
+                            stringResource(
+                                if (route == com.parux.android.core.network.EndpointRouter.Route.LAN) R.string.settings_route_lan
+                                else R.string.settings_route_tunnel
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Divider(Modifier.padding(vertical = 12.dp))
                     Row(
                         Modifier

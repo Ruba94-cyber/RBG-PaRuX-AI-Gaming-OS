@@ -191,12 +191,19 @@ public sealed class RemoteAccessService
         }
     }
 
-    public PairingStartResponse StartPairing()
+    public PairingStartResponse StartPairing() => StartPairing(null);
+
+    /// <summary>
+    /// <paramref name="tunnelEndpoint"/> is the public https address of the opt-in Internet tunnel while it is online. With it,
+    /// pairing is possible without LAN access (the QR then carries only the tunnel address).
+    /// </summary>
+    public PairingStartResponse StartPairing(string? tunnelEndpoint)
     {
         lock (_gate)
         {
-            if (!_document.Enabled || !_isAssignedPrivateAddress(_document.Address))
-                throw new InvalidOperationException("Enable LAN access on a private network interface first.");
+            bool lanUsable = _document.Enabled && _isAssignedPrivateAddress(_document.Address);
+            if (!lanUsable && string.IsNullOrEmpty(tunnelEndpoint))
+                throw new InvalidOperationException("Enable LAN access on a private network interface first, or turn the Internet tunnel on.");
 
             // Only the desktop owner reaches this method. Starting a new pairing is the owner's recovery from a lockout that a
             // LAN host provoked, so it clears the global backoff (per-source lockouts stay). The new code is still guarded by the
@@ -213,8 +220,9 @@ public sealed class RemoteAccessService
             {
                 Code = code,
                 ExpiresUtc = expires,
-                Endpoint = $"https://{_document.Address}:{_document.Port}",
-                CertificateFingerprint = _certificateFingerprint()
+                Endpoint = lanUsable ? $"https://{_document.Address}:{_document.Port}" : string.Empty,
+                CertificateFingerprint = lanUsable ? _certificateFingerprint() : string.Empty,
+                TunnelEndpoint = tunnelEndpoint ?? string.Empty
             };
         }
     }
@@ -297,6 +305,53 @@ public sealed class RemoteAccessService
                 DeviceToken = token,
                 Endpoint = $"https://{_document.Address}:{_document.Port}",
                 CertificateFingerprint = _certificateFingerprint()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Tunnel pairing, step one: spends a live pairing code without issuing a device. The code is single use, so a request that
+    /// presents it either becomes a pending approval (the PC owner decides) or is wasted; failures are counted by the tunnel's own
+    /// limiter, never by the LAN per-source buckets (every tunnel request arrives from loopback, so a source address proves nothing).
+    /// </summary>
+    internal bool TryConsumePairingCode(string? code)
+    {
+        lock (_gate)
+        {
+            RemoveExpiredPairings();
+            string key = code?.Trim() ?? string.Empty;
+            if (!_pairings.Remove(key, out PairingSession? pairing)) return false;
+            return pairing.ExpiresUtc > _utcNow();
+        }
+    }
+
+    /// <summary>Tunnel pairing, step two (after the owner approved on the PC): records the device and returns its one-time token.</summary>
+    internal PairingCompleteResponse IssueDevice(string deviceName, string? tunnelEndpoint)
+    {
+        string name = deviceName?.Trim() ?? string.Empty;
+        if (name.Length is < 1 or > 80) throw new InvalidDataException("Device name must be 1 to 80 characters.");
+        lock (_gate)
+        {
+            RequireReadableRegistry();
+            DateTime now = _utcNow();
+            string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            var device = new PairedDevice
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = name,
+                TokenHash = HashToken(token),
+                CreatedUtc = now,
+                LastSeenUtc = now
+            };
+            PersistDevices(new List<PairedDevice>(_document.Devices) { device });
+            bool lanUsable = _document.Enabled && _isAssignedPrivateAddress(_document.Address);
+            return new PairingCompleteResponse
+            {
+                DeviceId = device.Id,
+                DeviceToken = token,
+                Endpoint = lanUsable ? $"https://{_document.Address}:{_document.Port}" : string.Empty,
+                CertificateFingerprint = lanUsable ? _certificateFingerprint() : string.Empty,
+                TunnelEndpoint = tunnelEndpoint ?? string.Empty
             };
         }
     }

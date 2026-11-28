@@ -148,6 +148,10 @@
     <string name="media_empty">Ancora nulla di generato</string>
     <string name="media_video">Video</string>
     <string name="pair_pairing">Associazione con il PC PaRuX…</string>
+    <string name="pair_awaiting_title">Conferma sul PC</string>
+    <string name="pair_awaiting_body">PaRuX sta chiedendo al proprietario del PC di approvare questo nuovo dispositivo. Apri PaRuX sul PC, vai in Impostazioni > Accesso remoto e scegli Approva.</string>
+    <string name="settings_route_lan">Connesso tramite la rete di casa (LAN)</string>
+    <string name="settings_route_tunnel">Connesso tramite il tunnel Internet</string>
     <string name="pair_failed">Associazione non riuscita</string>
     <string name="pair_try_again">Riprova</string>
     <string name="pair_manual">Inserisci i dati di associazione a mano</string>
