@@ -872,6 +872,8 @@ namespace PaRuX
             ShowChat();
             // The setup profile now determines the actual workspace inventory and landing page.
             ApplySetupProfile();
+            // The onboarding page is collapsed only inside ShowChat, after the pane became visible: re-evaluate now.
+            UpdateContentStudioModeControlsVisibility(NavView.IsPaneOpen);
             // Queued rather than called inline: the tour points at sidebar controls, and they need
             // to be laid out on screen before a TeachingTip can position itself against them.
             GuidedTourDecision decision = GuidedTourTriggerPolicy.EvaluateGetStarted(

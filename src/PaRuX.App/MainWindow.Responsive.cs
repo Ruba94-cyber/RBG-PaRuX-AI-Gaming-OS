@@ -66,7 +66,11 @@ namespace PaRuX
             // switch. Both copies must obey the same setup-profile policy.
             bool allowAdvanced = !PaRuX.Contracts.CorporateMode.IsActive
                 && SetupProfilePolicy.Parse(SettingsStore.Current.Data.SetupProfileId) != SetupProfile.GamingOnly
-                && !IsGamingModeTab;
+                && !IsGamingModeTab
+                // First-run onboarding hides the pane on purpose; the switch belongs to the finished shell only.
+                && SettingsStore.Current.Data.OnboardingCompleted
+                && NavView?.IsPaneVisible == true
+                && OnboardingPageIfCreated is not { Visibility: Visibility.Visible };
             Visibility visibility = !isPaneOpen && allowAdvanced
                 ? Visibility.Visible : Visibility.Collapsed;
             if (ContentStudioModeToggle != null) ContentStudioModeToggle.Visibility = visibility;
