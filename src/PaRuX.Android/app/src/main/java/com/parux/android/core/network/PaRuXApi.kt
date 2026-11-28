@@ -89,6 +89,12 @@ interface PaRuXApi {
     @GET("api/v1/system/stop-all/status") suspend fun getStopAllStatus(): StopAllStatus
 
     @GET("api/v1/projects") suspend fun listProjects(): ProjectListResponse
+    @GET("api/v2/mobile/runtime") suspend fun getMobileRuntime(): MobileRuntimeStatusDto
+    @POST("api/v2/mobile/runtime/load") suspend fun loadMobileRuntime(): MobileRuntimeStatusDto
+    @POST("api/v2/mobile/runtime/unload") suspend fun unloadMobileRuntime(): MobileRuntimeStatusDto
+    @GET("api/v2/mobile/documents/{id}/status") suspend fun getMobileDocumentStatus(@Path("id") id: String): MobileIndexStatusDto
+    @POST("api/v2/mobile/documents") suspend fun uploadMobileDocument(@Body request: MobileDocumentUploadRequest): MobileDocumentUploadResponse
+
     @POST("api/v1/projects") suspend fun createProject(@Body request: CreateProjectRequest): ProjectDto
     @POST("api/v1/projects/{id}/tasks") suspend fun attachProjectTask(@Path("id") id: String, @Body request: AttachProjectTaskRequest): ProjectDto
     @GET("api/v1/projects/{id}/knowledge") suspend fun getProjectKnowledge(@Path("id") id: String, @Query("maxCharacters") maxCharacters: Int = 12_000): ProjectKnowledgePackDto

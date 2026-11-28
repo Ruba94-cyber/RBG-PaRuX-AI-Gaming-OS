@@ -1,5 +1,6 @@
 package com.parux.android.ui.studio
 
+import com.parux.android.R
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -168,7 +169,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                     error = null
                 )
             } catch (e: Exception) {
-                _state.value = _state.value.copy(loading = false, actionInFlight = false, error = e.message ?: "Could not refresh PC state.")
+                _state.value = _state.value.copy(loading = false, actionInFlight = false, error = e.message ?: container.appContext.getString(R.string.studio_err_refresh))
             }
         }
     }
@@ -202,7 +203,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 if (_state.value.selectedProjectId == projectId) {
                     _state.value = _state.value.copy(
                         knowledgeLoading = false,
-                        error = e.message ?: "Could not load Project knowledge."
+                        error = e.message ?: container.appContext.getString(R.string.studio_err_knowledge)
                     )
                 }
             }
@@ -213,7 +214,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
         if (goal.isBlank()) return
         val client = container.client.value ?: return
         viewModelScope.launch {
-            beginAction("Creating Project on the PC…")
+            beginAction(container.appContext.getString(R.string.studio_creating_project))
             try {
                 val project = client.api.createProject(CreateProjectRequest(goal.trim()))
                 container.activeProjectStore.select(project.id)
@@ -222,7 +223,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                     projectSelectionInitialized = true,
                     knowledge = null,
                     actionInFlight = false,
-                    message = "Project created and queued on the PC."
+                    message = container.appContext.getString(R.string.studio_project_created)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -260,9 +261,9 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             beginAction(
                 when (role) {
-                    "computer-use" -> "Sending Computer Use task to Windows…"
-                    "coding" -> "Sending coding task to Windows…"
-                    else -> "Sending task to PaRuX…"
+                    "computer-use" -> container.appContext.getString(R.string.studio_sending_cu)
+                    "coding" -> container.appContext.getString(R.string.studio_sending_code)
+                    else -> container.appContext.getString(R.string.studio_sending_task)
                 }
             )
             try {
@@ -282,9 +283,9 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                     knowledge = _state.value.knowledge?.takeIf { it.projectId != projectId },
                     actionInFlight = false,
                     message = when (role) {
-                        "coding" -> "Coding task queued. PaRuX Windows will work in its configured repository."
-                        "computer-use" -> "Computer Use task queued. If Windows needs consent, it will appear here as an Approve once / Deny request."
-                        else -> "Task queued."
+                        "coding" -> container.appContext.getString(R.string.studio_queued_code)
+                        "computer-use" -> container.appContext.getString(R.string.studio_queued_cu)
+                        else -> container.appContext.getString(R.string.studio_queued)
                     }
                 )
                 refresh(silent = true)
@@ -304,23 +305,23 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.IO) {
                     client.api.downloadMobileArtifact(artifact.id, artifact.versionNumber).use { body ->
                         val output = context.contentResolver.openOutputStream(destination, "w")
-                            ?: throw IllegalStateException("Android could not open the selected destination.")
+                            ?: throw IllegalStateException(container.appContext.getString(R.string.studio_dest_failed))
                         output.use { stream -> body.byteStream().use { input -> input.copyTo(stream) } }
                     }
                 }
                 _state.value = _state.value.copy(
                     downloadingArtifactId = null,
-                    message = "Saved ${artifact.fileName ?: artifact.title} on this device."
+                    message = container.appContext.getString(R.string.studio_saved, artifact.fileName ?: artifact.title)
                 )
             } catch (e: Exception) {
-                _state.value = _state.value.copy(downloadingArtifactId = null, error = e.message ?: "Artifact download failed.")
+                _state.value = _state.value.copy(downloadingArtifactId = null, error = e.message ?: container.appContext.getString(R.string.studio_download_failed))
             }
         }
     }
 
     fun requestComputerUseApproval(task: AgentTaskDto) {
         if (!PcComputerUseApproval.isPending(task)) {
-            _state.value = _state.value.copy(error = "This Computer Use request is no longer awaiting approval.")
+            _state.value = _state.value.copy(error = container.appContext.getString(R.string.studio_not_awaiting))
             return
         }
         _state.value = _state.value.copy(
@@ -337,14 +338,14 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
     fun approveComputerUseOnce(task: AgentTaskDto) {
         val client = container.client.value ?: return
         viewModelScope.launch {
-            beginAction("Approving Computer Use for this task only…")
+            beginAction(container.appContext.getString(R.string.studio_approving))
             try {
                 val current = client.api.getAgentTask(task.id)
                 if (!PcComputerUseApproval.isPending(current)) {
                     _state.value = _state.value.copy(
                         actionInFlight = false,
                         approvalTask = null,
-                        error = "This request changed before approval and was not authorized."
+                        error = container.appContext.getString(R.string.studio_changed_approval)
                     )
                     refresh(silent = true)
                     return@launch
@@ -358,7 +359,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 _state.value = _state.value.copy(
                     approvalTask = null,
                     actionInFlight = false,
-                    message = "Approved once. PaRuX Windows may execute this Computer Use task now."
+                    message = container.appContext.getString(R.string.studio_approved)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -368,14 +369,14 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
     fun denyComputerUse(task: AgentTaskDto) {
         val client = container.client.value ?: return
         viewModelScope.launch {
-            beginAction("Denying Computer Use…")
+            beginAction(container.appContext.getString(R.string.studio_denying))
             try {
                 val current = client.api.getAgentTask(task.id)
                 if (!PcComputerUseApproval.isPending(current)) {
                     _state.value = _state.value.copy(
                         actionInFlight = false,
                         approvalTask = null,
-                        error = "This request changed before the decision; no denial was applied."
+                        error = container.appContext.getString(R.string.studio_changed_denial)
                     )
                     refresh(silent = true)
                     return@launch
@@ -385,7 +386,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 _state.value = _state.value.copy(
                     approvalTask = null,
                     actionInFlight = false,
-                    message = "Computer Use denied. The task was cancelled without controlling the PC."
+                    message = container.appContext.getString(R.string.studio_denied)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -394,7 +395,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
 
     fun requestUserQuestion(task: AgentTaskDto) {
         if (!isUserInputPending(task)) {
-            _state.value = _state.value.copy(error = "This task is no longer waiting for user input.")
+            _state.value = _state.value.copy(error = container.appContext.getString(R.string.studio_not_waiting_input))
             return
         }
         val client = container.client.value ?: return
@@ -403,7 +404,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 val questionState = client.api.getAgentUserQuestion(task.id)
                 val question = questionState.pendingQuestion
                 if (question == null) {
-                    _state.value = _state.value.copy(error = "The pending question changed before it could be opened.")
+                    _state.value = _state.value.copy(error = container.appContext.getString(R.string.studio_question_changed))
                     refresh(silent = true)
                     return@launch
                 }
@@ -429,12 +430,12 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
         val trimmed = answer.trim()
         if (trimmed.isBlank()) return
         if (!question.allowOther && trimmed !in question.options) {
-            _state.value = _state.value.copy(error = "Choose one of the options offered by the agent.")
+            _state.value = _state.value.copy(error = container.appContext.getString(R.string.studio_choose_option))
             return
         }
         val client = container.client.value ?: return
         viewModelScope.launch {
-            beginAction("Sending your answer to the paused agent…")
+            beginAction(container.appContext.getString(R.string.studio_sending_answer))
             try {
                 // Re-read the durable pending question immediately before mutation. This prevents a
                 // stale mobile dialog from answering a newer question after another surface acted.
@@ -444,7 +445,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                         actionInFlight = false,
                         userQuestionTask = null,
                         userQuestion = null,
-                        error = "This question changed before your answer was submitted. Nothing was applied."
+                        error = container.appContext.getString(R.string.studio_question_changed2)
                     )
                     refresh(silent = true)
                     return@launch
@@ -458,7 +459,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                     userQuestionTask = null,
                     userQuestion = null,
                     actionInFlight = false,
-                    message = "Answer recorded. The same PaRuX task is resuming from its saved checkpoint."
+                    message = container.appContext.getString(R.string.studio_answer_recorded)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -474,7 +475,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
                 _state.value = _state.value.copy(
                     userQuestionTask = _state.value.userQuestionTask?.takeIf { it.id != id },
                     userQuestion = _state.value.userQuestion.takeIf { _state.value.userQuestionTask?.id != id },
-                    message = "Task cancellation requested."
+                    message = container.appContext.getString(R.string.studio_cancel_requested)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -515,14 +516,14 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
     fun runWorkflow(workflowId: String, input: String?) {
         val client = container.client.value ?: return
         viewModelScope.launch {
-            beginAction("Starting Workflow…")
+            beginAction(container.appContext.getString(R.string.studio_starting_workflow))
             try {
                 val result = client.api.runWorkflow(workflowId, RunWorkflowRequest(input?.takeIf { it.isNotBlank() }))
                 result.createdTaskIds.forEach { PcTaskSupervisor.monitor(container.appContext, it) }
                 _state.value = _state.value.copy(
                     selectedTaskId = result.createdTaskIds.firstOrNull(),
                     actionInFlight = false,
-                    message = "Workflow started ${result.createdTaskIds.size} task(s)."
+                    message = container.appContext.getString(R.string.studio_workflow_started, result.createdTaskIds.size)
                 )
                 refresh(silent = true)
             } catch (e: Exception) { failAction(e) }
@@ -536,7 +537,7 @@ class PcStudioViewModel(private val container: AppContainer) : ViewModel() {
         _state.value = _state.value.copy(actionInFlight = true, message = message, error = null)
     }
     private fun failAction(e: Exception) {
-        _state.value = _state.value.copy(actionInFlight = false, error = e.message ?: "PC action failed.")
+        _state.value = _state.value.copy(actionInFlight = false, error = e.message ?: container.appContext.getString(R.string.studio_action_failed))
     }
 
     private fun toResultView(task: AgentTaskDto): PcTaskResultView {

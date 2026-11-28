@@ -71,7 +71,8 @@ internal static class PairedDeviceEndpointPolicy
             "/api/v1/chat/model-routing/models",
             "/api/v1/system/stop-all/status",
             "/api/v2/mobile/execution-profile",
-            "/api/v2/mobile/observability/dashboard")) return true;
+            "/api/v2/mobile/observability/dashboard",
+            "/api/v2/mobile/runtime")) return true;
 
         return MatchesOneId(path, "/api/v1/conversations")
             || MatchesOneId(path, "/api/v1/jobs")
@@ -87,7 +88,8 @@ internal static class PairedDeviceEndpointPolicy
             || MatchesOneId(path, "/api/v2/mobile/goals")
             || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals", "/versions")
             || MatchesOneId(path, "/api/v2/mobile/goals/tasks")
-            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals/tasks", "/verification-records");
+            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/goals/tasks", "/verification-records")
+            || MatchesSuffixAfterOneId(path, "/api/v2/mobile/documents", "/status");
     }
 
     // /api/v1/media/{id} is a job id; these literal segments are desktop-owner resources and are never job ids.
@@ -123,7 +125,10 @@ internal static class PairedDeviceEndpointPolicy
             "/api/v1/chat/model-routing",
             "/api/v1/chat/model-routing/tuning",
             "/api/v2/mobile/goals",
-            "/api/v2/mobile/goals/tasks")) return true;
+            "/api/v2/mobile/goals/tasks",
+            "/api/v2/mobile/runtime/load",
+            "/api/v2/mobile/runtime/unload",
+            "/api/v2/mobile/documents")) return true;
 
         return MatchesSuffixAfterOneId(path, "/api/v1/jobs", "/cancel")
             || MatchesSuffixAfterOneId(path, "/api/v1/rag/sources", "/reindex")

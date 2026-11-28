@@ -1,5 +1,6 @@
 package com.parux.android.ui.tools
 
+import com.parux.android.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parux.android.core.AppContainer
@@ -30,7 +31,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** A user-facing message held as a string resource so it follows the phone language. */
+data class UiNotice(@androidx.annotation.StringRes val res: Int, val arg: String? = null)
+
 data class ToolsUiState(
+    val runtime: com.parux.android.core.network.MobileRuntimeStatusDto? = null,
+    val runtimeLoading: Boolean = false,
+    val runtimeNotice: UiNotice? = null,
+    val documentUploading: Boolean = false,
+    val documentIndex: com.parux.android.core.network.MobileIndexStatusDto? = null,
+    val documentIndexName: String? = null,
+    val documentNotice: UiNotice? = null,
     val internetEnabled: Boolean = false,
     val memory: List<MemoryEntryDto> = emptyList(),
     val ragSources: List<RagSourceDto> = emptyList(),
@@ -75,19 +86,115 @@ data class ToolsUiState(
  * Android creates/supervises a durable `computer-use` AgentTask and never gains phone Accessibility
  * or raw Windows input privileges.
  */
+private const val MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+private val ERROR_FIELD = Regex("\"error\"\\s*:\\s*\"([^\"]+)\"")
+
 class ToolsViewModel(private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(ToolsUiState())
     val state: StateFlow<ToolsUiState> = _state.asStateFlow()
 
     private fun fail(e: Exception) {
-        _state.value = _state.value.copy(errorMessage = e.message ?: "Something went wrong.")
+        _state.value = _state.value.copy(errorMessage = e.message ?: container.appContext.getString(R.string.common_error_generic))
     }
 
     fun dismissError() { _state.value = _state.value.copy(errorMessage = null) }
 
     fun refreshAll() {
-        refreshInternet(); refreshMemory(); refreshRag(); refreshSkills()
+        refreshRuntime(); refreshInternet(); refreshMemory(); refreshRag(); refreshSkills()
         refreshSpeechEngine(); refreshModelBudget(); refreshAvatarStatus(); refreshThreedEngine()
+    }
+
+    // ---- Runtime: path-free status and an explicit "load the model now" action. ----
+    fun refreshRuntime() {
+        val client = container.client.value ?: return
+        viewModelScope.launch {
+            try { _state.value = _state.value.copy(runtime = client.api.getMobileRuntime()) } catch (_: Exception) {}
+        }
+    }
+    fun loadRuntime() {
+        val client = container.client.value ?: return
+        if (_state.value.runtimeLoading) return
+        _state.value = _state.value.copy(runtimeLoading = true, runtimeNotice = null)
+        viewModelScope.launch {
+            try {
+                _state.value = _state.value.copy(runtime = client.api.loadMobileRuntime(), runtimeLoading = false)
+            } catch (e: retrofit2.HttpException) {
+                val gaming = e.response()?.errorBody()?.string()?.contains("gaming_active") == true
+                _state.value = _state.value.copy(
+                    runtimeLoading = false,
+                    runtimeNotice = UiNotice(if (gaming) com.parux.android.R.string.runtime_load_gaming else com.parux.android.R.string.runtime_load_failed)
+                )
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(runtimeLoading = false, runtimeNotice = UiNotice(com.parux.android.R.string.runtime_load_failed))
+            }
+        }
+    }
+
+    fun unloadRuntime() {
+        val client = container.client.value ?: return
+        if (_state.value.runtimeLoading) return
+        _state.value = _state.value.copy(runtimeLoading = true, runtimeNotice = null)
+        viewModelScope.launch {
+            try {
+                _state.value = _state.value.copy(runtime = client.api.unloadMobileRuntime(), runtimeLoading = false)
+            } catch (e: retrofit2.HttpException) {
+                val gaming = e.response()?.errorBody()?.string()?.contains("gaming_active") == true
+                _state.value = _state.value.copy(
+                    runtimeLoading = false,
+                    runtimeNotice = UiNotice(if (gaming) com.parux.android.R.string.runtime_unload_gaming else com.parux.android.R.string.runtime_unload_failed)
+                )
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(runtimeLoading = false, runtimeNotice = UiNotice(com.parux.android.R.string.runtime_unload_failed))
+            }
+        }
+    }
+
+    private var indexPoll: kotlinx.coroutines.Job? = null
+
+    /** Follows the PC's own indexing of an uploaded document until it finishes (bounded: ~10 minutes). */
+    private fun watchDocumentIndexing(sourceId: String, name: String) {
+        val client = container.client.value ?: return
+        indexPoll?.cancel()
+        _state.value = _state.value.copy(documentIndexName = name, documentIndex = com.parux.android.core.network.MobileIndexStatusDto(state = "running"))
+        indexPoll = viewModelScope.launch {
+            var misses = 0
+            repeat(400) {
+                try {
+                    val status = client.api.getMobileDocumentStatus(sourceId)
+                    _state.value = _state.value.copy(documentIndex = status)
+                    if (status.state == "done" || status.state == "failed") { refreshRag(); return@launch }
+                    misses = 0
+                } catch (_: Exception) {
+                    if (++misses >= 5) return@launch
+                }
+                delay(1500)
+            }
+        }
+    }
+
+    // ---- Documents: the phone sends a file into the PC's Core-owned inbox; Core validates and indexes it. ----
+    fun uploadDocument(fileName: String, bytes: ByteArray) {
+        val client = container.client.value ?: return
+        if (_state.value.documentUploading) return
+        if (bytes.isEmpty() || bytes.size > MAX_DOCUMENT_BYTES) {
+            _state.value = _state.value.copy(documentNotice = UiNotice(com.parux.android.R.string.docs_too_big))
+            return
+        }
+        _state.value = _state.value.copy(documentUploading = true, documentNotice = null)
+        viewModelScope.launch {
+            try {
+                val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val response = client.api.uploadMobileDocument(com.parux.android.core.network.MobileDocumentUploadRequest(fileName, encoded))
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_added, response.fileName))
+                refreshRag()
+                watchDocumentIndexing(response.sourceId, response.fileName)
+            } catch (e: retrofit2.HttpException) {
+                val reason = e.response()?.errorBody()?.string()?.let { ERROR_FIELD.find(it)?.groupValues?.get(1) } ?: "HTTP ${e.code()}"
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_failed, reason))
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_failed, e.javaClass.simpleName))
+            }
+        }
     }
 
     // ---- Internet ----
@@ -223,7 +330,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             try {
                 val result = client.api.synthesize(SynthesizeRequest(text = text))
-                _state.value = _state.value.copy(ttsAudioBase64 = result.base64Data, ttsResult = "Spoken locally · ${"%.1f".format(result.durationSeconds)}s")
+                _state.value = _state.value.copy(ttsAudioBase64 = result.base64Data, ttsResult = container.appContext.getString(R.string.tools_spoken, "%.1f".format(result.durationSeconds)))
             } catch (e: Exception) { fail(e) }
         }
     }
@@ -341,7 +448,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
     fun runComputerUse(goal: String) {
         if (goal.isBlank()) return
         val client = container.client.value ?: run {
-            _state.value = _state.value.copy(computerUseSummary = "Not paired with a PC yet.")
+            _state.value = _state.value.copy(computerUseSummary = container.appContext.getString(R.string.tools_not_paired))
             return
         }
         if (computerUseJob?.isActive == true) return
@@ -349,7 +456,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
         _state.value = _state.value.copy(
             computerUseRunning = true,
             computerUseLog = emptyList(),
-            computerUseSummary = "Creating a task on the paired Windows PC…"
+            computerUseSummary = container.appContext.getString(R.string.tools_cu_creating)
         )
 
         computerUseJob = viewModelScope.launch {
@@ -359,8 +466,8 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
                 )
                 computerUseTaskId = created.id
                 _state.value = _state.value.copy(
-                    computerUseLog = listOf("Core task ${created.id.take(12)} created on Windows."),
-                    computerUseSummary = "Windows owns execution. GUI control still requires task-scoped Approve once."
+                    computerUseLog = listOf(container.appContext.getString(R.string.tools_cu_created, created.id.take(12))),
+                    computerUseSummary = container.appContext.getString(R.string.tools_cu_windows_owns)
                 )
 
                 while (isActive) {
@@ -370,19 +477,19 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
                     } catch (_: Exception) {
                         emptyList()
                     }
-                    val stage = current.stage?.takeIf { it.isNotBlank() } ?: "Core task"
+                    val stage = current.stage?.takeIf { it.isNotBlank() } ?: container.appContext.getString(R.string.tools_core_task)
                     val statusLine = "${current.status.uppercase()} · $stage · ${current.progressPercent}%"
                     val terminal = current.status in listOf("completed", "failed", "cancelled")
                     val approvalPending = current.status in listOf("waiting", "blocked") &&
                         (stage.contains("approval", ignoreCase = true) || stage.contains("computer", ignoreCase = true))
                     val summary = when (current.status) {
-                        "completed" -> current.resultJson ?: "Computer Use completed on Windows."
-                        "failed" -> current.error ?: "Computer Use failed on Windows."
-                        "cancelled" -> "Computer Use task cancelled."
+                        "completed" -> current.resultJson ?: container.appContext.getString(R.string.tools_cu_done)
+                        "failed" -> current.error ?: container.appContext.getString(R.string.tools_cu_fail)
+                        "cancelled" -> container.appContext.getString(R.string.tools_cu_cancelled)
                         else -> if (approvalPending)
-                            "Waiting for task-scoped Approve once in PC Studio. The phone has no direct input privilege."
+                            container.appContext.getString(R.string.tools_cu_waiting)
                         else
-                            "Running on the paired Windows PC."
+                            container.appContext.getString(R.string.tools_cu_running)
                     }
                     _state.value = _state.value.copy(
                         computerUseRunning = !terminal,
@@ -396,7 +503,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
                 if (isActive) {
                     _state.value = _state.value.copy(
                         computerUseRunning = false,
-                        computerUseSummary = "Computer Use request failed: ${e.message ?: "unknown error"}"
+                        computerUseSummary = container.appContext.getString(R.string.tools_cu_failed, e.message ?: container.appContext.getString(R.string.tools_unknown_error))
                     )
                 }
             } finally {
@@ -416,7 +523,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
         computerUseTaskId = null
         _state.value = _state.value.copy(
             computerUseRunning = false,
-            computerUseSummary = if (taskId == null) "Stopped." else "Cancellation requested for the Windows task."
+            computerUseSummary = if (taskId == null) container.appContext.getString(R.string.tools_stopped) else container.appContext.getString(R.string.tools_cancel_requested)
         )
         if (client != null && taskId != null) {
             viewModelScope.launch {
@@ -477,7 +584,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
             try {
                 val result = client.api.stopAllAgents()
                 _state.value = _state.value.copy(
-                    stopAllMessage = "Stopped ${result.tasksCancelled} task(s), cancelled ${result.autopilotRunsCancelled} Autopilot run(s), automations paused."
+                    stopAllMessage = container.appContext.getString(R.string.tools_stopped_all, result.tasksCancelled, result.autopilotRunsCancelled)
                 )
                 refreshAgentTasks()
             } catch (e: Exception) { fail(e) }
@@ -487,7 +594,7 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
     fun resumeAutomations() {
         val client = container.client.value ?: return
         viewModelScope.launch {
-            try { client.api.resumeAutomations(); _state.value = _state.value.copy(stopAllMessage = "Automations resumed.") }
+            try { client.api.resumeAutomations(); _state.value = _state.value.copy(stopAllMessage = container.appContext.getString(R.string.tools_resumed)) }
             catch (e: Exception) { fail(e) }
         }
     }

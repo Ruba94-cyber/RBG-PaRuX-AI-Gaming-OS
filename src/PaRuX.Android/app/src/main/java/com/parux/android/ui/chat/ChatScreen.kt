@@ -1,5 +1,11 @@
 package com.parux.android.ui.chat
 
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import com.parux.android.R
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.ContentResolver
 import android.content.pm.PackageManager
@@ -95,7 +101,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         if (uri != null) {
             val image = uriToPendingImage(context.contentResolver, uri)
             if (image == null) {
-                attachmentError = "Could not attach this image. Use a supported image smaller than 8 MB."
+                attachmentError = context.getString(R.string.chat_attach_failed)
             } else {
                 pendingImage = image
                 attachmentError = null
@@ -122,18 +128,33 @@ fun ChatScreen(viewModel: ChatViewModel) {
             TopAppBar(
                 title = { Text(androidx.compose.ui.res.stringResource(com.parux.android.R.string.app_display_name)) },
                 actions = {
-                    IconButton(onClick = { showHistory = true }) { Icon(Icons.Default.History, contentDescription = "History") }
-                    IconButton(onClick = { viewModel.newConversation() }) { Icon(Icons.Default.Add, contentDescription = "New chat") }
+                    IconButton(onClick = { viewModel.setIncognito(!state.incognito) }) {
+                        Icon(
+                            if (state.incognito) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = stringResource(if (state.incognito) R.string.chat_incognito_on else R.string.chat_incognito_off),
+                            tint = if (state.incognito) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { showHistory = true }) { Icon(Icons.Default.History, contentDescription = stringResource(R.string.chat_history)) }
+                    IconButton(onClick = { viewModel.newConversation() }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.chat_new)) }
                 }
             )
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             if (state.gamingMode) GamingBanner()
+            if (state.incognito) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.chat_incognito_banner),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
             if (localCore == null) {
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth()) {
-                    Text("Local PaRuX PC not connected. Pair in Settings; your unsent text stays here.",
+                    Text(stringResource(R.string.chat_not_connected),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -156,7 +177,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 EmptyState(Modifier.weight(1f), state.selectedProjectId != null)
             } else {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(12.dp)) {
-                    items(state.current.messages, key = { it.id }) { message -> MessageBubble(message) }
+                    val lastAnswerId = state.current.messages.lastOrNull { it.role == "assistant" }?.id
+                    items(state.current.messages, key = { it.id }) { message ->
+                        MessageBubble(
+                            message,
+                            canRegenerate = message.id == lastAnswerId && !state.isStreaming,
+                            onRegenerate = { viewModel.regenerateLast() }
+                        )
+                    }
                 }
             }
 
@@ -164,7 +192,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                        TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                        TextButton(onClick = viewModel::dismissError) { Text(stringResource(R.string.common_dismiss)) }
                     }
                 }
             }
@@ -176,8 +204,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
             pendingImage?.let { image ->
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Attached: ${image.fileName}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { pendingImage = null }) { Text("Remove") }
+                    Text(stringResource(R.string.chat_attached, image.fileName), style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { pendingImage = null }) { Text(stringResource(R.string.common_remove)) }
                 }
             }
 
@@ -208,7 +236,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 
     if (showHistory) {
-        HistorySheet(state.conversations, { showHistory = false }) { id ->
+        HistorySheet(state.conversations, { showHistory = false }, viewModel::deleteConversation, viewModel::renameConversation) { id ->
             viewModel.openConversation(id)
             showHistory = false
         }
@@ -226,16 +254,16 @@ private fun ModelSelectorRow(
     var filter by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(MobileModelSort.Name) }
     val current = if (preference.mode == "manual") {
-        val file = preference.manualModelFileName ?: "missing model"
+        val file = preference.manualModelFileName ?: stringResource(R.string.chat_model_missing)
         val alias = models.firstOrNull { it.fileName.equals(file, ignoreCase = true) }?.alias
-        "Manual · " + (alias?.takeIf { it.isNotBlank() } ?: file)
+        stringResource(R.string.chat_model_manual, alias?.takeIf { it.isNotBlank() } ?: file)
     } else {
-        "Auto · " + when (preference.autoProfile) {
-            "max_intelligence" -> "Max intelligence"
-            "responsive" -> "Responsive"
-            "custom" -> "Custom"
-            else -> "Balanced"
-        }
+        stringResource(R.string.chat_model_auto, when (preference.autoProfile) {
+            "max_intelligence" -> stringResource(R.string.chat_auto_max)
+            "responsive" -> stringResource(R.string.chat_auto_responsive)
+            "custom" -> stringResource(R.string.chat_auto_custom)
+            else -> stringResource(R.string.chat_auto_balanced)
+        })
     }
 
     // One pure bounded policy for selection, search and order. No GPU load or
@@ -248,13 +276,13 @@ private fun ModelSelectorRow(
 
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
         Box {
-            TextButton(onClick = { filter = ""; expanded = true }) { Text("Model: $current") }
+            TextButton(onClick = { filter = ""; expanded = true }) { Text(stringResource(R.string.chat_model_label, current)) }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 listOf(
-                    "balanced" to "Auto · Balanced",
-                    "max_intelligence" to "Auto · Max intelligence",
-                    "responsive" to "Auto · Responsive",
-                    "custom" to "Auto · Custom (configured on PC)"
+                    "balanced" to stringResource(R.string.chat_model_auto, stringResource(R.string.chat_auto_balanced)),
+                    "max_intelligence" to stringResource(R.string.chat_model_auto, stringResource(R.string.chat_auto_max)),
+                    "responsive" to stringResource(R.string.chat_model_auto, stringResource(R.string.chat_auto_responsive)),
+                    "custom" to stringResource(R.string.chat_model_auto, stringResource(R.string.chat_auto_custom_pc))
                 ).forEach { (profile, label) ->
                     DropdownMenuItem(text = { Text(label) }, onClick = {
                         onAuto(profile)
@@ -265,7 +293,7 @@ private fun ModelSelectorRow(
                     OutlinedTextField(
                         value = filter,
                         onValueChange = { filter = it },
-                        placeholder = { Text("Search installed models") },
+                        placeholder = { Text(stringResource(R.string.chat_search_models)) },
                         singleLine = true,
                         modifier = Modifier.width(280.dp).padding(horizontal = 8.dp)
                     )
@@ -278,23 +306,23 @@ private fun ModelSelectorRow(
                         FilterChip(
                             selected = sort == MobileModelSort.Name,
                             onClick = { sort = MobileModelSort.Name },
-                            label = { Text("Name") }
+                            label = { Text(stringResource(R.string.chat_sort_name)) }
                         )
                         FilterChip(
                             selected = sort == MobileModelSort.SmallestFile,
                             onClick = { sort = MobileModelSort.SmallestFile },
-                            label = { Text("Small") }
+                            label = { Text(stringResource(R.string.chat_sort_small)) }
                         )
                         FilterChip(
                             selected = sort == MobileModelSort.MeasuredSpeed,
                             onClick = { sort = MobileModelSort.MeasuredSpeed },
-                            label = { Text("Speed") }
+                            label = { Text(stringResource(R.string.chat_sort_speed)) }
                         )
                     }
                 }
                 if (matchingCount == 0) {
                     DropdownMenuItem(
-                        text = { Text("No installed models match this search") },
+                        text = { Text(stringResource(R.string.chat_no_models_match)) },
                         onClick = {}, enabled = false
                     )
                 }
@@ -304,16 +332,16 @@ private fun ModelSelectorRow(
                         " · ${"%.1f".format(it / 1073741824.0)} GiB"
                     } ?: ""
                     val speed = model.lastBenchmarkTokensPerSecond?.takeIf { it.isFinite() && it > 0 }?.let {
-                        " · ${"%.1f".format(it)} last tok/s"
+                        " · " + androidx.compose.ui.platform.LocalContext.current.getString(R.string.chat_tok_s, "%.1f".format(it))
                     } ?: ""
-                    DropdownMenuItem(text = { Text("Manual · $display$size$speed") }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.chat_model_manual, "$display$size$speed")) }, onClick = {
                         onManual(model.fileName)
                         expanded = false
                     })
                 }
                 if (matchingCount > visible.size) {
                     DropdownMenuItem(
-                        text = { Text("Showing ${visible.size} of $matchingCount · refine search") },
+                        text = { Text(stringResource(R.string.chat_showing_of, visible.size, matchingCount)) },
                         onClick = {}, enabled = false
                     )
                 }
@@ -332,31 +360,32 @@ private fun LiveVoiceStatusBar(phase: LiveVoicePhase, transcript: String?, onInt
         ) {
             Icon(Icons.Default.Mic, contentDescription = null)
             Column(Modifier.weight(1f)) {
-                Text("Live Voice · ${voicePhaseLabel(phase)}", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.chat_live_voice, voicePhaseLabel(phase)), style = MaterialTheme.typography.labelLarge)
                 transcript?.takeIf { it.isNotBlank() }?.let {
-                    Text("Heard: ${it.take(90)}${if (it.length > 90) "…" else ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.chat_heard, it.take(90) + (if (it.length > 90) "…" else "")), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (phase == LiveVoicePhase.Speaking) TextButton(onClick = onInterrupt) { Text("Interrupt") }
-            TextButton(onClick = onStop) { Text("Stop") }
+            if (phase == LiveVoicePhase.Speaking) TextButton(onClick = onInterrupt) { Text(stringResource(R.string.chat_interrupt)) }
+            TextButton(onClick = onStop) { Text(stringResource(R.string.common_stop)) }
         }
     }
 }
 
-private fun voicePhaseLabel(phase: LiveVoicePhase): String = when (phase) {
-    LiveVoicePhase.Off -> "Off"
-    LiveVoicePhase.Checking -> "Checking local speech"
-    LiveVoicePhase.Listening -> "Listening"
-    LiveVoicePhase.Transcribing -> "Transcribing locally"
-    LiveVoicePhase.Thinking -> "Thinking"
-    LiveVoicePhase.Speaking -> "Speaking · say something to interrupt"
-}
+@Composable
+private fun voicePhaseLabel(phase: LiveVoicePhase): String = stringResource(when (phase) {
+    LiveVoicePhase.Off -> R.string.chat_voice_off
+    LiveVoicePhase.Checking -> R.string.chat_voice_checking
+    LiveVoicePhase.Listening -> R.string.chat_voice_listening
+    LiveVoicePhase.Transcribing -> R.string.chat_voice_transcribing
+    LiveVoicePhase.Thinking -> R.string.chat_voice_thinking
+    LiveVoicePhase.Speaking -> R.string.chat_voice_speaking
+})
 
 @Composable
 private fun ProfileRow(current: String, onChange: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("STANDARD", "UNCENSORED").forEach { option ->
-            FilterChip(selected = current == option, onClick = { onChange(option) }, label = { Text(option.lowercase().replaceFirstChar { it.uppercase() }) })
+            FilterChip(selected = current == option, onClick = { onChange(option) }, label = { Text(stringResource(if (option == "UNCENSORED") R.string.chat_profile_uncensored else R.string.chat_profile_standard)) })
         }
     }
 }
@@ -365,12 +394,12 @@ private fun ProfileRow(current: String, onChange: (String) -> Unit) {
 private fun ProjectSelectorRow(projects: List<ProjectDto>, selectedProjectId: String?, onSelect: (String?) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val selected = projects.firstOrNull { it.id == selectedProjectId }
-    val label = selected?.goal?.take(36) ?: "None"
+    val label = selected?.goal?.take(36) ?: stringResource(R.string.chat_project_none_short)
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
         Box {
-            TextButton(onClick = { expanded = true }) { Text("Project: $label") }
+            TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.chat_project, label)) }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("None · ordinary Chat") }, onClick = { onSelect(null); expanded = false })
+                DropdownMenuItem(text = { Text(stringResource(R.string.chat_project_none)) }, onClick = { onSelect(null); expanded = false })
                 projects.forEach { project ->
                     DropdownMenuItem(text = { Text(project.goal) }, onClick = { onSelect(project.id); expanded = false })
                 }
@@ -388,9 +417,10 @@ private fun SkillSelectorRow(
     var expanded by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
         Box {
-            TextButton(onClick = { expanded = true }) { Text("Skill: $selectedLabel") }
+            TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.chat_skill, selectedLabel)) }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Auto") }, onClick = { onSelect(null, "Auto"); expanded = false })
+                val autoLabel = stringResource(R.string.settings_auto)
+                DropdownMenuItem(text = { Text(autoLabel) }, onClick = { onSelect(null, autoLabel); expanded = false })
                 skills.sortedBy { it.displayName }.forEach { skill ->
                     DropdownMenuItem(text = { Text(skill.displayName) }, onClick = { onSelect(skill.id, skill.displayName); expanded = false })
                 }
@@ -403,8 +433,8 @@ private fun SkillSelectorRow(
 private fun GamingBanner() {
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Gaming Mode", style = MaterialTheme.typography.titleSmall)
-            Text("PaRuX AI is suspended for now to leave all resources for the game on your PC.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.settings_gaming_mode), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.chat_gaming_body), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -412,9 +442,9 @@ private fun GamingBanner() {
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier, projectScoped: Boolean = false) {
     Column(modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(if (projectScoped) "Continue this Project" else "Ask me something", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(if (projectScoped) R.string.chat_empty_title_project else R.string.chat_empty_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            if (projectScoped) "PaRuX will load this Project's bounded Core knowledge before every turn." else "Runs on your PC over the local network.",
+            stringResource(if (projectScoped) R.string.chat_empty_body_project else R.string.chat_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -422,15 +452,15 @@ private fun EmptyState(modifier: Modifier = Modifier, projectScoped: Boolean = f
 }
 
 @Composable
-private fun MessageBubble(message: UiMessage) {
+private fun MessageBubble(message: UiMessage, canRegenerate: Boolean = false, onRegenerate: () -> Unit = {}) {
     val isUser = message.role == "user"
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
             if (message.switchedToUncensored) {
-                Text("Switched to Uncensored", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(bottom = 2.dp))
+                Text(stringResource(R.string.chat_switched_uncensored), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(bottom = 2.dp))
             }
             message.modelRouteLabel?.let {
-                Text("Model · $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 2.dp))
+                Text(stringResource(R.string.chat_model_prefix, it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 2.dp))
             }
             // Above the bubble, not below it: the user should know the turn left their PC before
             // they read the answer, not after.
@@ -451,13 +481,26 @@ private fun MessageBubble(message: UiMessage) {
                     else MarkdownText(message.content)
                 }
             }
+            if (!isUser && !message.isStreaming && message.content.isNotBlank()) {
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                var copied by remember(message.id) { mutableStateOf(false) }
+                Row {
+                    TextButton(onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.content))
+                        copied = true
+                    }) { Text(stringResource(if (copied) R.string.chat_copied else R.string.common_copy), style = MaterialTheme.typography.labelSmall) }
+                    if (canRegenerate) TextButton(onClick = onRegenerate) {
+                        Text(stringResource(R.string.chat_regenerate), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             message.route?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             message.modelRouteReason?.takeIf { it.isNotBlank() }?.let {
-                Text("Why: ${it.take(180)}${if (it.length > 180) "…" else ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                Text(stringResource(R.string.chat_why, it.take(180) + (if (it.length > 180) "…" else "")), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
             if (message.skillUsed != null || message.ragSources.isNotEmpty()) {
-                val skillPart = message.skillUsed?.let { "Skill: $it" }
-                val sourcesPart = if (message.ragSources.isNotEmpty()) "Sources: " + message.ragSources.joinToString(", ") else null
+                val skillPart = message.skillUsed?.let { stringResource(R.string.chat_skill, it) }
+                val sourcesPart = if (message.ragSources.isNotEmpty()) stringResource(R.string.chat_skill_sources, message.ragSources.joinToString(", ")) else null
                 Text(listOfNotNull(skillPart, sourcesPart).joinToString("  ·  "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
         }
@@ -478,14 +521,14 @@ private fun Composer(
     onStop: () -> Unit
 ) {
     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        IconButton(onClick = onAttachClick) { Icon(Icons.Default.AttachFile, contentDescription = "Attach image") }
+        IconButton(onClick = onAttachClick) { Icon(Icons.Default.AttachFile, contentDescription = stringResource(R.string.chat_attach_image)) }
         IconButton(onClick = onVoiceClick) {
             Icon(
                 if (voiceModeEnabled && voicePhase != LiveVoicePhase.Speaking) Icons.Default.MicOff else Icons.Default.Mic,
                 contentDescription = when {
-                    !voiceModeEnabled -> "Start local Live Voice"
-                    voicePhase == LiveVoicePhase.Speaking -> "Interrupt spoken reply"
-                    else -> "Stop Live Voice"
+                    !voiceModeEnabled -> stringResource(R.string.chat_voice_start)
+                    voicePhase == LiveVoicePhase.Speaking -> stringResource(R.string.chat_voice_interrupt)
+                    else -> stringResource(R.string.chat_voice_stop)
                 }
             )
         }
@@ -493,27 +536,62 @@ private fun Composer(
             value = text,
             onValueChange = onTextChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text(if (voiceModeEnabled) "Live Voice is active…" else "Message PaRuX…") },
+            placeholder = { Text(stringResource(if (voiceModeEnabled) R.string.chat_voice_active_hint else R.string.chat_message_hint)) },
             maxLines = 6
         )
         Spacer(Modifier.width(4.dp))
-        if (isStreaming) IconButton(onClick = onStop) { Icon(Icons.Default.Stop, contentDescription = "Stop") }
-        else IconButton(onClick = onSend, enabled = text.isNotBlank() || hasAttachment) { Icon(Icons.Default.Send, contentDescription = "Send") }
+        if (isStreaming) IconButton(onClick = onStop) { Icon(Icons.Default.Stop, contentDescription = stringResource(R.string.common_stop)) }
+        else IconButton(onClick = onSend, enabled = text.isNotBlank() || hasAttachment) { Icon(Icons.Default.Send, contentDescription = stringResource(R.string.common_send)) }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistorySheet(conversations: List<ConversationSummary>, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+private fun HistorySheet(
+    conversations: List<ConversationSummary>,
+    onDismiss: () -> Unit,
+    onDelete: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onSelect: (String) -> Unit
+) {
     val sheetState = rememberModalBottomSheetState()
+    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
+    var pendingRename by remember { mutableStateOf<ConversationSummary?>(null) }
+    pendingRename?.let { target ->
+        var draft by remember(target.id) { mutableStateOf(target.title) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text(stringResource(R.string.chat_rename_title)) },
+            text = { OutlinedTextField(value = draft, onValueChange = { draft = it }, singleLine = true, label = { Text(stringResource(R.string.chat_rename_hint)) }) },
+            confirmButton = { TextButton(onClick = { onRename(target.id, draft); pendingRename = null }, enabled = draft.isNotBlank()) { Text(stringResource(R.string.common_save)) } },
+            dismissButton = { TextButton(onClick = { pendingRename = null }) { Text(stringResource(R.string.common_cancel)) } }
+        )
+    }
+    pendingDelete?.let { target ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.chat_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.chat_delete_confirm_body)) },
+            confirmButton = { TextButton(onClick = { onDelete(target.id); pendingDelete = null }) { Text(stringResource(R.string.chat_delete)) } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.common_cancel)) } }
+        )
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(16.dp)) {
-            Text("Conversations", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-            if (conversations.isEmpty()) Text("No conversations yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.chat_conversations), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            if (conversations.isEmpty()) Text(stringResource(R.string.chat_no_conversations), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyColumn {
                 items(conversations, key = { it.id }) { conversation ->
-                    Surface(onClick = { onSelect(conversation.id) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(conversation.title, Modifier.padding(vertical = 12.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(onClick = { onSelect(conversation.id) }, modifier = Modifier.weight(1f)) {
+                            Text(conversation.title, Modifier.padding(vertical = 12.dp))
+                        }
+                        IconButton(onClick = { pendingRename = conversation }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.chat_rename))
+                        }
+                        IconButton(onClick = { pendingDelete = conversation }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.chat_delete_conversation))
+                        }
                     }
                 }
             }

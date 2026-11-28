@@ -1,5 +1,6 @@
 package com.parux.android.ui.goals
 
+import com.parux.android.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parux.android.core.AppContainer
@@ -35,11 +36,11 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
             .take(24)
             .toList()
         if (normalizedGoal.isBlank()) {
-            _state.value = _state.value.copy(error = "Goal is required.")
+            _state.value = _state.value.copy(error = container.appContext.getString(R.string.goals_err_required))
             return
         }
         if (criteria.isEmpty()) {
-            _state.value = _state.value.copy(error = "Add at least one acceptance criterion, one per line.")
+            _state.value = _state.value.copy(error = container.appContext.getString(R.string.goals_err_criteria))
             return
         }
         val client = container.client.value ?: return
@@ -65,13 +66,13 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
                     latestSpecification = specification,
                     latestTask = task,
                     loading = false,
-                    message = "Goal v${specification.version} is immutable and the Windows task is queued."
+                    message = container.appContext.getString(R.string.goals_created, specification.version)
                 )
                 refreshVerification()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     loading = false,
-                    error = e.message ?: "Could not create Goal Mode task."
+                    error = e.message ?: container.appContext.getString(R.string.goals_err_create)
                 )
             }
         }
@@ -90,7 +91,7 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
                     error = null
                 )
             } catch (e: Exception) {
-                _state.value = _state.value.copy(error = e.message ?: "Could not refresh Goal Mode verification.")
+                _state.value = _state.value.copy(error = e.message ?: container.appContext.getString(R.string.goals_err_refresh))
             }
         }
     }

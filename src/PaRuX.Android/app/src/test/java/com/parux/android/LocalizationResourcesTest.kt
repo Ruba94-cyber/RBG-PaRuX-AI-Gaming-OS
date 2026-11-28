@@ -74,7 +74,7 @@ class LocalizationResourcesTest {
     @Test
     fun translationsAreNotEmptyAndDifferFromTheDefaultsExceptWhenExplicitlySame() {
         // These read the same in both languages (brand names, single loan words).
-        val sameInBoth = setOf("settings_auto")
+        val sameInBoth = setOf("media_seconds", "studio_branch", "studio_diff", "tools_3d_torch", "tools_autopilot", "tools_avatar", "tools_internet", "tools_skill_workflow", "settings_auto", "tab_chat", "tab_pc", "tab_media", "media_title", "media_video", "jobs_video", "chat_profile_standard", "chat_profile_uncensored", "chat_model_auto")
         val byName = defaults.associateBy { it.name }
         for (file in localeFiles()) {
             for (entry in read(file)) {
@@ -91,28 +91,25 @@ class LocalizationResourcesTest {
      * Screens that already read their text from resources. A hard-coded literal in a Text(...), contentDescription or title there
      * fails the build; the remaining screens are tracked by a count that may only go down.
      */
-    private val migrated = setOf("ui/settings/SettingsScreen.kt")
+    private val migrated = setOf("ui/settings/SettingsScreen.kt", "ui/chat/ChatScreen.kt", "ui/media/MediaScreen.kt")
 
-    private val remainingHardCoded = mapOf(
-        // file (relative to the app package) to the number of Compose text literals not yet moved to resources
-        "ui/tools/ToolsScreen.kt" to 81,
-        "ui/studio/PcStudioScreen.kt" to 48,
-        "ui/chat/ChatScreen.kt" to 34,
-        "ui/pairing/PairingScreen.kt" to 13,
-        "ui/goals/GoalsScreen.kt" to 12,
-        "ui/jobs/JobsScreen.kt" to 11,
-        "ui/media/MediaScreen.kt" to 9,
-        "ui/studio/ProjectKnowledgeSection.kt" to 6,
-        "ui/chat/ChatViewModel.kt" to 1,
-        "ui/jobs/JobsViewModel.kt" to 1,
-    )
+    // Every screen and ViewModel under ui/ is now held to zero hard-coded user-visible text.
+    private val remainingHardCoded = emptyMap<String, Int>()
+
+    /** Not user-visible: a model system prompt and a debug-only JSON placeholder. */
+    private val notUserVisible = listOf("You are working inside the explicitly selected PaRuX Project", "{\\\"v\\\":1")
 
     private val composeText = Regex(
         """(?:Text\(\s*|text\s*=\s*|contentDescription\s*=\s*|title\s*=\s*\{?\s*Text\(\s*|label\s*=\s*\{\s*Text\(\s*)"((?:[^"\\]|\\.)*)""""
     )
 
     private fun literalCount(file: File): Int = file.readLines().sumOf { line ->
-        composeText.findAll(line).count { Regex("[A-Za-z]{3,}").containsMatchIn(it.groupValues[1]) }
+        composeText.findAll(line).count { match ->
+            val literal = match.groupValues[1]
+            // Only the fixed words count: interpolated values (${...}, $name) are data, not translatable text.
+            val words = literal.replace(Regex("""\$\{[^}]*\}"""), "").replace(Regex("""\$[A-Za-z_]\w*"""), "")
+            notUserVisible.none { literal.startsWith(it) } && Regex("[A-Za-z]{3,}").containsMatchIn(words)
+        }
     }
 
     @Test

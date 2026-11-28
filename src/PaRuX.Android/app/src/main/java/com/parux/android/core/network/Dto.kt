@@ -515,3 +515,43 @@ data class ContextNeighborhoodResponse(
     val incomingRelations: List<ContextRelationDto> = emptyList(),
     val neighborEntities: List<ContextEntityDto> = emptyList()
 )
+
+@Serializable
+data class MobileRuntimeStatusDto(
+    val textLoaded: Boolean = false,
+    val activeRole: String? = null,
+    val activeModelName: String? = null,
+    val hasVision: Boolean = false,
+    val gamingActive: Boolean = false,
+    val textUnloadedForGaming: Boolean = false,
+    val gpuDetected: Boolean = false,
+    val vramTotalMib: Int = 0,
+    val vramFreeMib: Int? = null,
+    val ramTotalBytes: Long = 0,
+    val ramAvailableBytes: Long? = null
+)
+
+@Serializable
+data class MobileDocumentUploadRequest(val fileName: String, val contentBase64: String)
+
+@Serializable
+data class MobileDocumentUploadResponse(
+    val fileName: String = "",
+    val sourceId: String = "",
+    val indexingStarted: Boolean = false
+)
+
+@Serializable
+data class MobileIndexStatusDto(
+    val state: String = "idle",
+    val filesSeen: Int = 0,
+    val indexed: Int = 0,
+    val failed: Int = 0,
+    val skipped: Int = 0,
+    val currentFile: String? = null,
+    val currentPage: Int? = null,
+    val totalPages: Int? = null,
+    val error: String? = null,
+    val files: Int = 0,
+    val chunks: Int = 0
+)

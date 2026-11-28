@@ -1,5 +1,6 @@
 package com.parux.android.ui.settings
 
+import com.parux.android.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parux.android.core.AppContainer
@@ -56,7 +57,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     preferredContextTokens = effectiveProfile?.preferredContextTokens ?: _state.value.preferredContextTokens,
                     reasoningEffort = effectiveProfile?.reasoningEffort ?: _state.value.reasoningEffort,
                     executionEvidenceSource = effectiveProfile?.evidenceSource ?: _state.value.executionEvidenceSource,
-                    executionProfileError = if (effectiveProfile == null) "Execution profile is unavailable on this Core." else null,
+                    executionProfileError = if (effectiveProfile == null) container.appContext.getString(R.string.settings_err_profile_unavailable) else null,
                     workstationMetrics = dashboard?.metrics ?: _state.value.workstationMetrics,
                     engineRaceSummary = dashboard?.engineRaceSummary ?: _state.value.engineRaceSummary
                 )
@@ -84,7 +85,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     executionProfileChanging = false,
-                    executionProfileError = e.message ?: "Could not update the shared execution profile."
+                    executionProfileError = e.message ?: container.appContext.getString(R.string.settings_err_profile_update)
                 )
             }
         }

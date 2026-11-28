@@ -1,5 +1,6 @@
 package com.parux.android.ui.chat
 
+import com.parux.android.R
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,6 +36,8 @@ data class ChatUiState(
     val conversations: List<com.parux.android.core.network.ConversationSummary> = emptyList(),
     val current: UiConversation = UiConversation(),
     val isStreaming: Boolean = false,
+    /** Incognito chat: the conversation lives only on the phone and is never saved to the PC. */
+    val incognito: Boolean = false,
     val isLoadingList: Boolean = false,
     val gamingMode: Boolean = false,
     val aiProfile: String = "STANDARD",
@@ -148,6 +151,56 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _state.value = _state.value.copy(current = UiConversation())
     }
 
+    /** Switching modes always starts a fresh conversation so a saved chat never becomes incognito (or vice versa) mid-way. */
+    fun setIncognito(enabled: Boolean) {
+        if (_state.value.isStreaming || _state.value.incognito == enabled) return
+        if (_state.value.voiceModeEnabled) stopVoiceMode()
+        _state.value = _state.value.copy(incognito = enabled, current = UiConversation())
+    }
+
+    /** Renames a saved conversation on the PC: the stored document and its title are rewritten together. */
+    fun renameConversation(id: String, newTitle: String) {
+        val client = container.client.value ?: return
+        val title = newTitle.trim().take(120)
+        if (title.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val stored = client.api.getConversation(id)
+                val json = com.parux.android.core.network.PaRuXHttpClient.json
+                val doc = json.decodeFromString(com.parux.android.core.network.ConversationDoc.serializer(), stored.documentJson)
+                val renamed = json.encodeToString(com.parux.android.core.network.ConversationDoc.serializer(), doc.copy(title = title))
+                client.api.saveConversation(id, ConversationUpsertRequest(title, stored.createdUtc, stored.updatedUtc, renamed))
+                if (_state.value.current.id == id) _state.value = _state.value.copy(current = _state.value.current.copy(title = title))
+                refreshConversationList()
+            } catch (e: Exception) { _state.value = _state.value.copy(errorMessage = friendlyError(e)) }
+        }
+    }
+
+    fun deleteConversation(id: String) {
+        val client = container.client.value ?: return
+        viewModelScope.launch {
+            try {
+                client.api.deleteConversation(id)
+                if (_state.value.current.id == id && !_state.value.isStreaming) newConversation()
+                refreshConversationList()
+            } catch (e: Exception) { _state.value = _state.value.copy(errorMessage = friendlyError(e)) }
+        }
+    }
+
+    /** Drops the last answer and asks again with the same prompt (and image). */
+    fun regenerateLast(): Boolean {
+        if (_state.value.isStreaming) return false
+        val messages = _state.value.current.messages
+        val lastUser = messages.indexOfLast { it.role == "user" }
+        if (lastUser < 0) return false
+        val prompt = messages[lastUser]
+        val before = _state.value.current
+        _state.value = _state.value.copy(current = before.copy(messages = messages.subList(0, lastUser)))
+        val admitted = sendMessage(prompt.content, prompt.imageAttachment)
+        if (!admitted) _state.value = _state.value.copy(current = before)
+        return admitted
+    }
+
     fun refreshSkills() {
         val client = container.client.value ?: return
         viewModelScope.launch {
@@ -191,11 +244,11 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         if (text.isBlank() && image == null) return false
         if (_state.value.isStreaming) return false
         if (_state.value.gamingMode) {
-            _state.value = _state.value.copy(errorMessage = "Gaming Mode — PaRuX AI is suspended. Your draft is preserved.")
+            _state.value = _state.value.copy(errorMessage = container.appContext.getString(R.string.chatvm_gaming))
             return false
         }
         if (container.client.value == null) {
-            _state.value = _state.value.copy(errorMessage = "Connect to the local PaRuX PC to send a message. Your draft is preserved.")
+            _state.value = _state.value.copy(errorMessage = container.appContext.getString(R.string.chatvm_not_connected))
             return false
         }
         if (_state.value.voiceModeEnabled) stopVoiceMode()
@@ -208,7 +261,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         val client = container.client.value ?: return
         if (_state.value.voiceModeEnabled) return
         if (_state.value.gamingMode) {
-            _state.value = _state.value.copy(errorMessage = "Gaming Mode — Live Voice stays off while PaRuX AI is suspended.")
+            _state.value = _state.value.copy(errorMessage = container.appContext.getString(R.string.chatvm_gaming_voice))
             return
         }
         voiceEngine.stopAll()
@@ -220,7 +273,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             try {
                 val speech = client.api.getSpeechEngineStatus()
                 if (!speech.sttInstalled || !speech.ttsInstalled) {
-                    failVoice("Live Voice needs the local Speech runtime on the PC (Parakeet STT + Kokoro TTS). Install/repair Speech from PaRuX Runtime/Settings first.")
+                    failVoice(container.appContext.getString(R.string.chatvm_voice_runtime))
                     return@launch
                 }
                 while (currentCoroutineContext().isActive && _state.value.voiceModeEnabled) {
@@ -253,8 +306,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 }
             } catch (_: CancellationException) { }
-            catch (e: SecurityException) { failVoice("Microphone permission is required for PaRuX Live Voice.") }
-            catch (e: Exception) { failVoice("Live Voice stopped: " + friendlyError(e)) }
+            catch (e: SecurityException) { failVoice(container.appContext.getString(R.string.chatvm_mic)) }
+            catch (e: Exception) { failVoice(container.appContext.getString(R.string.chatvm_voice_stopped) + friendlyError(e)) }
             finally {
                 voiceSpeechStreamClient?.cancel()
                 voiceSpeechStreamClient = null
@@ -298,7 +351,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         val client = container.client.value ?: return null
         if (_state.value.isStreaming) return null
         if (_state.value.gamingMode) {
-            _state.value = _state.value.copy(errorMessage = "Gaming Mode — PaRuX AI is suspended to leave all resources for the game.")
+            _state.value = _state.value.copy(errorMessage = container.appContext.getString(R.string.chatvm_gaming_long))
             return null
         }
 
@@ -332,7 +385,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         try {
             if (!selectedProjectId.isNullOrBlank()) {
                 val pack = try { client.api.getProjectKnowledge(selectedProjectId) } catch (e: Exception) {
-                    val message = "Project context could not be loaded, so no model request was sent. " + friendlyError(e)
+                    val message = container.appContext.getString(R.string.chatvm_project_ctx) + friendlyError(e)
                     updateAssistantMessage(assistantMessage.id, message, false, isError = true)
                     _state.value = _state.value.copy(isStreaming = false, errorMessage = message)
                     finishTurn()
@@ -368,10 +421,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                     }
                     is ChatStreamEvent.CloudFallback -> {
                         val model = event.model.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
-                        val why = event.reason?.takeIf { it.isNotBlank() }?.let { " — local inference: " + it.take(140) } ?: ""
+                        val why = event.reason?.takeIf { it.isNotBlank() }?.let { container.appContext.getString(R.string.chatvm_cloud_why) + it.take(140) } ?: ""
                         updateAssistantMessage(
                             assistantMessage.id, builder.toString(), true,
-                            cloudFallbackNotice = "Answered by ${event.provider}$model. This turn left your PC.$why"
+                            cloudFallbackNotice = container.appContext.getString(R.string.chatvm_cloud, event.provider, model, why)
                         )
                     }
                     ChatStreamEvent.SwitchedToUncensored -> updateAssistantMessage(assistantMessage.id, builder.toString(), true, switchedToUncensored = true)
@@ -470,6 +523,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun persistCurrentConversation() {
         val client = container.client.value ?: return
+        if (_state.value.incognito) return
         val conversation = _state.value.current
         if (conversation.messages.isEmpty()) return
         val title = if (conversation.title == "New chat") deriveTitle(conversation) else conversation.title

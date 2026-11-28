@@ -290,6 +290,31 @@ public sealed class LocalRuntimeService
     }
 
     /// <summary>
+    /// Stops the resident text model to free GPU/RAM without changing the Local AI mode, so the next request reloads
+    /// it on demand. Takes the exclusive GPU lease (waits for admitted text work to finish) and is refused during Gaming.
+    /// </summary>
+    public async Task<RuntimeResult> UnloadTextExclusivelyAsync(CancellationToken cancellationToken)
+    {
+        await using MediaExecutionCoordinator.Lease exclusive = await MediaExecutionCoordinator.Current
+            .AcquireAsync("text-exclusive:unload", cancellationToken).ConfigureAwait(false);
+        if (GamingMode)
+            return new RuntimeResult(false, "Gaming Mode is active.");
+
+        await _process.WaitForIdleAsync(cancellationToken).ConfigureAwait(false);
+        LocalInferenceEngineCoordinator? coordinator = LocalInferenceEngineSharedServices.TryGetCoordinator();
+        if (coordinator != null)
+        {
+            await coordinator.WaitForAlternativeEnginesIdleAsync(cancellationToken).ConfigureAwait(false);
+            await coordinator.StopAlternativeEnginesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await TextInferenceQuiescence.WaitForIdleAsync(MediaTextDrainTimeout, cancellationToken).ConfigureAwait(false);
+
+        bool stopped = _process.StopText();
+        InvalidateGpuSamples();
+        return new RuntimeResult(stopped, stopped ? "Unloaded." : "The model could not be stopped.");
+    }
+
+    /// <summary>
     /// Called only after the caller owns MediaExecutionCoordinator's exclusive GPU lease. It drains
     /// admitted text work, then stops alternative residents. The normal llama.cpp resident is left
     /// alive until the media runtime's existing transition code stops it; this method proves doing

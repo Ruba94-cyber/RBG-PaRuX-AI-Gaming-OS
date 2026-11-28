@@ -1,5 +1,7 @@
 package com.parux.android.ui.media
 
+import com.parux.android.R
+import androidx.compose.ui.res.stringResource
 import android.content.ContentValues
 import android.content.Context
 import android.os.Build
@@ -71,14 +73,14 @@ fun MediaScreen(viewModel: JobsViewModel, container: AppContainer) {
     val completed = state.jobs.filter { it.status == "completed" && it.asset != null }
     var viewing by remember { mutableStateOf<MediaJobStatus?>(null) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Media") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.media_title)) }) }) { padding ->
         if (completed.isEmpty()) {
             Column(
                 Modifier.padding(padding).fillMaxSize().padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("Nothing generated yet", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.media_empty), style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Images and videos you generate or receive show up here.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -111,7 +113,7 @@ private fun MediaTile(job: MediaJobStatus, container: AppContainer, onClick: () 
                 AuthenticatedAsyncImage(url = "$endpoint/api/v1/media/${job.id}", container = container)
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Video", modifier = Modifier.padding(24.dp))
+                    Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.media_video), modifier = Modifier.padding(24.dp))
                 }
             }
         }
@@ -152,12 +154,12 @@ private fun MediaViewerDialog(job: MediaJobStatus, container: AppContainer, onDi
             else AuthenticatedAsyncImage(url = mediaUrl, container = container)
 
             Column(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Close") }
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close)) }
                 IconButton(onClick = { scope.launch { saveToGallery(context, job, container) } }) {
-                    Icon(Icons.Default.Download, contentDescription = "Save")
+                    Icon(Icons.Default.Download, contentDescription = stringResource(R.string.common_save))
                 }
                 IconButton(onClick = { scope.launch { shareMedia(context, job, container) } }) {
-                    Icon(Icons.Default.Share, contentDescription = "Share")
+                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.common_share))
                 }
             }
         }
