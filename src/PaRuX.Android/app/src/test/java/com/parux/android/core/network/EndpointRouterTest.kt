@@ -129,4 +129,29 @@ class EndpointRouterTest {
         // LAN without its fingerprint cannot be pinned.
         assertNull(PairingPayload.parse("""{"v":1,"endpoint":"https://192.168.1.50:51124","code":"1"}"""))
     }
+
+    @Test
+    fun `a changed tunnel address is picked up and an unchanged, invalid or empty one is ignored`() {
+        val old = "https://quiet-fox-9.trycloudflare.com"
+        assertEquals("https://new-name-2.trycloudflare.com",
+            com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, "https://new-name-2.trycloudflare.com/"))
+        assertNull(com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, "https://Quiet-Fox-9.trycloudflare.com/"))
+        assertNull(com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, ""))
+        assertNull(com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, null))
+        assertNull(com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, "http://evil.example"))
+        assertNull(com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(old, "https://192.168.1.5"))
+    }
+
+    @Test
+    fun `stale tunnel flag is set and cleared and ignored without a tunnel`() {
+        val router = EndpointRouter(lan, tunnel, probe = { false })
+        assertFalse(router.tunnelStale.value)
+        router.markTunnelStale()
+        assertTrue(router.tunnelStale.value)
+        router.clearTunnelStale()
+        assertFalse(router.tunnelStale.value)
+        val lanOnly = EndpointRouter(lan, null, probe = { true })
+        lanOnly.markTunnelStale()
+        assertFalse(lanOnly.tunnelStale.value)
+    }
 }

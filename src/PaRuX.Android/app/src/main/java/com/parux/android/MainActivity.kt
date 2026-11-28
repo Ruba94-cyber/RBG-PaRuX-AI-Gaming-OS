@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -159,8 +160,20 @@ private fun PaRuXApp(container: AppContainer, openPcRequests: StateFlow<Long>) {
         if (openPcRequest > 0) tab = PaRuXTab.PC
     }
 
+    val tunnelStale by (client?.router?.tunnelStale ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
     Scaffold(
         bottomBar = {
+          androidx.compose.foundation.layout.Column {
+            if (tunnelStale) {
+                androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                    Text(
+                        stringResource(R.string.tunnel_address_changed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+            }
             NavigationBar {
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Chat,
@@ -205,6 +218,7 @@ private fun PaRuXApp(container: AppContainer, openPcRequests: StateFlow<Long>) {
                     label = { NavLabel(stringResource(PaRuXTab.Settings.label)) }
                 )
             }
+          }
         }
     ) { padding ->
         // consumeWindowInsets: the bottom NavigationBar (and the system bars it already pads for) is part of

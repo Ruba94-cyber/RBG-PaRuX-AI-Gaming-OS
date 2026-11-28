@@ -563,6 +563,62 @@ public sealed class RemoteTunnelTests : IDisposable
         Assert.Equal(1, launcher.Started);
     }
 
+    // ---- UX: pending prompt and address refresh ------------------------------------------------------------------
+
+    [Fact]
+    public void Address_route_is_a_paired_device_route_and_never_a_browser_session_route()
+    {
+        Assert.True(TunnelEndpointPolicy.IsAllowed("GET", new PathString("/api/v1/remote/address")));
+        Assert.True(PairedDeviceEndpointPolicy.IsAllowed("GET", new PathString("/api/v1/remote/address")));
+        Assert.False(PairedDeviceEndpointPolicy.IsAllowed("POST", new PathString("/api/v1/remote/address")));
+        Assert.False(WebSessionEndpointPolicy.IsAllowed("GET", new PathString("/api/v1/remote/address")));
+        Assert.False(TunnelEndpointPolicy.IsAllowed("GET", new PathString("/api/v1/remote/tunnel/pending")));
+    }
+
+    [Fact]
+    public async Task A_paired_token_stays_valid_when_the_quick_tunnel_restarts_with_a_new_address()
+    {
+        var (t, r, launcher) = Online();
+        await GoOnline(t);
+        PairingCompleteResponse device = PairDirectly(r, t);
+        string first = t.PublicUrl;
+
+        await t.ConfigureAsync(new RemoteTunnelConfigRequest { Enabled = false }, CancellationToken.None);
+        Assert.Equal(string.Empty, t.PublicUrl);
+        launcher.OnStart = lines => { lines("INF |  https://brand-new-name-7.trycloudflare.com  |"); lines("INF Registered tunnel connection"); };
+        await t.ConfigureAsync(new RemoteTunnelConfigRequest { Enabled = true }, CancellationToken.None);
+        await WaitFor(() => t.State == RemoteTunnelState.Online);
+
+        Assert.NotEqual(first, t.PublicUrl);
+        Assert.True(r.TryValidateDeviceToken(device.DeviceToken, out _));
+        HttpContext ctx = Context("GET", "/api/v1/remote/address", host: "brand-new-name-7.trycloudflare.com");
+        ctx.Request.Headers[PaRuXHeaders.DeviceToken] = device.DeviceToken;
+        var result = await Send(t, r, ctx);
+        Assert.True(result.Reached);
+        // The old hostname no longer reaches the PC.
+        Assert.Equal(403, (await Send(t, r, Context("GET", "/api/v1/health", host: "quiet-fox-9.trycloudflare.com"))).Status);
+    }
+
+    [Fact]
+    public async Task Pending_pairing_expires_and_a_denied_one_cannot_be_approved()
+    {
+        DateTime now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var remote = new RemoteAccessService(Path.Combine(_dir, "remote-access.json"), () => now);
+        var broker = new TunnelPairingBroker(remote, () => "https://x.trycloudflare.com", () => now);
+
+        PairingApprovalPending a = broker.RequestApproval(new PairingCompleteRequest { Code = remote.StartPairing("https://x.trycloudflare.com").Code, DeviceName = "A" });
+        Assert.Single(broker.ListPending());
+        now += TunnelPairingBroker.RequestLifetime + TimeSpan.FromSeconds(1);
+        Assert.Empty(broker.ListPending());
+        Assert.False(broker.Approve(a.RequestId));
+        Assert.Equal(TunnelPollOutcome.Unknown, broker.Poll(new PairingPollRequest { RequestId = a.RequestId, PollSecret = a.PollSecret }, out _));
+
+        PairingApprovalPending b = broker.RequestApproval(new PairingCompleteRequest { Code = remote.StartPairing("https://x.trycloudflare.com").Code, DeviceName = "B" });
+        Assert.True(broker.Deny(b.RequestId));
+        Assert.False(broker.Approve(b.RequestId));
+        Assert.Empty(remote.GetStatus().Devices);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
     private sealed class PlainProtector : ISecretProtector

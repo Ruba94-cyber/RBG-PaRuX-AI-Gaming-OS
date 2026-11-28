@@ -47,6 +47,8 @@ internal static class PairedDeviceEndpointPolicy
     {
         if (Exact(path,
             "/api/v1/health",
+            // The PC's current Internet-tunnel address, so an already-paired phone can refresh it after a tunnel restart.
+            "/api/v1/remote/address",
             "/api/v1/ai/profile",
             "/api/v1/conversations",
             "/api/v1/jobs",

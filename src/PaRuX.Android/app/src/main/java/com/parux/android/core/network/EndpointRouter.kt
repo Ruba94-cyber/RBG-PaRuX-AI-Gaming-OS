@@ -28,6 +28,14 @@ class EndpointRouter(
     private val _route = MutableStateFlow(if (lan != null) Route.LAN else Route.TUNNEL)
     val route: StateFlow<Route> = _route.asStateFlow()
 
+    private val _tunnelStale = MutableStateFlow(false)
+
+    /** True when the stored Internet address no longer answers: the PC's quick tunnel was restarted under a new name. */
+    val tunnelStale: StateFlow<Boolean> = _tunnelStale.asStateFlow()
+
+    fun markTunnelStale() { if (tunnel != null) _tunnelStale.value = true }
+    fun clearTunnelStale() { _tunnelStale.value = false }
+
     private val lastProbe = AtomicLong(0L)
     private val probing = java.util.concurrent.atomic.AtomicBoolean(false)
 

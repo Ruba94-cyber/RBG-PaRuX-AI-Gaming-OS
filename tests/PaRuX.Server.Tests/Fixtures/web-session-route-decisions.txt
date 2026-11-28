@@ -831,3 +831,5 @@ DENY POST /api/v1/remote/tunnel/locate
 DENY POST /api/v1/remote/tunnel/pending/{id}/approve
 DENY POST /api/v1/remote/tunnel/pending/{id}/deny
 DENY POST /api/v1/remote/tunnel/skip
+DENY GET /api/v1/remote/address
+DENY GET /api/v1/remote/tunnel/pending

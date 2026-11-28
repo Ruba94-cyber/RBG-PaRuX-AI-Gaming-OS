@@ -90,6 +90,15 @@ internal static class TunnelEndpoints
             DesktopOwnerRouteExtensions.IsDesktopOwner(context) && !TunnelBoundaryMiddleware.IsTunnel(context)
                 ? Results.Ok(tunnel.GetStatus()) : Results.StatusCode(StatusCodes.Status403Forbidden));
 
+        // Cheap poll for the desktop shell's "a phone wants to pair" prompt (InfoBar / toast).
+        app.MapGet("/api/v1/remote/tunnel/pending", (RemoteTunnelService tunnel, HttpContext context) =>
+            IsOwner(context) ? Results.Ok(tunnel.Broker.ListPending()) : Results.StatusCode(StatusCodes.Status403Forbidden));
+
+        // Paired-device route (LAN or tunnel): the current public address. A quick tunnel gets a new hostname on every restart;
+        // the device token stays valid, so a phone that reaches the PC any way simply refreshes the address it stores.
+        app.MapGet("/api/v1/remote/address", (RemoteTunnelService tunnel) =>
+            Results.Ok(new { tunnelEndpoint = tunnel.PublicUrl, tunnelOnline = tunnel.PublicUrl.Length > 0 }));
+
         app.MapPost("/api/v1/remote/tunnel/config", async (RemoteTunnelConfigRequest request, RemoteTunnelService tunnel,
             HttpContext context, CancellationToken ct) =>
         {

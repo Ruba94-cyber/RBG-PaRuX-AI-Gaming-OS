@@ -32,8 +32,30 @@ class AppContainer(context: Context) {
 
     /** Prefer the LAN when the PC answers there, else the Internet tunnel (see EndpointRouter). */
     private fun probeRoute() {
-        val router = _client.value?.router ?: return
-        if (router.hasBoth) ioScope.launch { router.refresh() }
+        val client = _client.value ?: return
+        val router = client.router ?: return
+        ioScope.launch {
+            if (router.hasBoth) router.refresh()
+            refreshTunnelAddress(client)
+        }
+    }
+
+    /** Reached the PC by any route: pick up its current tunnel address if it changed (token stays valid). */
+    suspend fun refreshTunnelAddress(client: PaRuXHttpClient.AuthenticatedClient? = _client.value) {
+        client ?: return
+        try {
+            val reported = client.api.remoteAddress().tunnelEndpoint
+            val stored = credentialStore.load() ?: return
+            val updated = com.parux.android.core.pairing.TunnelAddressRefresh.newAddressToStore(stored.tunnelEndpoint, reported) ?: run {
+                if (reported.isNotBlank()) client.router?.clearTunnelStale()
+                return
+            }
+            credentialStore.save(stored.copy(tunnelEndpoint = updated))
+            _client.value = PaRuXHttpClient.buildAuthenticated(credentialStore)
+            _client.value?.router?.let { if (it.hasBoth) it.refresh() }
+        } catch (_: Exception) {
+            // Not reachable right now, or an older PC without the route: keep the stored address.
+        }
     }
 
     /** Null when not paired. Screens observe this instead of the credential store directly,
