@@ -74,7 +74,7 @@ class LocalizationResourcesTest {
     @Test
     fun translationsAreNotEmptyAndDifferFromTheDefaultsExceptWhenExplicitlySame() {
         // These read the same in both languages (brand names, single loan words).
-        val sameInBoth = setOf("settings_auto", "tab_chat", "tab_pc", "tab_media", "media_title", "media_video", "jobs_video", "chat_profile_standard", "chat_profile_uncensored", "chat_model_auto")
+        val sameInBoth = setOf("media_seconds", "studio_branch", "studio_diff", "tools_3d_torch", "tools_autopilot", "tools_avatar", "tools_internet", "tools_skill_workflow", "settings_auto", "tab_chat", "tab_pc", "tab_media", "media_title", "media_video", "jobs_video", "chat_profile_standard", "chat_profile_uncensored", "chat_model_auto")
         val byName = defaults.associateBy { it.name }
         for (file in localeFiles()) {
             for (entry in read(file)) {
@@ -93,24 +93,23 @@ class LocalizationResourcesTest {
      */
     private val migrated = setOf("ui/settings/SettingsScreen.kt", "ui/chat/ChatScreen.kt", "ui/media/MediaScreen.kt")
 
-    private val remainingHardCoded = mapOf(
-        // file (relative to the app package) to the number of Compose text literals not yet moved to resources
-        "ui/tools/ToolsScreen.kt" to 73,
-        "ui/studio/PcStudioScreen.kt" to 44,
-        "ui/pairing/PairingScreen.kt" to 3,
-        "ui/goals/GoalsScreen.kt" to 11,
-        "ui/jobs/JobsScreen.kt" to 1,
-        "ui/studio/ProjectKnowledgeSection.kt" to 6,
-        "ui/chat/ChatViewModel.kt" to 1,
-        "ui/jobs/JobsViewModel.kt" to 1,
-    )
+    // Every screen and ViewModel under ui/ is now held to zero hard-coded user-visible text.
+    private val remainingHardCoded = emptyMap<String, Int>()
+
+    /** Not user-visible: a model system prompt and a debug-only JSON placeholder. */
+    private val notUserVisible = listOf("You are working inside the explicitly selected PaRuX Project", "{\\\"v\\\":1")
 
     private val composeText = Regex(
         """(?:Text\(\s*|text\s*=\s*|contentDescription\s*=\s*|title\s*=\s*\{?\s*Text\(\s*|label\s*=\s*\{\s*Text\(\s*)"((?:[^"\\]|\\.)*)""""
     )
 
     private fun literalCount(file: File): Int = file.readLines().sumOf { line ->
-        composeText.findAll(line).count { Regex("[A-Za-z]{3,}").containsMatchIn(it.groupValues[1]) }
+        composeText.findAll(line).count { match ->
+            val literal = match.groupValues[1]
+            // Only the fixed words count: interpolated values (${...}, $name) are data, not translatable text.
+            val words = literal.replace(Regex("""\$\{[^}]*\}"""), "").replace(Regex("""\$[A-Za-z_]\w*"""), "")
+            notUserVisible.none { literal.startsWith(it) } && Regex("[A-Za-z]{3,}").containsMatchIn(words)
+        }
     }
 
     @Test

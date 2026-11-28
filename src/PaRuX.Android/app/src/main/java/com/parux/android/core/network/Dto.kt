@@ -540,3 +540,18 @@ data class MobileDocumentUploadResponse(
     val sourceId: String = "",
     val indexingStarted: Boolean = false
 )
+
+@Serializable
+data class MobileIndexStatusDto(
+    val state: String = "idle",
+    val filesSeen: Int = 0,
+    val indexed: Int = 0,
+    val failed: Int = 0,
+    val skipped: Int = 0,
+    val currentFile: String? = null,
+    val currentPage: Int? = null,
+    val totalPages: Int? = null,
+    val error: String? = null,
+    val files: Int = 0,
+    val chunks: Int = 0
+)

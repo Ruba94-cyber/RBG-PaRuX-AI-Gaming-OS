@@ -2,6 +2,8 @@ package com.parux.android.ui.jobs
 
 import com.parux.android.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import android.net.Uri
 import android.util.Base64
 import java.io.ByteArrayOutputStream
@@ -85,12 +87,12 @@ fun JobsScreen(viewModel: JobsViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text(if (localCore == null) "Connect to view local jobs" else
-                        if (state.errorMessage != null) "Jobs unavailable" else "No jobs yet",
+                    Text(if (localCore == null) stringResource(R.string.jobs_connect) else
+                        if (state.errorMessage != null) stringResource(R.string.jobs_unavailable) else stringResource(R.string.jobs_none),
                         style = MaterialTheme.typography.titleMedium)
                     Text(
-                        if (localCore == null) "Pair with your PaRuX PC in Settings."
-                        else "Tap + to generate an image or video. Progress appears here.",
+                        if (localCore == null) stringResource(R.string.jobs_pair_hint)
+                        else stringResource(R.string.jobs_tap_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -110,7 +112,7 @@ fun JobsScreen(viewModel: JobsViewModel) {
             onDismiss = { if (!state.isSubmitting) showCreateDialog = false },
             isSubmitting = state.isSubmitting,
             submissionError = state.submissionError,
-            onCreate = { type, prompt, sourceImageBase64 ->
+            onCreate = { type, prompt, sourceImageBase64, options ->
                 viewModel.createJob(type, prompt, sourceImageBase64,
                     onAccepted = { showCreateDialog = false })
             }
@@ -124,7 +126,7 @@ private const val MAX_JOB_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024
 @Composable
 private fun CreateJobDialog(
     onDismiss: () -> Unit,
-    onCreate: (String, String, String?) -> Unit,
+    onCreate: (String, String, String?, MediaAdvancedOptions) -> Unit,
     isSubmitting: Boolean,
     submissionError: String?
 ) {
@@ -133,6 +135,8 @@ private fun CreateJobDialog(
     var sourceImageBase64 by remember { mutableStateOf<String?>(null) }
     var sourceImageName by remember { mutableStateOf<String?>(null) }
     var imageError by remember { mutableStateOf<String?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
+    var advanced by remember { mutableStateOf(MediaAdvancedOptions()) }
     val context = LocalContext.current
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
@@ -152,16 +156,16 @@ private fun CreateJobDialog(
                         if (count < 0) break
                         total += count
                         if (total > MAX_JOB_SOURCE_IMAGE_BYTES)
-                            throw IllegalArgumentException("Image exceeds the 8 MiB local input limit")
+                            throw IllegalArgumentException(context.getString(R.string.jobs_img_big))
                         out.write(buffer, 0, count)
                     }
                     out.toByteArray()
-                } ?: throw IllegalArgumentException("Unable to read the selected image")
-                if (bytes.isEmpty()) throw IllegalArgumentException("Selected image is empty")
+                } ?: throw IllegalArgumentException(context.getString(R.string.jobs_img_unreadable))
+                if (bytes.isEmpty()) throw IllegalArgumentException(context.getString(R.string.jobs_img_empty))
                 sourceImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
                 sourceImageName = "image"
             } catch (e: Exception) {
-                imageError = e.message ?: "Unable to read image. Choose another file."
+                imageError = e.message ?: context.getString(R.string.jobs_img_other)
             }
         }
     }
@@ -195,17 +199,83 @@ private fun CreateJobDialog(
                     label = { Text(stringResource(if (type == "edit") R.string.jobs_edit_instruction else R.string.jobs_prompt)) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                 )
+                TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(stringResource(if (showAdvanced) R.string.media_adv_hide else R.string.media_adv_show))
+                }
+                if (showAdvanced) AdvancedOptionsSection(type, advanced) { advanced = it }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreate(type, prompt, sourceImageBase64) },
-                enabled = !isSubmitting && prompt.isNotBlank()
+                onClick = { onCreate(type, prompt, sourceImageBase64, advanced) },
+                enabled = !isSubmitting && prompt.isNotBlank() && advanced.seedIsValid
                     && (type != "edit" || sourceImageBase64 != null)
             ) { Text(stringResource(if (isSubmitting) R.string.jobs_submitting else R.string.jobs_generate)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdvancedOptionsSection(type: String, options: MediaAdvancedOptions, onChange: (MediaAdvancedOptions) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        if (type != "edit") {
+            Text(stringResource(R.string.media_aspect), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MediaAspect.values().forEach { aspect ->
+                    FilterChip(
+                        selected = options.aspect == aspect,
+                        onClick = { onChange(options.copy(aspect = aspect)) },
+                        label = {
+                            Text(stringResource(when (aspect) {
+                                MediaAspect.Default -> R.string.media_aspect_default
+                                MediaAspect.Square -> R.string.media_aspect_square
+                                MediaAspect.Wide -> R.string.media_aspect_wide
+                                MediaAspect.Tall -> R.string.media_aspect_tall
+                            }))
+                        }
+                    )
+                }
+            }
+        }
+        Text(stringResource(R.string.media_quality), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MediaQuality.values().forEach { quality ->
+                FilterChip(
+                    selected = options.quality == quality,
+                    onClick = { onChange(options.copy(quality = quality)) },
+                    label = {
+                        Text(stringResource(when (quality) {
+                            MediaQuality.Fast -> R.string.media_q_fast
+                            MediaQuality.Balanced -> R.string.media_q_balanced
+                            MediaQuality.Best -> R.string.media_q_best
+                        }))
+                    }
+                )
+            }
+        }
+        if (type == "video") {
+            Text(stringResource(R.string.media_duration), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(3, 5, 8).forEach { seconds ->
+                    FilterChip(
+                        selected = options.videoSeconds == seconds,
+                        onClick = { onChange(options.copy(videoSeconds = seconds)) },
+                        label = { Text(stringResource(R.string.media_seconds, seconds)) }
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            value = options.seedText,
+            onValueChange = { onChange(options.copy(seedText = it.filter { c -> c.isDigit() || c == '-' }.take(19))) },
+            label = { Text(stringResource(R.string.media_seed)) },
+            isError = !options.seedIsValid,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+    }
 }
 
 @Composable

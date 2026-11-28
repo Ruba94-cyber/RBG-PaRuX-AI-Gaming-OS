@@ -1,5 +1,7 @@
 package com.parux.android.ui.studio
 
+import androidx.compose.ui.res.stringResource
+import com.parux.android.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -76,13 +78,13 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PC Studio") },
+                title = { Text(stringResource(R.string.studio_title)) },
                 actions = {
                     IconButton(onClick = {
                         viewModel.refresh()
                         if (section == "Knowledge") viewModel.refreshKnowledge()
                     }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh PC state")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.studio_refresh))
                     }
                 }
             )
@@ -105,7 +107,7 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(error, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                        TextButton(onClick = viewModel::dismissError) { Text(stringResource(R.string.common_dismiss)) }
                     }
                 }
             }
@@ -114,18 +116,18 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 val first = state.pendingApprovals.first()
                 Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("Computer Use approval needed", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.studio_cu_needed), style = MaterialTheme.typography.titleSmall)
                         Text(
                             if (state.pendingApprovals.size == 1)
                                 first.goal
                             else
-                                "${state.pendingApprovals.size} Windows Computer Use tasks are waiting for your decision.",
+                                stringResource(R.string.studio_cu_waiting, state.pendingApprovals.size),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = { viewModel.requestComputerUseApproval(first) }) {
-                                Text("Review approval")
+                                Text(stringResource(R.string.common_review_approval))
                             }
                         }
                     }
@@ -137,18 +139,18 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 val first = pendingUserInputTasks.first()
                 Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("PaRuX needs your input", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.studio_needs_input), style = MaterialTheme.typography.titleSmall)
                         Text(
                             if (pendingUserInputTasks.size == 1)
                                 first.goal
                             else
-                                "${pendingUserInputTasks.size} durable agent tasks are paused for a user answer.",
+                                stringResource(R.string.studio_paused_tasks, pendingUserInputTasks.size),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = { viewModel.requestUserQuestion(first) }) {
-                                Text("Answer question")
+                                Text(stringResource(R.string.studio_answer_question))
                             }
                         }
                     }
@@ -160,7 +162,7 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(listOf("Work", "Knowledge", "Files", "Workflows", "Activity")) { label ->
-                    FilterChip(selected = section == label, onClick = { section = label }, label = { Text(label) })
+                    FilterChip(selected = section == label, onClick = { section = label }, label = { Text(stringResource(when (label) { "Work" -> R.string.studio_work; "Knowledge" -> R.string.studio_knowledge; "Files" -> R.string.studio_files; "Workflows" -> R.string.studio_workflows_title; else -> R.string.studio_activity })) })
                 }
             }
 
@@ -178,7 +180,7 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                         createDocument.launch(suggestedArtifactFileName(artifact))
                     }
                 )
-                "Workflows" -> WorkflowSection(state.workflows, onRun = { workflowToRun = it })
+                stringResource(R.string.studio_workflows_title) -> WorkflowSection(state.workflows, onRun = { workflowToRun = it })
                 "Activity" -> ActivitySection(state.timeline)
                 else -> WorkSection(
                     state = state,
@@ -198,9 +200,9 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
 
     if (showProjectDialog) {
         TextInputDialog(
-            title = "New Project",
-            label = "Goal",
-            confirmLabel = "Create",
+            title = stringResource(R.string.studio_new_project),
+            label = stringResource(R.string.common_goal),
+            confirmLabel = stringResource(R.string.common_create),
             onDismiss = { showProjectDialog = false },
             onConfirm = {
                 viewModel.createProject(it)
@@ -211,9 +213,9 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
 
     workflowToRun?.let { workflow ->
         TextInputDialog(
-            title = "Run ${workflow.name} · v${workflow.versionNumber}",
-            label = "Input / objective (optional)",
-            confirmLabel = "Run",
+            title = stringResource(R.string.studio_run_workflow, workflow.name, workflow.versionNumber),
+            label = stringResource(R.string.studio_input_optional),
+            confirmLabel = stringResource(R.string.common_run),
             allowBlank = true,
             onDismiss = { workflowToRun = null },
             onConfirm = {
@@ -225,9 +227,9 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
 
     state.continuationParent?.let { parent ->
         TextInputDialog(
-            title = "Continue ${parent.role ?: "task"} · ${parent.id.take(8)}",
-            label = "What should PaRuX do next?",
-            confirmLabel = "Continue on PC",
+            title = stringResource(R.string.studio_continue_title, parent.role ?: stringResource(R.string.common_task), parent.id.take(8)),
+            label = stringResource(R.string.studio_do_next),
+            confirmLabel = stringResource(R.string.studio_continue_pc),
             onDismiss = viewModel::dismissContinuation,
             onConfirm = { viewModel.continueTask(parent, it) }
         )
@@ -236,18 +238,17 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
     state.approvalTask?.let { task ->
         AlertDialog(
             onDismissRequest = viewModel::dismissComputerUseApproval,
-            title = { Text("Allow Computer Use once?") },
+            title = { Text(stringResource(R.string.studio_allow_once)) },
             text = {
                 Column {
                     Text(task.goal, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "PaRuX Windows will be allowed to control mouse and keyboard only for this task. " +
-                            "This does not turn on Full Computer Use permanently and does not give Android raw input privileges.",
+                        stringResource(R.string.studio_approve_body),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 10.dp)
                     )
                     Text(
-                        "Windows-protected prompts such as UAC / secure desktop remain controlled by Windows and are not bypassed by this approval.",
+                        stringResource(R.string.studio_uac_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp)
@@ -258,13 +259,13 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 TextButton(
                     onClick = { viewModel.approveComputerUseOnce(task) },
                     enabled = !state.actionInFlight
-                ) { Text("Approve once") }
+                ) { Text(stringResource(R.string.studio_approve_once)) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { viewModel.denyComputerUse(task) },
                     enabled = !state.actionInFlight
-                ) { Text("Deny") }
+                ) { Text(stringResource(R.string.common_deny)) }
             }
         )
     }
@@ -275,7 +276,7 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
         var answer by remember(question.id) { mutableStateOf(question.options.firstOrNull().orEmpty()) }
         AlertDialog(
             onDismissRequest = viewModel::dismissUserQuestion,
-            title = { Text("PaRuX needs your input") },
+            title = { Text(stringResource(R.string.studio_needs_input)) },
             text = {
                 LazyColumn(Modifier.heightIn(max = 520.dp)) {
                     item {
@@ -302,14 +303,14 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                                 value = answer,
                                 onValueChange = { answer = it },
                                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                                label = { Text(if (question.options.isEmpty()) "Your answer" else "Option or custom answer") },
+                                label = { Text(if (question.options.isEmpty()) stringResource(R.string.studio_your_answer) else stringResource(R.string.studio_option_or_custom)) },
                                 minLines = 2
                             )
                         }
                     }
                     item {
                         Text(
-                            "Your answer is stored in the Core task ledger and resumes the same saved checkpoint. It does not grant new permissions.",
+                            stringResource(R.string.studio_answer_note),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 10.dp)
@@ -321,10 +322,10 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 TextButton(
                     onClick = { viewModel.answerUserQuestion(answer) },
                     enabled = answer.isNotBlank() && !state.actionInFlight
-                ) { Text("Answer and resume") }
+                ) { Text(stringResource(R.string.studio_answer_resume)) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissUserQuestion, enabled = !state.actionInFlight) { Text("Later") }
+                TextButton(onClick = viewModel::dismissUserQuestion, enabled = !state.actionInFlight) { Text(stringResource(R.string.common_later)) }
             }
         )
     }
@@ -332,10 +333,10 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
     if (state.showTaskLogs && state.selectedTaskId != null) {
         AlertDialog(
             onDismissRequest = viewModel::dismissTaskLogs,
-            title = { Text("Task log") },
+            title = { Text(stringResource(R.string.studio_task_log)) },
             text = {
                 if (state.selectedTaskLogs.isEmpty()) {
-                    Text("No log entries yet.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.studio_no_log), style = MaterialTheme.typography.bodySmall)
                 } else {
                     LazyColumn(Modifier.heightIn(max = 520.dp)) {
                         items(state.selectedTaskLogs, key = { it.id }) { log ->
@@ -348,7 +349,7 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissTaskLogs) { Text("Close") }
+                TextButton(onClick = viewModel::dismissTaskLogs) { Text(stringResource(R.string.common_close)) }
             }
         )
     }
@@ -356,29 +357,29 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
     state.taskResult?.let { result ->
         AlertDialog(
             onDismissRequest = viewModel::dismissTaskResult,
-            title = { Text("Task result · ${result.taskId.take(8)}") },
+            title = { Text(stringResource(R.string.studio_task_result, result.taskId.take(8))) },
             text = {
                 LazyColumn(Modifier.heightIn(max = 560.dp)) {
                     item {
                         Text(result.goal, style = MaterialTheme.typography.titleSmall)
                         Text(
                             "${result.role} · ${result.status}" +
-                                (result.verificationStatus?.let { " · verification $it" } ?: ""),
+                                (result.verificationStatus?.let { stringResource(R.string.studio_verification_suffix, it) } ?: ""),
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                         result.stage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
-                    result.summary?.let { summary -> item { ResultBlock("Summary", summary) } }
-                    result.stepsTaken?.let { steps -> item { ResultBlock("Desktop actions", "$steps step(s)") } }
-                    result.branch?.let { branch -> item { ResultBlock("Branch", branch) } }
-                    result.worktree?.let { worktree -> item { ResultBlock("Worktree on PC", worktree) } }
-                    result.diff?.let { diff -> item { ResultBlock("Diff", diff) } }
-                    result.rawFallback?.let { raw -> item { ResultBlock("Raw result", raw) } }
+                    result.summary?.let { summary -> item { ResultBlock(stringResource(R.string.studio_summary), summary) } }
+                    result.stepsTaken?.let { steps -> item { ResultBlock(stringResource(R.string.studio_desktop_actions), stringResource(R.string.studio_steps, steps)) } }
+                    result.branch?.let { branch -> item { ResultBlock(stringResource(R.string.studio_branch), branch) } }
+                    result.worktree?.let { worktree -> item { ResultBlock(stringResource(R.string.studio_worktree), worktree) } }
+                    result.diff?.let { diff -> item { ResultBlock(stringResource(R.string.studio_diff), diff) } }
+                    result.rawFallback?.let { raw -> item { ResultBlock(stringResource(R.string.studio_raw), raw) } }
                     if (result.summary == null && result.diff == null && result.rawFallback == null) {
                         item {
                             Text(
-                                "No result payload yet. Keep this dialog open: PC Studio refreshes it while the Windows worker progresses.",
+                                stringResource(R.string.studio_no_result),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 12.dp)
@@ -389,9 +390,9 @@ fun PcStudioScreen(viewModel: PcStudioViewModel) {
             },
             confirmButton = {
                 val task = state.tasks.firstOrNull { it.id == result.taskId }
-                if (task != null) TextButton(onClick = { viewModel.requestContinuation(task) }) { Text("Continue") }
+                if (task != null) TextButton(onClick = { viewModel.requestContinuation(task) }) { Text(stringResource(R.string.common_continue)) }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissTaskResult) { Text("Close") } }
+            dismissButton = { TextButton(onClick = viewModel::dismissTaskResult) { Text(stringResource(R.string.common_close)) } }
         )
     }
 }
@@ -424,40 +425,40 @@ private fun WorkSection(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                    Text("Continue work on the PC", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.studio_continue_work), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Choose a Project, then send coding or Computer Use work to the Windows PaRuX workers. Review results/diffs here and continue them as child tasks without losing context.",
+                        stringResource(R.string.studio_work_intro),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = onCreateProject) { Icon(Icons.Default.Add, contentDescription = "New Project") }
+                IconButton(onClick = onCreateProject) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.studio_new_project)) }
             }
         }
 
-        item { ProjectScopeSelector(state.projects, state.selectedProjectId, "No Project", onSelectProject) }
+        item { ProjectScopeSelector(state.projects, state.selectedProjectId, stringResource(R.string.studio_no_project), onSelectProject) }
 
         item {
-            Text("What should PaRuX do?", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 16.dp))
+            Text(stringResource(R.string.studio_what_do), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 16.dp))
             OutlinedTextField(
                 value = goal,
                 onValueChange = { goal = it },
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 minLines = 2,
-                label = { Text("Objective") }
+                label = { Text(stringResource(R.string.studio_objective)) }
             )
             LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(
                     listOf(
-                        "coding" to "Code on PC",
-                        "computer-use" to "Control PC",
-                        "ui-verification" to "Check screen",
-                        "planner" to "Plan",
-                        "research" to "Research",
-                        "review" to "Review"
+                        "coding" to R.string.role_code_pc,
+                        "computer-use" to R.string.role_control_pc,
+                        "ui-verification" to R.string.role_check_screen,
+                        "planner" to R.string.role_plan,
+                        "research" to R.string.tools_research,
+                        "review" to R.string.role_review
                     )
                 ) { option ->
-                    FilterChip(selected = role == option.first, onClick = { role = option.first }, label = { Text(option.second) })
+                    FilterChip(selected = role == option.first, onClick = { role = option.first }, label = { Text(stringResource(option.second)) })
                 }
             }
             Button(
@@ -467,10 +468,10 @@ private fun WorkSection(
                 },
                 enabled = goal.isNotBlank() && !state.actionInFlight,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-            ) { Text(if (role == "computer-use") "Run on Windows PC" else "Start task") }
+            ) { Text(if (role == "computer-use") stringResource(R.string.studio_run_pc) else stringResource(R.string.studio_start_task)) }
             if (role == "computer-use") {
                 Text(
-                    "If Full Computer Use is off, Windows pauses the task and asks for an Approve once / Deny decision here. Android never receives direct mouse/keyboard privileges.",
+                    stringResource(R.string.studio_work_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
@@ -478,12 +479,12 @@ private fun WorkSection(
             }
         }
 
-        item { Text("Projects", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp)) }
+        item { Text(stringResource(R.string.studio_projects), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp)) }
         items(state.projects, key = { "project-${it.id}" }) { project ->
             ProjectCard(project, state.tasks, selected = state.selectedProjectId == project.id, onSelect = { onSelectProject(project.id) })
         }
 
-        item { Text("Recent agent tasks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp)) }
+        item { Text(stringResource(R.string.studio_recent_tasks), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp)) }
         items(state.tasks.take(30), key = { "task-${it.id}" }) { task ->
             TaskCard(
                 task,
@@ -506,21 +507,21 @@ private fun FilesSection(
 ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         item {
-            Text("Files from the PC", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.studio_files_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Browse generated PaRuX Artifacts without exposing Windows paths. Choose a Project to scope this list, or All files to browse every Artifact. Saving opens Android's own file picker.",
+                stringResource(R.string.studio_files_caption),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            ProjectScopeSelector(state.projects, state.selectedProjectId, "All files", onSelectProject)
+            ProjectScopeSelector(state.projects, state.selectedProjectId, stringResource(R.string.studio_all_files), onSelectProject)
         }
 
         if (state.artifacts.isEmpty()) {
             item {
                 Text(
-                    if (state.selectedProjectId == null) "No Artifacts are available yet."
-                    else "No Artifacts are linked to this Project yet.",
+                    if (state.selectedProjectId == null) stringResource(R.string.studio_no_artifacts)
+                    else stringResource(R.string.studio_no_artifacts_project),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 16.dp)
                 )
@@ -550,11 +551,11 @@ private fun FilesSection(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         if (artifact.downloadable) {
                             TextButton(onClick = { onSave(artifact) }, enabled = !downloading) {
-                                Text(if (downloading) "Saving…" else "Save to device")
+                                Text(if (downloading) stringResource(R.string.studio_saving) else stringResource(R.string.studio_save_device))
                             }
                         } else {
                             Text(
-                                "Metadata only · source is not a PaRuX-managed downloadable file",
+                                stringResource(R.string.studio_metadata_only),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp)
@@ -574,9 +575,9 @@ private fun ProjectScopeSelector(
     noProjectLabel: String,
     onSelectProject: (String?) -> Unit
 ) {
-    Text("Project", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+    Text(stringResource(R.string.common_project), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
     if (projects.isEmpty()) {
-        Text("No Projects yet.", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.common_no_projects), style = MaterialTheme.typography.bodySmall)
     } else {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
@@ -605,7 +606,7 @@ private fun ProjectCard(project: ProjectDto, tasks: List<AgentTaskDto>, selected
         Column(Modifier.padding(12.dp)) {
             Text(project.goal, style = MaterialTheme.typography.titleSmall)
             Text(
-                "${projectTasks.size} task(s) · $active active${if (selected) " · selected" else ""}",
+                stringResource(R.string.studio_project_counts, projectTasks.size, active) + (if (selected) " · " + stringResource(R.string.studio_selected) else ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -636,7 +637,7 @@ private fun TaskCard(
             Text(task.goal, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
             task.stage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             task.verificationStatus?.let {
-                Text("verification: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.studio_verification, it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (!terminal && task.progressPercent > 0) {
                 LinearProgressIndicator(
@@ -646,26 +647,26 @@ private fun TaskCard(
             }
             if (approvalPending) {
                 Text(
-                    "Windows is paused until you approve or deny this Computer Use request.",
+                    stringResource(R.string.studio_paused_cu),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
             if (userQuestionPending) {
                 Text(
-                    "The agent checkpoint is preserved and waiting for your answer before it continues.",
+                    stringResource(R.string.studio_paused_agent),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
             task.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                if (approvalPending) TextButton(onClick = onReviewApproval) { Text("Review approval") }
-                if (userQuestionPending) TextButton(onClick = onAnswerQuestion) { Text("Answer") }
-                TextButton(onClick = onLogs) { Text("Logs") }
-                if (hasResult || task.status == "verifying") TextButton(onClick = onResult) { Text("Result") }
-                if (terminal || task.status == "verifying") TextButton(onClick = onContinue) { Text("Continue") }
-                if (!terminal && !approvalPending) TextButton(onClick = onCancel) { Text("Cancel") }
+                if (approvalPending) TextButton(onClick = onReviewApproval) { Text(stringResource(R.string.common_review_approval)) }
+                if (userQuestionPending) TextButton(onClick = onAnswerQuestion) { Text(stringResource(R.string.common_answer)) }
+                TextButton(onClick = onLogs) { Text(stringResource(R.string.studio_logs)) }
+                if (hasResult || task.status == "verifying") TextButton(onClick = onResult) { Text(stringResource(R.string.studio_result)) }
+                if (terminal || task.status == "verifying") TextButton(onClick = onContinue) { Text(stringResource(R.string.common_continue)) }
+                if (!terminal && !approvalPending) TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
             }
         }
     }
@@ -675,23 +676,23 @@ private fun TaskCard(
 private fun WorkflowSection(workflows: List<WorkflowDto>, onRun: (WorkflowDto) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         item {
-            Text("Workflows", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.studio_workflows_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Run the same immutable workflow versions used on Windows. Created tasks appear immediately in Work.",
+                stringResource(R.string.studio_workflows_caption),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
-        if (workflows.isEmpty()) item { Text("No workflows saved on the PC.") }
+        if (workflows.isEmpty()) item { Text(stringResource(R.string.studio_no_workflows)) }
         items(workflows, key = { it.id }) { workflow ->
             Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text("${workflow.name} · v${workflow.versionNumber}", style = MaterialTheme.typography.titleSmall)
                     workflow.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    Text("${workflow.steps.size} step(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.studio_steps_count, workflow.steps.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { onRun(workflow) }) { Text("Run") }
+                        TextButton(onClick = { onRun(workflow) }) { Text(stringResource(R.string.common_run)) }
                     }
                 }
             }
@@ -703,15 +704,15 @@ private fun WorkflowSection(workflows: List<WorkflowDto>, onRun: (WorkflowDto) -
 private fun ActivitySection(timeline: List<TimelineEntry>) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         item {
-            Text("PC activity", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.studio_activity_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Unified Core timeline: agents, downloads, training, artifacts, automations, workflows and router decisions.",
+                stringResource(R.string.studio_activity_caption),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
-        if (timeline.isEmpty()) item { Text("No activity yet.") }
+        if (timeline.isEmpty()) item { Text(stringResource(R.string.studio_no_activity)) }
         items(timeline, key = { "${it.category}-${it.relatedId}-${it.timestamp}" }) { entry ->
             Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Column(Modifier.padding(10.dp)) {
@@ -760,6 +761,6 @@ private fun TextInputDialog(
         confirmButton = {
             TextButton(onClick = { onConfirm(value.trim()) }, enabled = allowBlank || value.isNotBlank()) { Text(confirmLabel) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }

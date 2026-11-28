@@ -1,5 +1,7 @@
 package com.parux.android.ui.studio
 
+import androidx.compose.ui.res.stringResource
+import com.parux.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,9 +29,9 @@ fun ProjectKnowledgeSection(
 ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         item {
-            Text("Project Knowledge", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.pk_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "This is the bounded, authoritative context PaRuX Core can carry with this Project: real AgentTasks and ArtifactStore records only. Graph nodes alone are not trusted as AI knowledge.",
+                stringResource(R.string.pk_caption),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -40,7 +42,7 @@ fun ProjectKnowledgeSection(
         if (state.selectedProjectId == null) {
             item {
                 Text(
-                    "Select a Project to inspect its durable context.",
+                    stringResource(R.string.pk_select),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 16.dp)
                 )
@@ -53,7 +55,7 @@ fun ProjectKnowledgeSection(
             val pack = state.knowledge
             if (pack == null && !state.knowledgeLoading) {
                 item {
-                    Button(onClick = onRefresh, modifier = Modifier.padding(top = 12.dp)) { Text("Load Project knowledge") }
+                    Button(onClick = onRefresh, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.pk_load)) }
                 }
             } else if (pack != null) {
                 item {
@@ -61,14 +63,14 @@ fun ProjectKnowledgeSection(
                         Column(Modifier.padding(12.dp)) {
                             Text(pack.goal, style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "${pack.items.size} authoritative item(s) · ${pack.usedCharacters}/${pack.maxCharacters} context characters"
-                                    + if (pack.truncated) " · bounded/truncated" else "",
+                                stringResource(R.string.pk_counts, pack.items.size, pack.usedCharacters, pack.maxCharacters)
+                                    + if (pack.truncated) stringResource(R.string.pk_truncated) else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                androidx.compose.material3.TextButton(onClick = onRefresh) { Text("Refresh") }
+                                androidx.compose.material3.TextButton(onClick = onRefresh) { Text(stringResource(R.string.common_refresh)) }
                             }
                         }
                     }
@@ -77,7 +79,7 @@ fun ProjectKnowledgeSection(
                 if (pack.items.isEmpty()) {
                     item {
                         Text(
-                            "No authoritative task or Artifact is attached yet. The Project goal itself is still part of the context pack.",
+                            stringResource(R.string.pk_empty),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
                         )
@@ -113,9 +115,9 @@ private fun KnowledgeProjectSelector(
     selectedProjectId: String?,
     onSelectProject: (String?) -> Unit
 ) {
-    Text("Project", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+    Text(stringResource(R.string.common_project), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
     if (projects.isEmpty()) {
-        Text("No Projects yet.", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.common_no_projects), style = MaterialTheme.typography.bodySmall)
         return
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -123,7 +125,7 @@ private fun KnowledgeProjectSelector(
             FilterChip(
                 selected = selectedProjectId == null,
                 onClick = { onSelectProject(null) },
-                label = { Text("None") }
+                label = { Text(stringResource(R.string.chat_project_none_short)) }
             )
         }
         items(projects, key = { it.id }) { project ->

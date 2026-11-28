@@ -127,7 +127,7 @@ fun PairingScreen(pairingRepository: PairingRepository, onPaired: () -> Unit) {
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(stringResource(R.string.pair_failed), style = MaterialTheme.typography.titleMedium)
-                Text(errorMessage ?: "Unknown error", Modifier.padding(top = 8.dp, bottom = 24.dp))
+                Text(errorMessage ?: stringResource(R.string.pair_unknown), Modifier.padding(top = 8.dp, bottom = 24.dp))
                 Button(onClick = { step = if (hasCameraPermission) PairingStep.Scanning else PairingStep.Intro }) { Text(stringResource(R.string.pair_try_again)) }
                 TextButton(onClick = { step = PairingStep.Intro }) { Text(stringResource(R.string.pair_manual)) }
             }
@@ -144,12 +144,12 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
     ) {
         Text(androidx.compose.ui.res.stringResource(com.parux.android.R.string.app_display_name), style = MaterialTheme.typography.displaySmall)
         Text(
-            "Your Local AI",
+            stringResource(R.string.app_tagline),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 4.dp, bottom = 32.dp)
         )
         Text(
-            "On PaRuX Windows: Settings → Local Network → Pair a device. Scan the QR code it shows.",
+            stringResource(R.string.pair_intro),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(bottom = 24.dp)
         )
@@ -159,7 +159,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
         // certificate pinning and one-time pairing exchange are used as for a scanned QR.
         var showManualEntry by remember { mutableStateOf(false) }
         TextButton(onClick = { showManualEntry = !showManualEntry }, modifier = Modifier.padding(top = 24.dp)) {
-            Text(if (showManualEntry) "Hide manual entry" else "No camera? Enter pairing details manually")
+            Text(if (showManualEntry) stringResource(R.string.pair_hide_manual) else stringResource(R.string.pair_no_camera))
         }
         if (showManualEntry) {
             var endpoint by remember { mutableStateOf("") }
@@ -167,7 +167,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
             var fingerprint by remember { mutableStateOf("") }
             Column(Modifier.padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "Read these from PaRuX Windows → Settings → Local Network → Pair a device.",
+                    stringResource(R.string.pair_read_from),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -200,7 +200,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
         if (com.parux.android.BuildConfig.DEBUG) {
             var manualText by remember { mutableStateOf("") }
             Column(Modifier.padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Debug: paste pairing QR payload", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.pair_debug_paste), style = MaterialTheme.typography.labelMedium)
                 androidx.compose.material3.OutlinedTextField(
                     value = manualText,
                     onValueChange = { manualText = it },
@@ -211,7 +211,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
                     onClick = { PairingPayload.parse(manualText)?.let(onManualPayload) },
                     modifier = Modifier.padding(top = 8.dp),
                     enabled = manualText.isNotBlank()
-                ) { Text("Pair (debug)") }
+                ) { Text(stringResource(R.string.pair_debug)) }
             }
         }
     }
@@ -302,8 +302,7 @@ private fun QrScanner(onScanned: (PairingPayload) -> Unit, onError: (String) -> 
                 } catch (e: Exception) {
                     if (handled.compareAndSet(false, true) && !disposed.get()) {
                         onError(
-                            "The camera could not be opened for QR pairing (${e.message ?: e.javaClass.simpleName}). " +
-                                "You can enter the endpoint, pairing code and certificate fingerprint manually."
+                            ctx.getString(R.string.pair_camera_error, e.message ?: e.javaClass.simpleName)
                         )
                     }
                 }

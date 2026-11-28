@@ -62,7 +62,7 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
         val client = container.client.value
         if (client == null) {
             _state.value = _state.value.copy(isLoading = false,
-                errorMessage = "PaRuX PC is not connected. Pair your PC in Settings.")
+                errorMessage = container.appContext.getString(R.string.jobs_err_not_connected))
             return
         }
         try {
@@ -76,24 +76,23 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
             // Preserve any previously fetched jobs, but do NOT show them as
             // live. A failed poll is not proof the job queue is empty.
             _state.value = _state.value.copy(isLoading = false,
-                errorMessage = "Can't refresh local jobs. Previously loaded results may be stale.")
+                errorMessage = container.appContext.getString(R.string.jobs_err_refresh))
         }
     }
 
     fun createJob(type: String, prompt: String, sourceImageBase64: String? = null,
-                  onAccepted: () -> Unit = {}) {
+                  options: MediaAdvancedOptions = MediaAdvancedOptions(), onAccepted: () -> Unit = {}) {
         if (_state.value.isSubmitting) return
         val client = container.client.value
         if (client == null) {
             _state.value = _state.value.copy(submissionError =
-                "PaRuX PC is not connected. The generation was not submitted.")
+                container.appContext.getString(R.string.jobs_err_submit))
             return
         }
         _state.value = _state.value.copy(isSubmitting = true, submissionError = null)
         viewModelScope.launch {
             try {
-                client.api.createJob(MediaJobRequest(
-                    type = type, prompt = prompt, sourceImageBase64 = sourceImageBase64 ?: ""))
+                client.api.createJob(options.toRequest(type, prompt, sourceImageBase64))
                 // Only a confirmed Core admission closes the Compose draft
                 // dialog. A network failure must leave the prompt and image
                 // selection available for a conscious retry.
@@ -101,7 +100,7 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: Exception) {
                 // describe() keeps the Core's own (sanitized) reason for an HTTP refusal instead of "HTTP 503".
                 _state.value = _state.value.copy(submissionError =
-                    com.parux.android.ui.chat.ChatErrors.describe(e) + " Your draft was kept.")
+                    com.parux.android.ui.chat.ChatErrors.describe(e) + container.appContext.getString(R.string.jobs_draft_kept))
             } finally {
                 _state.value = _state.value.copy(isSubmitting = false)
             }
@@ -112,14 +111,14 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
         val client = container.client.value
         if (client == null) {
             _state.value = _state.value.copy(errorMessage =
-                "PaRuX PC is not connected. Cancellation was not sent.")
+                container.appContext.getString(R.string.jobs_err_cancel_nc))
             return
         }
         viewModelScope.launch {
             try { client.api.cancelJob(id) }
             catch (_: Exception) {
                 _state.value = _state.value.copy(errorMessage =
-                    "Cancellation could not be confirmed. Check the job on your PC.")
+                    container.appContext.getString(R.string.jobs_err_cancel))
             }
         }
     }
@@ -129,7 +128,7 @@ class JobsViewModel(private val container: AppContainer) : ViewModel() {
         val notification = NotificationCompat.Builder(appContext, PaRuXApplication.CHANNEL_JOBS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(appContext.getString(R.string.app_display_name))
-            .setContentText("${job.type.replaceFirstChar { it.uppercase() }} completed")
+            .setContentText(container.appContext.getString(R.string.jobs_completed, job.type.replaceFirstChar { it.uppercase() }))
             .setAutoCancel(true)
             .build()
         manager.notify(job.id.hashCode(), notification)

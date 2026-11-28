@@ -69,12 +69,12 @@ fun ToolsScreen(viewModel: ToolsViewModel) {
 
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_tools)) }) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(12.dp)) {
-            item { RuntimeSection(state.runtime, state.runtimeLoading, state.runtimeNotice, viewModel::loadRuntime, viewModel::refreshRuntime) }
+            item { RuntimeSection(state.runtime, state.runtimeLoading, state.runtimeNotice, viewModel::loadRuntime, viewModel::unloadRuntime, viewModel::refreshRuntime) }
             item { InternetSection(state.internetEnabled, viewModel::setInternet) }
             item { MemorySection(state.memory, viewModel::addMemory, viewModel::deleteMemory) }
             item {
                 RagSection(
-                    state.ragSources, state.documentUploading, state.documentNotice,
+                    state.ragSources, state.documentUploading, state.documentNotice, state.documentIndex, state.documentIndexName,
                     viewModel::reindexRag, viewModel::removeRag, viewModel::uploadDocument
                 )
             }
@@ -172,7 +172,7 @@ fun ToolsScreen(viewModel: ToolsViewModel) {
                     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                            TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                            TextButton(onClick = viewModel::dismissError) { Text(stringResource(R.string.common_dismiss)) }
                         }
                     }
                 }
@@ -204,9 +204,9 @@ private fun SectionCard(title: String, caption: String? = null, initiallyExpande
 
 @Composable
 private fun InternetSection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
-    SectionCard("Internet", "Off by default. Required only for explicit Internet features such as Research/model discovery.") {
+    SectionCard(stringResource(R.string.tools_internet), stringResource(R.string.tools_internet_hint)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(if (enabled) "On" else "Off")
+            Text(if (enabled) "On" else stringResource(R.string.settings_off))
             Switch(checked = enabled, onCheckedChange = onToggle)
         }
     }
@@ -215,15 +215,15 @@ private fun InternetSection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
 @Composable
 private fun MemorySection(memory: List<MemoryEntryDto>, onAdd: (String) -> Unit, onDelete: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    SectionCard("Memory", "${memory.size} entries. Core-owned - same store Windows uses.") {
+    SectionCard(stringResource(R.string.tools_memory), stringResource(R.string.tools_memory_caption, memory.size)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f), placeholder = { Text("Add a memory…") })
-            TextButton(onClick = { onAdd(text); text = "" }, enabled = text.isNotBlank()) { Text("Add") }
+            OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f), placeholder = { Text(stringResource(R.string.tools_add_memory)) })
+            TextButton(onClick = { onAdd(text); text = "" }, enabled = text.isNotBlank()) { Text(stringResource(R.string.common_add)) }
         }
         memory.forEach { entry ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(entry.content, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { onDelete(entry.id) }) { Text("Delete") }
+                TextButton(onClick = { onDelete(entry.id) }) { Text(stringResource(R.string.chat_delete)) }
             }
         }
     }
@@ -235,6 +235,7 @@ private fun RuntimeSection(
     loading: Boolean,
     notice: UiNotice?,
     onLoad: () -> Unit,
+    onUnload: () -> Unit,
     onRefresh: () -> Unit
 ) {
     SectionCard(stringResource(R.string.runtime_title), initiallyExpanded = true) {
@@ -269,7 +270,10 @@ private fun RuntimeSection(
             Button(onClick = onLoad, enabled = !loading && runtime?.gamingActive != true) {
                 Text(stringResource(if (loading) R.string.runtime_loading else R.string.runtime_load))
             }
-            TextButton(onClick = onRefresh, modifier = Modifier.padding(start = 8.dp)) { Text(stringResource(R.string.runtime_refresh)) }
+            TextButton(onClick = onUnload, enabled = !loading && runtime?.textLoaded == true && runtime.gamingActive != true, modifier = Modifier.padding(start = 8.dp)) {
+                Text(stringResource(R.string.runtime_unload))
+            }
+            TextButton(onClick = onRefresh) { Text(stringResource(R.string.runtime_refresh)) }
         }
     }
 }
@@ -298,10 +302,33 @@ private fun readPickedDocument(resolver: ContentResolver, uri: Uri): Pair<String
 } catch (_: Exception) { null }
 
 @Composable
+private fun IndexProgressBlock(index: com.parux.android.core.network.MobileIndexStatusDto, name: String?) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        when (index.state) {
+            "done" -> Text(stringResource(R.string.docs_index_done, name ?: "", index.chunks), style = MaterialTheme.typography.bodySmall)
+            "failed" -> Text(stringResource(R.string.docs_index_failed, name ?: ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            else -> {
+                Text(stringResource(R.string.docs_indexing, name ?: ""), style = MaterialTheme.typography.bodySmall)
+                val pages = index.totalPages
+                val page = index.currentPage
+                if (pages != null && pages > 0 && page != null) {
+                    LinearProgressIndicator(progress = { (page.toFloat() / pages).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                    Text(stringResource(R.string.docs_index_pages, page, pages), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun RagSection(
     sources: List<RagSourceDto>,
     uploading: Boolean,
     notice: UiNotice?,
+    index: com.parux.android.core.network.MobileIndexStatusDto?,
+    indexName: String?,
     onReindex: (String) -> Unit,
     onRemove: (String) -> Unit,
     onUpload: (String, ByteArray) -> Unit
@@ -322,6 +349,7 @@ private fun RagSection(
             val text = if (it.arg != null) stringResource(it.res, it.arg) else stringResource(it.res)
             Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
         }
+        if (index != null) IndexProgressBlock(index, indexName)
         if (sources.isEmpty()) Text(stringResource(R.string.docs_none), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
         sources.forEach { source ->
             Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -344,25 +372,25 @@ private fun SkillsSection(
     onCreate: (String, String, String, String, Boolean) -> Unit
 ) {
     var showCreate by remember { mutableStateOf(false) }
-    SectionCard("Skills", "${skills.size} skills. Mobile-created skills are prompt/routing-only and Core strips privileged tools/permissions.") {
-        TextButton(onClick = { showCreate = !showCreate }) { Text(if (showCreate) "Cancel" else "New safe skill…") }
+    SectionCard(stringResource(R.string.tools_skills), stringResource(R.string.tools_skills_caption, skills.size)) {
+        TextButton(onClick = { showCreate = !showCreate }) { Text(if (showCreate) stringResource(R.string.common_cancel) else stringResource(R.string.tools_skill_new)) }
         if (showCreate) {
             var name by remember { mutableStateOf("") }
             var description by remember { mutableStateOf("") }
             var slash by remember { mutableStateOf("") }
             var internetRequired by remember { mutableStateOf(false) }
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Display name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = slash, onValueChange = { slash = it }, label = { Text("Slash command (optional)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.tools_display_name)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text(stringResource(R.string.tools_description)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = slash, onValueChange = { slash = it }, label = { Text(stringResource(R.string.tools_slash)) }, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Requires Internet")
+                Text(stringResource(R.string.tools_requires_internet))
                 Switch(checked = internetRequired, onCheckedChange = { internetRequired = it })
             }
-            Text("Filesystem, shell, browser automation, Computer Use and external-process permissions can only be authored on Windows.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tools_skill_privileged_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = {
                 onCreate(name, description, slash, "MAIN_LLM", internetRequired)
                 showCreate = false; name = ""; description = ""; slash = ""; internetRequired = false
-            }, enabled = name.isNotBlank()) { Text("Create") }
+            }, enabled = name.isNotBlank()) { Text(stringResource(R.string.common_create)) }
         }
         skills.sortedBy { it.displayName }.forEach { skill ->
             var expanded by remember(skill.id) { mutableStateOf(false) }
@@ -375,21 +403,21 @@ private fun SkillsSection(
                     Switch(checked = skill.enabled, onCheckedChange = { onSetEnabled(skill.id, it) })
                 }
                 Row {
-                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide" else "Details") }
-                    if (skill.source == "user" || skill.source == "imported") TextButton(onClick = { onDelete(skill.id) }) { Text("Delete") }
+                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) stringResource(R.string.tools_hide) else stringResource(R.string.tools_details)) }
+                    if (skill.source == "user" || skill.source == "imported") TextButton(onClick = { onDelete(skill.id) }) { Text(stringResource(R.string.chat_delete)) }
                 }
                 if (expanded) {
                     Column {
-                        Text("Source: ${skill.source}" + if (skill.license.isNotEmpty()) " · ${skill.license}" else "", style = MaterialTheme.typography.bodySmall)
-                        Text("Platforms: ${skill.platforms.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
-                        Text("Model role: ${skill.preferredModelRole}", style = MaterialTheme.typography.bodySmall)
-                        Text("Tools: " + if (skill.allowedTools.isEmpty()) "none" else skill.allowedTools.joinToString(", "), style = MaterialTheme.typography.bodySmall)
-                        Text("Internet/Memory/RAG: ${skill.internetPolicy}/${skill.memoryPolicy}/${skill.ragPolicy}", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.tools_skill_source, skill.source) + if (skill.license.isNotEmpty()) " · ${skill.license}" else "", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.tools_skill_platforms, skill.platforms.joinToString(", ")), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.tools_skill_role, skill.preferredModelRole), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.tools_skill_tools, if (skill.allowedTools.isEmpty()) stringResource(R.string.common_none) else skill.allowedTools.joinToString(", ")), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.tools_skill_policies, skill.internetPolicy, skill.memoryPolicy, skill.ragPolicy), style = MaterialTheme.typography.bodySmall)
                         Text(
-                            "Permissions: read=${skill.permissions.readFiles} write=${skill.permissions.writeFiles} shell=${skill.permissions.shell} computerUse=${skill.permissions.computerUse}",
+                            stringResource(R.string.tools_skill_permissions, skill.permissions.readFiles, skill.permissions.writeFiles, skill.permissions.shell, skill.permissions.computerUse),
                             style = MaterialTheme.typography.bodySmall
                         )
-                        if (skill.workflow.isNotEmpty()) Text("Workflow: " + skill.workflow.joinToString(" → "), style = MaterialTheme.typography.bodySmall)
+                        if (skill.workflow.isNotEmpty()) Text(stringResource(R.string.tools_skill_workflow, skill.workflow.joinToString(" → ")), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -403,17 +431,17 @@ private fun ResearchSection(loading: Boolean, result: com.parux.android.core.net
     var question by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("balanced") }
     var modeMenu by remember { mutableStateOf(false) }
-    SectionCard("Research", "Explicit Internet feature. Search is blocked while Internet is off." + if (!internetEnabled) " Enable Internet above to use it." else "") {
+    SectionCard(stringResource(R.string.tools_research), stringResource(R.string.tools_research_caption) + if (!internetEnabled) stringResource(R.string.tools_research_enable) else "") {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { modeMenu = true }) { Text("Mode: $mode") }
+            TextButton(onClick = { modeMenu = true }) { Text(stringResource(R.string.tools_mode, mode)) }
             DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                 listOf("fast", "balanced", "deep").forEach { m ->
                     DropdownMenuItem(text = { Text(m) }, onClick = { mode = m; modeMenu = false })
                 }
             }
         }
-        OutlinedTextField(value = question, onValueChange = { question = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Ask a research question…") })
-        Button(onClick = { onAsk(question, mode) }, enabled = internetEnabled && question.isNotBlank() && !loading) { Text("Ask") }
+        OutlinedTextField(value = question, onValueChange = { question = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.tools_ask_hint)) })
+        Button(onClick = { onAsk(question, mode) }, enabled = internetEnabled && question.isNotBlank() && !loading) { Text(stringResource(R.string.tools_ask)) }
         if (loading) CircularProgressIndicator(Modifier.padding(top = 8.dp))
         result?.let { r ->
             Text(r.answer, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
@@ -426,13 +454,13 @@ private fun ResearchSection(loading: Boolean, result: com.parux.android.core.net
 private fun PresentationSection(loading: Boolean, result: com.parux.android.core.network.PresentationResponse?, onGenerate: (String, Int) -> Unit) {
     var topic by remember { mutableStateOf("") }
     var slideCount by remember { mutableStateOf("6") }
-    SectionCard("Presentations", "Local-LLM outline + native PPTX generation on the paired PC.") {
-        OutlinedTextField(value = topic, onValueChange = { topic = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Topic…") })
-        OutlinedTextField(value = slideCount, onValueChange = { slideCount = it.filter(Char::isDigit) }, label = { Text("Slides") })
-        Button(onClick = { onGenerate(topic, slideCount.toIntOrNull() ?: 6) }, enabled = topic.isNotBlank() && !loading) { Text("Generate") }
+    SectionCard(stringResource(R.string.tools_presentations), stringResource(R.string.tools_presentations_caption)) {
+        OutlinedTextField(value = topic, onValueChange = { topic = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.tools_topic)) })
+        OutlinedTextField(value = slideCount, onValueChange = { slideCount = it.filter(Char::isDigit) }, label = { Text(stringResource(R.string.tools_slides)) })
+        Button(onClick = { onGenerate(topic, slideCount.toIntOrNull() ?: 6) }, enabled = topic.isNotBlank() && !loading) { Text(stringResource(R.string.jobs_generate)) }
         if (loading) CircularProgressIndicator(Modifier.padding(top = 8.dp))
         result?.let { r ->
-            Text("${r.fileName} · ${r.slides.size} slides", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.tools_pres_result, r.fileName, r.slides.size), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
             r.slides.forEach { slide ->
                 Text(slide.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 slide.bullets.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
@@ -470,14 +498,14 @@ private fun SpeechSection(
             }
         } catch (_: Exception) { }
     }
-    SectionCard("Speech", "STT: ${if (engineStatus.sttInstalled) "installed" else "not installed"} · TTS: ${if (engineStatus.ttsInstalled) "installed" else "not installed"}") {
-        Text("Text to speech", style = MaterialTheme.typography.titleSmall)
-        OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Text to speak…") })
-        Button(onClick = { onSpeak(text) }, enabled = text.isNotBlank()) { Text("Speak") }
+    SectionCard(stringResource(R.string.tools_speech), stringResource(R.string.tools_speech_caption, stringResource(if (engineStatus.sttInstalled) R.string.tools_installed else R.string.tools_not_installed), stringResource(if (engineStatus.ttsInstalled) R.string.tools_installed else R.string.tools_not_installed))) {
+        Text(stringResource(R.string.tools_tts), style = MaterialTheme.typography.titleSmall)
+        OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.tools_tts_hint)) })
+        Button(onClick = { onSpeak(text) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.tools_speak)) }
         ttsResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 
-        Text("Speech to text", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-        Button(onClick = { audioPicker.launch("audio/*") }, enabled = !sttLoading) { Text("Pick audio to transcribe…") }
+        Text(stringResource(R.string.tools_stt), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+        Button(onClick = { audioPicker.launch("audio/*") }, enabled = !sttLoading) { Text(stringResource(R.string.tools_stt_pick)) }
         if (sttLoading) CircularProgressIndicator(Modifier.padding(top = 8.dp))
         sttResult?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium) }
     }
@@ -493,11 +521,11 @@ private fun ModelManagerSection(
     onDownload: (String, String, String, Long) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    SectionCard("Model Manager", budget?.let { "Downloaded: ${formatBytes(it.usedBytes)} / ${formatBytes(it.limitBytes)}" } ?: "Search/download GGUF through Core.") {
-        Text("Manual benchmarks and raw model paths are desktop-only. New managed GGUF downloads are benchmarked by Core automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    SectionCard(stringResource(R.string.tools_models), budget?.let { stringResource(R.string.tools_models_downloaded, formatBytes(it.usedBytes), formatBytes(it.limitBytes)) } ?: stringResource(R.string.tools_models_caption)) {
+        Text(stringResource(R.string.tools_models_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.weight(1f), placeholder = { Text("Search GGUF models…") })
-            TextButton(onClick = { onSearch(query) }, enabled = query.isNotBlank() && !loading) { Text("Search") }
+            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.weight(1f), placeholder = { Text(stringResource(R.string.tools_models_search)) })
+            TextButton(onClick = { onSearch(query) }, enabled = query.isNotBlank() && !loading) { Text(stringResource(R.string.common_search)) }
         }
         if (loading) CircularProgressIndicator(Modifier.padding(top = 8.dp))
         results.forEach { repo ->
@@ -505,7 +533,7 @@ private fun ModelManagerSection(
             repo.ggufFiles.forEach { file ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("${file.fileName} (${formatBytes(file.sizeBytes)})", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { onDownload(repo.repoId, file.fileName, file.downloadUrl, file.sizeBytes) }) { Text("Download") }
+                    TextButton(onClick = { onDownload(repo.repoId, file.fileName, file.downloadUrl, file.sizeBytes) }) { Text(stringResource(R.string.common_download)) }
                 }
             }
         }
@@ -522,11 +550,11 @@ private fun ModelManagerSection(
 @Composable
 private fun TrainingLabSection() {
     SectionCard(
-        "Training Lab",
-        "Dataset paths, engine installation and fine-tuning job authoring are intentionally Windows-only."
+        stringResource(R.string.tools_training),
+        stringResource(R.string.tools_training_caption)
     ) {
         Text(
-            "Prepare/export the dataset and start SFT/DPO from PaRuX Windows. Android never sends a workstation filesystem path and can supervise the resulting Core tasks through PC Studio.",
+            stringResource(R.string.tools_training_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -537,13 +565,13 @@ private fun TrainingLabSection() {
 private fun AvatarSection(status: com.parux.android.core.network.AvatarProviderStatus, loading: Boolean, onGenerate: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     SectionCard(
-        "Avatar Studio",
-        if (status.configured && status.reachable) "Provider: ${status.providerName} · reachable"
-        else if (status.configured) "Provider ${status.providerName} configured but not reachable"
-        else "No local avatar provider configured."
+        stringResource(R.string.tools_avatar),
+        if (status.configured && status.reachable) stringResource(R.string.tools_avatar_ok, status.providerName ?: "")
+        else if (status.configured) stringResource(R.string.tools_avatar_down, status.providerName ?: "")
+        else stringResource(R.string.tools_avatar_none)
     ) {
-        OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Text for the avatar to say…") }, enabled = status.configured)
-        Button(onClick = { onGenerate(text) }, enabled = status.configured && text.isNotBlank() && !loading) { Text("Generate") }
+        OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.tools_avatar_hint)) }, enabled = status.configured)
+        Button(onClick = { onGenerate(text) }, enabled = status.configured && text.isNotBlank() && !loading) { Text(stringResource(R.string.jobs_generate)) }
         if (loading) CircularProgressIndicator(Modifier.padding(top = 8.dp))
     }
 }
@@ -558,19 +586,19 @@ private fun ComputerUseSection(
 ) {
     var goal by remember { mutableStateOf("") }
     SectionCard(
-        "Computer Use (paired Windows PC)",
-        "Creates a durable Core task. Execution stays on Windows and GUI control still requires task-scoped Approve once; Android has no Accessibility or raw-input privilege."
+        stringResource(R.string.tools_cu),
+        stringResource(R.string.tools_cu_caption)
     ) {
         OutlinedTextField(
             value = goal,
             onValueChange = { goal = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Goal, e.g. open Windows Settings and check the display configuration") },
+            placeholder = { Text(stringResource(R.string.tools_cu_hint)) },
             enabled = !running
         )
         Row(Modifier.padding(top = 8.dp)) {
-            if (running) Button(onClick = onStop) { Text("Cancel task") }
-            else Button(onClick = { onRun(goal) }, enabled = goal.isNotBlank()) { Text("Request on PC") }
+            if (running) Button(onClick = onStop) { Text(stringResource(R.string.tools_cancel_task)) }
+            else Button(onClick = { onRun(goal) }, enabled = goal.isNotBlank()) { Text(stringResource(R.string.tools_request_pc)) }
             if (running) CircularProgressIndicator(Modifier.padding(start = 12.dp).size(20.dp))
         }
         summary?.let {
@@ -598,26 +626,26 @@ private fun ThreedSection(
         if (uri != null && resultBase64 != null) saveGlb(context, uri, resultBase64)
     }
     SectionCard(
-        "3D Studio",
-        (if (engine.installed) "Engine installed" + (engine.torchVersion?.let { " · torch $it" } ?: "")
-        else engine.lastError?.let { "Engine unavailable: $it" } ?: "Engine not installed on the PC.") +
-            "\nEngine installation is desktop-only. Generation stays local through Core."
+        stringResource(R.string.tools_3d),
+        (if (engine.installed) stringResource(R.string.tools_3d_engine_ok) + (engine.torchVersion?.let { stringResource(R.string.tools_3d_torch, it) } ?: "")
+        else engine.lastError?.let { stringResource(R.string.tools_3d_engine_err, it) } ?: stringResource(R.string.tools_3d_engine_missing)) +
+            "\n" + stringResource(R.string.tools_3d_desktop_only)
     ) {
         if (!engine.installed) {
-            Text("Install/configure the 3D engine from PaRuX Windows, then refresh this screen.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tools_3d_install), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            Button(onClick = { imagePicker.launch("image/*") }, enabled = !generating) { Text("Pick image → generate 3D model") }
+            Button(onClick = { imagePicker.launch("image/*") }, enabled = !generating) { Text(stringResource(R.string.tools_3d_pick)) }
             if (generating) {
                 CircularProgressIndicator(Modifier.padding(top = 8.dp))
-                Text("Generating locally on the paired PC…", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.tools_3d_busy), style = MaterialTheme.typography.bodySmall)
             }
             resultInfo?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall) }
             resultBase64?.let {
-                Text("GLB generated locally. Preview does not load external JavaScript; save it to open with an installed 3D viewer.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.tools_3d_done), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
                 Button(
                     onClick = { saveModel.launch("parux-model-${System.currentTimeMillis()}.glb") },
                     modifier = Modifier.padding(top = 8.dp)
-                ) { Text("Save .glb") }
+                ) { Text(stringResource(R.string.tools_3d_save)) }
             }
         }
     }
@@ -644,55 +672,55 @@ private fun AgentsSection(
     LaunchedEffect(Unit) { onRefreshTasks() }
 
     SectionCard(
-        "Multi-Agent Tasks & Autopilot",
-        "Core-owned task graphs only. Windows filesystem/shell work stays inside the configured coding worker; GUI control remains approval-gated."
+        stringResource(R.string.tools_agents),
+        stringResource(R.string.tools_agents_caption)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${tasks.size} task(s)", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = onRefreshTasks) { Text("Refresh") }
+            Text(stringResource(R.string.tools_tasks_count, tasks.size), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onRefreshTasks) { Text(stringResource(R.string.common_refresh)) }
         }
         tasks.take(8).forEach { task ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(task.goal, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                    Text((task.role ?: "no role") + " · " + task.status.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text((task.role ?: stringResource(R.string.tools_no_role)) + " · " + task.status.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (task.status !in listOf("completed", "failed", "cancelled")) TextButton(onClick = { onCancelTask(task.id) }) { Text("Cancel") }
+                if (task.status !in listOf("completed", "failed", "cancelled")) TextButton(onClick = { onCancelTask(task.id) }) { Text(stringResource(R.string.common_cancel)) }
             }
         }
 
-        Text("Autopilot", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-        OutlinedTextField(value = autopilotGoal, onValueChange = { autopilotGoal = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Goal for Autopilot") })
+        Text(stringResource(R.string.tools_autopilot), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+        OutlinedTextField(value = autopilotGoal, onValueChange = { autopilotGoal = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.tools_autopilot_goal)) })
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box {
-                TextButton(onClick = { modeMenuExpanded = true }) { Text("Mode: $permissionMode") }
+                TextButton(onClick = { modeMenuExpanded = true }) { Text(stringResource(R.string.tools_mode, permissionMode)) }
                 DropdownMenu(expanded = modeMenuExpanded, onDismissRequest = { modeMenuExpanded = false }) {
                     listOf("supervised", "balanced", "autonomous").forEach { mode ->
                         DropdownMenuItem(text = { Text(mode) }, onClick = { permissionMode = mode; modeMenuExpanded = false })
                     }
                 }
             }
-            Button(onClick = { onStartAutopilotRun(autopilotGoal, permissionMode) }, enabled = autopilotGoal.isNotBlank(), modifier = Modifier.padding(start = 8.dp)) { Text("Start run") }
+            Button(onClick = { onStartAutopilotRun(autopilotGoal, permissionMode) }, enabled = autopilotGoal.isNotBlank(), modifier = Modifier.padding(start = 8.dp)) { Text(stringResource(R.string.tools_start_run)) }
         }
-        OutlinedTextField(value = runIdInput, onValueChange = { runIdInput = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), placeholder = { Text("Run id") })
+        OutlinedTextField(value = runIdInput, onValueChange = { runIdInput = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), placeholder = { Text(stringResource(R.string.tools_run_id)) })
         Row(Modifier.padding(top = 4.dp)) {
-            TextButton(onClick = { onCheckAutopilotRun(runIdInput) }, enabled = runIdInput.isNotBlank()) { Text("Check status") }
+            TextButton(onClick = { onCheckAutopilotRun(runIdInput) }, enabled = runIdInput.isNotBlank()) { Text(stringResource(R.string.tools_check_status)) }
             // A held run is approved on the PaRuX desktop; the phone can only cancel the run it started.
             TextButton(
                 onClick = { onCancelAutopilotRun(runIdInput) },
                 enabled = runIdInput.isNotBlank() && autopilotRun?.id == runIdInput && AutopilotRunText.canCancel(autopilotRun)
-            ) { Text("Cancel run") }
+            ) { Text(stringResource(R.string.tools_cancel_run)) }
         }
         autopilotStatusMessage?.let { Text(it, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall) }
-        autopilotRun?.finalReportJson?.let { Text("Report: $it", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        autopilotRun?.finalReportJson?.let { Text(stringResource(R.string.tools_report, it), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
-        Text("Universal STOP", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-        Text("Cancels in-flight tasks and active Autopilot runs and pauses existing Automations without deleting their definitions.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.tools_stop_title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+        Text(stringResource(R.string.tools_stop_caption), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.padding(top = 4.dp)) {
             Button(onClick = onStopAllAgents, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                Text("STOP ALL AGENTS", color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(stringResource(R.string.tools_stop_all), color = MaterialTheme.colorScheme.onErrorContainer)
             }
-            TextButton(onClick = onResumeAutomations, modifier = Modifier.padding(start = 8.dp)) { Text("Resume automations") }
+            TextButton(onClick = onResumeAutomations, modifier = Modifier.padding(start = 8.dp)) { Text(stringResource(R.string.tools_resume)) }
         }
         stopAllMessage?.let { Text(it, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall) }
     }
@@ -706,10 +734,10 @@ private fun AutomationsSection(
     onDelete: (String) -> Unit
 ) {
     LaunchedEffect(Unit) { onRefresh() }
-    SectionCard("Automations", "Supervise existing Core-owned automations. Trigger/action authoring stays Windows-only.") {
+    SectionCard(stringResource(R.string.tools_automations), stringResource(R.string.tools_automations_caption)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${automations.size} automation(s)", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = onRefresh) { Text("Refresh") }
+            Text(stringResource(R.string.tools_automations_count, automations.size), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onRefresh) { Text(stringResource(R.string.common_refresh)) }
         }
         automations.forEach { automation ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -718,7 +746,7 @@ private fun AutomationsSection(
                     Text(automation.triggerType + " → " + automation.actionType + (automation.lastResult?.let { " · $it" } ?: ""), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 }
                 Switch(checked = automation.enabled, onCheckedChange = { onSetEnabled(automation.id, it) })
-                TextButton(onClick = { onDelete(automation.id) }) { Text("Delete") }
+                TextButton(onClick = { onDelete(automation.id) }) { Text(stringResource(R.string.chat_delete)) }
             }
         }
     }
@@ -733,24 +761,24 @@ private fun ContextGraphSection(
 ) {
     var typeFilter by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { onRefresh(null) }
-    SectionCard("Context Graph Inspector", "Read-only on Android. Manual entity/relation authoring is desktop-only.") {
+    SectionCard(stringResource(R.string.tools_graph), stringResource(R.string.tools_graph_caption)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = typeFilter, onValueChange = { typeFilter = it }, modifier = Modifier.weight(1f), placeholder = { Text("Filter by type (optional)") })
-            TextButton(onClick = { onRefresh(typeFilter.ifBlank { null }) }, modifier = Modifier.padding(start = 8.dp)) { Text("Refresh") }
+            OutlinedTextField(value = typeFilter, onValueChange = { typeFilter = it }, modifier = Modifier.weight(1f), placeholder = { Text(stringResource(R.string.tools_graph_filter)) })
+            TextButton(onClick = { onRefresh(typeFilter.ifBlank { null }) }, modifier = Modifier.padding(start = 8.dp)) { Text(stringResource(R.string.common_refresh)) }
         }
-        Text("${entities.size} entities", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+        Text(stringResource(R.string.tools_graph_count, entities.size), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
         entities.take(15).forEach { entity ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(entity.name, style = MaterialTheme.typography.bodySmall)
                     Text(entity.entityType, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { onViewNeighborhood(entity.id) }) { Text("Neighborhood") }
+                TextButton(onClick = { onViewNeighborhood(entity.id) }) { Text(stringResource(R.string.tools_neighborhood)) }
             }
         }
         neighborhood?.let { n ->
-            Text("Neighborhood", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-            Text("${n.center.name} (${n.center.entityType}) · ${n.outgoingRelations.size} outgoing · ${n.incomingRelations.size} incoming · ${n.neighborEntities.size} neighbor(s)", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.tools_neighborhood), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            Text(stringResource(R.string.tools_neighborhood_line, n.center.name, n.center.entityType, n.outgoingRelations.size, n.incomingRelations.size, n.neighborEntities.size), style = MaterialTheme.typography.bodySmall)
             n.outgoingRelations.forEach { Text("  → ${it.relationType} → ${it.toEntityId}", style = MaterialTheme.typography.labelSmall) }
             n.incomingRelations.forEach { Text("  ← ${it.relationType} ← ${it.fromEntityId}", style = MaterialTheme.typography.labelSmall) }
         }
@@ -761,11 +789,11 @@ private fun saveGlb(context: Context, uri: Uri, glbBase64: String) {
     try {
         val bytes = Base64.decode(glbBase64, Base64.NO_WRAP)
         val output = context.contentResolver.openOutputStream(uri)
-            ?: throw IOException("The selected destination could not be opened.")
+            ?: throw IOException(context.getString(R.string.tools_dest_failed))
         output.use { it.write(bytes) }
-        Toast.makeText(context, "3D model saved", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.tools_3d_saved), Toast.LENGTH_SHORT).show()
     } catch (e: Exception) {
-        Toast.makeText(context, "Couldn't save: ${e.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.tools_save_failed, e.message ?: ""), Toast.LENGTH_SHORT).show()
     }
 }
 

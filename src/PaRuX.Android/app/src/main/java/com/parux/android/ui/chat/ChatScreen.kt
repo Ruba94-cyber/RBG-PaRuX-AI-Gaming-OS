@@ -1,6 +1,7 @@
 package com.parux.android.ui.chat
 
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Visibility
 import com.parux.android.R
@@ -235,7 +236,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 
     if (showHistory) {
-        HistorySheet(state.conversations, { showHistory = false }, viewModel::deleteConversation) { id ->
+        HistorySheet(state.conversations, { showHistory = false }, viewModel::deleteConversation, viewModel::renameConversation) { id ->
             viewModel.openConversation(id)
             showHistory = false
         }
@@ -550,10 +551,22 @@ private fun HistorySheet(
     conversations: List<ConversationSummary>,
     onDismiss: () -> Unit,
     onDelete: (String) -> Unit,
+    onRename: (String, String) -> Unit,
     onSelect: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
     var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
+    var pendingRename by remember { mutableStateOf<ConversationSummary?>(null) }
+    pendingRename?.let { target ->
+        var draft by remember(target.id) { mutableStateOf(target.title) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text(stringResource(R.string.chat_rename_title)) },
+            text = { OutlinedTextField(value = draft, onValueChange = { draft = it }, singleLine = true, label = { Text(stringResource(R.string.chat_rename_hint)) }) },
+            confirmButton = { TextButton(onClick = { onRename(target.id, draft); pendingRename = null }, enabled = draft.isNotBlank()) { Text(stringResource(R.string.common_save)) } },
+            dismissButton = { TextButton(onClick = { pendingRename = null }) { Text(stringResource(R.string.common_cancel)) } }
+        )
+    }
     pendingDelete?.let { target ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { pendingDelete = null },
@@ -572,6 +585,9 @@ private fun HistorySheet(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Surface(onClick = { onSelect(conversation.id) }, modifier = Modifier.weight(1f)) {
                             Text(conversation.title, Modifier.padding(vertical = 12.dp))
+                        }
+                        IconButton(onClick = { pendingRename = conversation }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.chat_rename))
                         }
                         IconButton(onClick = { pendingDelete = conversation }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.chat_delete_conversation))
