@@ -24,10 +24,10 @@ internal static class BundledBaselineRuntimeBootstrap
     private const string ManifestRelative = "runtime-baseline/staging-manifest.json";
     private const string VulkanRuntimeFolder = "llama.cpp-b10549-vulkan";
     private const string VulkanPayloadRelative = "runtime-baseline/llama.cpp-b10549-vulkan";
-    private const string CudaRuntimeFolder = "llama.cpp-b11871-cuda13.4";
-    private const string CudaPayloadRelative = "runtime-baseline/llama.cpp-b11871-cuda13.4";
-    private const string CudaBuildTag = "b11871";
-    private const string CudaToolkit = "13.4";
+    private const string CudaRuntimeFolder = "llama.cpp-b12818-cuda13.5";
+    private const string CudaPayloadRelative = "runtime-baseline/llama.cpp-b12818-cuda13.5";
+    private const string CudaBuildTag = "b12818";
+    private const string CudaToolkit = "13.5";
 
     /// <summary>
     /// Called explicitly from Program before anything else. It must NOT be a module initializer:
@@ -66,7 +66,7 @@ internal static class BundledBaselineRuntimeBootstrap
 
     /// <summary>
     /// The bundled Vulkan baseline is always installed, as in 1.9.6: the media assistant and non-NVIDIA text
-    /// path run on it. The bundled CUDA 13.4 build is added only for hardware that supports it.
+    /// path run on it. The bundled CUDA 13.5 build is added only for hardware that supports it.
     /// </summary>
     internal static IReadOnlyList<BundledBaselineRuntimeKind> BaselinesToInstall(BundledBaselineRuntimeKind target) =>
         target == BundledBaselineRuntimeKind.Cuda13

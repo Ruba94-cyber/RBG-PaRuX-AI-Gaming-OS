@@ -45,7 +45,7 @@ $cliPath = Join-Path $installDir "Cli"
 $licenseFile = Join-Path $installDir "LICENSE.txt"
 $noticesFile = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
 $cudaNoticeFile = Join-Path $installDir "NVIDIA_CUDA_NOTICE.txt"
-$cudaBaselineDir = Join-Path $installDir "PaRuX.Server\runtime-baseline\llama.cpp-b11871-cuda13.4"
+$cudaBaselineDir = Join-Path $installDir "PaRuX.Server\runtime-baseline\llama.cpp-b12818-cuda13.5"
 $cudaBaselineFiles = @(
     (Join-Path $cudaBaselineDir "llama-server.exe"),
     (Join-Path $cudaBaselineDir "cudart64_13.dll"),
@@ -118,7 +118,7 @@ function Assert-Installed([bool]$RequireUpdateHelper = $true) {
         @{ Path = $startMenuShortcut; Label = "machine Start Menu shortcut" }
     )
     foreach ($path in $cudaBaselineFiles) {
-        $required += @{ Path = $path; Label = "bundled CUDA 13.4 baseline payload" }
+        $required += @{ Path = $path; Label = "bundled CUDA 13.5 baseline payload" }
     }
     if ($RequireUpdateHelper) {
         $required += @{ Path = $updateHelperExe; Label = "protected Update Helper executable" }

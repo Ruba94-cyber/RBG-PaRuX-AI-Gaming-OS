@@ -76,7 +76,7 @@ namespace PaRuX.Services
             FirstModelAdvice? modelAdvice = null)
         {
             bool vulkanDetected = IsComponentDetected(components, BundledVulkanId);
-            // On NVIDIA GPUs that support it the MSI bootstraps the bundled CUDA 13.4 build instead of Vulkan, so a
+            // On NVIDIA GPUs that support it the MSI bootstraps the bundled CUDA 13.5 build instead of Vulkan, so a
             // detected CUDA text engine is just as much "the included engine" as Vulkan.
             bool cudaDetected = IsComponentDetected(components, DownloadableCudaId);
             bool uvDetected = IsComponentDetected(components, BundledUvId);
@@ -139,7 +139,7 @@ namespace PaRuX.Services
                     EstimatedSizeText = FormatSize(CudaRuntimeSizeBytes),
                     IsRequired = false,
                     WhenDownloaded = "Optional. Only downloaded for older NVIDIA GPUs, if you choose 'Install with PaRuX' for CUDA acceleration.",
-                    Description = T("Heavy GPU acceleration for NVIDIA cards. GPUs that support it (RTX 50 series with driver 580 or newer) already get an included CUDA 13.4 engine; this pack is the CUDA 12.4 build for older cards. The bundled Vulkan runtime is sufficient for chat.", "Accelerazione GPU pesante per schede NVIDIA. Le GPU che la supportano (serie RTX 50 con driver 580 o successivo) hanno già un motore CUDA 13.4 incluso; questo pacchetto è la build CUDA 12.4 per schede più vecchie. Il runtime Vulkan incluso basta per la chat.")
+                    Description = T("Heavy GPU acceleration for NVIDIA cards. GPUs that support it (RTX 50 series with driver 580 or newer) already get an included CUDA 13.5 engine; this pack is the CUDA 12.4 build for older cards. The bundled Vulkan runtime is sufficient for chat.", "Accelerazione GPU pesante per schede NVIDIA. Le GPU che la supportano (serie RTX 50 con driver 580 o successivo) hanno già un motore CUDA 13.5 incluso; questo pacchetto è la build CUDA 12.4 per schede più vecchie. Il runtime Vulkan incluso basta per la chat.")
                 },
                 new()
                 {
@@ -163,9 +163,9 @@ namespace PaRuX.Services
 
             string subhead = hasWorkingTextPath
                 ? (cudaDetected && !vulkanDetected
-                    ? "The included CUDA 13.4 runtime is detected. Choose or use an existing chat model, then verify a real local answer before entering Chat."
+                    ? "The included CUDA 13.5 runtime is detected. Choose or use an existing chat model, then verify a real local answer before entering Chat."
                     : "The included Vulkan runtime is detected. Choose or use an existing chat model, then verify a real local answer before entering Chat.")
-                : "The installer is designed to include the Vulkan engine, a CUDA 13.4 engine for supported NVIDIA GPUs, and package tooling. If detection fails, repair or locate the runtime in Components.";
+                : "The installer is designed to include the Vulkan engine, a CUDA 13.5 engine for supported NVIDIA GPUs, and package tooling. If detection fails, repair or locate the runtime in Components.";
 
             string guidance = $"Verify installer integrity: run '{PowerShellVerificationCommand}' in PowerShell and compare with SHA256SUMS.txt. See {DocumentationPath} for details.";
 

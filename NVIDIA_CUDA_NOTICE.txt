@@ -1,7 +1,7 @@
 NVIDIA CUDA Runtime Redistribution Notice
 
 PaRuX includes these NVIDIA CUDA Toolkit redistributable DLLs in its bundled
-llama.cpp CUDA 13.4 runtime:
+llama.cpp CUDA 13.5 runtime:
 
   cudart64_13.dll
   cublas64_13.dll
