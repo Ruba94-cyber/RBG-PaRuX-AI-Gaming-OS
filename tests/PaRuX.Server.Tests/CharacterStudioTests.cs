@@ -409,4 +409,21 @@ public sealed class CharacterStudioTests : IDisposable
         Assert.True(ManagedRequirementLocks.Validate(lockPath) > 50);
         Assert.Contains("--require-hashes", ManagedRequirementLocks.ArgumentsFor("character-trainer"));
     }
+
+    /// <summary>Opt-in helper for the real training smoke test: writes captions and the trainer config for a dataset folder that
+    /// already holds pictures. Does nothing unless PARUX_CHARACTER_SMOKE_DIR is set, so the normal suite never touches a GPU.</summary>
+    [Fact]
+    public void Smoke_writer_prepares_a_dataset_and_config_when_asked()
+    {
+        string? dir = Environment.GetEnvironmentVariable("PARUX_CHARACTER_SMOKE_DIR");
+        if (string.IsNullOrEmpty(dir)) return;
+        string dataset = Path.Combine(dir, "dataset");
+        string[] pictures = Directory.GetFiles(dataset, "*.png");
+        foreach (string picture in pictures)
+            File.WriteAllText(Path.ChangeExtension(picture, ".txt"), CharacterCaptions.Format("prx_smoke", "cartoon face with red hair and green eyes"));
+        var plan = CharacterLoraPresets.Select("quick", 16, pictures.Length, new CharacterTrainingAdvanced { Steps = int.Parse(Environment.GetEnvironmentVariable("PARUX_CHARACTER_SMOKE_STEPS") ?? "40") });
+        File.WriteAllText(Path.Combine(dir, "config.yaml"),
+            CharacterTrainerConfig.Build("prx_smoke", Path.Combine(dir, "output"), dataset, "prx_smoke", plan, pictures.Length, 7,
+                new[] { "prx_smoke, cartoon face with red hair" }));
+    }
 }

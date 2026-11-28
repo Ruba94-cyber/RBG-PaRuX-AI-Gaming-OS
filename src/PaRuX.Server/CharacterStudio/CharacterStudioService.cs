@@ -554,6 +554,12 @@ internal sealed class CharacterStudioService : IDisposable
         });
     }
 
+    internal string? ActivePortraitPath()
+    {
+        CharacterProfile? c = _store.ForPersona(_personas.GetActive().Id);
+        return c?.PortraitFile == null ? null : _store.ImagePath(c.Id, c.PortraitFile);
+    }
+
     internal CharacterProfile Unbind(string id) => _store.Mutate(id, x => x.Binding = null);
 
     /// <summary>Training status with the resume flag recomputed from disk, so a restart shows the right buttons.</summary>

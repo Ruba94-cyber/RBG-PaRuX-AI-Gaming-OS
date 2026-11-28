@@ -844,3 +844,4 @@ DENY POST /api/v2/characters/{id}/training
 DENY POST /api/v2/characters/{id}/training/cancel
 DENY POST /api/v2/characters/{id}/training/resume
 DENY PUT /api/v2/characters/{id}
+DENY GET /api/v2/characters/active/portrait

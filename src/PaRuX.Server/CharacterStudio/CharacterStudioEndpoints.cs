@@ -48,6 +48,13 @@ internal static class CharacterStudioEndpoints
         app.MapPost("/api/v2/characters/{id}/binding", (string id, BindCharacterLoraRequest r, CharacterStudioService s) => Guard(() => Results.Ok(s.Bind(id, r)))).RequireDesktopOwner();
         app.MapDelete("/api/v2/characters/{id}/binding", (string id, CharacterStudioService s) => Guard(() => Results.Ok(s.Unbind(id)))).RequireDesktopOwner();
 
+        // The portrait of the character attached to the active chat persona, for the chat avatar. 404 when there is none.
+        app.MapGet("/api/v2/characters/active/portrait", (CharacterStudioService s) =>
+        {
+            string? path = s.ActivePortraitPath();
+            return path == null ? Results.NotFound() : Results.File(path, MediaType(path));
+        }).RequireDesktopOwner();
+
         app.MapGet("/api/v2/characters/trainer/status", (CharacterStudioService s) => Results.Ok(s.Trainer.GetStatus())).RequireDesktopOwner();
         app.MapPost("/api/v2/characters/trainer/install", async (CharacterStudioService s, CancellationToken ct) =>
             await GuardAsync(async () => Results.Ok(await s.Trainer.InstallAsync(null, ct)))).RequireDesktopOwner();
