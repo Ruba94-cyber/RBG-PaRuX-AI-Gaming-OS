@@ -331,7 +331,7 @@ internal sealed class ComfyMediaOptimizer
     {
         bool streaming = safe.Arguments.Contains("--enable-dynamic-vram");
         long need = s.Footprint.WeightBytes + ComfyLaunchPlanner.ActivationReserveBytes(s.Footprint);
-        if (s.Footprint.DiffusionBytes <= 0 || need > s.Gpu.TotalVramBytes) return null;
+        if (s.Footprint.DiffusionBytes <= 0 || need + (streaming ? ComfyLaunchPlanner.ResidentMarginBytes : 0) > s.Gpu.TotalVramBytes) return null;
         string[] memoryFlags = { "--enable-dynamic-vram", "--disable-dynamic-vram", "--gpu-only", "--highvram", "--lowvram", "--novram" };
         var args = safe.Arguments.Where(a => !memoryFlags.Contains(a)).ToList();
         string reason;
@@ -701,13 +701,22 @@ internal static class ComfyLaunchArguments
     /// <summary>Flags PaRuX has always launched ComfyUI with; used whenever nothing was measured for the current stack.</summary>
     internal static readonly string[] Legacy = { "--enable-dynamic-vram", "--reserve-vram", "1.0" };
 
+    /// <summary>Default when nothing was measured yet. Measured (RTX 5080, ComfyUI 0.44, torch 2.14 cu130): Legacy + the CUDA async allocator
+    /// gives byte-identical images with the fastest cold start (Z-Image nvfp4 11 s vs 16 s Legacy vs 28 s plain ComfyUI) and ~6% faster warm
+    /// jobs. Resident placement (--highvram/--disable-dynamic-vram) is deliberately NOT a default: it adds 15-55 s of cold start, gains nothing
+    /// on bf16/Wan, and thrashes badly when the graph does not fit. Numerics-changing flags stay behind the measured, equivalence-gated race.</summary>
+    internal static readonly string[] Balanced = { "--enable-dynamic-vram", "--reserve-vram", "1.0", "--cuda-malloc" };
+
     internal sealed record Resolution(IReadOnlyList<string> Arguments, string? Fingerprint, string Source);
 
     internal static Resolution Resolve(ComfyOptimizationStore store, string? stackKey, ComfyCapabilities? caps)
     {
         if (stackKey is null) return new Resolution(Legacy, null, "default");
         ComfyOptimizationRecord? r = store.FindForStack(stackKey);
-        if (r is null || r.ChosenArguments.Count == 0) return new Resolution(Legacy, null, "default");
+        if (r is null || r.ChosenArguments.Count == 0)
+            return caps is not null && !Balanced.Where(a => a.StartsWith("--", StringComparison.Ordinal)).All(caps.Supports)
+                ? new Resolution(Legacy, null, "default")
+                : new Resolution(Balanced, null, "balanced-default");
         // When the installed ComfyUI's flag list is known, every stored flag is re-checked: an update that dropped one falls back to
         // defaults. (The stack key already contains the ComfyUI version, so a stored result is never applied to a different build.)
         if (caps is not null)

@@ -368,8 +368,70 @@ usage: main.py [--cuda-malloc | --disable-cuda-malloc] [--use-pytorch-cross-atte
         Assert.Equal("default", downgraded.Source);
         Assert.Equal(ComfyLaunchArguments.Legacy, downgraded.Arguments);
 
-        Assert.Equal("default", ComfyLaunchArguments.Resolve(store, "other-stack", Caps).Source);
+        var unmeasured = ComfyLaunchArguments.Resolve(store, "other-stack", Caps);
+        Assert.Equal("balanced-default", unmeasured.Source);
+        Assert.Equal(ComfyLaunchArguments.Balanced, unmeasured.Arguments);
+        Assert.Null(unmeasured.Fingerprint);
+        Assert.Equal("default", ComfyLaunchArguments.Resolve(store, "other-stack", ComfyHelpParser.Parse("--reserve-vram X --enable-dynamic-vram")).Source);
         Assert.Equal("default", ComfyLaunchArguments.Resolve(store, null, null).Source);
+    }
+
+    [Fact]
+    public void Balanced_default_keeps_the_measured_streaming_strategy_and_never_forces_resident_placement()
+    {
+        Assert.Equal(ComfyLaunchArguments.Legacy.Concat(new[] { "--cuda-malloc" }), ComfyLaunchArguments.Balanced);
+        Assert.DoesNotContain("--highvram", ComfyLaunchArguments.Balanced);
+        Assert.DoesNotContain("--gpu-only", ComfyLaunchArguments.Balanced);
+        Assert.DoesNotContain("--disable-dynamic-vram", ComfyLaunchArguments.Balanced);
+        Assert.DoesNotContain("--fast", ComfyLaunchArguments.Balanced);
+    }
+
+    [Fact]
+    public void Resident_placement_is_never_planned_unless_the_whole_graph_fits_with_margin()
+    {
+        // Z-Image bf16 (12.3 GB unet + 8.0 GB Qwen text encoder + VAE) on a 16 GB card: measured --gpu-only ~965 s/image.
+        var bf16 = new ComfyModelFootprint(12_309_866_400, 8_044_982_048, 335_304_388, 1024, 1024);
+        foreach (var tier in new[] { ComfyPlanTier.Safe, ComfyPlanTier.Aggressive })
+        {
+            var p = ComfyLaunchPlanner.Plan(Blackwell16(), bf16, Cuda, Caps, tier);
+            Assert.DoesNotContain("--gpu-only", p.Arguments);
+            Assert.DoesNotContain("--highvram", p.Arguments);
+            Assert.DoesNotContain("--disable-dynamic-vram", p.Arguments);
+            Assert.Contains("--enable-dynamic-vram", p.Arguments);
+        }
+
+        // Exactly weights + activations + 1.5 GiB spare is not enough; weights + activations + margin is.
+        long reserve = ComfyLaunchPlanner.ActivationReserveBytes(new ComfyModelFootprint(1, 0, 0, 1024, 1024));
+        long weights = 6L << 30;
+        var m = new ComfyModelFootprint(weights, 0, 0, 1024, 1024);
+        var tight = ComfyLaunchPlanner.Plan(Blackwell16(weights + reserve + (3L << 29)), m, Cuda, Caps, ComfyPlanTier.Safe);
+        Assert.DoesNotContain("--highvram", tight.Arguments);
+        Assert.Contains("--enable-dynamic-vram", tight.Arguments);
+        var roomy = ComfyLaunchPlanner.Plan(Blackwell16(weights + reserve + ComfyLaunchPlanner.ResidentMarginBytes), m, Cuda, Caps, ComfyPlanTier.Safe);
+        Assert.Contains("--disable-dynamic-vram", roomy.Arguments);
+        Assert.Contains("--highvram", roomy.Arguments);
+        Assert.DoesNotContain("--gpu-only", roomy.Arguments); // gpu-only needs 3 GiB spare
+    }
+
+    [Fact]
+    public void Fast_video_preset_is_a_few_step_cfg1_variant_of_the_default_graph_with_the_same_node_ids()
+    {
+        string dir = Path.GetDirectoryName(typeof(ConfigAssets).Assembly.Location)!;
+        string asm = typeof(ConfigAssets).Assembly.GetManifestResourceNames().Single(n => n.EndsWith("wan-video-fast-api.json", StringComparison.Ordinal));
+        using var st = typeof(ConfigAssets).Assembly.GetManifestResourceStream(asm)!;
+        var fast = System.Text.Json.Nodes.JsonNode.Parse(st)!["prompt"]!.AsObject();
+        string smokeName = typeof(ConfigAssets).Assembly.GetManifestResourceNames().Single(n => n.EndsWith("wan-video-smoke-api.json", StringComparison.Ordinal));
+        using var st2 = typeof(ConfigAssets).Assembly.GetManifestResourceStream(smokeName)!;
+        var smoke = System.Text.Json.Nodes.JsonNode.Parse(st2)!["prompt"]!.AsObject();
+        Assert.Equal(smoke.Select(k => k.Key).OrderBy(x => x), fast.Select(k => k.Key).OrderBy(x => x));
+        var k8 = fast["8"]!["inputs"]!;
+        Assert.Equal(4, (int)k8["steps"]!);
+        Assert.Equal(1.0, (double)k8["cfg"]!);
+        Assert.Equal("KSampler", (string)fast["8"]!["class_type"]!);
+        Assert.Contains("FastWan", (string)fast["1"]!["inputs"]!["unet_name"]!);
+        Assert.Contains("wan-video-fast-api.json", ConfigAssets.FileNames);
+        Assert.Equal(20, (int)smoke["8"]!["inputs"]!["steps"]!); // the quality default is untouched
+        Assert.False(string.IsNullOrEmpty(dir));
     }
 
     [Fact]
@@ -380,7 +442,7 @@ usage: main.py [--cuda-malloc | --disable-cuda-malloc] [--use-pytorch-cross-atte
         await opt.RunAsync(false, default);
         string fp = ComfyLaunchArguments.Resolve(store, h.Snapshot.StackKey, Caps).Fingerprint!;
         store.Invalidate(fp, "exited with code 1");
-        Assert.Equal("default", ComfyLaunchArguments.Resolve(store, h.Snapshot.StackKey, Caps).Source);
+        Assert.Equal("balanced-default", ComfyLaunchArguments.Resolve(store, h.Snapshot.StackKey, Caps).Source);
     }
 
     // ---- automatic tuning right after a checkpoint download (visible state) -------------------------------------

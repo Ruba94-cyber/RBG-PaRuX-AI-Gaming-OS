@@ -77,6 +77,8 @@ internal sealed record ComfyLaunchPlan(
 internal static class ComfyLaunchPlanner
 {
     internal const long GiB = 1L << 30;
+    /// <summary>Spare VRAM required beyond weights + activations before --highvram / --gpu-only / --disable-dynamic-vram may be planned.</summary>
+    internal const long ResidentMarginBytes = 2 * GiB;
     /// <summary>Activations + sampler workspace beyond the weights, scaled by resolution (1024x1024 ~ 2 GiB).</summary>
     internal static long ActivationReserveBytes(ComfyModelFootprint m)
     {
@@ -113,7 +115,10 @@ internal static class ComfyLaunchPlanner
         // DynamicVRAM (--enable-dynamic-vram) already streams weights on demand and makes --lowvram a no-op, so the placement
         // choice is between "everything resident" (no dynamic streaming) and "dynamic" (streaming, the PaRuX legacy default).
         bool unknown = model.DiffusionBytes <= 0;
-        bool fitsResident = !unknown && weights + reserve + GiB <= free;
+        // Measured on an RTX 5080 16 GB: when the whole graph (unet + text encoder + VAE + activations) does not fit with margin, a
+        // resident strategy thrashes (Z-Image bf16 + --gpu-only: ~965 s per image instead of ~5 s; --highvram: 70 s cold starts and no
+        // warm gain). So resident placement is only planned with ResidentMarginBytes spare.
+        bool fitsResident = !unknown && weights + reserve + ResidentMarginBytes <= free;
         string textEncoderDevice = "default";
         if (fitsResident)
         {

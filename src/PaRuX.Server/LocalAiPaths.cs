@@ -1214,6 +1214,8 @@ public static class LocalAiPaths
     public static string UiConfig => Path.Combine(ConfigDir, "llama-ui.json");
     public static string ImageWorkflowTemplate => Path.Combine(ConfigDir, "z-image-smoke-api.json");
     public static string VideoWorkflowTemplate => Path.Combine(ConfigDir, "wan-video-smoke-api.json");
+    /// <summary>Optional few-step Wan 2.2 TI2V 5B preset (FastWan distilled weights, 4 steps, cfg 1): ~3x faster clips, a different (not pixel-equal) video. Needs the converted FastWan file; the 20-step template stays the default.</summary>
+    public static string VideoFastWorkflowTemplate => Path.Combine(ConfigDir, "wan-video-fast-api.json");
     public static string EditWorkflowTemplate => Path.Combine(ConfigDir, "flux2-klein-edit-api.json");
     public static string Img2ImgWorkflowTemplate => Path.Combine(ConfigDir, "z-image-img2img-api.json");
     public static string InpaintWorkflowTemplate => Path.Combine(ConfigDir, "z-image-inpaint-api.json");

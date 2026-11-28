@@ -2248,7 +2248,7 @@ public sealed class LocalAiProcessManager
             var list = new List<string>
             {
                 "-s", LocalAiPaths.ComfyMain, "--windows-standalone-build", "--listen", "127.0.0.1",
-                "--port", MediaPort.ToString(), "--disable-auto-launch", "--preview-method", "auto"
+                "--port", MediaPort.ToString(), "--disable-auto-launch", "--preview-method", "none"
             };
             list.AddRange(flags);
             return list;
@@ -2256,9 +2256,9 @@ public sealed class LocalAiProcessManager
         state.ProcessStarted = true;
         RuntimeResult launched = await LaunchAndWaitAsync(LocalAiPaths.ComfyPython, BuildArgs(tuning.Arguments), LocalAiPaths.ComfyApp, null,
             LocalAiPaths.MediaPidFile, null, () => IsMediaHealthyAsync(ct), () => StopMedia(), TimeSpan.FromMinutes(3), ct).ConfigureAwait(false);
-        if (!launched.Success && tuning.Fingerprint is not null && !ct.IsCancellationRequested)
+        if (!launched.Success && tuning.Source != "default" && !ct.IsCancellationRequested)
         {
-            new ComfyOptimizationStore().Invalidate(tuning.Fingerprint, launched.Message);
+            if (tuning.Fingerprint is not null) new ComfyOptimizationStore().Invalidate(tuning.Fingerprint, launched.Message);
             launched = await LaunchAndWaitAsync(LocalAiPaths.ComfyPython, BuildArgs(ComfyLaunchArguments.Legacy), LocalAiPaths.ComfyApp, null,
                 LocalAiPaths.MediaPidFile, null, () => IsMediaHealthyAsync(ct), () => StopMedia(), TimeSpan.FromMinutes(3), ct).ConfigureAwait(false);
         }
