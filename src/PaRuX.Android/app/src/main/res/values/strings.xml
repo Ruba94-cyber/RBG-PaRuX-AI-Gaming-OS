@@ -320,7 +320,7 @@
     <string name="tools_cu_running">Running on the paired Windows PC.</string>
     <string name="tools_stopped">Stopped.</string>
     <string name="tools_cancel_requested">Cancellation requested for the Windows task.</string>
-    <string name="tools_stopped_all">Stopped %1$s task(s), cancelled %2$s Autopilot run(s), automations paused.</string>
+    <string name="tools_stopped_all">Stopped %1$d task(s), cancelled %2$d Autopilot run(s), automations paused.</string>
     <string name="tools_resumed">Automations resumed.</string>
     <string name="studio_title">PC Studio</string>
     <string name="studio_refresh">Refresh PC state</string>
@@ -424,7 +424,7 @@
     <string name="studio_answer_recorded">Answer recorded. The same PaRuX task is resuming from its saved checkpoint.</string>
     <string name="studio_cancel_requested">Task cancellation requested.</string>
     <string name="studio_starting_workflow">Starting Workflow…</string>
-    <string name="studio_workflow_started">Workflow started %1$s task(s).</string>
+    <string name="studio_workflow_started">Workflow started %1$d task(s).</string>
     <string name="studio_action_failed">PC action failed.</string>
     <string name="goals_title">Goal Mode</string>
     <string name="goals_define_done">Define done before PaRuX starts</string>
@@ -444,7 +444,7 @@
     <string name="goals_not_accepted">not accepted</string>
     <string name="goals_err_required">Goal is required.</string>
     <string name="goals_err_criteria">Add at least one acceptance criterion, one per line.</string>
-    <string name="goals_created">Goal v%1$s is immutable and the Windows task is queued.</string>
+    <string name="goals_created">Goal v%1$d is immutable and the Windows task is queued.</string>
     <string name="goals_err_create">Could not create Goal Mode task.</string>
     <string name="goals_err_refresh">Could not refresh Goal Mode verification.</string>
     <string name="settings_err_profile_unavailable">Execution profile is unavailable on this Core.</string>

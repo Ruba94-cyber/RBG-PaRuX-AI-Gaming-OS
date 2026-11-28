@@ -316,7 +316,7 @@
     <string name="tools_cu_running">In esecuzione sul PC Windows associato.</string>
     <string name="tools_stopped">Fermato.</string>
     <string name="tools_cancel_requested">Annullamento richiesto per l\'attività su Windows.</string>
-    <string name="tools_stopped_all">Fermate %1$s attività, annullate %2$s esecuzioni Autopilot, automazioni in pausa.</string>
+    <string name="tools_stopped_all">Fermate %1$d attività, annullate %2$d esecuzioni Autopilot, automazioni in pausa.</string>
     <string name="tools_resumed">Automazioni riprese.</string>
     <string name="studio_title">Studio PC</string>
     <string name="studio_refresh">Aggiorna lo stato del PC</string>
@@ -420,7 +420,7 @@
     <string name="studio_answer_recorded">Risposta registrata. La stessa attività PaRuX riprende dal punto salvato.</string>
     <string name="studio_cancel_requested">Annullamento dell\'attività richiesto.</string>
     <string name="studio_starting_workflow">Avvio del workflow…</string>
-    <string name="studio_workflow_started">Il workflow ha avviato %1$s attività.</string>
+    <string name="studio_workflow_started">Il workflow ha avviato %1$d attività.</string>
     <string name="studio_action_failed">Azione sul PC non riuscita.</string>
     <string name="goals_title">Modalità Obiettivo</string>
     <string name="goals_define_done">Definisci cosa significa «fatto» prima che PaRuX inizi</string>
@@ -440,7 +440,7 @@
     <string name="goals_not_accepted">non accettato</string>
     <string name="goals_err_required">L\'obiettivo è obbligatorio.</string>
     <string name="goals_err_criteria">Aggiungi almeno un criterio di accettazione, uno per riga.</string>
-    <string name="goals_created">L\'obiettivo v%1$s è immutabile e l\'attività su Windows è in coda.</string>
+    <string name="goals_created">L\'obiettivo v%1$d è immutabile e l\'attività su Windows è in coda.</string>
     <string name="goals_err_create">Impossibile creare l\'attività Goal Mode.</string>
     <string name="goals_err_refresh">Impossibile aggiornare la verifica di Goal Mode.</string>
     <string name="settings_err_profile_unavailable">Il profilo di esecuzione non è disponibile su questo PC.</string>
