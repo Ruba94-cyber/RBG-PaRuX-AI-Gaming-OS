@@ -1385,17 +1385,13 @@ public sealed class RuntimeManagerService
         return declared <= 0 ? 0 : Math.Min(declared, DefaultLaunchContextLength);
     }
 
-    private static string? ReadActiveRoleRaw()
-    {
-        try { return File.Exists(LocalAiPaths.ActiveRoleFile) ? File.ReadAllText(LocalAiPaths.ActiveRoleFile).Trim() : null; }
-        catch { return null; }
-    }
+    // Read on every chat turn by the warm-route check; a stat replaces the open/read/close while the file is unchanged.
+    private static readonly StampedTextFileCache ActiveRoleCache = new();
+    private static readonly StampedTextFileCache ActiveModelPathCache = new();
 
-    private static string? ReadActiveModelPathRaw()
-    {
-        try { return File.Exists(LocalAiPaths.ActiveModelPathFile) ? File.ReadAllText(LocalAiPaths.ActiveModelPathFile).Trim() : null; }
-        catch { return null; }
-    }
+    private static string? ReadActiveRoleRaw() => ActiveRoleCache.Read(LocalAiPaths.ActiveRoleFile);
+
+    private static string? ReadActiveModelPathRaw() => ActiveModelPathCache.Read(LocalAiPaths.ActiveModelPathFile);
 
     private static void WriteActiveRole(string role)
     {
