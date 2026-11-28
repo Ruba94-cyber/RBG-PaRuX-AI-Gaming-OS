@@ -47,6 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.parux.android.R
+import com.parux.android.core.network.MobileRuntimeStatusDto
 import androidx.compose.ui.unit.dp
 import com.parux.android.core.network.MemoryEntryDto
 import com.parux.android.core.network.RagSourceDto
@@ -64,11 +67,17 @@ fun ToolsScreen(viewModel: ToolsViewModel) {
     val state by viewModel.state.collectAsState()
     LaunchedEffect(Unit) { viewModel.refreshAll() }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Tools") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_tools)) }) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(12.dp)) {
+            item { RuntimeSection(state.runtime, state.runtimeLoading, state.runtimeNotice, viewModel::loadRuntime, viewModel::refreshRuntime) }
             item { InternetSection(state.internetEnabled, viewModel::setInternet) }
             item { MemorySection(state.memory, viewModel::addMemory, viewModel::deleteMemory) }
-            item { RagSection(state.ragSources, viewModel::reindexRag, viewModel::removeRag) }
+            item {
+                RagSection(
+                    state.ragSources, state.documentUploading, state.documentNotice,
+                    viewModel::reindexRag, viewModel::removeRag, viewModel::uploadDocument
+                )
+            }
             item { SkillsSection(state.skills, viewModel::setSkillEnabled, viewModel::deleteSkill, viewModel::createSkill) }
             item {
                 ResearchSection(
@@ -221,16 +230,106 @@ private fun MemorySection(memory: List<MemoryEntryDto>, onAdd: (String) -> Unit,
 }
 
 @Composable
-private fun RagSection(sources: List<RagSourceDto>, onReindex: (String) -> Unit, onRemove: (String) -> Unit) {
-    SectionCard("RAG (local documents)", "Folders are selected on PaRuX Windows; Android manages only existing Core-owned source ids.") {
-        if (sources.isEmpty()) Text("No folders indexed yet.", style = MaterialTheme.typography.bodySmall)
+private fun RuntimeSection(
+    runtime: MobileRuntimeStatusDto?,
+    loading: Boolean,
+    notice: UiNotice?,
+    onLoad: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    SectionCard(stringResource(R.string.runtime_title), initiallyExpanded = true) {
+        if (runtime == null) {
+            Text(stringResource(R.string.settings_checking), style = MaterialTheme.typography.bodySmall)
+        } else {
+            val headline = when {
+                runtime.gamingActive || runtime.textUnloadedForGaming -> R.string.runtime_gaming
+                runtime.textLoaded -> R.string.runtime_loaded
+                else -> R.string.runtime_not_loaded
+            }
+            Text(stringResource(headline), style = MaterialTheme.typography.bodyMedium)
+            runtime.activeModelName?.takeIf { runtime.textLoaded }?.let {
+                Text(stringResource(R.string.runtime_model, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (runtime.textLoaded && runtime.hasVision) {
+                Text(stringResource(R.string.runtime_vision), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            runtime.vramFreeMib?.takeIf { runtime.gpuDetected }?.let {
+                Text(stringResource(R.string.runtime_vram, it, runtime.vramTotalMib), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            runtime.ramAvailableBytes?.let {
+                val gib = 1073741824.0
+                Text(
+                    stringResource(R.string.runtime_ram, "%.1f".format(it / gib), "%.1f".format(runtime.ramTotalBytes / gib)),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        notice?.let { Text(stringResource(it.res), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp)) }
+        Row(Modifier.padding(top = 4.dp)) {
+            Button(onClick = onLoad, enabled = !loading && runtime?.gamingActive != true) {
+                Text(stringResource(if (loading) R.string.runtime_loading else R.string.runtime_load))
+            }
+            TextButton(onClick = onRefresh, modifier = Modifier.padding(start = 8.dp)) { Text(stringResource(R.string.runtime_refresh)) }
+        }
+    }
+}
+
+private const val MAX_PICKED_DOCUMENT_BYTES = 8 * 1024 * 1024
+
+/** Reads a picked document with a hard byte bound; returns null when it is unreadable or too large. */
+private fun readPickedDocument(resolver: ContentResolver, uri: Uri): Pair<String, ByteArray>? = try {
+    val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0) else null
+    } ?: uri.lastPathSegment ?: "document"
+    val bytes = resolver.openInputStream(uri)?.use { input ->
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            total += n
+            if (total > MAX_PICKED_DOCUMENT_BYTES) return@use null
+            out.write(buffer, 0, n)
+        }
+        out.toByteArray()
+    }
+    if (bytes == null) null else name to bytes
+} catch (_: Exception) { null }
+
+@Composable
+private fun RagSection(
+    sources: List<RagSourceDto>,
+    uploading: Boolean,
+    notice: UiNotice?,
+    onReindex: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onUpload: (String, ByteArray) -> Unit
+) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            // An oversized or unreadable file is reported through the same bounded path as a server refusal.
+            val picked = readPickedDocument(context.contentResolver, uri)
+            if (picked != null) onUpload(picked.first, picked.second) else onUpload("document", ByteArray(0))
+        }
+    }
+    SectionCard(stringResource(R.string.docs_title), stringResource(R.string.docs_hint)) {
+        Button(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !uploading) {
+            Text(stringResource(if (uploading) R.string.docs_adding else R.string.docs_add))
+        }
+        notice?.let {
+            val text = if (it.arg != null) stringResource(it.res, it.arg) else stringResource(it.res)
+            Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+        }
+        if (sources.isEmpty()) Text(stringResource(R.string.docs_none), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
         sources.forEach { source ->
             Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Text(source.folderPath, style = MaterialTheme.typography.bodyMedium)
-                Text("${source.documentCount} documents · ${source.chunkCount} chunks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(source.folderPath.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/'), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.docs_counts, source.documentCount, source.chunkCount), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row {
-                    TextButton(onClick = { onReindex(source.id) }) { Text("Reindex") }
-                    TextButton(onClick = { onRemove(source.id) }) { Text("Remove") }
+                    TextButton(onClick = { onReindex(source.id) }) { Text(stringResource(R.string.docs_reindex)) }
+                    TextButton(onClick = { onRemove(source.id) }) { Text(stringResource(R.string.common_remove)) }
                 }
             }
         }

@@ -74,7 +74,7 @@ class LocalizationResourcesTest {
     @Test
     fun translationsAreNotEmptyAndDifferFromTheDefaultsExceptWhenExplicitlySame() {
         // These read the same in both languages (brand names, single loan words).
-        val sameInBoth = setOf("settings_auto")
+        val sameInBoth = setOf("settings_auto", "tab_chat", "tab_pc", "tab_media", "media_title", "media_video", "jobs_video", "chat_profile_standard", "chat_profile_uncensored", "chat_model_auto")
         val byName = defaults.associateBy { it.name }
         for (file in localeFiles()) {
             for (entry in read(file)) {
@@ -91,17 +91,15 @@ class LocalizationResourcesTest {
      * Screens that already read their text from resources. A hard-coded literal in a Text(...), contentDescription or title there
      * fails the build; the remaining screens are tracked by a count that may only go down.
      */
-    private val migrated = setOf("ui/settings/SettingsScreen.kt")
+    private val migrated = setOf("ui/settings/SettingsScreen.kt", "ui/chat/ChatScreen.kt", "ui/media/MediaScreen.kt")
 
     private val remainingHardCoded = mapOf(
         // file (relative to the app package) to the number of Compose text literals not yet moved to resources
-        "ui/tools/ToolsScreen.kt" to 81,
-        "ui/studio/PcStudioScreen.kt" to 48,
-        "ui/chat/ChatScreen.kt" to 34,
-        "ui/pairing/PairingScreen.kt" to 13,
-        "ui/goals/GoalsScreen.kt" to 12,
-        "ui/jobs/JobsScreen.kt" to 11,
-        "ui/media/MediaScreen.kt" to 9,
+        "ui/tools/ToolsScreen.kt" to 73,
+        "ui/studio/PcStudioScreen.kt" to 44,
+        "ui/pairing/PairingScreen.kt" to 3,
+        "ui/goals/GoalsScreen.kt" to 11,
+        "ui/jobs/JobsScreen.kt" to 1,
         "ui/studio/ProjectKnowledgeSection.kt" to 6,
         "ui/chat/ChatViewModel.kt" to 1,
         "ui/jobs/JobsViewModel.kt" to 1,

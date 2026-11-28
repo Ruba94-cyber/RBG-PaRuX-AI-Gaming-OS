@@ -35,6 +35,8 @@ data class ChatUiState(
     val conversations: List<com.parux.android.core.network.ConversationSummary> = emptyList(),
     val current: UiConversation = UiConversation(),
     val isStreaming: Boolean = false,
+    /** Incognito chat: the conversation lives only on the phone and is never saved to the PC. */
+    val incognito: Boolean = false,
     val isLoadingList: Boolean = false,
     val gamingMode: Boolean = false,
     val aiProfile: String = "STANDARD",
@@ -146,6 +148,38 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun newConversation() {
         if (_state.value.voiceModeEnabled) stopVoiceMode()
         _state.value = _state.value.copy(current = UiConversation())
+    }
+
+    /** Switching modes always starts a fresh conversation so a saved chat never becomes incognito (or vice versa) mid-way. */
+    fun setIncognito(enabled: Boolean) {
+        if (_state.value.isStreaming || _state.value.incognito == enabled) return
+        if (_state.value.voiceModeEnabled) stopVoiceMode()
+        _state.value = _state.value.copy(incognito = enabled, current = UiConversation())
+    }
+
+    fun deleteConversation(id: String) {
+        val client = container.client.value ?: return
+        viewModelScope.launch {
+            try {
+                client.api.deleteConversation(id)
+                if (_state.value.current.id == id && !_state.value.isStreaming) newConversation()
+                refreshConversationList()
+            } catch (e: Exception) { _state.value = _state.value.copy(errorMessage = friendlyError(e)) }
+        }
+    }
+
+    /** Drops the last answer and asks again with the same prompt (and image). */
+    fun regenerateLast(): Boolean {
+        if (_state.value.isStreaming) return false
+        val messages = _state.value.current.messages
+        val lastUser = messages.indexOfLast { it.role == "user" }
+        if (lastUser < 0) return false
+        val prompt = messages[lastUser]
+        val before = _state.value.current
+        _state.value = _state.value.copy(current = before.copy(messages = messages.subList(0, lastUser)))
+        val admitted = sendMessage(prompt.content, prompt.imageAttachment)
+        if (!admitted) _state.value = _state.value.copy(current = before)
+        return admitted
     }
 
     fun refreshSkills() {
@@ -470,6 +504,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun persistCurrentConversation() {
         val client = container.client.value ?: return
+        if (_state.value.incognito) return
         val conversation = _state.value.current
         if (conversation.messages.isEmpty()) return
         val title = if (conversation.title == "New chat") deriveTitle(conversation) else conversation.title

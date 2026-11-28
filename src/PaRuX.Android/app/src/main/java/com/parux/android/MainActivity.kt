@@ -1,5 +1,6 @@
 package com.parux.android
 
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -64,8 +65,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-private enum class PaRuXTab(val label: String) {
-    Chat("Chat"), PC("PC"), Goals("Goals"), Media("Media"), Jobs("Jobs"), Tools("Tools"), Settings("Settings")
+private enum class PaRuXTab(@androidx.annotation.StringRes val label: Int) {
+    Chat(R.string.tab_chat), PC(R.string.tab_pc), Goals(R.string.tab_goals), Media(R.string.tab_media),
+    Jobs(R.string.tab_jobs), Tools(R.string.tab_tools), Settings(R.string.tab_settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -164,43 +166,43 @@ private fun PaRuXApp(container: AppContainer, openPcRequests: StateFlow<Long>) {
                     selected = tab == PaRuXTab.Chat,
                     onClick = { tab = PaRuXTab.Chat },
                     icon = { Icon(Icons.Default.Chat, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Chat.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Chat.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.PC,
                     onClick = { tab = PaRuXTab.PC },
                     icon = { Icon(Icons.Default.Computer, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.PC.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.PC.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Goals,
                     onClick = { tab = PaRuXTab.Goals },
                     icon = { Icon(Icons.Default.Flag, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Goals.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Goals.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Media,
                     onClick = { tab = PaRuXTab.Media },
                     icon = { Icon(Icons.Default.PermMedia, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Media.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Media.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Jobs,
                     onClick = { tab = PaRuXTab.Jobs },
                     icon = { Icon(Icons.Default.Task, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Jobs.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Jobs.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Tools,
                     onClick = { tab = PaRuXTab.Tools },
                     icon = { Icon(Icons.Default.Build, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Tools.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Tools.label)) }
                 )
                 NavigationBarItem(
                     selected = tab == PaRuXTab.Settings,
                     onClick = { tab = PaRuXTab.Settings },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { NavLabel(PaRuXTab.Settings.label) }
+                    label = { NavLabel(stringResource(PaRuXTab.Settings.label)) }
                 )
             }
         }

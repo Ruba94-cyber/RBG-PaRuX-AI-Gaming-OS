@@ -30,7 +30,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** A user-facing message held as a string resource so it follows the phone language. */
+data class UiNotice(@androidx.annotation.StringRes val res: Int, val arg: String? = null)
+
 data class ToolsUiState(
+    val runtime: com.parux.android.core.network.MobileRuntimeStatusDto? = null,
+    val runtimeLoading: Boolean = false,
+    val runtimeNotice: UiNotice? = null,
+    val documentUploading: Boolean = false,
+    val documentNotice: UiNotice? = null,
     val internetEnabled: Boolean = false,
     val memory: List<MemoryEntryDto> = emptyList(),
     val ragSources: List<RagSourceDto> = emptyList(),
@@ -75,6 +83,9 @@ data class ToolsUiState(
  * Android creates/supervises a durable `computer-use` AgentTask and never gains phone Accessibility
  * or raw Windows input privileges.
  */
+private const val MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+private val ERROR_FIELD = Regex("\"error\"\\s*:\\s*\"([^\"]+)\"")
+
 class ToolsViewModel(private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(ToolsUiState())
     val state: StateFlow<ToolsUiState> = _state.asStateFlow()
@@ -86,8 +97,58 @@ class ToolsViewModel(private val container: AppContainer) : ViewModel() {
     fun dismissError() { _state.value = _state.value.copy(errorMessage = null) }
 
     fun refreshAll() {
-        refreshInternet(); refreshMemory(); refreshRag(); refreshSkills()
+        refreshRuntime(); refreshInternet(); refreshMemory(); refreshRag(); refreshSkills()
         refreshSpeechEngine(); refreshModelBudget(); refreshAvatarStatus(); refreshThreedEngine()
+    }
+
+    // ---- Runtime: path-free status and an explicit "load the model now" action. ----
+    fun refreshRuntime() {
+        val client = container.client.value ?: return
+        viewModelScope.launch {
+            try { _state.value = _state.value.copy(runtime = client.api.getMobileRuntime()) } catch (_: Exception) {}
+        }
+    }
+    fun loadRuntime() {
+        val client = container.client.value ?: return
+        if (_state.value.runtimeLoading) return
+        _state.value = _state.value.copy(runtimeLoading = true, runtimeNotice = null)
+        viewModelScope.launch {
+            try {
+                _state.value = _state.value.copy(runtime = client.api.loadMobileRuntime(), runtimeLoading = false)
+            } catch (e: retrofit2.HttpException) {
+                val gaming = e.response()?.errorBody()?.string()?.contains("gaming_active") == true
+                _state.value = _state.value.copy(
+                    runtimeLoading = false,
+                    runtimeNotice = UiNotice(if (gaming) com.parux.android.R.string.runtime_load_gaming else com.parux.android.R.string.runtime_load_failed)
+                )
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(runtimeLoading = false, runtimeNotice = UiNotice(com.parux.android.R.string.runtime_load_failed))
+            }
+        }
+    }
+
+    // ---- Documents: the phone sends a file into the PC's Core-owned inbox; Core validates and indexes it. ----
+    fun uploadDocument(fileName: String, bytes: ByteArray) {
+        val client = container.client.value ?: return
+        if (_state.value.documentUploading) return
+        if (bytes.isEmpty() || bytes.size > MAX_DOCUMENT_BYTES) {
+            _state.value = _state.value.copy(documentNotice = UiNotice(com.parux.android.R.string.docs_too_big))
+            return
+        }
+        _state.value = _state.value.copy(documentUploading = true, documentNotice = null)
+        viewModelScope.launch {
+            try {
+                val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val response = client.api.uploadMobileDocument(com.parux.android.core.network.MobileDocumentUploadRequest(fileName, encoded))
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_added, response.fileName))
+                refreshRag()
+            } catch (e: retrofit2.HttpException) {
+                val reason = e.response()?.errorBody()?.string()?.let { ERROR_FIELD.find(it)?.groupValues?.get(1) } ?: "HTTP ${e.code()}"
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_failed, reason))
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(documentUploading = false, documentNotice = UiNotice(com.parux.android.R.string.docs_failed, e.javaClass.simpleName))
+            }
+        }
     }
 
     // ---- Internet ----

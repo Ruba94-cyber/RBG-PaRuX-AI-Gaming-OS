@@ -1,5 +1,7 @@
 package com.parux.android.ui.jobs
 
+import com.parux.android.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import android.util.Base64
 import java.io.ByteArrayOutputStream
@@ -56,18 +58,18 @@ fun JobsScreen(viewModel: JobsViewModel) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Jobs") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.jobs_title)) }) },
         floatingActionButton = {
             if (localCore != null) {
                 FloatingActionButton(onClick = { showCreateDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "New generation job")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.jobs_new))
                 }
             }
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (localCore == null) {
-                Text("PaRuX PC is disconnected. Pair in Settings; cached jobs are not live.",
+                Text(stringResource(R.string.jobs_disconnected),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
@@ -166,17 +168,17 @@ private fun CreateJobDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Generate") },
+        title = { Text(stringResource(R.string.jobs_generate)) },
         text = {
             Column {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = type == "image", onClick = { type = "image" }, label = { Text("Image") })
-                    FilterChip(selected = type == "video", onClick = { type = "video" }, label = { Text("Video") })
-                    FilterChip(selected = type == "edit", onClick = { type = "edit" }, label = { Text("Edit") })
+                    FilterChip(selected = type == "image", onClick = { type = "image" }, label = { Text(stringResource(R.string.jobs_image)) })
+                    FilterChip(selected = type == "video", onClick = { type = "video" }, label = { Text(stringResource(R.string.jobs_video)) })
+                    FilterChip(selected = type == "edit", onClick = { type = "edit" }, label = { Text(stringResource(R.string.jobs_edit)) })
                 }
                 if (type == "edit") {
                     TextButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(if (sourceImageName != null) "Image attached ✓ (tap to change)" else "Pick an image to edit…")
+                        Text(stringResource(if (sourceImageName != null) R.string.jobs_image_attached else R.string.jobs_pick_image))
                     }
                     imageError?.let { issue ->
                         Text(issue, color = MaterialTheme.colorScheme.error,
@@ -190,7 +192,7 @@ private fun CreateJobDialog(
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
-                    label = { Text(if (type == "edit") "Edit instruction" else "Prompt") },
+                    label = { Text(stringResource(if (type == "edit") R.string.jobs_edit_instruction else R.string.jobs_prompt)) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                 )
             }
@@ -200,9 +202,9 @@ private fun CreateJobDialog(
                 onClick = { onCreate(type, prompt, sourceImageBase64) },
                 enabled = !isSubmitting && prompt.isNotBlank()
                     && (type != "edit" || sourceImageBase64 != null)
-            ) { Text(if (isSubmitting) "Submitting..." else "Generate") }
+            ) { Text(stringResource(if (isSubmitting) R.string.jobs_submitting else R.string.jobs_generate)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
@@ -220,7 +222,7 @@ private fun JobRow(job: MediaJobStatus, onCancel: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 if (job.status == "running") job.etaSeconds?.takeIf { it in 1..86400 }?.let {
-                    Text("Engine ETA ~${it / 60}m ${it % 60}s",
+                    Text(stringResource(R.string.jobs_eta, it / 60, it % 60),
                         style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -229,7 +231,7 @@ private fun JobRow(job: MediaJobStatus, onCancel: () -> Unit) {
             job.error?.let { Text(com.parux.android.ui.chat.ChatErrors.sanitize(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             if (job.status == "queued" || job.status == "running") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
                 }
             }
         }

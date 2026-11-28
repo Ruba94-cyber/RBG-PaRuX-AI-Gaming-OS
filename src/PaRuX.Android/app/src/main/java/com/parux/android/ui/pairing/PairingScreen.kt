@@ -1,5 +1,7 @@
 package com.parux.android.ui.pairing
 
+import com.parux.android.R
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.camera.core.CameraSelector
@@ -117,17 +119,17 @@ fun PairingScreen(pairingRepository: PairingRepository, onPaired: () -> Unit) {
                 verticalArrangement = Arrangement.Center
             ) {
                 CircularProgressIndicator()
-                Text("Pairing with PaRuX PC…", Modifier.padding(top = 16.dp))
+                Text(stringResource(R.string.pair_pairing), Modifier.padding(top = 16.dp))
             }
             PairingStep.Failed -> Column(
                 Modifier.fillMaxSize().padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("Couldn't pair", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.pair_failed), style = MaterialTheme.typography.titleMedium)
                 Text(errorMessage ?: "Unknown error", Modifier.padding(top = 8.dp, bottom = 24.dp))
-                Button(onClick = { step = if (hasCameraPermission) PairingStep.Scanning else PairingStep.Intro }) { Text("Try again") }
-                TextButton(onClick = { step = PairingStep.Intro }) { Text("Enter pairing details manually") }
+                Button(onClick = { step = if (hasCameraPermission) PairingStep.Scanning else PairingStep.Intro }) { Text(stringResource(R.string.pair_try_again)) }
+                TextButton(onClick = { step = PairingStep.Intro }) { Text(stringResource(R.string.pair_manual)) }
             }
         }
     }
@@ -151,7 +153,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(bottom = 24.dp)
         )
-        Button(onClick = onScanClick) { Text("Scan QR code") }
+        Button(onClick = onScanClick) { Text(stringResource(R.string.pair_scan)) }
 
         // Production fallback for a device with no working camera. The exact same parser, TLS
         // certificate pinning and one-time pairing exchange are used as for a scanned QR.
@@ -171,15 +173,15 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = endpoint, onValueChange = { endpoint = it },
-                    label = { Text("Endpoint (https://192.168.x.x:51124)") }, modifier = Modifier.padding(top = 4.dp)
+                    label = { Text(stringResource(R.string.pair_endpoint)) }, modifier = Modifier.padding(top = 4.dp)
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = code, onValueChange = { code = it },
-                    label = { Text("Pairing code") }, modifier = Modifier.padding(top = 4.dp)
+                    label = { Text(stringResource(R.string.pair_code)) }, modifier = Modifier.padding(top = 4.dp)
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = fingerprint, onValueChange = { fingerprint = it },
-                    label = { Text("Certificate fingerprint") }, modifier = Modifier.padding(top = 4.dp)
+                    label = { Text(stringResource(R.string.pair_fingerprint)) }, modifier = Modifier.padding(top = 4.dp)
                 )
                 Button(
                     onClick = {
@@ -189,7 +191,7 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
                     },
                     modifier = Modifier.padding(top = 12.dp),
                     enabled = endpoint.isNotBlank() && code.isNotBlank() && fingerprint.isNotBlank()
-                ) { Text("Pair") }
+                ) { Text(stringResource(R.string.pair_pair)) }
             }
         }
 
