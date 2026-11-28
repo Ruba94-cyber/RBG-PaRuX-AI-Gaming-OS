@@ -229,6 +229,8 @@ public sealed class PairingStartResponse
     public DateTime ExpiresUtc { get; set; }
     public string Endpoint { get; set; } = string.Empty;
     public string CertificateFingerprint { get; set; } = string.Empty;
+    /// <summary>Public https address while the opt-in Internet tunnel is online; empty otherwise. Additive field.</summary>
+    public string TunnelEndpoint { get; set; } = string.Empty;
 }
 
 public sealed class PairingCompleteRequest
@@ -243,6 +245,8 @@ public sealed class PairingCompleteResponse
     public string DeviceToken { get; set; } = string.Empty;
     public string Endpoint { get; set; } = string.Empty;
     public string CertificateFingerprint { get; set; } = string.Empty;
+    /// <summary>Public https address while the opt-in Internet tunnel is online; empty otherwise. Additive field.</summary>
+    public string TunnelEndpoint { get; set; } = string.Empty;
 }
 
 public sealed class PairedDeviceInfo

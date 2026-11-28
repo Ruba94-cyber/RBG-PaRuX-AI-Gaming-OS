@@ -60,6 +60,17 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 64L * 1024 * 1024;
     options.ListenLocalhost(corePort);
     if (gatewayPort is int port) options.ListenLocalhost(port);
+    // Dedicated loopback port for the opt-in Internet tunnel: only cloudflared is pointed at it, and the boundary middleware
+    // treats everything that arrives on it as untrusted Internet traffic. Never bound in Corporate Lite.
+    if (!PaRuX.Contracts.CorporateMode.IsActive)
+    {
+        int tunnelPort = ServerState.ChooseTunnelPort();
+        if (tunnelPort > 0 && tunnelPort != gatewayPort)
+        {
+            PaRuX.Server.Tunnel.TunnelListener.Port = tunnelPort;
+            options.ListenLocalhost(tunnelPort);
+        }
+    }
     RemoteAccessService.RemoteAccessConfiguration remote = RemoteAccessService.LoadConfiguration();
     if (remote.Enabled && RemoteAccessService.IsPrivateAssignedAddress(remote.Address))
     {
@@ -126,6 +137,22 @@ builder.Services.AddSingleton<MediaJobService>(services => new MediaJobService(
     services.GetRequiredService<MediaJobStore>(),
     logger: services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MediaJobService>>()));
 builder.Services.AddSingleton<RemoteAccessService>();
+builder.Services.AddSingleton(sp =>
+{
+    var runtime = sp.GetRequiredService<LocalRuntimeService>();
+    var remote = sp.GetRequiredService<RemoteAccessService>();
+    var service = new PaRuX.Server.Tunnel.RemoteTunnelService(
+        new PaRuX.Server.Tunnel.TunnelSettingsStore(ServerState.StateDirectory),
+        new PaRuX.Server.Tunnel.CloudflaredComponent(),
+        new PaRuX.Server.Tunnel.TunnelProcessLauncher(),
+        () => PaRuX.Contracts.CorporateMode.IsActive,
+        () => runtime.GamingMode,
+        autoStart: !sp.GetRequiredService<IHostEnvironment>().IsEnvironment("Testing"));
+    service.Broker = new PaRuX.Server.Tunnel.TunnelPairingBroker(remote, () => service.PublicUrl);
+    runtime.HardOff.Register(service);
+    return service;
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PaRuX.Server.Tunnel.RemoteTunnelService>());
 builder.Services.AddSingleton<WebAccessService>();
 builder.Services.AddSingleton(InFlightRequestRegistry.Shared);
 builder.Services.AddSingleton<ApiKeyService>();
@@ -489,6 +516,8 @@ builder.Services.AddSingleton(sp => IdleCalibrationComposition.Create(sp));
 StartupTrace.Mark("services-registered");
 StartupTrace.WrapHostedServices(builder.Services);
 WebApplication app = builder.Build();
+// First of all: anything that arrived on the tunnel-only loopback port is confined to the paired-device API (see TunnelBoundaryMiddleware).
+app.UseMiddleware<PaRuX.Server.Tunnel.TunnelBoundaryMiddleware>();
 if (PaRuX.Server.ChatPhaseTrace.Enabled)
     app.Use((context, next) => { PaRuX.Server.ChatPhaseTrace.BeginRequest(context); return next(); });
 
@@ -556,6 +585,7 @@ StartupTrace.Mark("core-singletons-resolved");
     HostHeaderPolicy hostPolicy = app.Services.GetRequiredService<HostHeaderPolicy>();
     app.Use(async (context, next) =>
     {
+        if (PaRuX.Server.Tunnel.TunnelBoundaryMiddleware.IsTunnel(context)) { await next(); return; }
         if (!hostPolicy.IsAllowed(context.Request.Headers.Host.ToString(), context.Connection.LocalIpAddress))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -605,6 +635,9 @@ app.Use(async (context, next) =>
 
 app.Use(async (context, next) =>
 {
+    // Tunnel traffic was fully authenticated (or confined to the pairing steps) by TunnelBoundaryMiddleware and must never be
+    // evaluated as loopback, browser-session, API-key or desktop traffic.
+    if (PaRuX.Server.Tunnel.TunnelBoundaryMiddleware.IsTunnel(context)) { await next(); return; }
     bool loopback = IsLoopback(context);
     bool pairingCompletion = context.Request.Path == "/api/v1/remote/pair/complete";
     if (loopback && context.Request.Path == "/api/v1/health")
@@ -890,16 +923,19 @@ app.MapPost("/api/v1/remote/config", (
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
-app.MapPost("/api/v1/remote/pair/start", (RemoteAccessService remote, HttpContext context) =>
+app.MapPost("/api/v1/remote/pair/start", (RemoteAccessService remote, PaRuX.Server.Tunnel.RemoteTunnelService tunnel, HttpContext context) =>
 {
     if (!IsDesktopOwner(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
-    try { var started = remote.StartPairing(); AuditLogService.TryRecord("remote.pairing", "started"); return Results.Ok(started); }
+    try { var started = remote.StartPairing(tunnel.PublicUrl); AuditLogService.TryRecord("remote.pairing", "started"); return Results.Ok(started); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
 
 app.MapPost("/api/v1/remote/pair/complete", (
-    PairingCompleteRequest request, RemoteAccessService remote, HttpContext context) =>
+    PairingCompleteRequest request, RemoteAccessService remote, PaRuX.Server.Tunnel.RemoteTunnelService tunnel, HttpContext context) =>
 {
+    // Through the Internet tunnel a NEW device never gets a token directly: the PC owner must approve it first.
+    if (PaRuX.Server.Tunnel.TunnelBoundaryMiddleware.IsTunnel(context))
+        return PaRuX.Server.Tunnel.TunnelEndpoints.CompleteThroughTunnel(request, tunnel, context);
     try { var completed = remote.CompletePairing(request, context.Connection.RemoteIpAddress); AuditLogService.TryRecord("remote.pairing", "completed"); return Results.Ok(completed); }
     catch (InvalidDataException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (RemoteAccessService.PairingLockedException ex)
@@ -909,6 +945,8 @@ app.MapPost("/api/v1/remote/pair/complete", (
     }
     catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
 });
+
+PaRuX.Server.Tunnel.TunnelEndpoints.MapTunnelEndpoints(app);
 
 app.MapDelete("/api/v1/remote/devices/{id}", (string id, RemoteAccessService remote, HttpContext context) =>
 {
@@ -4673,6 +4711,7 @@ static TrainingPlanResult ToTrainingPlanResult(TrainingRunPlanner.RunPlan plan) 
 // A request with no recorded remote address is not evidence of a local caller, so it is never treated as loopback.
 static bool IsLoopback(HttpContext context)
 {
+    if (PaRuX.Server.Tunnel.TunnelBoundaryMiddleware.IsTunnel(context)) return false;
     IPAddress? address = context.Connection.RemoteIpAddress;
     return address is not null && IPAddress.IsLoopback(address);
 }

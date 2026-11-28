@@ -45,12 +45,13 @@ import com.google.zxing.common.HybridBinarizer
 import com.parux.android.core.pairing.PairingPayload
 import com.parux.android.core.pairing.PairingRepository
 import com.parux.android.core.pairing.PairingResult
+import com.parux.android.core.pairing.TunnelEndpointPolicy
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.launch
 
-private enum class PairingStep { Intro, Scanning, Pairing, Failed }
+private enum class PairingStep { Intro, Scanning, Pairing, AwaitingApproval, Failed }
 
 /**
  * "Scan QR code" -> scan the QR from PaRuX Windows > Settings > Local Network > Pair a device.
@@ -77,10 +78,10 @@ fun PairingScreen(pairingRepository: PairingRepository, onPaired: () -> Unit) {
     }
 
     fun handleScan(payload: PairingPayload) {
-        if (step == PairingStep.Pairing) return
+        if (step == PairingStep.Pairing || step == PairingStep.AwaitingApproval) return
         step = PairingStep.Pairing
         scope.launch {
-            when (val result = pairingRepository.completePairing(payload)) {
+            when (val result = pairingRepository.completePairing(payload, onAwaitingApproval = { step = PairingStep.AwaitingApproval })) {
                 PairingResult.Success -> onPaired()
                 is PairingResult.Failure -> {
                     errorMessage = result.message
@@ -120,6 +121,15 @@ fun PairingScreen(pairingRepository: PairingRepository, onPaired: () -> Unit) {
             ) {
                 CircularProgressIndicator()
                 Text(stringResource(R.string.pair_pairing), Modifier.padding(top = 16.dp))
+            }
+            PairingStep.AwaitingApproval -> Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator()
+                Text(stringResource(R.string.pair_awaiting_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+                Text(stringResource(R.string.pair_awaiting_body), modifier = Modifier.padding(top = 8.dp))
             }
             PairingStep.Failed -> Column(
                 Modifier.fillMaxSize().padding(24.dp),
@@ -185,12 +195,17 @@ private fun IntroContent(onScanClick: () -> Unit, onManualPayload: (PairingPaylo
                 )
                 Button(
                     onClick = {
+                        // An Internet (tunnel) address has no fingerprint to type: it uses a normal public certificate.
                         onManualPayload(
-                            PairingPayload(endpoint = endpoint.trim(), code = code.trim(), fp = fingerprint.trim())
+                            if (TunnelEndpointPolicy.isAllowedTunnelEndpoint(endpoint))
+                                PairingPayload(tunnel = endpoint.trim(), code = code.trim())
+                            else
+                                PairingPayload(endpoint = endpoint.trim(), code = code.trim(), fp = fingerprint.trim())
                         )
                     },
                     modifier = Modifier.padding(top = 12.dp),
-                    enabled = endpoint.isNotBlank() && code.isNotBlank() && fingerprint.isNotBlank()
+                    enabled = endpoint.isNotBlank() && code.isNotBlank() &&
+                        (fingerprint.isNotBlank() || TunnelEndpointPolicy.isAllowedTunnelEndpoint(endpoint))
                 ) { Text(stringResource(R.string.pair_pair)) }
             }
         }

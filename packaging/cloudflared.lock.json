@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "description": "Reviewed pin for the cloudflared Windows x64 executable that PaRuX downloads when the person chooses Install with PaRuX for the opt-in Internet tunnel. Source: official release on github.com/cloudflare/cloudflared. To bump: download the asset, compute SHA-256, compare with the digest GitHub shows for the release asset (gh api repos/cloudflare/cloudflared/releases/tags/<tag>), update this file AND src/PaRuX.Server/Tunnel/CloudflaredPin.cs in one reviewed commit (a unit test fails when they disagree).",
+  "component": "cloudflared",
+  "license": "Apache-2.0",
+  "platform": "win-x64",
+  "version": "2026.11.2",
+  "assetName": "cloudflared-windows-amd64.exe",
+  "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.2/cloudflared-windows-amd64.exe",
+  "sizeBytes": 55470800,
+  "sha256": "555b46c85582461d189cac30d14ad05480d612613801be9f110b8ce08c5b2113"
+}

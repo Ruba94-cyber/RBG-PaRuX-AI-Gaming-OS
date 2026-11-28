@@ -27,6 +27,21 @@ public sealed class ServerState
         return CorePort;
     }
 
+    public const int PreferredTunnelPort = 51125;
+
+    /// <summary>Loopback port reserved for traffic that arrives through the Internet tunnel (never the Core port). A stable
+    /// number is preferred because a named tunnel's hostname is configured in Cloudflare to forward to it.</summary>
+    public static int ChooseTunnelPort()
+    {
+        if (PreferredTunnelPort != CorePort && CanBindLoopback(PreferredTunnelPort)) return PreferredTunnelPort;
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            int port = FindFreeLoopbackPort();
+            if (port != CorePort && port != PreferredPort) return port;
+        }
+        return 0;
+    }
+
     private static bool CanBindLoopback(int port)
     {
         foreach (System.Net.IPAddress address in new[] { System.Net.IPAddress.Loopback, System.Net.IPAddress.IPv6Loopback })

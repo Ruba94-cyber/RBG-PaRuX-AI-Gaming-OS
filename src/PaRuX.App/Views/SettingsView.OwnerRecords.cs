@@ -72,6 +72,7 @@ namespace PaRuX.Views
             card.Children.Add(add);
             if (!corporate) SettingsContentPanel.Children.Add(webhooks);
 
+            if (!corporate) SettingsContentPanel.Children.Add(BuildRemoteTunnelSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildSignInAppListSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildLogonStartupSection());
             if (!corporate) SettingsContentPanel.Children.Add(BuildSupportAppsSection());

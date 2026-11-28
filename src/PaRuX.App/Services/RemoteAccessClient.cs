@@ -14,6 +14,7 @@ namespace PaRuX.Services
         public static RemoteAccessClient Current { get; } = new RemoteAccessClient();
 
         private static readonly HttpClient Http = PaRuXServerController.CreateControlPlaneClient(TimeSpan.FromSeconds(15));
+        private static readonly HttpClient LongHttp = PaRuXServerController.CreateControlPlaneClient(TimeSpan.FromMinutes(11));
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
         private RemoteAccessClient() { }
@@ -29,6 +30,27 @@ namespace PaRuX.Services
 
         public async Task RevokeAsync(string id, CancellationToken ct) =>
             await SendAsync<object>(HttpMethod.Delete, "/api/v1/remote/devices/" + Uri.EscapeDataString(id), null, ct).ConfigureAwait(false);
+
+        // Internet tunnel (opt-in, Cloudflare). All owner-only; the Core refuses them through the tunnel itself.
+        public async Task<RemoteTunnelStatus> GetTunnelStatusAsync(CancellationToken ct) =>
+            await SendAsync<RemoteTunnelStatus>(HttpMethod.Get, "/api/v1/remote/tunnel/status", null, ct).ConfigureAwait(false);
+
+        public async Task<RemoteTunnelStatus> ConfigureTunnelAsync(RemoteTunnelConfigRequest request, CancellationToken ct) =>
+            await SendAsync<RemoteTunnelStatus>(HttpMethod.Post, "/api/v1/remote/tunnel/config", request, ct).ConfigureAwait(false);
+
+        /// <summary>Downloads the pinned cloudflared (tens of MB), so it is allowed far longer than a status call.</summary>
+        public async Task<RemoteTunnelStatus> InstallTunnelComponentAsync(CancellationToken ct) =>
+            await SendAsync<RemoteTunnelStatus>(HttpMethod.Post, "/api/v1/remote/tunnel/install", new { }, ct, TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+
+        public async Task<RemoteTunnelStatus> LocateTunnelComponentAsync(string path, CancellationToken ct) =>
+            await SendAsync<RemoteTunnelStatus>(HttpMethod.Post, "/api/v1/remote/tunnel/locate", new RemoteTunnelLocateRequest { Path = path }, ct).ConfigureAwait(false);
+
+        public async Task<RemoteTunnelStatus> SkipTunnelComponentAsync(CancellationToken ct) =>
+            await SendAsync<RemoteTunnelStatus>(HttpMethod.Post, "/api/v1/remote/tunnel/skip", new { }, ct).ConfigureAwait(false);
+
+        public async Task DecideTunnelPairingAsync(string id, bool approve, CancellationToken ct) =>
+            await SendAsync<object>(HttpMethod.Post,
+                "/api/v1/remote/tunnel/pending/" + Uri.EscapeDataString(id) + (approve ? "/approve" : "/deny"), new { }, ct).ConfigureAwait(false);
 
         // The browser door. It lives beside the paired-device routes because Settings presents them
         // together, but it is a different boundary: no certificate pinning, no device token, a
@@ -60,13 +82,16 @@ namespace PaRuX.Services
         public async Task SaveGatewaySettingsAsync(Integrations.GatewaySettingsUpdate settings, CancellationToken ct) =>
             await SendAsync<object>(HttpMethod.Put, "/api/v1/gateway/settings", settings, ct).ConfigureAwait(false);
 
-        private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
+        private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, TimeSpan? timeout = null)
         {
+            using var timeoutSource = timeout is { } limit ? CancellationTokenSource.CreateLinkedTokenSource(ct) : null;
+            timeoutSource?.CancelAfter(timeout!.Value);
+            if (timeoutSource is not null) ct = timeoutSource.Token;
             ServerBootstrap bootstrap = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);
             using var request = new HttpRequestMessage(method, bootstrap.Endpoint.TrimEnd('/') + path);
             request.Headers.Add("X-PaRuX-Token", bootstrap.Token);
             if (body != null) request.Content = JsonContent.Create(body);
-            using HttpResponseMessage response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+            using HttpResponseMessage response = await (timeout is null ? Http : LongHttp).SendAsync(request, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 string detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

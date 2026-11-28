@@ -50,9 +50,22 @@ data class PairingCompleteRequest(
 data class PairingCompleteResponse(
     val deviceId: String,
     val deviceToken: String,
-    val endpoint: String,
-    val certificateFingerprint: String
+    val endpoint: String = "",
+    val certificateFingerprint: String = "",
+    val tunnelEndpoint: String = ""
 )
+
+/** 202 from the tunnel: the PC owner has to approve a NEW device before it receives a token. */
+@Serializable
+data class PairingApprovalPending(
+    val requestId: String,
+    val pollSecret: String,
+    val pollIntervalSeconds: Int = 2,
+    val message: String = ""
+)
+
+@Serializable
+data class PairingPollRequest(val requestId: String, val pollSecret: String)
 
 @Serializable
 data class AiProfileStatus(
