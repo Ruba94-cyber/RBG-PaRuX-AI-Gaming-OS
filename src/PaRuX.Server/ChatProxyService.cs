@@ -259,9 +259,10 @@ public sealed class ChatProxyService
         trace?.Mark("skills_shortcuts");
         // The status probe (health round trip) is independent of routing, which needs only the persisted text profile:
         // run them concurrently and join before anything reads the status.
-        Task<AiProfileStatus> profileTask = _profiles.GetStatusAsync(cancellationToken);
+        Task<AiProfileStatus> profileTask = Task.Run(() => _profiles.GetStatusAsync(cancellationToken), CancellationToken.None);
         string persistedTextProfile = _profiles.ReadTextProfile();
         ChatRoutingPreferenceStore.Preference routingPreference = ChatRoutingPreferenceStore.ResolveAndPersist(request.Model);
+        trace?.Mark("pref_resolved");
         RouteDecisionDto? modelRoute = null;
         bool scopedForce = false;
 
@@ -284,6 +285,7 @@ public sealed class ChatProxyService
             RouteRequest routeRequest = BuildRouteRequest(
                 routingPreference, profileRole, lastUser?.Content, scoped, request);
             scopedForce = request.ForcedModelRoute != null || scoped?.Mode == ScopedRouteMode.Force;
+            trace?.Mark("route_request");
 
             try { modelRoute = await _router.ResolveAsync(routeRequest, cancellationToken); }
             catch { _ = profileTask.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted); throw; }
@@ -1387,6 +1389,7 @@ public sealed class ChatProxyService
         request.Stream = true;
         using var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, _runtime.ProviderEndpoint + "/v1/chat/completions");
         JsonObject streamPayload = await PrepareProviderPayloadAsync(request, stream: true, cancellationToken).ConfigureAwait(false);
+        ChatPhaseTrace.Current?.Mark("payload_built");
         // Real per-reply token usage for the chat indicator and /usage: ask the managed local server for
         // its terminal usage frame. Relayed untouched; the desktop parses it (ChatTokenUsageParser).
         if (!_runtime.UsesExternalProvider)
@@ -1402,6 +1405,7 @@ public sealed class ChatProxyService
             upstream.Dispose();
             throw new HttpRequestException($"The model provider returned HTTP {(int)upstream.StatusCode}: {Trim(detail)}");
         }
+        if (!_runtime.UsesExternalProvider) LocalAiProcessManager.NoteTextHealthyFromTraffic();
         return upstream;
     }
 
@@ -1500,7 +1504,11 @@ public sealed class ChatProxyService
             cancellationToken.ThrowIfCancellationRequested();
             if (ChatPhaseTrace.Enabled) (downstream.HttpContext.Items[nameof(ChatPhaseTrace)] as ChatPhaseTrace)?.MarkOnce("first_frame");
             await downstream.WriteAsync(line + "\n", cancellationToken);
-            if (line.Length == 0) await downstream.Body.FlushAsync(cancellationToken);
+            if (line.Length == 0)
+            {
+                await downstream.Body.FlushAsync(cancellationToken);
+                if (ChatPhaseTrace.Enabled) (downstream.HttpContext.Items[nameof(ChatPhaseTrace)] as ChatPhaseTrace)?.MarkOnce("first_flushed");
+            }
         }
     }
 

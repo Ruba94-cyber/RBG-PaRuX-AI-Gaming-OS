@@ -17,6 +17,9 @@ public static class RoutingBackupMirror
     private const string SettingsMutexName = "PaRuX.SettingsJson.v1";
     private static readonly object Gate = new();
     private static string DefaultRoot => PaRuX.Contracts.PaRuXDataRoot.Path;
+    /// <summary>Change stamp of settings.json, for read-through caches of routing preferences.</summary>
+    internal static long SettingsStamp(string? root = null) => RoutingStamp.OfFile(SettingsPath(root));
+
     private static string SettingsPath(string? root = null) => Path.Combine(root ?? DefaultRoot, "settings.json");
 
     public static bool TryReadScopedOverrides(string? root, out List<ScopedRoutingOverrideDto> rows)

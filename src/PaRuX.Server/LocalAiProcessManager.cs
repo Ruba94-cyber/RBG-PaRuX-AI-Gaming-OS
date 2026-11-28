@@ -690,7 +690,8 @@ public sealed class LocalAiProcessManager
         LaunchIdentityBox? launch = Volatile.Read(ref _textLaunchIdentity);
         TextHealthyMemo? memo = Volatile.Read(ref _textHealthyMemo);
         if (TextHealthProbeForTests is null && memo is not null
-            && IsTextHealthyMemoReusable(launch, memo.Launch, memo.Ticks, Stopwatch.GetTimestamp())
+            && IsTextHealthyMemoReusable(launch, memo.Launch, memo.Ticks, Stopwatch.GetTimestamp(),
+                memo.ByTraffic ? TextHealthyTrafficTtl : TextHealthyMemoTtl)
             && IsPortListening(TextPort))
             return true;
         bool healthy = await IsTextHealthyAsync(ct, static (url, token) => Http.GetAsync(url, token)).ConfigureAwait(false);
@@ -700,14 +701,25 @@ public sealed class LocalAiProcessManager
         return healthy;
     }
 
-    private sealed record TextHealthyMemo(LaunchIdentityBox Launch, long Ticks);
+    private sealed record TextHealthyMemo(LaunchIdentityBox Launch, long Ticks, bool ByTraffic = false);
     private static TextHealthyMemo? _textHealthyMemo;
     internal static readonly TimeSpan TextHealthyMemoTtl = TimeSpan.FromSeconds(1);
+    /// <summary>A completed chat request is stronger proof of health than a /health probe, so consecutive turns of one
+    /// conversation do not each pay for a fresh probe. The port-listening and same-launch checks still apply every time.</summary>
+    internal static readonly TimeSpan TextHealthyTrafficTtl = TimeSpan.FromSeconds(8);
 
-    internal static bool IsTextHealthyMemoReusable(object? currentLaunch, object? memoLaunch, long memoTicks, long nowTicks) =>
+    internal static bool IsTextHealthyMemoReusable(object? currentLaunch, object? memoLaunch, long memoTicks, long nowTicks,
+        TimeSpan? ttl = null) =>
         currentLaunch is not null
         && ReferenceEquals(currentLaunch, memoLaunch)
-        && Stopwatch.GetElapsedTime(memoTicks, nowTicks) < TextHealthyMemoTtl;
+        && Stopwatch.GetElapsedTime(memoTicks, nowTicks) < (ttl ?? TextHealthyMemoTtl);
+
+    /// <summary>Called when the managed text runtime has just answered a real request with HTTP 200 (the proof of health).</summary>
+    internal static void NoteTextHealthyFromTraffic()
+    {
+        LaunchIdentityBox? launch = Volatile.Read(ref _textLaunchIdentity);
+        if (launch is not null) Volatile.Write(ref _textHealthyMemo, new TextHealthyMemo(launch, Stopwatch.GetTimestamp(), ByTraffic: true));
+    }
 
     internal async Task<bool> IsTextHealthyAsync(
         CancellationToken ct,

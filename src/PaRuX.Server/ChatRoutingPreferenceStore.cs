@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using PaRuX.Contracts;
 
@@ -43,9 +44,37 @@ public static class ChatRoutingPreferenceStore
             lock (Gate) return ResolveAndPersistUnsafe(selector, root, modelsDirectory);
         }
 
+        // Nothing to persist here, so the answer is exactly what is stored. Re-reading settings.json (under its cross-process
+        // file lock) and the sidecar on every turn cost about a millisecond; reuse the parsed value while neither file changed.
         lock (ManualSelectionGate.Sync)
-        lock (Gate) return ResolveAndPersistUnsafe(selector, root, modelsDirectory);
+        lock (Gate)
+        {
+            string rootKey = root ?? DefaultRoot;
+            long stamp = ReadStamp(root);
+            if (_readCache is { } cached && cached.Root == rootKey && cached.Stamp == stamp
+                && Stopwatch.GetElapsedTime(cached.Ticks) < ReadCacheTtl)
+                return Clone(cached.Value);
+            Preference value = ResolveAndPersistUnsafe(selector, root, modelsDirectory);
+            // Loading may itself refresh a mirror or sidecar; cache only when the files did not move under the read.
+            _readCache = ReadStamp(root) == stamp ? new ReadCacheEntry(rootKey, stamp, Stopwatch.GetTimestamp(), Clone(value)) : null;
+            return value;
+        }
     }
+
+    private sealed record ReadCacheEntry(string Root, long Stamp, long Ticks, Preference Value);
+    private static ReadCacheEntry? _readCache;
+    private static readonly TimeSpan ReadCacheTtl = TimeSpan.FromSeconds(30);
+
+    private static long ReadStamp(string? root) =>
+        RoutingStamp.Combine(RoutingBackupMirror.SettingsStamp(root), RoutingStamp.OfFile(FilePath(root)));
+
+    private static Preference Clone(Preference p) => new()
+    {
+        Mode = p.Mode, AutoProfile = p.AutoProfile, ManualModelFileName = p.ManualModelFileName
+    };
+
+    /// <summary>Drops the read-through cache (tests, and every write).</summary>
+    internal static void InvalidateReadCache() => _readCache = null;
 
     private static Preference ResolveAndPersistUnsafe(string selector, string? root, string? modelsDirectory)
     {
@@ -285,6 +314,7 @@ public static class ChatRoutingPreferenceStore
 
     private static void SaveUnsafe(Preference value, string? root)
     {
+        _readCache = null;
         WriteSidecarUnsafe(value, root);
         RoutingBackupMirror.WritePreference(SelectorFor(value), value.AutoProfile, root);
     }

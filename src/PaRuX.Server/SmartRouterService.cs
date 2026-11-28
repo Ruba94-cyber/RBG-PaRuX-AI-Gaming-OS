@@ -59,6 +59,22 @@ public sealed class SmartRouterService : IRoleRouter
     }
 
     private const int MaxDecisionHistory = 50;
+    private readonly RouteDecisionMemo _memo = new();
+
+    /// <summary>Replaceable in tests: the change stamp of every persisted input of an AUTO decision.</summary>
+    internal Func<long>? RoutingStampOverride { get; set; }
+
+    /// <summary>The AUTO decision memo (tests inspect hits and invalidate it).</summary>
+    internal RouteDecisionMemo DecisionMemo => _memo;
+
+    /// <summary>Drops every remembered AUTO selection, e.g. after a model, role or profile change the stamp cannot see.</summary>
+    public void InvalidateRouteMemo() => _memo.Invalidate();
+
+    private long ComputeRoutingStamp() => RoutingStampOverride?.Invoke() ?? RoutingStamp.Combine(
+        LocalAiPaths.RoutingInputsStamp(),
+        CapabilityRoutingPreferenceStore.CapabilityModeStamp(CapabilityModeRoot),
+        RoutingStamp.OfDirectory(ModelDownloadService.ModelsDirectory));
+
     private readonly ConcurrentQueue<RouteDecisionDto> _decisions = new();
 
     public SmartRouterService(
@@ -115,7 +131,9 @@ public sealed class SmartRouterService : IRoleRouter
         string? normalizedRole = LocalAiPaths.NormalizeTextRole(role);
         if (normalizedRole == null) return new List<CandidateEvidenceDto>();
 
+        ChatPhaseTrace.Current?.Mark("r.enter");
         List<string> paths = LocalAiPaths.ListCandidates(normalizedRole);
+        ChatPhaseTrace.Current?.Mark("r.list");
         if (includeManagedLibrary)
             paths = ManagedLibraryCandidateExpander.Expand(paths, ModelDownloadService.ModelsDirectory);
 
@@ -318,6 +336,7 @@ public sealed class SmartRouterService : IRoleRouter
     public async Task<RouteDecisionDto> ResolveAsync(RouteRequest request, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
+        ChatPhaseTrace.Current?.Mark("r.begin");
         string inferredMode = !string.IsNullOrWhiteSpace(request.Role) ? RouteMode.Manual : RouteMode.Auto;
         string? explicitMode = request.Mode?.Trim().ToLowerInvariant();
         string mode = explicitMode != null && RouteMode.All.Contains(explicitMode) ? explicitMode : inferredMode;
@@ -347,10 +366,44 @@ public sealed class SmartRouterService : IRoleRouter
             && string.IsNullOrWhiteSpace(request.Role)
             && !exactForced;
 
+        ChatPhaseTrace.Current?.Mark("r.features");
+        // Warm turn: the same request features against unchanged persisted inputs, the same model still resident and no
+        // evidence-qualified recommendation to apply -> reuse the earlier AUTO selection instead of re-collecting evidence.
+        RouteMemoKey? memoKey = null;
+        RouteMemoEntry? memoHit = null;
+        string? memoRecommendationSkip = null;
+        RuntimeLoadResult? memoReuse = null;
+        long memoStamp = 0;
+        if (mode == RouteMode.Auto && string.IsNullOrWhiteSpace(request.Role) && !exactForced && !scopedPrefer
+            && normalizedTextRole != null && autoProfile != AutoIntelligenceProfile.Custom && !CorporateMode.IsActive)
+        {
+            memoKey = new RouteMemoKey(mode, requestedRole, normalizedTextRole, autoProfile, requiredIntelligence ?? 0,
+                AutoTrivialTurnPolicy.IsTrivial(request.PromptText ?? request.TaskType, requestedRole, autoProfile),
+                managedLibraryExpanded);
+            memoStamp = ComputeRoutingStamp();
+            // A single-candidate pool is remembered without the prompt features (nothing was ranked), so different prompts share it.
+            if ((_memo.TryGet(memoKey, memoStamp, out RouteMemoEntry? remembered)
+                    || _memo.TryGet(memoKey.WithoutPromptFeatures(), memoStamp, out remembered)) && remembered is not null
+                && await _runtimeManager.TryReuseActiveExactCandidateAsync(
+                    remembered.Role, remembered.SelectedPath, ct).ConfigureAwait(false) is { } reusedResult)
+            {
+                memoHit = remembered;
+                memoReuse = reusedResult;
+                if (_recommendation is not null && normalizedTextRole == "standard" && autoProfile == AutoIntelligenceProfile.Balanced)
+                {
+                    (RecommendedRoute? recommendedNow, string? skip) = await _recommendation.ConsultAsync(ct).ConfigureAwait(false);
+                    if (recommendedNow is not null) { memoHit = null; memoReuse = null; }
+                    else memoRecommendationSkip = skip;
+                }
+            }
+        }
+
         // An exact managed-model lock cannot select from alternatives. Avoid collecting
         // per-candidate hardware and capability evidence on this latency-sensitive path;
         // EnsureExactCandidateLoadedAsync still applies the strict live admission checks.
-        List<CandidateEvidenceDto> candidates = normalizedTextRole != null && !scopedForce
+        List<CandidateEvidenceDto> candidates = memoHit is not null
+            ? new List<CandidateEvidenceDto>(memoHit.Candidates)
+            : normalizedTextRole != null && !scopedForce
             && (!exactManagedForced || exactRegisteredForced)
             ? await GetCandidateEvidenceAsync(normalizedTextRole, managedLibraryExpanded, ct, allowRetrievalReclaim: true)
             : new List<CandidateEvidenceDto>();
@@ -363,9 +416,20 @@ public sealed class SmartRouterService : IRoleRouter
         bool recommendedApplied = false;
         bool scopedPreferApplied = false;
         string? scopedPreferenceFallbackReason = null;
+        if (memoHit is not null)
+        {
+            selectedEvidence = memoHit.Selected;
+            escalationNote = memoHit.EscalationNote;
+            recommendationSkip = memoRecommendationSkip;
+        }
 
         async Task<RuntimeLoadResult> ResolveAutomaticallyAsync()
         {
+            if (memoHit is not null)
+            {
+                ChatPhaseTrace.Current?.Mark("r.memo_hit");
+                return memoReuse!;
+            }
             // Evidence-qualified recommendation: explicit AUTO only, Standard x Balanced only, after every lock,
             // Force and Prefer attempt. Any doubt falls through to the ordinary ranker, and the reason is reported.
             RuntimeLoadResult? recommended = null;
@@ -418,7 +482,7 @@ public sealed class SmartRouterService : IRoleRouter
         string? capabilityId = CapabilityForTextRole(normalizedTextRole);
         var capTrace = new List<string>();
         if (capabilityId is not null && mode == RouteMode.Auto && string.IsNullOrWhiteSpace(request.Role)
-            && !exactForced && !scopedPrefer)
+            && !exactForced && !scopedPrefer && memoHit is null)
         {
             try { capOverride = CapabilityRoutingPreferenceStore.GetCapabilityMode(capabilityId, CapabilityModeRoot); }
             catch (InvalidDataException)
@@ -464,6 +528,7 @@ public sealed class SmartRouterService : IRoleRouter
             }
         }
 
+        ChatPhaseTrace.Current?.Mark("r.capmode");
         if (capGate is { Success: false })
         {
             result = Failure(normalizedTextRole!, capGate.Explanation);
@@ -591,6 +656,24 @@ public sealed class SmartRouterService : IRoleRouter
                     await GetCandidateEvidenceAsync("standard", managedLibraryExpanded, ct, allowRetrievalReclaim: true);
                 selectedEvidence = standardCandidates.FirstOrDefault(candidate => PathsEqual(candidate.FilePath, result.ModelPath));
             }
+        }
+
+        if (memoKey is not null)
+        {
+            if (memoHit is null && result.Success && !fellBack && !recommendedApplied && !scopedPreferApplied
+                && selectedEvidence is not null && result.ModelPath is not null
+                && PathsEqual(selectedEvidence.FilePath, result.ModelPath)
+                && (capOverride is null || capOverride.Mode == ScopedRouteMode.Automatic)
+                && candidates.Count > 0)
+            {
+                _memo.Store(new RouteMemoEntry
+                {
+                    Key = candidates.Count <= 1 ? memoKey.WithoutPromptFeatures() : memoKey, Stamp = memoStamp, CreatedTicks = _memo.NowTicks,
+                    SelectedPath = result.ModelPath, Role = normalizedTextRole!,
+                    Candidates = candidates, Selected = selectedEvidence, EscalationNote = escalationNote
+                });
+            }
+            else if (!result.Success) _memo.Invalidate();
         }
 
         stopwatch.Stop();

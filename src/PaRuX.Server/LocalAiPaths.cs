@@ -996,6 +996,14 @@ public static class LocalAiPaths
         _candidatePoolCache = pools;
     }
 
+    /// <summary>Change stamp of the persisted files that decide which GGUFs are role candidates and which one backs each role
+    /// (candidate pools, role overrides and their origins) plus the model folders; see <see cref="RoutingStamp"/>.</summary>
+    internal static long RoutingInputsStamp() => RoutingStamp.Combine(
+        RoutingStamp.OfFile(CandidatePoolPath),
+        RoutingStamp.OfFile(RoleOverridesPath),
+        RoutingStamp.OfFile(RoleOverrideOriginsPath),
+        RoutingStamp.OfDirectory(ModelsPath));
+
     public static List<string> ListCandidates(string role)
     {
         string? normalized = NormalizeTextRole(role);
