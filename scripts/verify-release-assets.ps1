@@ -179,6 +179,47 @@ function Assert-TreeMatchesProvenance([hashtable]$actual, [string]$what) {
     }
 }
 
+# The optional MSI features (controller drivers, Sunshine) carry vendor payloads that build-msi.ps1 stages from
+# packaging/redist-installers.lock.json AFTER the publish tree is hashed, so they are not in payloadFiles. Instead of
+# skipping them, every Redist/ file must match an independent reference: vendor binaries the lock's pinned SHA-256,
+# licence/source-offer texts, the lock and the installer helper the committed files in this repository.
+function Split-AndAssertRedistPayload([hashtable]$actual) {
+    $redistKeys = @($actual.Keys | Where-Object { $_.StartsWith('Redist/', [StringComparison]::Ordinal) })
+    if ($redistKeys.Count -eq 0) { return $actual }
+    $lockPath = Join-Path $root 'packaging\redist-installers.lock.json'
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+    $expected = @{
+        'Redist/redist-installers.lock.json' = Get-CanonicalHash $lockPath
+        'Redist/Invoke-PaRuXRedist.ps1'      = Get-CanonicalHash (Join-Path $root 'scripts\redist\Invoke-PaRuXRedist.ps1')
+    }
+    foreach ($c in @($lock.components)) {
+        $folder = [string]$c.payloadFolder
+        $expected["Redist/$folder/$([string]$c.asset.name)"] = ([string]$c.asset.sha256).ToLowerInvariant()
+        $texts = @()
+        foreach ($section in @('license', 'sourceOffer')) {
+            $node = if ($c.PSObject.Properties.Name -contains $section) { $c.$section } else { $null }
+            if ($null -ne $node -and $node.PSObject.Properties.Name -contains 'textFile') { $texts += [string]$node.textFile }
+        }
+        foreach ($text in $texts) {
+            if ([string]::IsNullOrWhiteSpace($text)) { continue }
+            $expected["Redist/$folder/$([IO.Path]::GetFileName($text))"] = Get-CanonicalHash (Join-Path $root $text)
+        }
+    }
+    $problems = @()
+    foreach ($key in $expected.Keys) {
+        if (-not $actual.ContainsKey($key)) { $problems += "missing $key" }
+        elseif ($actual[$key] -cne $expected[$key]) { $problems += "hash mismatch $key" }
+    }
+    foreach ($key in $redistKeys) { if (-not $expected.ContainsKey($key)) { $problems += "unexpected $key" } }
+    if ($problems.Count -gt 0) {
+        throw "MSI optional Redist payload differs from packaging/redist-installers.lock.json ($($problems.Count) problem(s)): $(($problems | Select-Object -First 5) -join '; ')"
+    }
+    Write-Host "[release verify] MSI optional Redist payload ($($expected.Count) files) matches the redist lock and repository: PASS"
+    $rest = @{}
+    foreach ($key in $actual.Keys) { if (-not $key.StartsWith('Redist/', [StringComparison]::Ordinal)) { $rest[$key] = $actual[$key] } }
+    return $rest
+}
+
 function Test-EmbeddedCommit([string]$payloadRoot) {
     $report = @()
     foreach ($relative in $primaryBinaries) {
@@ -291,7 +332,7 @@ try {
     $primaryHits = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "PaRuX.exe" | Where-Object { $_.Name -ceq "PaRuX.exe" })
     if ($primaryHits.Count -ne 1) { throw "Expected exactly one PaRuX.exe in the extracted MSI payload, found $($primaryHits.Count)." }
     $payloadRoot = $primaryHits[0].DirectoryName
-    Assert-TreeMatchesProvenance (Get-TreeHashes $payloadRoot) "MSI payload"
+    Assert-TreeMatchesProvenance (Split-AndAssertRedistPayload (Get-TreeHashes $payloadRoot)) "MSI payload"
     Write-Host "[release verify] MSI payload ($($expectedPayload.Count) files) equals provenance: PASS"
     Assert-BundledCuda13Payload $payloadRoot
     Write-Host "[release verify] NVIDIA CUDA 13.5 baseline assets and notice: PASS"
