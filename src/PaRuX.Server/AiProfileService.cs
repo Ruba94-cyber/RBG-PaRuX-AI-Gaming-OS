@@ -127,13 +127,20 @@ public sealed class AiProfileService
         return string.Empty;
     }
 
+    /// <summary>The persisted text profile (STANDARD or UNCENSORED) alone, without the health probe GetStatusAsync adds.
+    /// The chat path uses it so routing can start while the status probe runs concurrently.</summary>
+    public string ReadTextProfile()
+    {
+        string textProfile = ReadTrimmed("text-profile.txt").ToUpperInvariant();
+        return textProfile is "STANDARD" or "UNCENSORED" ? textProfile : "STANDARD";
+    }
+
     public async Task<AiProfileStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
         string mode = ReadTrimmed("mode.txt").ToUpperInvariant();
         if (mode is not ("ON" or "OFF" or "AUTO")) mode = "AUTO";
 
-        string textProfile = ReadTrimmed("text-profile.txt").ToUpperInvariant();
-        if (textProfile is not ("STANDARD" or "UNCENSORED")) textProfile = "STANDARD";
+        string textProfile = ReadTextProfile();
 
         // active-profile.txt only ever records the LAST profile a llama-server process
         // actually finished loading - it is never cleared on an unclean shutdown (a killed

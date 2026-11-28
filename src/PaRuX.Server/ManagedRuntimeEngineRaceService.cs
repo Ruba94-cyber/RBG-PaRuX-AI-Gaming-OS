@@ -59,6 +59,32 @@ public sealed class RuntimeEngineRaceEvidenceStore
             return LoadUnsafe().OrderByDescending(item => item.SavedUtc).Take(maximum).ToList();
     }
 
+    private (long Ticks, long Length, bool Any)? _winnerStamp;
+
+    /// <summary>
+    /// Cheap pre-check for the chat hot path: false when no completed, promoted race record exists at all, in which
+    /// case <see cref="FindLatestWinner"/> can only return null. The answer is cached against the evidence file's
+    /// last-write time and length; a file written within the last second is never trusted from cache, so a record
+    /// saved right now cannot be missed. Any doubt (unreadable file) answers true and the full lookup decides.
+    /// </summary>
+    public bool MayHavePromotedWinner()
+    {
+        try
+        {
+            var info = new FileInfo(_path);
+            if (!info.Exists) return false;
+            long ticks = info.LastWriteTimeUtc.Ticks, length = info.Length;
+            lock (_gate)
+            {
+                if (_winnerStamp is { } cached && cached.Ticks == ticks && cached.Length == length) return cached.Any;
+                bool any = LoadUnsafe().Any(item => item.Result?.Status == "completed" && item.Result.Promotion?.Promote == true);
+                if (DateTime.UtcNow - info.LastWriteTimeUtc > TimeSpan.FromSeconds(1)) _winnerStamp = (ticks, length, any);
+                return any;
+            }
+        }
+        catch { return true; }
+    }
+
     public RuntimeEngineRaceEvidenceRecord? FindLatestWinner(
         string logicalModelId,
         string revision,

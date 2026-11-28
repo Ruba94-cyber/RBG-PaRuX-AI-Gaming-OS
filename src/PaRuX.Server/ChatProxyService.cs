@@ -257,15 +257,17 @@ public sealed class ChatProxyService
         }
 
         trace?.Mark("skills_shortcuts");
-        AiProfileStatus profile = await _profiles.GetStatusAsync(cancellationToken);
-        trace?.Mark("profile");
+        // The status probe (health round trip) is independent of routing, which needs only the persisted text profile:
+        // run them concurrently and join before anything reads the status.
+        Task<AiProfileStatus> profileTask = _profiles.GetStatusAsync(cancellationToken);
+        string persistedTextProfile = _profiles.ReadTextProfile();
         ChatRoutingPreferenceStore.Preference routingPreference = ChatRoutingPreferenceStore.ResolveAndPersist(request.Model);
         RouteDecisionDto? modelRoute = null;
         bool scopedForce = false;
 
         if (!_runtime.UsesExternalProvider && !hasVisualInput)
         {
-            string? profileRole = string.Equals(profile.TextProfile, "UNCENSORED", StringComparison.OrdinalIgnoreCase)
+            string? profileRole = string.Equals(persistedTextProfile, "UNCENSORED", StringComparison.OrdinalIgnoreCase)
                 ? "uncensored" : null;
             ScopedRoutingOverrideDto? scoped = null;
             if (routingPreference.Mode != RouteMode.Manual && profileRole is null)
@@ -283,13 +285,16 @@ public sealed class ChatProxyService
                 routingPreference, profileRole, lastUser?.Content, scoped, request);
             scopedForce = request.ForcedModelRoute != null || scoped?.Mode == ScopedRouteMode.Force;
 
-            modelRoute = await _router.ResolveAsync(routeRequest, cancellationToken);
+            try { modelRoute = await _router.ResolveAsync(routeRequest, cancellationToken); }
+            catch { _ = profileTask.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted); throw; }
             if (!modelRoute.Success)
                 throw new InvalidOperationException("PaRuX model routing failed"
                     + (modelRoute.EffectiveOverrideMode is "force" or "prefer" && modelRoute.FailureReasonCode is { } routeFailureCode
                         ? " [" + routeFailureCode + "]" : string.Empty) + ": " + modelRoute.Message);
         }
 
+        AiProfileStatus profile = await profileTask;
+        trace?.Mark("profile");
         trace?.Mark("route");
         request.Model = ResolveProviderModel(modelRoute);
 

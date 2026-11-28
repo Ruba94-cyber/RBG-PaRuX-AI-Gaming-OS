@@ -101,6 +101,10 @@ public sealed class LocalInferenceEngineCoordinator : IAsyncDisposable
                 selectedGgufPath))
             return null;
 
+        // No promoted race winner exists anywhere: nothing below can select an alternative engine, so skip the managed
+        // catalog listing and GPU fingerprint on every llama.cpp-only turn.
+        if (!_evidence.MayHavePromotedWinner()) return null;
+
         workload = RuntimePerformanceTuner.NormalizeWorkload(workload);
         string selectedPath;
         try { selectedPath = Path.GetFullPath(selectedGgufPath!); }
