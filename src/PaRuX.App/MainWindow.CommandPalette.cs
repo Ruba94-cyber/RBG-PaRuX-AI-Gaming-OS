@@ -43,7 +43,7 @@ namespace PaRuX
         /// <summary>Runs a quick action by opening the same control the mouse path uses, after going to the right workspace.</summary>
         private void RunQuickAction(string id)
         {
-            if (!CurrentSetupPlan.ShowAiWorkspaces || App.IsShuttingDown) return;
+            if (!CurrentSetupPlan.ShowAiWorkspaces || App.IsShuttingDown || FirstRunSetupScreenOpen) return;
             if (IsGamingModeTab) SelectModeTab(ModeKeyAi, navigate: false);
             if (id == QuickActionCatalog.CreateImage)
             {
@@ -106,7 +106,7 @@ namespace PaRuX
 
         private async System.Threading.Tasks.Task ShowCommandPaletteAsync()
         {
-            if (_commandPaletteOpen || App.IsShuttingDown || Content?.XamlRoot is null) return;
+            if (_commandPaletteOpen || App.IsShuttingDown || FirstRunSetupScreenOpen || Content?.XamlRoot is null) return;
             _commandPaletteOpen = true;
             try
             {

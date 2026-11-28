@@ -795,8 +795,18 @@ namespace PaRuX
             }
         }
 
+        /// <summary>
+        /// True while the first-run welcome/setup screen is on screen. Tray actions, keyboard shortcuts and the command
+        /// palette must not open other workspaces over it: the guided setup is the only door until it is completed.
+        /// (The Model Hub hand-off hides the setup screen first, so its own navigation is unaffected.)
+        /// </summary>
+        internal bool FirstRunSetupScreenOpen =>
+            !SettingsStore.Current.Data.OnboardingCompleted
+            && OnboardingPageIfCreated is { Visibility: Visibility.Visible };
+
         public void ShowChat()
         {
+            if (FirstRunSetupScreenOpen) return;
             // Gaming-only setup must not expose Chat through tray/deep links even
             // though Chat is the ordinary startup page for the full product.
             if (SettingsStore.Current.Data.OnboardingCompleted
@@ -831,6 +841,7 @@ namespace PaRuX
 
         public void ShowSettings()
         {
+            if (FirstRunSetupScreenOpen) return;
             SetNavPaneVisible(true);
             SelectWorkspaceNavigationItem(SettingsNavItem);
             // Workspace pages are siblings in the shell Grid, not a Frame. Hide the previous
