@@ -39,6 +39,9 @@ namespace PaRuX.Services
         public const string TrainLearningRate = "train.learningRate";
         public const string KnowledgeChunk = "knowledge.chunk";
         public const string KnowledgeResults = "knowledge.results";
+        public const string KnowledgeRetrievalMode = "knowledge.retrievalMode";
+        public const string KnowledgeEmbedder = "knowledge.embedder";
+        public const string KnowledgeIndexEffort = "knowledge.indexEffort";
         public const string AutomationTrigger = "automation.trigger";
         public const string AutomationTriggerJson = "automation.triggerJson";
         public const string AutomationGoal = "automation.goal";
@@ -146,6 +149,15 @@ namespace PaRuX.Services
             H(ControlHelpIds.KnowledgeResults, "Passages to use", "Passaggi da usare",
                 "How many matching passages are given to the model when it answers. More is thorough but slower.",
                 "Quanti passaggi pertinenti vengono dati al modello per rispondere. Di più è più completo ma più lento."),
+            H(ControlHelpIds.KnowledgeRetrievalMode, "How to search", "Come cercare",
+                "Hybrid combines exact words with meaning and is the best default. Keyword only matches the words you type; meaning-based finds related ideas.",
+                "Ibrida unisce parole esatte e significato ed è la scelta migliore. Parole chiave trova solo le parole scritte; per significato trova idee affini."),
+            H(ControlHelpIds.KnowledgeEmbedder, "Search model (embedder)", "Modello di ricerca (embedder)",
+                "The small model that turns text into meaning so related passages can be found. Changing it means documents are re-read once.",
+                "Il piccolo modello che trasforma il testo in significato per trovare passaggi affini. Cambiarlo richiede di rileggere i documenti una volta."),
+            H(ControlHelpIds.KnowledgeIndexEffort, "Indexing effort", "Impegno dell'indicizzazione",
+                "How much of your computer is used while documents are read. Lower is quieter; higher finishes sooner.",
+                "Quanta parte del computer viene usata mentre si leggono i documenti. Più basso è più silenzioso; più alto finisce prima."),
             H(ControlHelpIds.AutomationTrigger, "When to run", "Quando eseguire",
                 "What starts the automation: a timer, a new file, a code change and so on.",
                 "Cosa avvia l'automazione: un timer, un nuovo file, una modifica al codice e così via.", advanced: false),

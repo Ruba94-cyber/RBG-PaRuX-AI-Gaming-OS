@@ -182,6 +182,7 @@ namespace PaRuX.Views
                 })
                     profile.Items.Add(new ComboBoxItem { Tag = tag, Content = label });
                 profile.SelectedIndex = s.ProfileIsAutomatic ? 0 : Math.Max(0, new[] { "auto", "Eco", "Balanced", "Performance" }.ToList().IndexOf(s.Profile));
+                GuidanceUi.Help(profile, ControlHelpIds.KnowledgeIndexEffort);
                 AutomationProperties.SetAutomationId(profile, "Settings_Rag_Profile_ComboBox");
                 var profileNote = new TextBlock { TextWrapping = TextWrapping.Wrap };
                 ApplyCaptionStyle(profileNote);
@@ -266,9 +267,11 @@ namespace PaRuX.Views
             const string workspace = "default";
             bool loading = true;
             var embedder = new ComboBox { Header = KT("Search model (embedder)", "Modello di ricerca (embedder)"), MinWidth = 260 };
+            GuidanceUi.Help(embedder, ControlHelpIds.KnowledgeEmbedder);
             AutomationProperties.SetAutomationId(embedder, "Settings_Rag_Embedder_ComboBox");
             var mode = new ComboBox { Header = KT("Retrieval mode", "Modalità di recupero"), MinWidth = 260 };
             foreach (string m in new[] { "hybrid", "embedding", "keyword" }) mode.Items.Add(new ComboBoxItem { Tag = m, Content = ModeLabel(m) });
+            GuidanceUi.Help(mode, ControlHelpIds.KnowledgeRetrievalMode);
             AutomationProperties.SetAutomationId(mode, "Settings_Rag_RetrievalMode_ComboBox");
             var note = new TextBlock { TextWrapping = TextWrapping.Wrap };
             ApplyCaptionStyle(note);
