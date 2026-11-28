@@ -189,6 +189,7 @@ namespace PaRuX
             // conversation started on a paired Android device shows up here too. Never
             // blocks startup and never throws if the server is unavailable.
             _ = SyncHistoryFromServerAsync();
+            StartTunnelPairingWatch();
         }
 
         /// <summary>Game guides reuse the existing Chat composer and its exact selected-source document scope. No parallel

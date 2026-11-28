@@ -104,7 +104,19 @@ object PaRuXHttpClient {
                         .build()
                 }
                 try {
-                    chain.proceed(routed(original))
+                    val onTunnel = router.route.value == EndpointRouter.Route.TUNNEL && router.tunnel != null
+                    val response = try {
+                        chain.proceed(routed(original))
+                    } catch (e: java.net.UnknownHostException) {
+                        // A host name that no longer resolves while on the tunnel: the quick-tunnel name changed.
+                        if (onTunnel) router.markTunnelStale()
+                        throw e
+                    }
+                    if (onTunnel) {
+                        // Cloudflare answers 530 for a tunnel name that has no live tunnel behind it.
+                        if (response.code == 530) router.markTunnelStale() else router.clearTunnelStale()
+                    }
+                    response
                 } catch (e: java.net.ConnectException) {
                     if (router.reportLanUnreachable()) chain.proceed(routed(original)) else throw e
                 } catch (e: java.net.UnknownHostException) {

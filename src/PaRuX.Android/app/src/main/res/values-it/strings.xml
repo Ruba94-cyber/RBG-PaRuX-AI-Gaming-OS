@@ -152,6 +152,7 @@
     <string name="pair_awaiting_body">PaRuX sta chiedendo al proprietario del PC di approvare questo nuovo dispositivo. Apri PaRuX sul PC, vai in Impostazioni > Accesso remoto e scegli Approva.</string>
     <string name="settings_route_lan">Connesso tramite la rete di casa (LAN)</string>
     <string name="settings_route_tunnel">Connesso tramite il tunnel Internet</string>
+    <string name="tunnel_address_changed">L\'indirizzo remoto del tuo PC è cambiato — collegati una volta al Wi-Fi di casa per aggiornarlo.</string>
     <string name="pair_failed">Associazione non riuscita</string>
     <string name="pair_try_again">Riprova</string>
     <string name="pair_manual">Inserisci i dati di associazione a mano</string>

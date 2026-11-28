@@ -243,6 +243,29 @@
                                     Click="ReturnToOnboardingButton_Click" />
                             </InfoBar.ActionButton>
                         </InfoBar>
+                        <InfoBar
+                            x:Name="TunnelPairingBanner"
+                            AutomationProperties.AutomationId="MainWindow_TunnelPairing_Banner"
+                            IsOpen="False"
+                            IsClosable="False"
+                            Severity="Warning"
+                            Title="A phone wants to pair" loc:Loc.ItTitle="Un telefono vuole associarsi">
+                            <InfoBar.ActionButton>
+                                <Button
+                                    x:Name="TunnelPairingApproveButton"
+                                    AutomationProperties.AutomationId="MainWindow_TunnelPairing_Approve_Button"
+                                    Content="Approve" loc:Loc.ItContent="Approva"
+                                    Click="TunnelPairingApprove_Click" />
+                            </InfoBar.ActionButton>
+                            <InfoBar.Content>
+                                <Button
+                                    x:Name="TunnelPairingDenyButton"
+                                    AutomationProperties.AutomationId="MainWindow_TunnelPairing_Deny_Button"
+                                    Content="Deny" loc:Loc.ItContent="Rifiuta"
+                                    Margin="0,0,0,8"
+                                    Click="TunnelPairingDeny_Click" />
+                            </InfoBar.Content>
+                        </InfoBar>
                     </StackPanel>
 
                     <!-- Workspace pages (including Chat and Onboarding) are created in code on first open (MainWindow.LazyPages.cs) and added here so only the initial view is constructed before the first frame. -->

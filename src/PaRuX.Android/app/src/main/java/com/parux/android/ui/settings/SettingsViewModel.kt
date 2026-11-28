@@ -55,6 +55,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             try {
                 val health = client.api.health()
+                container.refreshTunnelAddress(client)
                 val profile = runCatching { client.api.getExecutionProfile() }.getOrNull()
                 val dashboard = runCatching { client.api.getObservabilityDashboard(20, 6) }.getOrNull()
                 val effectiveProfile = profile ?: dashboard?.executionProfile

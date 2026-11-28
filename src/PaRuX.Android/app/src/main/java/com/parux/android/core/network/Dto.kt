@@ -55,6 +55,10 @@ data class PairingCompleteResponse(
     val tunnelEndpoint: String = ""
 )
 
+/** GET /api/v1/remote/address: the PC's current Internet-tunnel address (a quick tunnel gets a new one on every restart). */
+@Serializable
+data class RemoteAddressDto(val tunnelEndpoint: String = "", val tunnelOnline: Boolean = false)
+
 /** 202 from the tunnel: the PC owner has to approve a NEW device before it receives a token. */
 @Serializable
 data class PairingApprovalPending(

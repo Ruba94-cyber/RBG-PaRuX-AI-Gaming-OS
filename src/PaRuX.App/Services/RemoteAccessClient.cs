@@ -48,6 +48,9 @@ namespace PaRuX.Services
         public async Task<RemoteTunnelStatus> SkipTunnelComponentAsync(CancellationToken ct) =>
             await SendAsync<RemoteTunnelStatus>(HttpMethod.Post, "/api/v1/remote/tunnel/skip", new { }, ct).ConfigureAwait(false);
 
+        public async Task<List<RemoteTunnelPendingPairing>> GetTunnelPendingAsync(CancellationToken ct) =>
+            await SendAsync<List<RemoteTunnelPendingPairing>>(HttpMethod.Get, "/api/v1/remote/tunnel/pending", null, ct).ConfigureAwait(false);
+
         public async Task DecideTunnelPairingAsync(string id, bool approve, CancellationToken ct) =>
             await SendAsync<object>(HttpMethod.Post,
                 "/api/v1/remote/tunnel/pending/" + Uri.EscapeDataString(id) + (approve ? "/approve" : "/deny"), new { }, ct).ConfigureAwait(false);

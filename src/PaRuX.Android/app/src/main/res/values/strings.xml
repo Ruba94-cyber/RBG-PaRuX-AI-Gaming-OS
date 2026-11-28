@@ -156,6 +156,7 @@
     <string name="pair_awaiting_body">PaRuX is asking the owner of the PC to approve this new device. Open PaRuX on the PC, go to Settings > Remote access and choose Approve.</string>
     <string name="settings_route_lan">Connected through your home network (LAN)</string>
     <string name="settings_route_tunnel">Connected through the Internet tunnel</string>
+    <string name="tunnel_address_changed">Your PC\'s remote address changed — connect once on home Wi-Fi to refresh.</string>
     <string name="pair_failed">Couldn\'t pair</string>
     <string name="pair_try_again">Try again</string>
     <string name="pair_manual">Enter pairing details manually</string>
