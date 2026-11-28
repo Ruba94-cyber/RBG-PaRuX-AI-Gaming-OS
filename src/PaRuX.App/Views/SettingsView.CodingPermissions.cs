@@ -46,6 +46,7 @@ namespace PaRuX.Views
                 card.BorderBrush = brush;
 
             var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Coding));
             content.Children.Add(new TextBlock
             {
                 Text = T("Choose the authority copied into newly created Coding Agent tasks. Existing tasks keep the exact permissions they were created with. Normal shell commands stay inside the AppContainer with network disabled in every profile.", "Scegli l'autorità copiata nelle nuove attività dell'agente di programmazione. Le attività esistenti mantengono esattamente i permessi con cui sono state create. I normali comandi shell restano dentro l'AppContainer con la rete disattivata in ogni profilo."),
@@ -59,6 +60,7 @@ namespace PaRuX.Views
                 PlaceholderText = T("Coding permission profile", "Profilo dei permessi di programmazione")
             };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(picker, T("Coding permission profile", "Profilo dei permessi di programmazione"));
+            GuidanceUi.Help(picker, ControlHelpIds.CodingPermission);
             picker.Items.Add(new ComboBoxItem
             {
                 Content = T("Offline — no dependency downloads", "Offline: nessun download di dipendenze"),

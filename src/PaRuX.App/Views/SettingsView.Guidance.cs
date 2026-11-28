@@ -12,6 +12,7 @@ namespace PaRuX.Views
     {
         private void ApplyAdvancedGuidance()
         {
+            SettingsContentPanel.Children.Insert(0, GuidanceUi.Intro(WorkspaceGuideIds.Settings));
             CompareGuidanceHost.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Compare));
             CompareGuidanceHost.Children.Add(GuidanceUi.TemplateRow("Settings_Compare_Template",
                 WorkspaceTemplateCatalog.For(TemplateWorkspaces.Compare), t => FillPrompt(ComparePromptBox, t)));
