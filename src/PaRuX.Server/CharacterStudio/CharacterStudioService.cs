@@ -382,6 +382,7 @@ internal sealed class CharacterStudioService : IDisposable
                 UseShellExecute = false, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
             };
             psi.ArgumentList.Add("-u"); psi.ArgumentList.Add(launch.RunScript); psi.ArgumentList.Add(configPath);
+            if (launch.Ownership == CharacterTrainerRuntime.Managed) psi.Environment["HF_HOME"] = _trainer.HfHome;
             psi.Environment["PYTHONIOENCODING"] = "utf-8";
             psi.Environment["PYTHONUTF8"] = "1";
             psi.Environment["HF_HUB_DISABLE_TELEMETRY"] = "1";

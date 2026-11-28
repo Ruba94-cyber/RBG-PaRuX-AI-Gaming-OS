@@ -20,6 +20,7 @@ internal sealed class CharacterTrainerRuntime
     internal const string ArchiveSha256 = "2dd3cec75057ad96da2e7f80b1877b14859106d293f469789b85d9fc7963e33a";
     internal const long ArchiveBytes = 36_079_262;
     internal const string LockSetId = "character-trainer";
+    internal const string TorchLockFile = "character-trainer-torch-cu128.lock.txt";
     internal const string Managed = "PARUX_MANAGED", UserManaged = "USER_MANAGED", None = "NONE";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
@@ -31,6 +32,8 @@ internal sealed class CharacterTrainerRuntime
     internal CharacterTrainerRuntime(LocalRuntimeService? runtime, string root) { _runtime = runtime!; _root = root; }
 
     internal string AppDir => Path.Combine(_root, "app");
+    /// <summary>Model downloads (tens of GB) of a PaRuX-managed trainer live here, so deleting the trainer folder removes them.</summary>
+    internal string HfHome => Path.Combine(_root, "hf");
     internal string VenvDir => Path.Combine(_root, "venv");
     private string ManifestPath => Path.Combine(_root, "manifest.json");
     private string ChoicePath => Path.Combine(_root, "choice.json");
@@ -156,7 +159,8 @@ internal sealed class CharacterTrainerRuntime
             TorchInstallChannelPlan plan = TorchInstallChannelPolicy.Select(await TorchInstallHardwareDetector.DetectAsync(ct).ConfigureAwait(false));
             if (plan.Channel != TorchInstallChannel.Cuda128)
                 throw new TrainingRuntimeRefusalException("hardware_unsupported", "Training a character needs an NVIDIA graphics card. " + plan.Reason);
-            await TrainingRuntimeLock.InstallAsync(TrainingRuntimeLock.TorchLockPath(plan.Channel),
+            // torch, torchvision and torchaudio (the trainer imports torchaudio) from the CUDA 12.8 index, hash-locked.
+            await TrainingRuntimeLock.InstallAsync(Path.Combine(ManagedRequirementLocks.Directory, TorchLockFile),
                 args => ManagedPythonRuntime.PipInstallAsync(VenvDir, args, ct, TimeSpan.FromMinutes(40)),
                 TrainingRuntimeLock.TorchIndexUrl(plan.Channel)).ConfigureAwait(false);
 

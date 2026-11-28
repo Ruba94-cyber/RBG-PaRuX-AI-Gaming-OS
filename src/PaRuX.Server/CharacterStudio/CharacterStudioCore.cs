@@ -175,9 +175,9 @@ internal static class CharacterLoraPresets
     internal const double MinimumVramGib = 12.0;
     internal const int ImagesRepeats = 10;
 
-    /// <summary>Measured seconds per step on a 16 GB RTX-class card at the preset's resolution (qfloat8 + adapter). Used only for the ETA shown before the first step.</summary>
+    /// <summary>Seconds per step, from a measured run (RTX 5080, 16 GB, 512 px, rank 8: 1.0 s/step) and scaled with picture size. Used only for the ETA shown before the first step.</summary>
     private static double SecondsPerStep(int resolution, double vramGib) =>
-        (resolution switch { <= 512 => 2.2, <= 768 => 3.4, _ => 6.0 }) * (vramGib >= 23.5 ? 0.6 : 1.0);
+        (resolution switch { <= 512 => 1.2, <= 768 => 2.5, _ => 4.5 }) * (vramGib >= 23.5 ? 0.6 : 1.0);
 
     internal static CharacterTrainingPlan Select(string? preset, double vramGib, int imageCount, CharacterTrainingAdvanced? advanced = null)
     {
@@ -202,7 +202,7 @@ internal static class CharacterLoraPresets
         bool roomy = vramGib >= 23.5;
         (int rank, int res, int epochs, double lr) = p switch
         {
-            CharacterTrainingPreset.Quick => (8, 512, 12, 1e-4),
+            CharacterTrainingPreset.Quick => (8, 512, 18, 1e-4),
             CharacterTrainingPreset.Best => (roomy ? 32 : 16, roomy ? 1024 : 768, 24, 1e-4),
             _ => (16, 768, 16, 1e-4)
         };
@@ -222,7 +222,7 @@ internal static class CharacterLoraPresets
         plan.Epochs = Math.Max(1, (int)Math.Round(steps / (double)n));
         plan.LowVram = small;
         plan.Label = Label(p);
-        plan.EstimatedMinutes = (int)Math.Ceiling(steps * SecondsPerStep(res, vramGib) / 60.0 + 3);
+        plan.EstimatedMinutes = (int)Math.Ceiling(steps * SecondsPerStep(res, vramGib) / 60.0 + 5); // + model loading and latent caching
         return plan;
     }
 

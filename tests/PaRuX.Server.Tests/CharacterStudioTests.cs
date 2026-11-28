@@ -230,6 +230,18 @@ public sealed class CharacterStudioTests : IDisposable
     }
 
     [Fact]
+    public void Progress_parses_real_trainer_console_lines()
+    {
+        // Captured from a real run: unicode bar, trainer-formatted postfix.
+        TrainerProgress p = CharacterTrainerProgressParser.Parse("prx_smoke:  22%|██▎       | 9/40 [01:10<00:35,  1.14s/it, lr: 1.0e-04 loss: 2.972e-02]")!;
+        Assert.Equal((9, 40, 35), (p.Step, p.Total, p.EtaSeconds));
+        Assert.Equal(0.02972, p.Loss!.Value, 5);
+        Assert.Null(CharacterTrainerProgressParser.Parse("prx_smoke:   0%|          | 0/40 [01:00<?, ?it/s, lr: 1.0e-04 loss: 1.100e-01]"));
+        // Several redraws in one chunk: the latest wins.
+        Assert.Equal(11, CharacterTrainerProgressParser.Parse("j: 5%| | 10/200 [00:10<03:00, 1.0s/it]\rj: 5%| | 11/200 [00:11<03:00, 1.0s/it]")!.Step);
+    }
+
+    [Fact]
     public void Progress_handles_it_per_second_and_unknown_eta_and_noise()
     {
         TrainerProgress p = CharacterTrainerProgressParser.Parse("job: 1%| | 5/500 [00:03<?, 1.60it/s]")!;
@@ -408,6 +420,8 @@ public sealed class CharacterStudioTests : IDisposable
         string lockPath = Path.Combine(AppContext.BaseDirectory, "managed-locks", "character-trainer.lock.txt");
         Assert.True(ManagedRequirementLocks.Validate(lockPath) > 50);
         Assert.Contains("--require-hashes", ManagedRequirementLocks.ArgumentsFor("character-trainer"));
+        string torchLock = Path.Combine(AppContext.BaseDirectory, "managed-locks", CharacterTrainerRuntime.TorchLockFile);
+        Assert.Equal(3, TrainingRuntimeLock.Validate(torchLock)); // torch, torchvision, torchaudio: the trainer imports torchaudio
     }
 
     /// <summary>Opt-in helper for the real training smoke test: writes captions and the trainer config for a dataset folder that
