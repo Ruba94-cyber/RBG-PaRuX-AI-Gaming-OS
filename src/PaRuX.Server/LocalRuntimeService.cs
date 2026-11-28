@@ -343,6 +343,19 @@ public sealed class LocalRuntimeService
         if (GamingMode) throw new InvalidOperationException("Gaming Mode became active while media execution was waiting for text to drain.");
     }
 
+    /// <summary>
+    /// For a GPU training child: after <see cref="PrepareForExclusiveMediaAsync"/>, also stops the resident text model and the media
+    /// runtime so the trainer gets the whole card. Both restart lazily on the next request. Caller owns the exclusive GPU lease.
+    /// </summary>
+    internal async Task PrepareForExclusiveTrainingAsync(CancellationToken cancellationToken)
+    {
+        await PrepareForExclusiveMediaAsync(cancellationToken).ConfigureAwait(false);
+        _process.StopText();
+        _process.StopMedia();
+        InvalidateGpuSamples();
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+    }
+
     private const long MediaCachedWeightsEvictThresholdBytes = 1_500_000_000L;
     private const long MediaStaleProcessRestartThresholdBytes = 2_500_000_000L;
     private static readonly TimeSpan MediaCacheEvictionSettleDelay = TimeSpan.FromMilliseconds(250);

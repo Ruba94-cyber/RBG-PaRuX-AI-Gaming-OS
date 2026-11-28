@@ -174,6 +174,92 @@ public sealed class VisionSubagentService
         }
     }
 
+    /// <summary>
+    /// Describes pictures for LoRA training captions with the local vision model, loading a vision-capable helper once for the whole
+    /// batch and restoring the previous text model afterwards. Returns the descriptions it got; a picture that failed is simply absent.
+    /// Throws when no vision-capable local model exists, so the caller can fall back to template captions.
+    /// </summary>
+    internal async Task<IReadOnlyDictionary<string, string>> DescribeForCaptionsAsync(
+        IReadOnlyList<(string Id, byte[] Bytes, string MediaType)> pictures, CancellationToken ct)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (pictures.Count == 0) return result;
+        if (_runtime.UsesExternalProvider) throw new InvalidOperationException("Captions are written by a local model only.");
+        RuntimeManagerStatus before = await _manager.GetStatusAsync(ct).ConfigureAwait(false);
+        string? originalRole = NormalizeRole(before.ActiveRole);
+        string? originalModel = string.IsNullOrWhiteSpace(before.ActiveModelPath) ? null : before.ActiveModelPath;
+        bool swapped = false;
+        try
+        {
+            if (!before.ActiveHasVisionSupport)
+            {
+                swapped = true;
+                await LoadVisionHelperAsync(originalRole, ct).ConfigureAwait(false);
+            }
+            foreach ((string id, byte[] bytes, string mediaType) in pictures)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    string text = await CaptionOneAsync(bytes, mediaType, ct).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(text)) result[id] = text;
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception) { /* this picture falls back to a template caption */ }
+            }
+            return result;
+        }
+        finally
+        {
+            if (swapped)
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+                await RestoreAsync(originalRole, originalModel, cleanup.Token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<string> CaptionOneAsync(byte[] bytes, string mediaType, CancellationToken ct)
+    {
+        var payload = new JsonObject
+        {
+            ["model"] = "local-coder", ["stream"] = false, ["temperature"] = 0.1, ["max_tokens"] = 160,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "text",
+                            ["text"] = "Write one line (at most 40 words) describing this picture for an image-model training caption: "
+                                + "the pose, camera angle, facial expression, clothing, background and lighting. "
+                                + "Do not name the person and do not start with 'The image shows'. Describe only what is visible."
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "image_url",
+                            ["image_url"] = new JsonObject { ["url"] = "data:" + mediaType + ";base64," + Convert.ToBase64String(bytes) }
+                        }
+                    }
+                }
+            }
+        };
+        await using MediaExecutionCoordinator.Lease lease = await _runtime.AcquireTextInferenceAsync("character-studio:caption", ct).ConfigureAwait(false);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _runtime.ProviderEndpoint.TrimEnd('/') + "/v1/chat/completions")
+        {
+            Content = JsonContent.Create(payload, options: JsonOptions)
+        };
+        using HttpResponseMessage response = await Http.SendAsync(httpRequest, ct).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("The vision model failed (HTTP " + (int)response.StatusCode + ").");
+        using JsonDocument doc = JsonDocument.Parse(body);
+        JsonElement message = doc.RootElement.GetProperty("choices")[0].GetProperty("message");
+        return message.TryGetProperty("content", out JsonElement content) ? Bound(ExtractText(content), 600) : string.Empty;
+    }
+
     private async Task RestoreAsync(string? role, string? liveModel, CancellationToken ct)
     {
         try
