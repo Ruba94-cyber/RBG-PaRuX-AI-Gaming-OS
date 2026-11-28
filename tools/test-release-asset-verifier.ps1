@@ -63,8 +63,8 @@ function New-PayloadTree([string]$Directory, [string]$ExePath) {
     [IO.File]::WriteAllText((Join-Path $Directory 'Assets\parux.ico'), 'synthetic icon', [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText((Join-Path $Directory 'LICENSE.txt'), 'synthetic license', [Text.UTF8Encoding]::new($false))
 
-    # The release verifier requires the bundled CUDA 13.4 baseline: its lock, staging manifest, files and NVIDIA notice.
-    $cudaRelative = 'runtime-baseline/llama.cpp-b11871-cuda13.4'
+    # The release verifier requires the bundled CUDA 13.5 baseline: its lock, staging manifest, files and NVIDIA notice.
+    $cudaRelative = 'runtime-baseline/llama.cpp-b12818-cuda13.5'
     $cudaDir = Join-Path $Directory ('PaRuX.Server\' + $cudaRelative.Replace('/', '\'))
     New-Item -ItemType Directory -Path $cudaDir -Force | Out-Null
     $manifestFiles = @()
@@ -78,9 +78,9 @@ function New-PayloadTree([string]$Directory, [string]$ExePath) {
     $lock = [ordered]@{
         schemaVersion = 1; platform = 'win-x64'
         artifacts = @(
-            [ordered]@{ id = 'llama.cpp-cuda13'; version = 'b11871'; license = 'MIT'; sizeBytes = 160060670
+            [ordered]@{ id = 'llama.cpp-cuda13'; version = 'b12818'; license = 'MIT'; sizeBytes = 232715956
                 sha256 = ('a' * 64); destination = $destination; requiredFiles = @('llama-server.exe') },
-            [ordered]@{ id = 'cuda-runtime-13.4'; version = '13.4'; license = 'NVIDIA CUDA Toolkit EULA'
+            [ordered]@{ id = 'cuda-runtime-13.5'; version = '13.5'; license = 'NVIDIA CUDA Toolkit EULA'
                 licenseUrl = 'https://docs.nvidia.com/cuda/eula/index.html'; sizeBytes = 423535356; sha256 = ('b' * 64)
                 destination = $destination; requiredFiles = $dlls; redistributableFiles = $dlls }
         )

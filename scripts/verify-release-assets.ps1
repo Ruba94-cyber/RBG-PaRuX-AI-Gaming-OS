@@ -212,13 +212,13 @@ function Assert-BundledCuda13Payload([string]$payloadRoot) {
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
     $artifacts = @($lock.artifacts)
     $cudaServer = @($artifacts | Where-Object { [string]$_.id -ceq "llama.cpp-cuda13" })
-    $cudaRuntime = @($artifacts | Where-Object { [string]$_.id -ceq "cuda-runtime-13.4" })
+    $cudaRuntime = @($artifacts | Where-Object { [string]$_.id -ceq "cuda-runtime-13.5" })
     if ($cudaServer.Count -ne 1 -or $cudaRuntime.Count -ne 1) {
-        throw "MSI runtime lock must contain exactly one CUDA 13.4 server and CUDA Runtime archive."
+        throw "MSI runtime lock must contain exactly one CUDA 13.5 server and CUDA Runtime archive."
     }
     $cudaServer = $cudaServer[0]
     $cudaRuntime = $cudaRuntime[0]
-    if ([string]$cudaServer.version -cne "b11871" -or [string]$cudaRuntime.version -cne "13.4") {
+    if ([string]$cudaServer.version -cne "b12818" -or [string]$cudaRuntime.version -cne "13.5") {
         throw "MSI baseline CUDA runtime version does not match the accepted 1.9.7 payload."
     }
     if ([string]$cudaServer.destination -cne [string]$cudaRuntime.destination) {
@@ -258,7 +258,7 @@ function Assert-BundledCuda13Payload([string]$payloadRoot) {
     }
     foreach ($file in @("llama-server.exe") + $expectedDlls) {
         if (-not (Test-Path -LiteralPath (Join-Path $cudaRoot $file) -PathType Leaf)) {
-            throw "MSI CUDA 13.4 baseline is missing required file $file."
+            throw "MSI CUDA 13.5 baseline is missing required file $file."
         }
     }
 
@@ -294,7 +294,7 @@ try {
     Assert-TreeMatchesProvenance (Get-TreeHashes $payloadRoot) "MSI payload"
     Write-Host "[release verify] MSI payload ($($expectedPayload.Count) files) equals provenance: PASS"
     Assert-BundledCuda13Payload $payloadRoot
-    Write-Host "[release verify] NVIDIA CUDA 13.4 baseline assets and notice: PASS"
+    Write-Host "[release verify] NVIDIA CUDA 13.5 baseline assets and notice: PASS"
     $embeddedCommitReport = Test-EmbeddedCommit $payloadRoot
     Write-Host "[release verify] embedded source commit in $($primaryBinaries.Count) primary binaries of the MSI: PASS"
 }
