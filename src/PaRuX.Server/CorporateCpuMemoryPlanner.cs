@@ -13,10 +13,21 @@ internal static class CorporateCpuMemoryPlanner
     internal const int MinimumUsefulContextTokens = 2048;
     internal static readonly int[] CandidateContexts = [4096, 3072, 2048];
 
-    internal sealed record Plan(int ContextTokens, double NeededMib, double AvailableMib, bool Fits)
+    /// <param name="Busy">Fits only by letting Windows page idle applications out: run it, with a plain-language warning.</param>
+    /// <param name="Refusal">Why it does not fit (null when it fits or the cause is the classic free-memory shortfall).</param>
+    internal sealed record Plan(int ContextTokens, double NeededMib, double AvailableMib, bool Fits,
+        bool Busy = false, RuntimeMemoryBudget.CorporateAdmissionOutcome? Refusal = null)
     {
         public bool Reduced => Fits && ContextTokens < NormalContextTokens;
     }
+
+    /// <summary>
+    /// The bundled CPU engine memory-maps the GGUF (no --no-mmap / --mlock / --load-mode in
+    /// <see cref="LocalAiProcessManager.BuildCorporateCpuArguments"/>), so weights are file-backed: they cost no commit
+    /// charge and Windows may evict them, but every token reads them, so they stay in the hot working set. Only the rest
+    /// (KV cache, compute buffers, runtime reserve) is private and commit-charged.
+    /// </summary>
+    internal static double MappedWeightsMib(string modelPath) => new FileInfo(modelPath).Length / 1048576d;
 
     internal static Plan ForModel(string modelPath, SystemRamSnapshot? ram, double maxSystemRamPercent,
         long reclaimableOwnedTextBytes = 0)
@@ -26,30 +37,42 @@ internal static class CorporateCpuMemoryPlanner
         if (ram?.IsValid != true)
             return new Plan(NormalContextTokens, 0, 0, false);
         return Select(ram, maxSystemRamPercent, reclaimableOwnedTextBytes,
-            CpuFallbackAdmission.CreateContextEstimator(modelPath));
+            CpuFallbackAdmission.CreateContextEstimator(modelPath), MappedWeightsMib(modelPath));
     }
 
     /// <summary>Pure deterministic test seam; no Windows APIs or file access.</summary>
     internal static Plan Select(SystemRamSnapshot? ram, double maxSystemRamPercent,
-        long reclaimableOwnedTextBytes, Func<int, double> estimateMib)
+        long reclaimableOwnedTextBytes, Func<int, double> estimateMib, double mappedWeightsMib = 0)
     {
         if (ram?.IsValid != true || !double.IsFinite(maxSystemRamPercent) ||
             maxSystemRamPercent is <= 0 or > 100)
             return new Plan(NormalContextTokens, 0, 0, false);
 
-        double availableMib = RuntimeMemoryBudget.CalculateCorporateAvailableBytes(
+        double comfortableMib = RuntimeMemoryBudget.CalculateCorporateAvailableBytes(
             ram, maxSystemRamPercent, reclaimableOwnedTextBytes) / 1048576d;
+        Plan? firstBusy = null;
+        RuntimeMemoryBudget.CorporateAdmission? last = null;
         double lastNeededMib = 0;
         foreach (int contextTokens in CandidateContexts)
         {
             double neededMib = estimateMib(contextTokens);
             if (!double.IsFinite(neededMib) || neededMib <= 0)
-                return new Plan(NormalContextTokens, 0, availableMib, false);
+                return new Plan(NormalContextTokens, 0, comfortableMib, false);
             lastNeededMib = neededMib;
-            if (neededMib <= availableMib)
-                return new Plan(contextTokens, neededMib, availableMib, true);
+            double mapped = Math.Clamp(mappedWeightsMib, 0, neededMib);
+            RuntimeMemoryBudget.CorporateAdmission verdict = RuntimeMemoryBudget.EvaluateCorporate(
+                ram, maxSystemRamPercent, reclaimableOwnedTextBytes, neededMib - mapped, mapped);
+            last = verdict;
+            if (verdict.Outcome == RuntimeMemoryBudget.CorporateAdmissionOutcome.Admit)
+                return new Plan(contextTokens, neededMib, verdict.AvailableMib, true);
+            if (verdict.Busy) firstBusy ??= new Plan(contextTokens, neededMib, verdict.AvailableMib, true, Busy: true);
         }
-        return new Plan(MinimumUsefulContextTokens, lastNeededMib, availableMib, false);
+        // A comfortable fit at a smaller context wins over a busy fit at a larger one only when the larger one is not
+        // needed for the chat to work; the largest context that fits comfortably is returned above, otherwise the largest
+        // busy one (never silently shrinking below what Windows can actually serve).
+        if (firstBusy is not null) return firstBusy;
+        return new Plan(MinimumUsefulContextTokens, lastNeededMib, last?.AvailableMib ?? comfortableMib, false,
+            Refusal: last?.Outcome);
     }
 
     /// <summary>
@@ -61,6 +84,8 @@ internal static class CorporateCpuMemoryPlanner
     internal static int IdleUnloadSeconds(Plan plan)
     {
         if (!plan.Fits) return LocalAiProcessManager.CorporateIdleUnloadSeconds;
+        // A busy PC: give the memory back quickly so the other applications are not paged out for long.
+        if (plan.Busy) return 120;
         double remainingMib = Math.Max(0, plan.AvailableMib - plan.NeededMib);
         if (remainingMib < 768) return 120;
         if (remainingMib < 1536) return 180;
@@ -72,6 +97,8 @@ internal static class CorporateCpuMemoryPlanner
         if (ram?.IsValid != true || plan.NeededMib <= 0)
             return "Corporate CPU memory availability could not be measured safely, or the model footprint is unknown. "
                 + "Retry in Runtime Manager; no other application was stopped.";
+        if (plan.Refusal == RuntimeMemoryBudget.CorporateAdmissionOutcome.RefuseCommit)
+            return CorporateMemoryMessages.CommitExhausted(plan.NeededMib, ram);
         return DescribeShortfall(plan.NeededMib, plan.AvailableMib, ram, maxSystemRamPercent);
     }
 
@@ -95,5 +122,32 @@ internal static class CorporateCpuMemoryPlanner
             + " GB is kept free for Windows and your other programs." + limitNote
             + " Free about " + missingGiB.ToString("0.0", inv) + " GB more (for example close a heavy application or browser tabs you do not need) and try again."
             + " PaRuX did not close any program and did not change the model.";
+    }
+}
+
+/// <summary>Plain-language, bilingual (Italian / English) texts for the Corporate memory admission. No raw numbers jargon, always a next action.</summary>
+internal static class CorporateMemoryMessages
+{
+    internal const string BusyEnglish =
+        "Your PC is busy; replies may be slower. PaRuX started the model anyway because Windows can make room by moving idle programs out of memory. No program was closed.";
+    internal const string BusyItalian =
+        "Il PC è molto occupato: le risposte potrebbero essere più lente. PaRuX ha avviato comunque il modello perché Windows può fare spazio spostando i programmi inattivi. Nessun programma è stato chiuso.";
+
+    internal static string Busy => BusyItalian + " / " + BusyEnglish;
+
+    /// <summary>The commit limit (RAM plus page file) is used up: the one case where starting would really fail.</summary>
+    internal static string CommitExhausted(double neededMib, SystemRamSnapshot ram)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        double freeGiB = (ram.CommitAvailableBytes ?? 0UL) / 1073741824d;
+        string need = (neededMib / 1024d).ToString("0.0", inv);
+        string free = freeGiB.ToString("0.0", inv);
+        return "Not enough free memory to start the local model: Windows has run out of memory it can promise to new programs "
+            + "(about " + free + " GB left, the model needs private memory on top of its " + need + " GB file). "
+            + "Close a heavy program or some browser tabs, or ask IT to enlarge the Windows page file, then try again. "
+            + "PaRuX did not close any program. / "
+            + "Memoria insufficiente per avviare il modello locale: Windows non può più garantire memoria ai nuovi programmi "
+            + "(restano circa " + free + " GB). Chiudi un programma pesante o alcune schede del browser, oppure chiedi all'IT "
+            + "di aumentare il file di paging di Windows, poi riprova. PaRuX non ha chiuso alcun programma.";
     }
 }

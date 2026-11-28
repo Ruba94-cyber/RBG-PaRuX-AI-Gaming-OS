@@ -66,6 +66,7 @@ namespace PaRuX.Services
                 || Has(raw, "failed to allocate memory") || Has(raw, "not enough VRAM")
                 || Has(raw, "insufficient VRAM") || Has(raw, "not enough system memory")
                 || Has(raw, "not enough free memory for CPU mode")
+                || Has(raw, "not enough free memory to start the local model")
                 || Has(raw, "no installed corporate cpu model fits")
                 || Has(raw, "ran out of available RAM or virtual memory"))
                 return Reason.OutOfMemory;
@@ -116,8 +117,8 @@ namespace PaRuX.Services
                     ? "Il runtime locale richiesto non è presente. Apri Runtime Manager per individuare un'installazione esistente oppure verificare e installare il componente compatibile."
                     : "The required local runtime is missing. Open Runtime Manager to locate an existing installation or review and install a compatible component.",
                 Reason.OutOfMemory => italian
-                    ? "Memoria insufficiente per avviare questo modello. La RAM libera di Windows può essere superiore a quella concessa dal limite del profilo PaRuX. Controlla la memoria disponibile e il profilo in Runtime Manager, oppure scegli un modello più piccolo in Model Hub; nessuna impostazione verrà cambiata automaticamente."
-                    : "Not enough RAM/VRAM to start this model. Windows free RAM may exceed the amount allowed by the PaRuX profile limit. Review available memory and the profile in Runtime Manager, or choose a smaller model in Model Hub; no settings will change automatically.",
+                    ? "Memoria insufficiente (RAM/VRAM) per avviare questo modello in questo momento. Chiudi un programma pesante o alcune schede del browser e riprova (puoi controllare la memoria in Runtime Manager), oppure scegli un modello più piccolo in Model Hub; nessuna impostazione verrà cambiata automaticamente e nessun programma verrà chiuso."
+                    : "Not enough RAM/VRAM to start this model right now. Close a heavy program or some browser tabs and try again (you can check memory in Runtime Manager), or choose a smaller model in Model Hub; no settings will change automatically and no program will be closed.",
                 Reason.MemoryUnavailable => italian
                     ? "Impossibile misurare in sicurezza la memoria disponibile per il modello CPU Corporate. Verifica lo stato in Runtime Manager e riprova; PaRuX non aumenterà i limiti né interromperà altri programmi."
                     : "Corporate CPU model memory could not be measured safely. Check Runtime Manager and retry; PaRuX will not increase limits or stop other programs.",

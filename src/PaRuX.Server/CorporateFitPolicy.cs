@@ -18,7 +18,7 @@ internal static class CorporateFitPolicy
         long reclaimableOwnedTextBytes = 0)
     {
         if (snapshot?.IsValid != true) return null;
-        long availableBytes = RuntimeMemoryBudget.CalculateCorporateAvailableBytes(
+        long availableBytes = RuntimeMemoryBudget.CalculateCorporateAdmissibleBytes(
             snapshot, maxSystemRamPercent, reclaimableOwnedTextBytes);
         double availableMib = availableBytes / 1024d / 1024d;
         return new HardwareFitEstimate(neededMib <= availableMib, neededMib, availableMib, null, null);

@@ -184,7 +184,7 @@ public sealed partial class RagStore
             // documents. When a promoted provider is active, retain MiniLM alongside it so any
             // SHA/runtime/VRAM fallback remains semantic rather than dropping to lexical-only.
             IReadOnlyList<float[]?> activeEmbeddings = await EmbedResolvedBatchAsync(
-                provider, chunks, cancellationToken).ConfigureAwait(false);
+                provider, chunks, cancellationToken, message => progress?.Report(message)).ConfigureAwait(false);
             IReadOnlyList<float[]?> baselineEmbeddings = string.Equals(
                     provider.Identity.StableKey,
                     _embeddingProvider.Identity.StableKey,
@@ -251,7 +251,8 @@ WHERE c.document_id = $d
     internal static async Task<IReadOnlyList<float[]?>> EmbedResolvedBatchAsync(
         ResolvedRetrievalEmbeddingProvider provider,
         IReadOnlyList<string> chunks,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? notice = null)
     {
         if (chunks.Count == 0) return Array.Empty<float[]?>();
         if (!provider.IsAvailable) return Enumerable.Repeat<float[]?>(null, chunks.Count).ToList();
@@ -269,8 +270,11 @@ WHERE c.document_id = $d
             // indexed without embeddings. The per-file transaction has not run for this file, so the index stays
             // consistent and a later run re-embeds it.
             catch (UnavailableDuringGamingException) { throw; }
-            catch
+            catch (Exception ex)
             {
+                // The engine stayed unreachable after the bounded wait-and-restart: say so in plain words. This file keeps
+                // its text and its fallback vectors and is completed by the next run; the job itself does not fail.
+                if (ex is RetrievalEngineUnavailableException) notice?.Invoke(RetrievalEngineUnavailableException.Friendly);
                 vectors = Enumerable.Repeat<float[]?>(null, batch.Length).ToList();
             }
             if (vectors.Count != batch.Length)

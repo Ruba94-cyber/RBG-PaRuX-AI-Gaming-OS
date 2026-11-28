@@ -197,7 +197,7 @@ public sealed class RuntimeManagerService
                     {
                         result.CorporateSystemRamLimitPercent = limit;
                         result.CorporateAdmissibleBytes =
-                            RuntimeMemoryBudget.CalculateCorporateAvailableBytes(ramSnapshot, limit);
+                            RuntimeMemoryBudget.CalculateCorporateAdmissibleBytes(ramSnapshot, limit);
                     }
                 }
             }
@@ -919,6 +919,11 @@ public sealed class RuntimeManagerService
     {
         double maxSystemRamPercent = ExecutionProfileStore.Current.Get(modelPath)
             .Effective.Budget.MaxSystemRamPercent;
+        // Corporate admits by commit headroom and a physical working floor, not by the free-memory counter alone
+        // (which excludes trimmable working sets of idle applications); strict profile ceilings are still honored.
+        if (CorporateMode.IsActive)
+            return RuntimeMemoryBudget.CalculateCorporateAdmissibleBytes(
+                snapshot, maxSystemRamPercent, GetReclaimableTextWorkingSetBytes());
         return RuntimeMemoryBudget.CalculateAvailableSystemRamBytes(
             snapshot, maxSystemRamPercent, GetReclaimableTextWorkingSetBytes());
     }
@@ -1284,8 +1289,8 @@ public sealed class RuntimeManagerService
                 ? "Corporate CPU memory availability could not be measured; model load was refused. Check Runtime Manager and retry."
                 : "Not enough free memory for CPU mode: this model needs about "
                     + (fit.NeededMib / 1024d).ToString("0.0", Inv)
-                    + " GB but only " + (fit.AvailableMib / 1024d).ToString("0.0", Inv)
-                    + " GB is available within the memory limit. Select a smaller installed model or free RAM in Windows. No other program was stopped.";
+                    + " GB but PaRuX can use about " + (fit.AvailableMib / 1024d).ToString("0.0", Inv)
+                    + " GB on this PC right now. Close a heavy program or choose a smaller installed model, then try again. No other program was stopped.";
             return new RuntimeLoadResult
             {
                 Success = false,
