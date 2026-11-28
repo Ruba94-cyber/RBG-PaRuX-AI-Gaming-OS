@@ -75,6 +75,9 @@ public sealed class MediaJobService
             throw new ArgumentOutOfRangeException(nameof(reattachPollInterval), "The reattach poll interval must be positive.");
     }
 
+    /// <summary>Set at startup by Character Studio: resolves a character id (or "active") for jobs that ask for a character's look.</summary>
+    internal static Func<string, PaRuX.Contracts.CharacterProfile?>? CharacterLookup { get; set; }
+
     public MediaJobStatus Create(MediaJobRequest request, string owner = "desktop")
     {
         string type = request.Type.Trim().ToLowerInvariant();
@@ -86,6 +89,8 @@ public sealed class MediaJobService
             throw new InvalidDataException("A video prompt cannot exceed 32000 characters.");
         if ((type == "edit" || type == "img2img" || type == "inpaint" || type == "upscale") && string.IsNullOrWhiteSpace(request.SourceImageBase64))
             throw new InvalidDataException(type + " requires sourceImageBase64.");
+        if (type == "image" && !string.IsNullOrWhiteSpace(request.CharacterId))
+            CharacterStudio.CharacterBindingPolicy.Apply(request, CharacterLookup?.Invoke(request.CharacterId.Trim()));
         // The mask pair and the LoRA stack are checked now, so a bad request fails here and not on the GPU queue.
         if (type == "inpaint")
             MediaInpaintMask.Validate(MediaStartImageValidator.DecodePayload(request.SourceImageBase64), request.MaskImageBase64);

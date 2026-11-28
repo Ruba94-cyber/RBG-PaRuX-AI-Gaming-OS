@@ -565,6 +565,16 @@ namespace PaRuX.Views
         }
 
         /// <summary>Imports a SillyTavern/Chub character card (.json or .png with an embedded card) as a persona.</summary>
+        private async void CharacterStudio_Click(object sender, RoutedEventArgs e)
+        {
+            try { await CharacterStudioDialog.ShowAsync(XamlRoot); }
+            catch (Exception ex)
+            {
+                Log.Write("CharacterStudio failed: " + ex.Message);
+                if (PersonaStatus != null) PersonaStatus.Text = T("Couldn't open Character Studio: ", "Impossibile aprire Studio personaggi: ") + ex.Message;
+            }
+        }
+
         private async void ImportPersonaCard_Click(object sender, RoutedEventArgs e)
         {
             try

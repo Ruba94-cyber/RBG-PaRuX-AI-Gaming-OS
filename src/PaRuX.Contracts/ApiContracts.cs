@@ -601,6 +601,8 @@ public sealed class MediaJobRequest
     /// <summary>"image" and "inpaint": up to three LoRAs applied in order as chained LoraLoader nodes. Each name must be an
     /// installed ComfyUI LoRA and its family must match the checkpoint family, otherwise the job is refused with the reason.</summary>
     public List<MediaLoraSelection>? Loras { get; set; }
+    /// <summary>"image" only: a Character Studio character id, or "active" for the character bound to the active chat persona. The server adds that character's LoRA and trigger word.</summary>
+    public string? CharacterId { get; set; }
 }
 
 /// <summary>One LoRA of a stack: the installed file name (relative to ComfyUI models/loras) and its strength.</summary>

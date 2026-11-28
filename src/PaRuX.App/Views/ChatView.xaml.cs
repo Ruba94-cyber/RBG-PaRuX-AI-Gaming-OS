@@ -153,6 +153,7 @@ namespace PaRuX.Views
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            _ = ChatPortrait.RefreshAsync();
             // UserControl.OnApplyTemplate() is not reliably invoked for a plain UserControl that has
             // no Style/ControlTemplate of its own (ChatView has none) - confirmed live via a temporary
             // diagnostic log: at the point right after InitializeComponent() runs in the constructor,
@@ -1273,6 +1274,13 @@ namespace PaRuX.Views
             Style? glyphStyle = LocalStyle("PaRuXAvatarGlyphStyle");
             if (glyphStyle != null) glyph.Style = glyphStyle;
             avatar.Child = glyph;
+
+            // A persona attached to a Character Studio character shows that character's portrait instead of the initial.
+            if (ChatPortrait.Source is { } portrait)
+            {
+                avatar.Background = new Microsoft.UI.Xaml.Media.ImageBrush { ImageSource = portrait, Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill };
+                avatar.Child = null;
+            }
 
             return avatar;
         }

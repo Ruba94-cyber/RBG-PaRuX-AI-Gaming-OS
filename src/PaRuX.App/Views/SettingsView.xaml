@@ -1644,6 +1644,7 @@
                             TextWrapping="Wrap" AcceptsReturn="True" Height="72" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="Create persona" loc:Loc.ItContent="Crea persona" HorizontalAlignment="Left" Click="CreatePersona_Click" />
+                            <Button x:Name="CharacterStudioButton" Content="Character Studio…" loc:Loc.ItContent="Studio personaggi…" AutomationProperties.AutomationId="Settings_Persona_CharacterStudio_Button" Click="CharacterStudio_Click" />
                             <Button x:Name="ImportPersonaCardButton" Content="Import character card…" loc:Loc.ItContent="Importa scheda personaggio…" AutomationProperties.AutomationId="Settings_Persona_ImportCard_Button" Click="ImportPersonaCard_Click" />
                         </StackPanel>
                         <TextBlock x:Name="PersonaStatus" TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />

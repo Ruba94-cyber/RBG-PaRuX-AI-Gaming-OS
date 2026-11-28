@@ -1,3 +1,4 @@
+using PaRuX.Server.CharacterStudio;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -136,6 +137,13 @@ builder.Services.AddSingleton<MediaJobService>(services => new MediaJobService(
     services.GetRequiredService<MediaGenerationService>(),
     services.GetRequiredService<MediaJobStore>(),
     logger: services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MediaJobService>>()));
+builder.Services.AddSingleton<PaRuX.Server.CharacterStudio.CharacterStudioStore>();
+builder.Services.AddSingleton(sp => new PaRuX.Server.CharacterStudio.CharacterTrainerRuntime(sp.GetRequiredService<LocalRuntimeService>()));
+builder.Services.AddSingleton(sp => new PaRuX.Server.CharacterStudio.CharacterStudioService(
+    sp.GetRequiredService<PaRuX.Server.CharacterStudio.CharacterStudioStore>(),
+    sp.GetRequiredService<PaRuX.Server.CharacterStudio.CharacterTrainerRuntime>(),
+    sp.GetRequiredService<MediaJobService>(), sp.GetRequiredService<LocalRuntimeService>(), sp.GetRequiredService<PersonaService>(),
+    new VisionSubagentService(sp.GetRequiredService<RuntimeManagerService>(), sp.GetRequiredService<LocalRuntimeService>())));
 builder.Services.AddSingleton<RemoteAccessService>();
 builder.Services.AddSingleton(sp =>
 {
@@ -873,6 +881,7 @@ app.Use((context, next) => PrincipalRoleStore.EnforceAsync(context, context.Requ
 // middleware as every other API route. The module exposes durable Project/task operations and
 // sanitized Artifact transfer only; it never exposes raw Windows filesystem/input primitives.
 app.MapMobileControlEndpoints();
+app.MapCharacterStudioEndpoints();
 app.MapProjectChatEndpoints();
 app.MapCandidateUtilityEndpoints();
 app.MapModelArenaEndpoints();
