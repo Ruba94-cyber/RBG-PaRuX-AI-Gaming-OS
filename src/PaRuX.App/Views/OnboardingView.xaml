@@ -59,6 +59,13 @@
                             <TextBlock x:Name="AutoSetupDetailText"
                                        AutomationProperties.AutomationId="Onboarding_AutoSetup_Detail_Text"
                                        TextWrapping="Wrap" Style="{StaticResource PaRuXCaptionTextStyle}" />
+                            <Expander x:Name="AutoSetupDetailsExpander" Visibility="Collapsed" IsExpanded="False"
+                                      Header="Details" loc:Loc.ItHeader="Dettagli"
+                                      AutomationProperties.AutomationId="Onboarding_AutoSetup_Details_Expander">
+                                <TextBlock x:Name="AutoSetupTechnicalDetailsText" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                           AutomationProperties.AutomationId="Onboarding_AutoSetup_TechnicalDetails_Text"
+                                           Style="{StaticResource PaRuXCaptionTextStyle}" />
+                            </Expander>
                             <ProgressBar x:Name="AutoSetupProgress"
                                          AutomationProperties.AutomationId="Onboarding_AutoSetup_Progress"
                                          Minimum="0" Maximum="1" Visibility="Collapsed" />

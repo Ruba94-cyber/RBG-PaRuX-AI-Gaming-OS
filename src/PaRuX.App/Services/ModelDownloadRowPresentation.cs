@@ -14,6 +14,8 @@ namespace PaRuX.Services
     /// </summary>
     public static class ModelDownloadRowPresentation
     {
+        private static string T(string en, string it) => UiText.Pick(en, it);
+
         public static string DescribeStatus(ModelDownloadStatus job)
         {
             if (job == null) throw new ArgumentNullException(nameof(job));
@@ -24,14 +26,14 @@ namespace PaRuX.Services
         {
             return (status ?? string.Empty) switch
             {
-                "queued" => "queued",
-                "downloading" => "downloading",
-                "retrying" => "retrying",
-                "paused" when error == "Paused for Gaming" => "paused for Gaming / resumable",
-                "paused" => "paused / resumable",
-                "cancelled" => "cancelled / resumable",
-                "failed" => "failed",
-                "completed" => "completed",
+                "queued" => T("queued", "in coda"),
+                "downloading" => T("downloading", "download in corso"),
+                "retrying" => T("retrying", "nuovo tentativo"),
+                "paused" when error == "Paused for Gaming" => T("paused for Gaming / resumable", "in pausa per il Gaming / riprendibile"),
+                "paused" => T("paused / resumable", "in pausa / riprendibile"),
+                "cancelled" => T("cancelled / resumable", "annullato / riprendibile"),
+                "failed" => T("failed", "non riuscito"),
+                "completed" => T("completed", "completato"),
                 _ => status ?? string.Empty
             };
         }
@@ -39,7 +41,7 @@ namespace PaRuX.Services
         public static string FormatSpeed(double? bytesPerSecond)
         {
             if (!bytesPerSecond.HasValue || !double.IsFinite(bytesPerSecond.Value) || bytesPerSecond.Value <= 0)
-                return "Speed -";
+                return T("Speed -", "Velocità -");
 
             double size = bytesPerSecond.Value;
             string[] units = { "B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s" };
@@ -49,7 +51,7 @@ namespace PaRuX.Services
                 size /= 1024;
                 unit++;
             }
-            return "Speed " + size.ToString("0.0", CultureInfo.CurrentCulture) + " " + units[unit];
+            return T("Speed ", "Velocità ") + size.ToString("0.0", CultureInfo.CurrentCulture) + " " + units[unit];
         }
 
         public static string FormatSpeedValue(double? bytesPerSecond)
@@ -72,17 +74,17 @@ namespace PaRuX.Services
         {
             if (!seconds.HasValue || !double.IsFinite(seconds.Value) || seconds.Value <= 0
                 || seconds.Value > TimeSpan.MaxValue.TotalSeconds)
-                return "ETA -";
+                return T("ETA -", "Mancano -");
 
-            if (seconds.Value < 1) return "ETA <1s";
+            if (seconds.Value < 1) return T("ETA <1s", "Mancano meno di 1s");
             TimeSpan eta = TimeSpan.FromSeconds(seconds.Value);
             if (eta.TotalDays >= 1)
-                return "ETA " + ((int)eta.TotalDays).ToString(CultureInfo.InvariantCulture) + "d " + eta.Hours.ToString(CultureInfo.InvariantCulture) + "h";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalDays).ToString(CultureInfo.InvariantCulture) + "d " + eta.Hours.ToString(CultureInfo.InvariantCulture) + "h";
             if (eta.TotalHours >= 1)
-                return "ETA " + ((int)eta.TotalHours).ToString(CultureInfo.InvariantCulture) + "h " + eta.Minutes.ToString(CultureInfo.InvariantCulture) + "m";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalHours).ToString(CultureInfo.InvariantCulture) + "h " + eta.Minutes.ToString(CultureInfo.InvariantCulture) + "m";
             if (eta.TotalMinutes >= 1)
-                return "ETA " + ((int)eta.TotalMinutes).ToString(CultureInfo.InvariantCulture) + "m " + eta.Seconds.ToString(CultureInfo.InvariantCulture) + "s";
-            return "ETA " + Math.Max(1, eta.Seconds).ToString(CultureInfo.InvariantCulture) + "s";
+                return T("ETA ", "Mancano ") + ((int)eta.TotalMinutes).ToString(CultureInfo.InvariantCulture) + "m " + eta.Seconds.ToString(CultureInfo.InvariantCulture) + "s";
+            return T("ETA ", "Mancano ") + Math.Max(1, eta.Seconds).ToString(CultureInfo.InvariantCulture) + "s";
         }
 
         public static string FormatEtaValue(double? seconds)
@@ -107,12 +109,12 @@ namespace PaRuX.Services
             if (string.IsNullOrWhiteSpace(failureClass)) return string.Empty;
             return failureClass.Trim().ToLowerInvariant() switch
             {
-                "permanent" => "permanent",
-                "transient" => "temporary",
-                "auth" => "authentication required",
-                "disk" => "disk space",
-                "cancelled" => "cancelled",
-                _ => "download issue"
+                "permanent" => T("permanent", "definitivo"),
+                "transient" => T("temporary", "temporaneo"),
+                "auth" => T("authentication required", "accesso richiesto"),
+                "disk" => T("disk space", "spazio su disco"),
+                "cancelled" => T("cancelled", "annullato"),
+                _ => T("download issue", "problema di download")
             };
         }
 
@@ -122,48 +124,48 @@ namespace PaRuX.Services
             string rem = remediation?.Trim() ?? string.Empty;
             if (string.IsNullOrEmpty(desc) && string.IsNullOrEmpty(rem)) return string.Empty;
             if (string.IsNullOrEmpty(desc)) return rem;
-            if (string.IsNullOrEmpty(rem)) return "Failure: " + desc;
-            return "Failure: " + desc + " · " + rem;
+            if (string.IsNullOrEmpty(rem)) return T("Failure: ", "Errore: ") + desc;
+            return T("Failure: ", "Errore: ") + desc + " · " + rem;
         }
 
         public static string FormatAttempt(int attempt, int maxAttempts)
         {
             if (attempt <= 0) return string.Empty;
             if (maxAttempts > 0)
-                return "attempt " + attempt.ToString(CultureInfo.InvariantCulture) + " of " + maxAttempts.ToString(CultureInfo.InvariantCulture);
-            return "attempt " + attempt.ToString(CultureInfo.InvariantCulture);
+                return T("attempt ", "tentativo ") + attempt.ToString(CultureInfo.InvariantCulture) + T(" of ", " di ") + maxAttempts.ToString(CultureInfo.InvariantCulture);
+            return T("attempt ", "tentativo ") + attempt.ToString(CultureInfo.InvariantCulture);
         }
 
         public static string FormatRelativeTime(TimeSpan delta)
         {
-            if (delta <= TimeSpan.Zero) return "now";
-            if (delta.TotalSeconds < 1) return "in <1s";
+            if (delta <= TimeSpan.Zero) return T("now", "ora");
+            if (delta.TotalSeconds < 1) return T("in <1s", "tra meno di 1s");
             if (delta.TotalMinutes < 1)
             {
                 int sec = Math.Max(1, (int)Math.Round(delta.TotalSeconds));
-                return "in " + sec.ToString(CultureInfo.InvariantCulture) + "s";
+                return T("in ", "tra ") + sec.ToString(CultureInfo.InvariantCulture) + "s";
             }
             if (delta.TotalHours < 1)
             {
                 int min = (int)delta.TotalMinutes;
                 int sec = delta.Seconds;
                 return sec > 0
-                    ? "in " + min.ToString(CultureInfo.InvariantCulture) + "m " + sec.ToString(CultureInfo.InvariantCulture) + "s"
-                    : "in " + min.ToString(CultureInfo.InvariantCulture) + "m";
+                    ? T("in ", "tra ") + min.ToString(CultureInfo.InvariantCulture) + "m " + sec.ToString(CultureInfo.InvariantCulture) + "s"
+                    : T("in ", "tra ") + min.ToString(CultureInfo.InvariantCulture) + "m";
             }
             if (delta.TotalDays < 1)
             {
                 int hr = (int)delta.TotalHours;
                 int min = delta.Minutes;
                 return min > 0
-                    ? "in " + hr.ToString(CultureInfo.InvariantCulture) + "h " + min.ToString(CultureInfo.InvariantCulture) + "m"
-                    : "in " + hr.ToString(CultureInfo.InvariantCulture) + "h";
+                    ? T("in ", "tra ") + hr.ToString(CultureInfo.InvariantCulture) + "h " + min.ToString(CultureInfo.InvariantCulture) + "m"
+                    : T("in ", "tra ") + hr.ToString(CultureInfo.InvariantCulture) + "h";
             }
             int days = (int)delta.TotalDays;
             int hours = delta.Hours;
             return hours > 0
-                ? "in " + days.ToString(CultureInfo.InvariantCulture) + "d " + hours.ToString(CultureInfo.InvariantCulture) + "h"
-                : "in " + days.ToString(CultureInfo.InvariantCulture) + "d";
+                ? T("in ", "tra ") + days.ToString(CultureInfo.InvariantCulture) + "d " + hours.ToString(CultureInfo.InvariantCulture) + "h"
+                : T("in ", "tra ") + days.ToString(CultureInfo.InvariantCulture) + "d";
         }
 
         public static string FormatNextRetry(DateTime nextRetryUtc, DateTime? nowUtc = null)
@@ -176,7 +178,7 @@ namespace PaRuX.Services
                 _ => nextRetryUtc
             };
             TimeSpan delta = targetUtc - now;
-            return "Next retry: " + FormatRelativeTime(delta);
+            return T("Next retry: ", "Prossimo tentativo: ") + FormatRelativeTime(delta);
         }
 
         public static string FormatDetails(ModelDownloadStatus job, DateTime? nowUtc = null)
@@ -202,7 +204,7 @@ namespace PaRuX.Services
                 details.Add(FormatNextRetry(job.NextRetryUtc.Value, nowUtc));
 
             if (!string.IsNullOrWhiteSpace(job.FailureClass))
-                details.Add("Failure: " + DescribeFailureClass(job.FailureClass));
+                details.Add(T("Failure: ", "Errore: ") + DescribeFailureClass(job.FailureClass));
 
             if (!string.IsNullOrWhiteSpace(job.Error))
                 details.Add(job.Error.Trim());

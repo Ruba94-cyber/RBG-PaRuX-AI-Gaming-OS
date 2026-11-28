@@ -10,6 +10,23 @@ namespace PaRuX.Server.Tests;
 public sealed class ModelDownloadClientWiringPolicyTests
 {
     [Fact]
+    public void Download_rows_show_speed_and_remaining_time_in_Italian_when_Italian_is_selected()
+    {
+        CultureInfo previous = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("it-IT");
+            string details = ModelDownloadPresentationPolicy.FormatDetails(
+                new ModelDownloadStatus { Status = "downloading", SpeedBytesPerSecond = 1024 * 1024, EtaSeconds = 90 });
+            Assert.Contains("Velocità", details);
+            Assert.Contains("Mancano 1m 30s", details);
+            Assert.DoesNotContain("ETA", details);
+            Assert.Equal("download in corso", ModelDownloadPresentationPolicy.DescribeStatus(new ModelDownloadStatus { Status = "downloading" }));
+        }
+        finally { CultureInfo.CurrentUICulture = previous; }
+    }
+
+    [Fact]
     public void Active_retry_row_shows_speed_eta_failure_remediation_attempt_and_retry_time()
     {
         var status = new ModelDownloadStatus

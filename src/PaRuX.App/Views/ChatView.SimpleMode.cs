@@ -594,13 +594,50 @@ namespace PaRuX.Views
                 ToolTipService.SetToolTip(SimpleModeRuntimeHealthButton, info.TooltipText);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SimpleModeRuntimeHealthButton, info.AccessibleName);
             }
-            if (HomeSetupButton != null)
-                HomeSetupButton.Visibility = !info.IsInstalled && !info.IsSkipped && info.NextAction.StartsWith("Install or locate", StringComparison.Ordinal)
-                    ? Visibility.Visible : Visibility.Collapsed;
+            _homeRuntimeMissing = !info.IsInstalled && !info.IsSkipped && info.NextAction.StartsWith("Install or locate", StringComparison.Ordinal);
+            ApplyHomeSetupButton();
             if (SimpleModeRuntimeHealthIcon != null)
             {
                 SimpleModeRuntimeHealthIcon.Glyph = info.IsHealthy ? "\uE73E" : (info.IsInstalled ? "\uE783" : "\uE711");
             }
+        }
+
+        private bool _homeRuntimeMissing;
+        private bool _homeNoModel;
+        private string? _homeNoModelButtonText;
+
+        /// <summary>One call to action on the empty chat: install the engine first, otherwise get the recommended model.</summary>
+        private void ApplyHomeSetupButton()
+        {
+            if (HomeSetupButton == null) return;
+            bool showNoModel = _homeNoModel && !_homeRuntimeMissing && !PaRuX.Contracts.CorporateMode.IsActive;
+            HomeSetupButton.Visibility = _homeRuntimeMissing || showNoModel ? Visibility.Visible : Visibility.Collapsed;
+            HomeSetupButton.Content = showNoModel && !string.IsNullOrEmpty(_homeNoModelButtonText)
+                ? _homeNoModelButtonText
+                : T("Set up local chat", "Configura la chat locale");
+        }
+
+        /// <summary>
+        /// Empty chat with no installed model: show "Get a model - recommended: X" (from the Core's hardware-fit advice for this PC)
+        /// instead of letting the first message fail. Silent when the advice cannot be read: the plain button still works.
+        /// </summary>
+        private async Task RefreshHomeNoModelCallToActionAsync(bool noModel)
+        {
+            if (PaRuX.Contracts.CorporateMode.IsActive) return;
+            FirstModelAdvice? advice = null;
+            if (noModel)
+            {
+                try { advice = await ModelDownloadClient.Current.GetAdviceForThisPcAsync(System.Threading.CancellationToken.None); }
+                catch (Exception ex) { Log.Write("Home recommended model advice unavailable: " + ex.Message); }
+            }
+            _dispatcher.TryEnqueue(() =>
+            {
+                _homeNoModel = noModel;
+                _homeNoModelButtonText = FirstModelRecommendationPresenter.GetModelButtonText(advice, ChatItalian);
+                ApplyHomeSetupButton();
+                if (HomeDescription != null && noModel && !_homeRuntimeMissing)
+                    HomeDescription.Text = FirstModelRecommendationPresenter.NoModelDescription(advice, ChatItalian);
+            });
         }
 
         private void HomeSetup_Click(object sender, RoutedEventArgs e) => App.MainWin?.ShowModelHub();

@@ -6,8 +6,23 @@ using Xunit;
 
 namespace PaRuX.Server.Tests;
 
-public sealed class ModelDownloadRowPresentationTests
+public sealed class ModelDownloadRowPresentationTests : IDisposable
 {
+    // The presenter follows the UI language; these English assertions must not depend on the machine running them.
+    private readonly CultureInfo _previousUiCulture = CultureInfo.CurrentUICulture;
+
+    public ModelDownloadRowPresentationTests() => CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+
+    public void Dispose() => CultureInfo.CurrentUICulture = _previousUiCulture;
+
+    [Fact]
+    public void Speed_eta_and_status_have_an_Italian_version()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("it-IT");
+        Assert.Equal("Mancano 1m 30s", ModelDownloadRowPresentation.FormatEta(90));
+        Assert.StartsWith("Velocità", ModelDownloadRowPresentation.FormatSpeed(2048));
+        Assert.Equal("download in corso", ModelDownloadRowPresentation.DescribeStatus("downloading"));
+    }
     [Theory]
     [InlineData(null)]
     [InlineData(0.0)]

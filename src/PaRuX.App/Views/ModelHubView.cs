@@ -815,6 +815,7 @@ namespace PaRuX.Views
             bool becameAdvanced = advanced && !_isAdvancedMode;
             _isAdvancedMode = advanced;
             RenderSuggestions();
+            if (_recommended != null && _lastRecommendedModels.Count > 0) RenderRecommended(_lastRecommendedModels);
             if (_recommendedTitle != null)
             {
                 _recommendedTitle.Text = ModelHubSimpleModePresenter.GetRecommendedSectionTitle(advanced);
@@ -4400,9 +4401,42 @@ namespace PaRuX.Views
             return query.OrderByDescending(r => r.Likes).ThenByDescending(r => r.Downloads).ToList();
         }
 
+        private IReadOnlyList<RecommendedModel> _lastRecommendedModels = Array.Empty<RecommendedModel>();
+
+        private UIElement BuildModelBadgeRow(IReadOnlyList<ModelBadge> badges)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            foreach (ModelBadge badge in badges)
+            {
+                var chip = new Border
+                {
+                    Padding = new Thickness(8, 2, 8, 3),
+                    CornerRadius = new CornerRadius(10),
+                    BorderThickness = new Thickness(1),
+                    Opacity = badge.Tone == ModelBadgeTone.Neutral ? 0.85 : 1,
+                    Child = new TextBlock
+                    {
+                        Text = badge.Text,
+                        FontSize = 12,
+                        FontWeight = badge.Tone == ModelBadgeTone.Caution
+                            ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal
+                    }
+                };
+                ToolTipService.SetToolTip(chip, badge.Explanation);
+                AutomationProperties.SetName(chip, badge.Text + ". " + badge.Explanation);
+                row.Children.Add(chip);
+            }
+            return row;
+        }
+
         private void RenderRecommended(IReadOnlyList<RecommendedModel> models)
         {
+            _lastRecommendedModels = models;
             _recommended.Children.Clear();
+            // Simple mode speaks in badges; the numbers (parameters, quantization) stay behind Advanced.
+            var fitByModel = models
+                .Select(m => (Model: m, Verdict: ModelHardwareFitEstimator.Estimate(m.EstimatedSizeBytes, _hardware).Verdict))
+                .ToList();
             foreach (RecommendedModel model in models)
             {
                 ModelHardwareFitEstimate fit = ModelHardwareFitEstimator.Estimate(model.EstimatedSizeBytes, _hardware);
@@ -4414,12 +4448,25 @@ namespace PaRuX.Views
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     TextWrapping = TextWrapping.Wrap
                 });
-                card.Children.Add(new TextBlock
+                if (_isAdvancedMode)
                 {
-                    Text = model.Category + " · " + model.ApproxParams + " · ~" + FormatBytes(model.EstimatedSizeBytes)
-                        + " · " + ModelFitVerdictWords.Of(fit.Verdict),
-                    FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap
-                });
+                    card.Children.Add(new TextBlock
+                    {
+                        Text = model.Category + " · " + model.ApproxParams + " · ~" + FormatBytes(model.EstimatedSizeBytes)
+                            + " · " + ModelFitVerdictWords.Of(fit.Verdict),
+                        FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap
+                    });
+                }
+                else
+                {
+                    card.Children.Add(new TextBlock
+                    {
+                        Text = model.Category + T(" · download about ", " · download di circa ") + FormatBytes(model.EstimatedSizeBytes),
+                        FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap
+                    });
+                    IReadOnlyList<ModelBadge> badges = ModelBadgePresenter.For(model, fit.Verdict, fitByModel, StartItalian);
+                    if (badges.Count > 0) card.Children.Add(BuildModelBadgeRow(badges));
+                }
                 card.Children.Add(new TextBlock
                 {
                     Text = ModelHubRowPresentation.CompactDescription(model.Description),
@@ -4436,8 +4483,8 @@ namespace PaRuX.Views
                     {
                         (T("Description", "Descrizione"), model.Description),
                         (T("Category", "Categoria"), model.Category),
-                        (T("Parameters", "Parametri"), model.ApproxParams),
-                        (T("Suggested quantization", "Quantizzazione suggerita"), model.QuantHint),
+                        (T("Parameters", "Parametri"), _isAdvancedMode ? model.ApproxParams : null),
+                        (T("Suggested quantization", "Quantizzazione suggerita"), _isAdvancedMode ? model.QuantHint : null),
                         (T("Estimated download size", "Dimensione stimata del download"), FormatBytes(model.EstimatedSizeBytes)),
                         (T("Hardware fit estimate", "Stima di compatibilità hardware"), ModelHubRowPresentation.HardwareFit(fit.Verdict, fit.Summary)),
                         ("Repository", model.HuggingFaceRepoId)

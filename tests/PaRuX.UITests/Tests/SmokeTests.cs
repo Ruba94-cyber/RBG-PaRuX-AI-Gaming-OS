@@ -1977,9 +1977,9 @@ public sealed class SmokeTests
         try
         {
             var headline = UiWait.ById(app.MainWindow, "FirstModelHeadlineText", ControlType.Text);
-            UiWait.For(() => headline.Name.Contains("compatible chat model in Model Hub", StringComparison.OrdinalIgnoreCase),
-                "neutral model guidance");
-            Assert.DoesNotContain("Storage fixture model", headline.Name, StringComparison.Ordinal);
+            UiWait.For(() => headline.Name.Contains("Recommended for your PC", StringComparison.OrdinalIgnoreCase),
+                "hardware-fit recommendation preselected");
+            Assert.Contains("Storage fixture model", headline.Name, StringComparison.Ordinal);
 
             var storage = UiWait.ById(app.MainWindow, "FirstModelStorageText", ControlType.Text);
             UiWait.For(() => storage.Name.Contains("456 GB", StringComparison.Ordinal),
@@ -2003,9 +2003,9 @@ public sealed class SmokeTests
         try
         {
             var headline = UiWait.ById(app.MainWindow, "FirstModelHeadlineText", ControlType.Text);
-            UiWait.For(() => headline.Name.Contains("compatible chat model in Model Hub", StringComparison.OrdinalIgnoreCase),
-                "neutral model guidance");
-            Assert.DoesNotContain("Storage fixture model", headline.Name, StringComparison.Ordinal);
+            UiWait.For(() => headline.Name.Contains("Recommended for your PC", StringComparison.OrdinalIgnoreCase),
+                "hardware-fit recommendation preselected");
+            Assert.Contains("Storage fixture model", headline.Name, StringComparison.Ordinal);
             var storage = UiWait.ById(app.MainWindow, "FirstModelStorageText", ControlType.Text);
             UiWait.For(() => storage.Name.Contains("6 GB", StringComparison.Ordinal),
                 "fixture destination free space");
