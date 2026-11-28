@@ -380,13 +380,16 @@ public sealed class SmartRouterService : IRoleRouter
             memoKey = new RouteMemoKey(mode, requestedRole, normalizedTextRole, autoProfile, requiredIntelligence ?? 0,
                 AutoTrivialTurnPolicy.IsTrivial(request.PromptText ?? request.TaskType, requestedRole, autoProfile),
                 managedLibraryExpanded);
+            ChatPhaseTrace.Current?.Mark("r.memo_key");
             memoStamp = ComputeRoutingStamp();
+            ChatPhaseTrace.Current?.Mark("r.memo_stamp");
             // A single-candidate pool is remembered without the prompt features (nothing was ranked), so different prompts share it.
             if ((_memo.TryGet(memoKey, memoStamp, out RouteMemoEntry? remembered)
                     || _memo.TryGet(memoKey.WithoutPromptFeatures(), memoStamp, out remembered)) && remembered is not null
                 && await _runtimeManager.TryReuseActiveExactCandidateAsync(
                     remembered.Role, remembered.SelectedPath, ct).ConfigureAwait(false) is { } reusedResult)
             {
+                ChatPhaseTrace.Current?.Mark("r.memo_reuse");
                 memoHit = remembered;
                 memoReuse = reusedResult;
                 if (_recommendation is not null && normalizedTextRole == "standard" && autoProfile == AutoIntelligenceProfile.Balanced)

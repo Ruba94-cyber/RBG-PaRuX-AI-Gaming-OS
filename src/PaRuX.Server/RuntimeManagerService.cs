@@ -493,6 +493,17 @@ public sealed class RuntimeManagerService
     /// <summary>One residency read (health is memoised for a second): the model is resident, healthy, this exact file, under this role, and Gaming is off.</summary>
     private async Task<bool> IsResidentHealthyExactAsync(string normalizedRole, string filePath, CancellationToken ct)
     {
+        // Lean path for a runtime this process launched itself: the active role/model files, the launch's own pid and the
+        // launch-identity health memo. It skips the VRAM probe and the per-request module-path lookup that the full residency
+        // read does only to build a status page; any doubt (no pid, health not proven) takes the full read below.
+        if (!_process.GamingActive && _process.GetTextProcessId() is not null)
+        {
+            string? activeModel = ReadActiveModelPathRaw();
+            string? activeRole = ReadActiveRoleRaw();
+            if (activeModel is null || !PathsEqualLocal(activeModel, filePath)
+                || !string.Equals(activeRole, normalizedRole, StringComparison.OrdinalIgnoreCase)) return false;
+            if (await _process.IsTextHealthyAsync(ct).ConfigureAwait(false)) return true;
+        }
         TextRuntimeResidency status = await GetTextResidencyAsync(ct).ConfigureAwait(false);
         return status.Resident && status.Healthy && !status.GamingActive
             && status.ActiveModelPath != null && PathsEqualLocal(status.ActiveModelPath, filePath)
