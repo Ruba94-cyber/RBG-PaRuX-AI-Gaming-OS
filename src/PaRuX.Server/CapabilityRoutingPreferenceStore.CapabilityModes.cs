@@ -33,6 +33,9 @@ internal static partial class CapabilityRoutingPreferenceStore
     private static string CapabilityModePath(string? root) =>
         Path.Combine(root ?? DefaultRoot, "capability-mode-overrides.json");
 
+    /// <summary>Change stamp of the stored capability mode overrides, for the router's decision memo.</summary>
+    internal static long CapabilityModeStamp(string? root = null) => RoutingStamp.OfFile(CapabilityModePath(root));
+
     internal static IReadOnlyList<CapabilityModeOverride> ListCapabilityModes(string? root = null)
     {
         lock (CapabilityModeGate) return LoadCapabilityModes(root).Rows.Select(CloneMode).ToArray();

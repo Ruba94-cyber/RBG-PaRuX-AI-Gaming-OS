@@ -41,6 +41,7 @@ public static class ChatSchedulingEndpointExtensions
             HttpContext context,
             CancellationToken cancellationToken) =>
         {
+            ChatPhaseTrace.Current?.Mark("bound");
             using (MediaExecutionCoordinator.EnterContextScope())
             {
                 LocalRuntimeService runtime = context.RequestServices.GetRequiredService<LocalRuntimeService>();
@@ -69,9 +70,11 @@ public static class ChatSchedulingEndpointExtensions
                     // Must precede AcquireTextInferenceAsync: DelegateIfNeededAsync can own an
                     // exclusive text transition while it swaps to the helper and restores main.
                     await vision.DelegateIfNeededAsync(request, linked.Token).ConfigureAwait(false);
+                    ChatPhaseTrace.Current?.Mark("vision_gate");
 
                     await using MediaExecutionCoordinator.Lease textLease = await runtime
                         .AcquireTextInferenceAsync("chat:interactive", linked.Token).ConfigureAwait(false);
+                    ChatPhaseTrace.Current?.Mark("text_lease");
                     await legacyHandler(request, proxy, context, linked.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

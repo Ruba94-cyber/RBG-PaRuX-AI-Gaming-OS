@@ -486,6 +486,8 @@ builder.Services.AddSingleton(sp => IdleCalibrationComposition.Create(sp));
 StartupTrace.Mark("services-registered");
 StartupTrace.WrapHostedServices(builder.Services);
 WebApplication app = builder.Build();
+if (PaRuX.Server.ChatPhaseTrace.Enabled)
+    app.Use((context, next) => { PaRuX.Server.ChatPhaseTrace.BeginRequest(context); return next(); });
 
 // Corporate Lite remains AI/documents-only. Local GGUF import is always allowed (desktop owner);
 // model downloads are the sole optionally enabled online operation, explicitly opted in at launch.

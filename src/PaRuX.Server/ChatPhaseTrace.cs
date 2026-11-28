@@ -17,6 +17,7 @@ internal sealed class ChatPhaseTrace
 
     private static readonly object WriteLock = new();
     private readonly long _start = Stopwatch.GetTimestamp();
+    private readonly double _startUnixMs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) / (double)TimeSpan.TicksPerMillisecond;
     private readonly List<(string Name, double Ms)> _marks = new(16);
     private bool _flushed;
 
@@ -27,9 +28,20 @@ internal sealed class ChatPhaseTrace
     /// <summary>The trace of the chat request on this async flow, or null (always null when tracing is off).</summary>
     internal static ChatPhaseTrace? Current => Enabled ? CurrentTrace.Value : null;
 
+    /// <summary>Starts the trace at the head of the ASP.NET pipeline so middleware, model binding and scheduling are attributed too.</summary>
+    internal static void BeginRequest(HttpContext context)
+    {
+        if (!Enabled || !HttpMethods.IsPost(context.Request.Method)
+            || !context.Request.Path.Equals("/api/v1/chat/completions", StringComparison.Ordinal)) return;
+        var trace = new ChatPhaseTrace();
+        CurrentTrace.Value = trace;
+        context.Items[nameof(ChatPhaseTrace)] = trace;
+    }
+
     internal static ChatPhaseTrace? Start()
     {
         if (!Enabled) return null;
+        if (CurrentTrace.Value is { } existing) return existing;
         var trace = new ChatPhaseTrace();
         CurrentTrace.Value = trace;
         return trace;
@@ -60,6 +72,7 @@ internal sealed class ChatPhaseTrace
             _flushed = true;
             var builder = new StringBuilder(256);
             builder.Append(DateTimeOffset.UtcNow.ToString("O"));
+            builder.Append(" t0=").Append(_startUnixMs.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
             foreach ((string name, double ms) in _marks)
                 builder.Append(' ').Append(name).Append('=').Append(ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
             builder.Append(" total=").Append(Stopwatch.GetElapsedTime(_start).TotalMilliseconds

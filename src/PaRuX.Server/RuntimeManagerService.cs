@@ -472,6 +472,44 @@ public sealed class RuntimeManagerService
         };
     }
 
+    /// <summary>
+    /// The no-swap half of <see cref="EnsureExactCandidateLoadedAsync"/> for a caller that already decided on this exact model:
+    /// returns the reuse result when that model is the healthy resident for the role (same checks, same wait for a running
+    /// media job), otherwise null so the caller falls back to the full route. Never starts, stops or swaps anything.
+    /// </summary>
+    internal async Task<RuntimeLoadResult?> TryReuseActiveExactCandidateAsync(string role, string filePath, CancellationToken ct)
+    {
+        string? normalizedRole = LocalAiPaths.NormalizeTextRole(role);
+        if (normalizedRole == null || string.IsNullOrWhiteSpace(filePath)) return null;
+        if (!await IsResidentHealthyExactAsync(normalizedRole, filePath, ct).ConfigureAwait(false)) return null;
+        long waitStart = Stopwatch.GetTimestamp();
+        await MediaExecutionCoordinator.Current.WaitForMediaAvailabilityAsync(ct).ConfigureAwait(false);
+        // Only a wait that really parked behind a media job can have changed the resident; the common instant return needs no re-check.
+        if (Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds > 2
+            && !await IsResidentHealthyExactAsync(normalizedRole, filePath, ct).ConfigureAwait(false)) return null;
+        return new RuntimeLoadResult { Success = true, Role = normalizedRole, ModelPath = filePath, Message = "Already loaded (reused, no swap)." };
+    }
+
+    /// <summary>One residency read (health is memoised for a second): the model is resident, healthy, this exact file, under this role, and Gaming is off.</summary>
+    private async Task<bool> IsResidentHealthyExactAsync(string normalizedRole, string filePath, CancellationToken ct)
+    {
+        // Lean path for a runtime this process launched itself: the active role/model files, the launch's own pid and the
+        // launch-identity health memo. It skips the VRAM probe and the per-request module-path lookup that the full residency
+        // read does only to build a status page; any doubt (no pid, health not proven) takes the full read below.
+        if (!_process.GamingActive && _process.GetTextProcessId() is not null)
+        {
+            string? activeModel = ReadActiveModelPathRaw();
+            string? activeRole = ReadActiveRoleRaw();
+            if (activeModel is null || !PathsEqualLocal(activeModel, filePath)
+                || !string.Equals(activeRole, normalizedRole, StringComparison.OrdinalIgnoreCase)) return false;
+            if (await _process.IsTextHealthyAsync(ct).ConfigureAwait(false)) return true;
+        }
+        TextRuntimeResidency status = await GetTextResidencyAsync(ct).ConfigureAwait(false);
+        return status.Resident && status.Healthy && !status.GamingActive
+            && status.ActiveModelPath != null && PathsEqualLocal(status.ActiveModelPath, filePath)
+            && string.Equals(status.ActiveRole, normalizedRole, StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<RuntimeLoadResult> EnsureExactCandidateLoadedAsync(string role, string filePath, CancellationToken ct)
     {
         string? normalizedRole = LocalAiPaths.NormalizeTextRole(role);
