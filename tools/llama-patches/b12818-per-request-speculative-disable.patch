@@ -1,0 +1,39 @@
+# Experimental, NOT bundled. Re-enables a per-request opt-out of speculative drafting in llama.cpp b12818:
+# a request field "speculative.disabled": true skips drafting for that request (sampling output is unchanged).
+# Apply to the b12818 source tree with: git apply tools/llama-patches/b12818-per-request-speculative-disable.patch
+# Measured result and why it is not shipped: docs/COMPETITOR_BENCHMARK_2026-11-28.md, section 5.
+
+--- a/tools/server/server-schema.cpp
++++ b/tools/server/server-schema.cpp
+@@ -196,6 +196,10 @@
+     // Speculative decoding params
+     //
+ 
++    // PaRuX patch: per-request opt-out of speculative drafting (sampling output is unchanged)
++    add((new field_bool("speculative.disabled", params.speculative_disabled))
++        ->set_desc("Disable speculative drafting for this request"));
++
+     // TODO: to keep things simple, we disable speculative parameter adjustments for now
+ #if 0
+     // TODO: for now, be able to adjust only the draft-model based speculative parameters
+--- a/tools/server/server-task.h
++++ b/tools/server/server-task.h
+@@ -79,6 +79,7 @@
+     bool include_usage   = false;
+     bool cache_prompt    = true; // remember the prompt to avoid reprocessing all prompt
+     bool return_tokens   = false;
++    bool speculative_disabled = false; // PaRuX patch: per-request speculative opt-out
+     bool return_progress = false;
+ 
+     int32_t sse_ping_interval = 30; // seconds between SSE comment pings while the stream stays silent, -1 disables
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -594,7 +594,7 @@
+     int get_n_draft_max() const {
+         GGML_ASSERT(task);
+ 
+-        if (!can_speculate()) {
++        if (!can_speculate() || task->params.speculative_disabled) {
+             return 0;
+         }
+ 
