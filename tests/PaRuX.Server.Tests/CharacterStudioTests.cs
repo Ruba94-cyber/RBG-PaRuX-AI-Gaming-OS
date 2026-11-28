@@ -440,4 +440,32 @@ public sealed class CharacterStudioTests : IDisposable
             CharacterTrainerConfig.Build("prx_smoke", Path.Combine(dir, "output"), dataset, "prx_smoke", plan, pictures.Length, 7,
                 new[] { "prx_smoke, cartoon face with red hair" }));
     }
+
+    /// <summary>Opt-in helper for the ComfyUI LoRA proof: builds the shipped Z-Image graph for a character-bound request, with and
+    /// without the LoRA, using the same binding and LoRA injection code the server uses. Does nothing unless PARUX_CHARACTER_GRAPH_DIR is set.</summary>
+    [Fact]
+    public void Graph_writer_builds_with_and_without_lora_graphs_when_asked()
+    {
+        string? dir = Environment.GetEnvironmentVariable("PARUX_CHARACTER_GRAPH_DIR");
+        if (string.IsNullOrEmpty(dir)) return;
+        string template = Path.Combine(AppContext.BaseDirectory, "Assets", "config", "z-image-smoke-api.json");
+        var character = new CharacterProfile
+        {
+            Id = "smoke", Name = "Smoke", BaseFamily = "zimage",
+            Binding = new CharacterLoraBinding { LoraFile = "parux-character-smoke.safetensors", TriggerWord = "prx_smoke", Strength = 1.0 }
+        };
+        foreach (bool withLora in new[] { false, true })
+        {
+            var request = new MediaJobRequest { Type = "image", Prompt = "portrait, smiling, soft daylight" };
+            if (withLora) CharacterBindingPolicy.Apply(request, character);
+            var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(template))!.AsObject();
+            System.Text.Json.Nodes.JsonObject graph = root["prompt"] as System.Text.Json.Nodes.JsonObject ?? root;
+            graph["4"]!["inputs"]!["text"] = request.Prompt;
+            graph["8"]!["inputs"]!["seed"] = 1234;
+            if (withLora)
+                MediaLoraStack.Inject(root, request.Loras!.Select(l => new ValidatedLora(l.Name, l.Strength, "zimage")).ToList());
+            File.WriteAllText(Path.Combine(dir, withLora ? "graph-lora.json" : "graph-plain.json"),
+                new System.Text.Json.Nodes.JsonObject { ["prompt"] = graph.DeepClone() }.ToJsonString());
+        }
+    }
 }
