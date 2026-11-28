@@ -67,6 +67,15 @@ namespace PaRuX.Services
             SendNoContentAsync(HttpMethod.Delete, "/api/v1/desktop/workbook-edits/" + Uri.EscapeDataString(id)
                 + "?conversationId=" + Uri.EscapeDataString(conversationId), ct);
 
+        /// <summary>Pending "change a setting" proposals the model made in this chat. They only change anything after the owner presses Apply.</summary>
+        public Task<List<ChatSettingProposalDto>> GetChatSettingProposalsAsync(string conversationId, CancellationToken ct) =>
+            SendAsync<List<ChatSettingProposalDto>>(HttpMethod.Get,
+                "/api/v1/chat/setting-proposals?conversationId=" + Uri.EscapeDataString(conversationId), null, ct);
+
+        public Task DismissChatSettingProposalAsync(string id, string conversationId, CancellationToken ct) =>
+            SendNoContentAsync(HttpMethod.Delete, "/api/v1/chat/setting-proposals/" + Uri.EscapeDataString(id)
+                + "?conversationId=" + Uri.EscapeDataString(conversationId), ct);
+
         private static async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
         {
             ServerBootstrap server = await PaRuXServerController.Current.EnsureRunningAsync(null, ct).ConfigureAwait(false);

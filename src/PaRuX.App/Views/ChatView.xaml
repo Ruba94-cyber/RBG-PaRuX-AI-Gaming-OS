@@ -456,6 +456,20 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+            <Border x:Name="SettingProposalPanel" Visibility="Collapsed"
+                    AutomationProperties.AutomationId="Chat_SettingProposal_Card"
+                    Background="{ThemeResource PaRuXSurfaceCardBrush}" BorderBrush="{ThemeResource PaRuXStrokeBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="12">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Change a setting?" loc:Loc.ItText="Cambiare un'impostazione?" FontWeight="SemiBold" />
+                    <TextBlock x:Name="SettingProposalText" TextWrapping="Wrap" AutomationProperties.AutomationId="Chat_SettingProposal_Text" />
+                    <TextBlock x:Name="SettingProposalStatus" TextWrapping="Wrap" AutomationProperties.AutomationId="Chat_SettingProposal_Status" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="SettingProposalApply" AutomationProperties.AutomationId="Chat_SettingProposal_Apply_Button" Content="Apply" loc:Loc.ItContent="Applica" Click="SettingProposalApply_Click" />
+                        <Button x:Name="SettingProposalCancel" AutomationProperties.AutomationId="Chat_SettingProposal_Cancel_Button" Content="Cancel" loc:Loc.ItContent="Annulla" Click="SettingProposalCancel_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
             </StackPanel>
 
             <!-- Transient status: never a bare "loading…" string, always paired

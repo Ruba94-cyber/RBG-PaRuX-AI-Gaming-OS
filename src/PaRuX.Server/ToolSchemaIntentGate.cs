@@ -76,6 +76,17 @@ internal static partial class ToolSchemaIntentGate
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex EarlierChatsIntent();
 
+    // Asking to change an app setting (English and Italian). Deliberately narrow: a verb plus a settings noun.
+    [GeneratedRegex(
+        @"\b(change|set|switch|turn|enable|disable|activate|deactivate|use|make)\b[^.\n]{0,40}\b(theme|dark\s+mode|light\s+mode|dark|light|language|italian|english|simple|advanced|web\s+search|internet\s+search|voice|uncensored\s+profile|model\s+profile)\b" +
+        @"|\b(cambia|imposta|metti|passa|attiva|disattiva|abilita|disabilita|usa)\w*\b[^.\n]{0,40}\b(tema|modalit\w+\s+(scura|chiara)|scuro|chiaro|lingua|italiano|inglese|semplice|avanzat\w+|ricerca\s+(web|su\s+internet)|voce|profilo)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ChangeSettingsIntent();
+
+    /// <summary>True when the prompt asks to change an app setting; only then is the propose-setting tool schema offered.</summary>
+    internal static bool AsksToChangeSettings(string? query) =>
+        !string.IsNullOrWhiteSpace(query) && ChangeSettingsIntent().IsMatch(query.Length > MaximumSimpleTurnCharacters ? query[..MaximumSimpleTurnCharacters] : query);
+
     /// <summary>True when the prompt asks about the user's own earlier chats; only then is the chat-search tool schema offered.</summary>
     internal static bool AsksAboutEarlierChats(string? query) =>
         !string.IsNullOrWhiteSpace(query) && EarlierChatsIntent().IsMatch(query.Length > MaximumSimpleTurnCharacters ? query[..MaximumSimpleTurnCharacters] : query);
@@ -83,13 +94,15 @@ internal static partial class ToolSchemaIntentGate
     /// <summary>Returns the schemas without the chat-search tool unless the prompt asks about earlier chats.</summary>
     internal static System.Text.Json.Nodes.JsonArray KeepChatSearchSchema(System.Text.Json.Nodes.JsonArray schemas, string? query)
     {
-        if (AsksAboutEarlierChats(query)) return schemas;
+        bool chats = AsksAboutEarlierChats(query), settings = AsksToChangeSettings(query);
+        if (chats && settings) return schemas;
         var kept = new System.Text.Json.Nodes.JsonArray();
         foreach (System.Text.Json.Nodes.JsonNode? schema in schemas)
         {
             if (schema == null) continue;
             string? name = schema["function"]?["name"]?.GetValue<string>();
-            if (name == PaRuX.Server.AgentSkills.AgentSkillTools.ChatSearchToolName) continue;
+            if (!chats && name == PaRuX.Server.AgentSkills.AgentSkillTools.ChatSearchToolName) continue;
+            if (!settings && name == PaRuX.Server.AgentSkills.AgentSkillTools.ProposeSettingToolName) continue;
             kept.Add(schema.DeepClone());
         }
         return kept;
@@ -102,7 +115,7 @@ internal static partial class ToolSchemaIntentGate
         if (string.IsNullOrWhiteSpace(query)) return false;
         string text = query.Trim();
         if (text.Length > MaximumSimpleTurnCharacters) return false;
-        if (AsksAboutEarlierChats(text)) return false;
+        if (AsksAboutEarlierChats(text) || AsksToChangeSettings(text)) return false;
         // Asking for code to be written in a language is authoring, not a request to run it in the sandbox.
         text = AuthoredCode().Replace(text, " ");
         if (text.Length <= 300) return !ToolIntent().IsMatch(text);

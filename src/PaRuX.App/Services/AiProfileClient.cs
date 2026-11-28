@@ -27,6 +27,10 @@ namespace PaRuX.Services
         public async Task<AiProfileStatus> GetStatusAsync(CancellationToken ct) =>
             await SendAsync<AiProfileStatus>(HttpMethod.Get, "/api/v1/ai/profile", null, ct).ConfigureAwait(false);
 
+        public async Task<AiProfileStatus> SetTextProfileAsync(string textProfile, CancellationToken ct) =>
+            await SendAsync<AiProfileStatus>(HttpMethod.Post, "/api/v1/ai/profile",
+                new AiProfileRequest { TextProfile = textProfile }, ct).ConfigureAwait(false);
+
         public async Task<AiProfileStatus> SetAutoFallbackAsync(bool enabled, CancellationToken ct) =>
             await SendAsync<AiProfileStatus>(HttpMethod.Post, "/api/v1/ai/profile/auto-fallback",
                 new AiAutoFallbackRequest { Enabled = enabled }, ct).ConfigureAwait(false);

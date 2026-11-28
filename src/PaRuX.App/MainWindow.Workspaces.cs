@@ -87,6 +87,14 @@ namespace PaRuX
             ModelHubPage.ShowDiscoverTab();
         }
 
+        /// <summary>Switches between the Simple and Advanced interface (used by the confirmed "change setting from chat" card). Returns false when the switch is unavailable (Corporate or Gaming).</summary>
+        public bool TrySetInterfaceMode(bool advanced)
+        {
+            if (PaRuX.Contracts.CorporateMode.IsActive || StudioModeToggle.Visibility != Visibility.Visible) return false;
+            StudioModeToggle.IsOn = advanced;
+            return true;
+        }
+
         private void StudioModeToggle_Toggled(object sender, RoutedEventArgs e)
         {
             if (_applyingNavigationMode || _synchronizingStudioModeToggles) return;
