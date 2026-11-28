@@ -2285,6 +2285,7 @@ namespace PaRuX.Views
             SearxngUrlBox.Text = status.SearxngUrl.TrimEnd('/');
             SearchDuckDuckGoCheck.IsChecked = status.Providers.FirstOrDefault(p => p.Id == "duckduckgo")?.Enabled ?? true;
             SearchWikipediaCheck.IsChecked = status.Providers.FirstOrDefault(p => p.Id == "wikipedia")?.Enabled ?? true;
+            SearchMarginaliaCheck.IsChecked = status.Providers.FirstOrDefault(p => p.Id == "marginalia")?.Enabled ?? true;
             _loading = false;
 
             var lines = new List<string>();
@@ -2311,6 +2312,7 @@ namespace PaRuX.Views
             var disabled = new List<string>();
             if (SearchDuckDuckGoCheck.IsChecked != true) disabled.Add("duckduckgo");
             if (SearchWikipediaCheck.IsChecked != true) disabled.Add("wikipedia");
+            if (SearchMarginaliaCheck.IsChecked != true) disabled.Add("marginalia");
             try
             {
                 ApplySearchProviders(await InternetClient.Current.SetSearchProvidersAsync(

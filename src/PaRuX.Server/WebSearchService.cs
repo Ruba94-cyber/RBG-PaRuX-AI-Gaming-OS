@@ -10,7 +10,7 @@ public sealed class WebSearchResult
     public string Title { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public string Snippet { get; set; } = string.Empty;
-    /// <summary>Id of the provider that answered (duckduckgo, wikipedia, searxng).</summary>
+    /// <summary>Id of the provider that answered (duckduckgo, marginalia, wikipedia, searxng).</summary>
     public string Provider { get; set; } = string.Empty;
 }
 
@@ -131,6 +131,7 @@ public class WebSearchService
         string? braveKey = _settings?.GetBraveKey();
         if (!string.IsNullOrEmpty(braveKey)) providers.Insert(searxng != null ? 1 : 0, new BraveSearchProvider(_http, braveKey));
         if (!disabled.Contains(WebSearchSettingsService.DuckDuckGoId)) providers.Add(new DuckDuckGoProvider(this));
+        if (!disabled.Contains(WebSearchSettingsService.MarginaliaId)) providers.Add(new MarginaliaSearchProvider(_http));
         if (!disabled.Contains(WebSearchSettingsService.WikipediaId)) providers.Add(new WikipediaSearchProvider(_http));
 
         if (providers.Count == 0)
@@ -223,6 +224,8 @@ public class WebSearchService
                     Make(WebSearchSettingsService.BraveId, "Brave Search (your API key)", braveConfigured, braveConfigured),
                     Make(WebSearchSettingsService.DuckDuckGoId, "DuckDuckGo",
                         !snap.DisabledProviders.Contains(WebSearchSettingsService.DuckDuckGoId), true),
+                    Make(WebSearchSettingsService.MarginaliaId, "Marginalia",
+                        !snap.DisabledProviders.Contains(WebSearchSettingsService.MarginaliaId), true),
                     Make(WebSearchSettingsService.WikipediaId, "Wikipedia",
                         !snap.DisabledProviders.Contains(WebSearchSettingsService.WikipediaId), true)
                 }

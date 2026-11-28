@@ -11,6 +11,7 @@ public sealed class WebSearchSettingsService
 {
     public const string DuckDuckGoId = "duckduckgo";
     public const string WikipediaId = "wikipedia";
+    public const string MarginaliaId = "marginalia";
     public const string SearxngId = "searxng";
 
     private readonly object _gate = new();
@@ -119,7 +120,7 @@ public sealed class WebSearchSettingsService
         }
     }
 
-    private static bool IsToggleable(string id) => id is DuckDuckGoId or WikipediaId;
+    private static bool IsToggleable(string id) => id is DuckDuckGoId or WikipediaId or MarginaliaId;
 
     private sealed class Document
     {
