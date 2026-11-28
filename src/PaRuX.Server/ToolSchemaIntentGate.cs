@@ -17,12 +17,20 @@ internal static partial class ToolSchemaIntentGate
     /// <summary>Longest query still treated as a simple plain-chat turn.</summary>
     internal const int MaximumSimpleTurnCharacters = 24_000;
 
+    // write/create/generate (and Italian equivalents) followed shortly by a producible artifact.
+    private const string WriteVerbWithArtifact =
+        @"|\b(scrivi\w*|crea\w*|genera\w*|write|create|generate|make|produce)\b[^.\n]{0,48}\b(excel|docx?|xlsx?|files?|documen\w*|spreadsheet|workbook|report|foglio|tabella)\b"
+        // list/show are a request for the user's data only as a command ("List the invoices"), not inside a noun phrase ("a skip list").
+        + @"|(?:^|[.!?\n]\s*|\b(?:please|can you|could you|puoi|potresti)\s+)(?:elenca\w*|mostra\w*|list|show)\b";
+
     // Object words (English and Italian), file extensions, paths and possessives that point at the user's data, plus write verbs.
     [GeneratedRegex(
-        @"(file|files|folder|cartella|document|documento|docs?\b|docx|word\b|excel|xlsx|xls\b|csv|spreadsheet|workbook|foglio|pdf|pptx|slide|appunti|desktop|disk\b|disco|drive|path\b|percorso" +
+        @"(file|files|folder|cartella|document|documento|docs?\b|docx|(?<![-\d])word\b|excel|xlsx|xls\b|csv|spreadsheet|workbook|foglio|pdf|pptx|slide|appunti|desktop|disk\b|disco|drive|path\b|percorso" +
         @"|\b(my|mine|mio|mia|miei|mie)\b" +
         // Imperative verbs that ask for an action on something (English and Italian): the object may be a file the user never named.
-        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
+        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|search|find|open|read)\b" +
+        // Authoring verbs only count next to something a tool could produce; "write an explanation of X" is plain prose.
+        WriteVerbWithArtifact +
         @"|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
         // Asking for code to be executed: the run_python tool must be offered even for a short one-line request.
         @"|\b(python|run_python|script|sandbox|execute|esegui\w*)\b" +
@@ -40,13 +48,20 @@ internal static partial class ToolSchemaIntentGate
     // Generic nouns alone ("file", "disk", "document") inside pasted prose do not trigger tools.
     [GeneratedRegex(
         @"(\b(my|mine|mio|mia|miei|mie)\b" +
-        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|scrivi\w*|crea\w*|genera\w*|elenca\w*|mostra\w*|search|find|open|read|write|create|generate|list|show)\b" +
+        @"|\b(cerca\w*|trova\w*|apri\w*|leggi\w*|search|find|open|read)\b" +
+        // Authoring verbs only count next to something a tool could produce; "write an explanation of X" is plain prose.
+        WriteVerbWithArtifact +
         @"|\b(save|export|download|upload|attach|salva|esporta|scarica|allega|invia|send|email|mail|calendar|calendario)\b" +
         @"|\b(python|run_python|script|sandbox|execute|esegui\w*)\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex EdgeActionIntent();
 
     private const int EdgeIntentWindowCharacters = 180;
+
+    [GeneratedRegex(
+        @"\b(write|create|generate|implement\w*|make|produce|scrivi\w*|crea\w*|genera\w*|implementa\w*)\b[^.\n]{0,60}?\b(python|script)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AuthoredCode();
 
     /// <summary>True when this turn certainly needs no tool, so the schemas can be omitted from the prompt.</summary>
     internal static bool CanOmitToolSchemas(string? query, string? skillId)
@@ -55,6 +70,8 @@ internal static partial class ToolSchemaIntentGate
         if (string.IsNullOrWhiteSpace(query)) return false;
         string text = query.Trim();
         if (text.Length > MaximumSimpleTurnCharacters) return false;
+        // Asking for code to be written in a language is authoring, not a request to run it in the sandbox.
+        text = AuthoredCode().Replace(text, " ");
         if (text.Length <= 300) return !ToolIntent().IsMatch(text);
         if (StructuralToolSignal().IsMatch(text)) return false;
         string head = text[..EdgeIntentWindowCharacters];

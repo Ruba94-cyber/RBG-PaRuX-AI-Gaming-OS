@@ -447,6 +447,28 @@ public sealed class LocalAiProcessManager
         if (scopedVram >= 0) return scopedVram;
         if (TryGetCachedVramMib(out int cached)) return cached;
 
+        // Stale-while-revalidate: once a probe has succeeded, an expired value is still returned immediately and
+        // refreshed off the request path. Every 30 s the synchronous nvidia-smi spawn (80-100 ms, measured as the
+        // r.status spike in the chat phase trace) otherwise landed in front of one unlucky first token.
+        if (Volatile.Read(ref _cachedVramProbedTicks) != 0 && Volatile.Read(ref _cachedVramMib) > 0
+            && VramProbeGate.Wait(0))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    int refreshed = await ProbeVramMibAsync(CancellationToken.None).ConfigureAwait(false);
+                    Volatile.Write(ref _cachedVramMib, refreshed);
+                    Volatile.Write(ref _cachedVramProbedTicks, DateTime.UtcNow.Ticks);
+                }
+                catch { }
+                finally { VramProbeGate.Release(); }
+            });
+            return Volatile.Read(ref _cachedVramMib);
+        }
+        if (Volatile.Read(ref _cachedVramProbedTicks) != 0 && Volatile.Read(ref _cachedVramMib) > 0)
+            return Volatile.Read(ref _cachedVramMib);
+
         await VramProbeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {

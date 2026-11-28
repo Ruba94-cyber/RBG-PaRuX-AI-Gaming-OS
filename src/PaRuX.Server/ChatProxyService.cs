@@ -1437,16 +1437,20 @@ public sealed class ChatProxyService
             AdaptiveReasoningPolicy.Decision reasoning = AdaptiveReasoningPolicy.Decide(request);
             // A caller-capped reply that is too small to hold hidden thinking plus an answer must not
             // be starved into an empty "length" completion: mirror LocalApiServerService's guard.
-            if (ChatSamplingOptions.EffectiveMaxTokens(request) is { } cap && cap < 512 && reasoning.Budget > 0)
+            // An explicit client setting is the caller's own contract and is never rewritten here.
+            if (!reasoning.Explicit && ChatSamplingOptions.EffectiveMaxTokens(request) is { } cap && cap < 512 && reasoning.Budget > 0)
                 reasoning = new AdaptiveReasoningPolicy.Decision("minimal", 0, reasoning.Demand);
             payload["reasoning_format"] = "auto";
             payload["reasoning_control"] = true;
             payload["thinking_budget_tokens"] = reasoning.Budget;
-            payload["chat_template_kwargs"] = new JsonObject
-            {
-                ["enable_thinking"] = reasoning.Budget > 0,
-                ["reasoning_effort"] = reasoning.Effort
-            };
+            var templateKwargs = new JsonObject();
+            // Preserve any other template arguments the client supplied (custom templates read them).
+            if (request.ChatTemplateKwargs is { ValueKind: JsonValueKind.Object } clientKwargs)
+                foreach (JsonProperty property in clientKwargs.EnumerateObject())
+                    templateKwargs[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+            templateKwargs["enable_thinking"] = reasoning.Budget > 0;
+            templateKwargs["reasoning_effort"] = reasoning.Effort;
+            payload["chat_template_kwargs"] = templateKwargs;
 
             ApplyContinuation(payload, request, usesExternalProvider: false);
         }

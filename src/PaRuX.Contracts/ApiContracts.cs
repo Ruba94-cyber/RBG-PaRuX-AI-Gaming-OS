@@ -50,6 +50,19 @@ public sealed class ChatCompletionRequest
     /// <summary>Sampling seed. Forwarded when set.</summary>
     [JsonPropertyName("seed")]
     public long? Seed { get; set; }
+    /// <summary>Top-k sampling (0 disables). Forwarded when set; otherwise the model's launch default applies.</summary>
+    [JsonPropertyName("top_k")]
+    public int? TopK { get; set; }
+    /// <summary>Min-p sampling (0..1). Forwarded when set.</summary>
+    [JsonPropertyName("min_p")]
+    public double? MinP { get; set; }
+    /// <summary>llama.cpp/OpenAI-compatible template arguments. An explicit <c>enable_thinking</c> or
+    /// <c>reasoning_effort</c> here outranks PaRuX's adaptive reasoning decision for this turn.</summary>
+    [JsonPropertyName("chat_template_kwargs")]
+    public System.Text.Json.JsonElement? ChatTemplateKwargs { get; set; }
+    /// <summary>OpenAI-style top-level reasoning effort ("none"/"minimal"/"low"/"medium"/"high"). Explicit values outrank the adaptive decision.</summary>
+    [JsonPropertyName("reasoning_effort")]
+    public string? ReasoningEffort { get; set; }
     /// <summary>Optional id of a saved sampling preset. Unset sampling values are filled from it; values in the request win. An unknown id is a 400.</summary>
     [JsonPropertyName("preset_id")]
     public string? PresetId { get; set; }

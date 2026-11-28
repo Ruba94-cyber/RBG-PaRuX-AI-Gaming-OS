@@ -20,7 +20,7 @@ public static class ActiveContextWindow
 
     private sealed record CacheEntry(int Tokens, DateTime CheckedUtc);
 
-    internal static void Invalidate() => Cache.Clear();
+    internal static void Invalidate() { Cache.Clear(); ReasoningEffortCompatibility.Invalidate(); }
 
     public static async Task<int> GetAsync(HttpClient http, string providerEndpoint, CancellationToken ct)
     {
