@@ -60,6 +60,8 @@ namespace PaRuX.Views
             };
             scroll.Content = body;
             body.Children.Add(new TextBlock { Text = T("Runtime Manager", "Runtime Manager"), FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Runtime));
+            GuidanceUi.Help(_performanceMode, ControlHelpIds.RuntimeProfile);
             AutomationProperties.SetAutomationId(_status, "RuntimeManager_Status_Text");
             AutomationProperties.SetAutomationId(_progress, "RuntimeManager_Progress_Bar");
             AutomationProperties.SetAutomationId(_performanceMode, "RuntimeManager_PerformanceMode_ComboBox");

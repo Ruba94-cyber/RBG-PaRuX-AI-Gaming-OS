@@ -250,6 +250,7 @@ namespace PaRuX.Views
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.76
             });
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Routing));
             body.Children.Add(new Border
             {
                 Padding = new Thickness(16),

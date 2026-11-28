@@ -340,6 +340,7 @@ namespace PaRuX.Views
             options.Children.Add(new TextBlock { Text = T("Steps", "Passaggi"), VerticalAlignment = VerticalAlignment.Center });
             options.Children.Add(_steps);
             options.Children.Add(new TextBlock { Text = T("LoRA rank", "Rango LoRA"), VerticalAlignment = VerticalAlignment.Center });
+            GuidanceUi.Help(_rank, ControlHelpIds.TrainRank);
             options.Children.Add(_rank);
             advanced.Children.Add(options);
             advanced.Children.Add(BuildTrainingWizardControls());

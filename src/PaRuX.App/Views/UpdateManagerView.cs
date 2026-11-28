@@ -72,6 +72,7 @@ namespace PaRuX.Views
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.78
             });
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Updates));
             body.Children.Add(_busy);
             body.Children.Add(_status);
             body.Children.Add(Section("PARUX APPLICATION", _app));

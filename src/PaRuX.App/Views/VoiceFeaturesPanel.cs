@@ -64,6 +64,11 @@ namespace PaRuX.Views
             AutomationProperties.SetAutomationId(_dictationStatus, "Dictation_Status");
             AutomationProperties.SetLiveSetting(_meetStatus, AutomationLiveSetting.Polite);
 
+            Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Voice));
+            _voiceEmpty = GuidanceUi.EmptyState(WorkspaceGuideIds.Voice, () => { _meetEnabled.IsOn = true; });
+            Children.Add(_voiceEmpty);
+            _meetEnabled.Toggled += (_, _) => _voiceEmpty.Visibility = _meetEnabled.IsOn ? Visibility.Collapsed : Visibility.Visible;
+            GuidanceUi.Help(_language, ControlHelpIds.VoiceLanguage);
             Children.Add(Heading(T("Meeting assistant", "Assistente riunioni")));
             Children.Add(new TextBlock
             {
@@ -104,6 +109,7 @@ namespace PaRuX.Views
 
         private static TextBlock Heading(string t) => new() { Text = t, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) };
         private XamlRoot? Root => XamlRoot;
+        private StackPanel _voiceEmpty = new();
 
         // ------------------------------------------------------------------ state
 
@@ -113,6 +119,7 @@ namespace PaRuX.Views
             try
             {
                 AppSettings s = SettingsStore.Current.Data;
+                _voiceEmpty.Visibility = _meetEnabled.IsOn ? Visibility.Collapsed : Visibility.Visible;
                 _dictation.IsOn = s.SystemDictationEnabled;
                 _dictationKey.Text = s.SystemDictationHotkey;
                 _dictationStatus.Text = s.SystemDictationEnabled
@@ -198,8 +205,8 @@ namespace PaRuX.Views
                 await _recorder.StartAsync();
             }
             catch (CoreRequestException ex) { _meetStatus.Text = ex.Message; await DropAsync(); return; }
-            catch (VoiceCaptureException ex) { _meetStatus.Text = ex.Message; await DropAsync(); return; }
-            catch (Exception ex) { _meetStatus.Text = T("Could not start: ", "Impossibile avviare: ") + ex.Message; await DropAsync(); return; }
+            catch (VoiceCaptureException ex) { _meetStatus.Text = WorkspaceErrorExplainer.StatusLine(string.Empty, ex.Message, UiText.IsItalian); await DropAsync(); return; }
+            catch (Exception ex) { _meetStatus.Text = WorkspaceErrorExplainer.StatusLine(T("Could not start: ", "Impossibile avviare: "), ex.Message, UiText.IsItalian); await DropAsync(); return; }
             _start.Visibility = Visibility.Collapsed; _import.IsEnabled = false;
             _stop.Visibility = _discard.Visibility = _recordingBanner.Visibility = Visibility.Visible;
             _recordingBanner.Text = T("● Recording the meeting (microphone is on)", "● Registrazione della riunione (il microfono è acceso)");

@@ -110,6 +110,7 @@ namespace PaRuX.Views
                 VerticalAlignment = VerticalAlignment.Center,
                 Opacity = 0.7
             });
+            GuidanceUi.Help(_contextLength, ControlHelpIds.RuntimeContextSize);
             controls.Children.Add(_contextLength);
 
             var apply = new Button { Content = T("Apply", "Applica") };

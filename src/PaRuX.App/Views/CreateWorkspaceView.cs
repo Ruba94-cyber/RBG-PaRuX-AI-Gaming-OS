@@ -126,6 +126,7 @@ namespace PaRuX.Views
                 Opacity = 0.78
             });
 
+            body.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Create));
             var statusBlock = new StackPanel { Spacing = 8 };
             var top = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_cancelActiveJobButton, "Create_Cancel_Active_Job_Button");
@@ -205,6 +206,27 @@ namespace PaRuX.Views
             return row;
         }
 
+        private void ApplyImageTemplate(WorkspaceTemplate template)
+        {
+            _imagePrompt.Text = template.Prompt.Pick();
+            _imageWidth.Value = int.Parse(template.Field("width", "1024"));
+            _imageHeight.Value = int.Parse(template.Field("height", "1024"));
+            _imagePrompt.Focus(FocusState.Programmatic);
+            _status.Text = T("Template filled in. Change the description if you like, then press Generate image.", "Modello compilato. Cambia la descrizione se vuoi, poi premi Genera l'immagine.");
+        }
+
+        private void ApplyVideoTemplate(WorkspaceTemplate template)
+        {
+            _videoPrompt.Text = template.Prompt.Pick();
+            _videoWidth.Value = int.Parse(template.Field("width", "832"));
+            _videoHeight.Value = int.Parse(template.Field("height", "480"));
+            _videoDuration.Value = int.Parse(template.Field("seconds", "5"));
+            _videoPrompt.Focus(FocusState.Programmatic);
+            _status.Text = template.Field("needsStartImage") == "true"
+                ? T("Template filled in. Now choose your start image, then press Generate video.", "Modello compilato. Ora scegli l'immagine iniziale, poi premi Genera il video.")
+                : T("Template filled in. Press Generate video when you are ready.", "Modello compilato. Premi Genera il video quando sei pronto.");
+        }
+
         /// <summary>One-click aspect-ratio presets that fill the width and height boxes.</summary>
         private static UIElement SizePresets(string idPrefix, NumberBox width, NumberBox height, params (string Label, int W, int H)[] presets)
         {
@@ -248,11 +270,12 @@ namespace PaRuX.Views
                 "Macro photo of a dew-covered spider web at sunrise",
                 "Watercolor portrait of an old sailor with a pipe",
                 "Isometric pixel-art city at night, neon signs"));
+            panel.Children.Add(GuidanceUi.TemplateRow("Create_Image_Template", WorkspaceTemplateCatalog.For(TemplateWorkspaces.MediaImage), ApplyImageTemplate));
             panel.Children.Add(_enhanceImage);
             panel.Children.Add(_imageModelRow);
             var dimensions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            dimensions.Children.Add(Labeled("Width", _imageWidth));
-            dimensions.Children.Add(Labeled("Height", _imageHeight));
+            dimensions.Children.Add(Labeled("Width", _imageWidth, ControlHelpIds.MediaWidth));
+            dimensions.Children.Add(Labeled("Height", _imageHeight, ControlHelpIds.MediaHeight));
             panel.Children.Add(dimensions);
             panel.Children.Add(BuildLoraStackPanel());
             panel.Children.Add(SizePresets("Create_Image_Size", _imageWidth, _imageHeight,
@@ -298,19 +321,23 @@ namespace PaRuX.Views
                 "Waves rolling onto a beach at sunset, cinematic, slow motion",
                 "A paper boat drifting down a rain-soaked street",
                 "Clouds racing over a mountain ridge, time-lapse"));
+            panel.Children.Add(GuidanceUi.TemplateRow("Create_Video_Template", WorkspaceTemplateCatalog.For(TemplateWorkspaces.MediaVideo), ApplyVideoTemplate));
             panel.Children.Add(_enhanceVideo);
             panel.Children.Add(_videoModelRow);
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            row.Children.Add(Labeled("Width", _videoWidth));
-            row.Children.Add(Labeled("Height", _videoHeight));
+            row.Children.Add(Labeled("Width", _videoWidth, ControlHelpIds.MediaWidth));
+            row.Children.Add(Labeled("Height", _videoHeight, ControlHelpIds.MediaHeight));
             panel.Children.Add(SizePresets("Create_Video_Size", _videoWidth, _videoHeight,
                 ("Fast 480p", 832, 480), ("HD 720p", 1280, 720), ("Vertical", 480, 832)));
-            row.Children.Add(Labeled("Seconds", _videoDuration));
-            row.Children.Add(Labeled("FPS", _videoFps));
-            row.Children.Add(Labeled("Steps", _videoSteps));
+            row.Children.Add(Labeled("Seconds", _videoDuration, ControlHelpIds.MediaSeconds));
             panel.Children.Add(row);
+            // Smoothness and steps are technical: folded away, still one click and fully keyboard reachable.
+            var videoAdvanced = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            videoAdvanced.Children.Add(Labeled("FPS", _videoFps, ControlHelpIds.MediaFps));
+            videoAdvanced.Children.Add(Labeled("Steps", _videoSteps, ControlHelpIds.MediaSteps));
+            panel.Children.Add(GuidanceUi.Advanced(videoAdvanced, "Create_Video_Advanced_Expander"));
             var startRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            var chooseStart = new Button { Content = T("Choose start image…", "Scegli l'immagine iniziale…") };
+            var chooseStart = GuidanceUi.Help(new Button { Content = T("Choose start image…", "Scegli l'immagine iniziale…") }, ControlHelpIds.MediaStartImage);
             chooseStart.Click += async (_, _) =>
             {
                 _videoStartImagePath = await PickFileAsync(new[] { ".png", ".jpg", ".jpeg", ".webp" });
@@ -402,6 +429,7 @@ namespace PaRuX.Views
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editStrength, T("Variation strength", "Intensità della variazione"));
             _variationStrengthPanel.Children.Add(new TextBlock { Text = T("Variation strength", "Intensità della variazione"), FontSize = 11, Opacity = 0.68 });
             _variationStrengthPanel.Children.Add(_editStrength);
+            GuidanceUi.Help(_editStrength, ControlHelpIds.MediaStrength);
             panel.Children.Add(_variationStrengthPanel);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_editRunButton, "Create_Edit_Run_Button");
             _editRunButton.Click += async (_, _) => await GenerateMediaAsync(SelectedEditType());
@@ -644,12 +672,12 @@ namespace PaRuX.Views
                 ticket = BeginOperation(type == "video" ? "Generating video…" : type == "image" ? "Generating image…" : type == "inpaint" ? "Repainting masked area…" : "Editing image…");
                 if (ticket == null) return;
                 MediaJobProvenance? jobProvenance = null;
+                var jobClock = System.Diagnostics.Stopwatch.StartNew();
                 var progress = new Progress<MediaJobStatus>(job =>
                 {
                     if (job.Provenance != null) jobProvenance = job.Provenance;
                     _progress.Value = Math.Clamp(job.ProgressPercent, 0, 100);
-                    string eta = job.EtaSeconds.HasValue ? " · ETA ~" + job.EtaSeconds.Value + "s" : string.Empty;
-                    _status.Text = job.Stage + " · " + job.ProgressPercent + "%" + eta;
+                    _status.Text = LongJobProgressPresenter.Line(job.Stage, job.ProgressPercent, job.EtaSeconds, jobClock.Elapsed, PaRuX.Services.UiText.IsItalian);
                 });
                 MediaAsset asset = await RunWithCompanionConsentAsync(request, type, progress, ticket.Token);
                 string path = await SaveMediaAssetAsync(asset, type, ticket.Token);
@@ -672,8 +700,8 @@ namespace PaRuX.Views
                 FinishOperation(ticket);
             }
             catch (OperationCanceledException) { FinishOperation(ticket, "Generation cancelled."); }
-            catch (MediaDependencyJobException ex) { FinishOperation(ticket, "Generation failed: " + ex.Message); }
-            catch (Exception ex) { FinishOperation(ticket, "Generation failed: " + ex.Message); }
+            catch (MediaDependencyJobException ex) { FinishOperation(ticket, WorkspaceErrorExplainer.StatusLine("Generation failed: ", ex.Message, PaRuX.Services.UiText.IsItalian)); }
+            catch (Exception ex) { FinishOperation(ticket, WorkspaceErrorExplainer.StatusLine("Generation failed: ", ex.Message, PaRuX.Services.UiText.IsItalian)); }
         }
 
         private async Task<MediaAsset> RunWithCompanionConsentAsync(
@@ -1105,6 +1133,18 @@ namespace PaRuX.Views
             panel.Children.Add(new TextBlock { Text = label, FontSize = 11, Opacity = 0.68 });
             if (string.IsNullOrEmpty(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(control)))
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(control, label);
+            panel.Children.Add(control);
+            return panel;
+        }
+
+        /// <summary>Like <see cref="Labeled(string, Control)"/> but shows the plain-language catalog label and tooltip. The automation name stays the original English label.</summary>
+        private static StackPanel Labeled(string label, Control control, string helpId)
+        {
+            if (string.IsNullOrEmpty(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(control)))
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(control, label);
+            GuidanceUi.Help(control, helpId);
+            var panel = new StackPanel { Spacing = 3 };
+            panel.Children.Add(new TextBlock { Text = ControlHelpCatalog.Label(helpId, PaRuX.Services.UiText.IsItalian), FontSize = 11, Opacity = 0.68 });
             panel.Children.Add(control);
             return panel;
         }

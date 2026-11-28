@@ -104,6 +104,7 @@ namespace PaRuX.Views
         {
             InitializeComponent();
             InitDocumentsButton();
+            InitCodingTemplates();
             InitFileDrop();
             HookCanvasPreview();
             // Non-modal "Tuning for your PC" line: visible only while a model is queued or being tuned.

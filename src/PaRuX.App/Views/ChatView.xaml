@@ -783,6 +783,15 @@
                         <FontIcon Glyph="&#xE711;" FontSize="10" />
                     </Button>
                 </StackPanel>
+                <Button
+                    x:Name="CodeTemplatesButton"
+                    AutomationProperties.AutomationId="Chat_CodeTemplates_Button"
+                    AutomationProperties.Name="Coding task templates" loc:Loc.ItName="Modelli di attività di codice"
+                    Content="Coding tasks" loc:Loc.ItContent="Attività di codice"
+                    Height="32"
+                    Padding="10,0,10,0"
+                    FontSize="{StaticResource PaRuXFontSizeMicro}"
+                    ToolTipService.ToolTip="Start from a ready-made task such as Fix a bug or Explain this repo" loc:Loc.ItToolTip="Parti da un'attività pronta, come Correggi un bug o Spiega questo repository" />
                 <Border
                     x:Name="RoutePill"
                     Visibility="Collapsed"

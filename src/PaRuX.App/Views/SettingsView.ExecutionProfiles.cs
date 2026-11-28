@@ -49,6 +49,7 @@ namespace PaRuX.Views
                 card.BorderBrush = brush;
 
             var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Profiles));
             content.Children.Add(new TextBlock
             {
                 Text = T("One Core-owned quality/resource envelope for Chat, Agents, Training, Media and the scheduler. Adaptive routing remains authoritative inside that envelope, so Maximum Quality does not make trivial chat waste hidden reasoning.", "Un unico involucro di qualità/risorse gestito dal Core per Chat, Agenti, Training, Media e scheduler. L'instradamento adattivo resta autorevole dentro quell'involucro, quindi Qualità massima non fa sprecare ragionamento nascosto alle chat banali."),
@@ -58,6 +59,7 @@ namespace PaRuX.Views
 
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             _executionQualityCombo = new ComboBox { MinWidth = 190 };
+            GuidanceUi.Help(_executionQualityCombo, ControlHelpIds.RuntimeProfile);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_executionQualityCombo, T("Execution quality profile", "Profilo di qualità di esecuzione"));
             _executionQualityCombo.Items.Add(new ComboBoxItem { Content = T("Fast", "Veloce"), Tag = ExecutionQualityProfile.Fast });
             _executionQualityCombo.Items.Add(new ComboBoxItem { Content = T("Balanced", "Bilanciato"), Tag = ExecutionQualityProfile.Balanced });

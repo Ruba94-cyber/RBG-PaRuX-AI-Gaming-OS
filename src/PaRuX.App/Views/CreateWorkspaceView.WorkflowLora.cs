@@ -49,6 +49,7 @@ namespace PaRuX.Views
             var run = new Button { Content = T("Run imported workflow", "Esegui il workflow importato") };
             run.Click += async (_, _) => await RunImportedWorkflowAsync();
             _runButtons.Add(run);
+            panel.Children.Add(GuidanceUi.Intro(WorkspaceGuideIds.Workflows));
             panel.Children.Add(import);
             panel.Children.Add(_importStatus);
             panel.Children.Add(_importedTemplates);
