@@ -17,6 +17,7 @@ public static class ProductV2Endpoints
     {
         app.MapManagedMediaV2Endpoints();
         app.MapMobileProductV2Endpoints();
+        app.MapMobileRuntimeDocumentEndpoints();
 
         // Backup v2 is intentionally desktop-owner only even though the global auth layer already
         // authenticates paired devices and browser sessions. Backup/restore is desktop authority, not LAN
