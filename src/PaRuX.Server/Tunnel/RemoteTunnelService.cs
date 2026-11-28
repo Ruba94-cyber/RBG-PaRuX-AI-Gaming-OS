@@ -359,6 +359,11 @@ internal sealed class RemoteTunnelService : IHostedService, IGamingHardOffPartic
             }
         }
 
+        // Re-check right before the launch: Gaming may have started while this attempt was preparing.
+        if (_gaming())
+            return new AttemptResult(true, RemoteTunnelReasons.GamingActive,
+                "Gaming Mode is on, so the Internet tunnel is off. Turn it on again after you finish gaming.", RemoteTunnelActions.Retry, TimeSpan.Zero);
+
         ITunnelProcess process;
         try { process = _launcher.Start(exe, args, env, OnLine); }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)

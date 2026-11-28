@@ -59,7 +59,8 @@ internal sealed class CharacterStudioStore
     private readonly string _dataRoot;
     private List<CharacterProfile>? _cache;
 
-    internal CharacterStudioStore() : this(ServerState.StateDirectory, Path.Combine(LocalAiPaths.Root, "character-studio")) { }
+    // Public: the DI container (Program.cs) can only use a public constructor.
+    public CharacterStudioStore() : this(ServerState.StateDirectory, Path.Combine(LocalAiPaths.Root, "character-studio")) { }
     internal CharacterStudioStore(string stateDir, string dataRoot) { _stateDir = stateDir; _dataRoot = dataRoot; }
 
     private string IndexPath => Path.Combine(_stateDir, "characters.json");
